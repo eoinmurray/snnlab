@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pinglab.dev/schemas/snn-graph-v1.schema.json",
+  "title": "snnlang graph v1",
+  "type": "object",
+  "required": ["schema", "name", "timebase", "inputs", "populations", "projections", "operations", "parameters", "outputs"],
+  "properties": {
+    "schema": {"const": "snnlang.graph/v1"},
+    "name": {"type": "string", "minLength": 1},
+    "timebase": {"type": "object"},
+    "inputs": {"type": "array", "items": {"$ref": "#/$defs/named"}},
+    "populations": {"type": "array", "items": {"$ref": "#/$defs/named"}},
+    "projections": {"type": "array", "items": {"$ref": "#/$defs/named"}},
+    "operations": {"type": "array", "items": {"$ref": "#/$defs/named"}},
+    "parameters": {"type": "array", "items": {"$ref": "#/$defs/named"}},
+    "outputs": {"type": "array", "items": {"$ref": "#/$defs/named"}}
+  },
+  "$defs": {
+    "named": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {"id": {"type": "string", "minLength": 1}}
+    }
+  }
+}

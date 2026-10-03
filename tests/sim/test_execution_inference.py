@@ -1,0 +1,314 @@
+"""Focused acceptance tests for the typed seam and graph executor."""
+
+from __future__ import annotations
+
+import pytest
+import torch
+
+from snnlab.sim.execution import (
+    ExecutionSpec,
+    GraphExecutor,
+    PoissonInputBinding,
+    build,
+    plan_graph,
+    resolve_poisson_input_bindings,
+    simulate,
+    train,
+)
+from tests.sim._execution_builders import (
+    coupled_graph as _coupled_graph,
+)
+from tests.sim._execution_builders import (
+    direct_train_bundle as _direct_train_bundle,
+)
+from tests.sim._execution_builders import (
+    standard_readout_graph as _standard_readout_graph,
+)
+
+
+def test_fixed_rate_poisson_binding_has_exact_boundary_fixtures():
+    graph = _standard_readout_graph("count")
+    zero = resolve_poisson_input_bindings(
+        graph,
+        bindings=(PoissonInputBinding("events", 3, 2, (0.0,), 7),),
+    )
+    assert torch.count_nonzero(zero.tensors["events"]) == 0
+    graph["timebase"]["dt"] = {"value": 1.0, "unit": "ms"}
+    full = resolve_poisson_input_bindings(
+        graph,
+        bindings=(PoissonInputBinding("events", 3, 2, (1000.0,), 7),),
+    )
+    assert torch.all(full.tensors["events"] == 1)
+    assert full.protocol["binding_schema"] == "tools/snnsim.poisson-input-binding/v1"
+    assert full.protocol["inputs"][0]["selection"] == "constant"
+
+
+def test_graph_inference_overrides_poisson_duration_and_rate():
+    graph = _standard_readout_graph("count")
+    result = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            executor="graph",
+            graph=graph,
+            poisson_bindings=(PoissonInputBinding("events", 2, 1, (0.0,), 7),),
+            options={
+                "inference_overrides": {
+                    "duration_ms": 300.0,
+                    "input_rate_hz": 10.0,
+                }
+            },
+        )
+    )
+    protocol = result.metrics["execution_protocol"]
+    assert protocol["timing"] == {
+        "dt_ms": 100.0,
+        "duration_ms": 300.0,
+        "steps": 3,
+    }
+    assert protocol["inputs"][0]["rates_hz"] == [10.0]
+    assert result.metrics["inference_overrides"] == {
+        "schema": "tools/snnsim.inference-overrides/v1",
+        "requested": {"duration_ms": 300.0, "input_rate_hz": 10.0},
+        "resolved": {
+            "duration_ms": 300.0,
+            "timestep_ms": 100.0,
+            "projection_scales": {},
+            "input_rate_hz": 10.0,
+        },
+    }
+
+
+def test_graph_inference_timestep_recompiles_and_preserves_duration(tmp_path):
+    bundle = _direct_train_bundle()
+    checkpoint = tmp_path / "checkpoint"
+    train(
+        ExecutionSpec(
+            kind="train",
+            executor="graph",
+            graph=bundle.graph,
+            training=bundle.training,
+            inputs={"events": torch.ones(3, 1, 2)},
+            targets={"label": torch.tensor([0])},
+            seed=7,
+            options={"save_final_checkpoint": checkpoint},
+        )
+    )
+    result = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            executor="graph",
+            graph=bundle.graph,
+            checkpoint=checkpoint,
+            poisson_bindings=(PoissonInputBinding("events", 3, 1, (0.0,), 13),),
+            options={"inference_overrides": {"timestep_ms": 0.05}},
+        )
+    )
+    assert bundle.graph["timebase"]["dt"] == {"value": 0.1, "unit": "ms"}
+    assert result.metrics["execution_protocol"]["timing"] == {
+        "dt_ms": 0.05,
+        "steps": 6,
+        "duration_ms": pytest.approx(0.3),
+    }
+    provenance = result.metrics["inference_overrides"]
+    assert provenance["resolved"]["timestep_ms"] == 0.05
+    assert provenance["resolved"]["duration_ms"] == pytest.approx(0.3)
+    assert result.metrics["source_graph_digest"] == bundle.training["graph_digest"]
+    assert (
+        result.metrics["effective_graph_digest"]
+        != result.metrics["source_graph_digest"]
+    )
+
+
+def test_graph_inference_timestep_rejects_non_resampleable_inputs():
+    graph = _standard_readout_graph("count")
+    with pytest.raises(ValueError, match="resampleable Poisson"):
+        simulate(
+            ExecutionSpec(
+                kind="simulate",
+                executor="graph",
+                graph=graph,
+                inputs={"events": torch.zeros(2, 1, 2)},
+                options={"inference_overrides": {"timestep_ms": 50.0}},
+            )
+        )
+
+
+def test_graph_inference_projection_scale_is_request_local():
+    graph = _coupled_graph(direction="uncoupled")
+    inputs = {
+        "drive_a": torch.zeros(2, 1, 3),
+        "drive_b": torch.zeros(2, 1, 2),
+    }
+    baseline = build(ExecutionSpec(kind="build", executor="graph", graph=graph, seed=5))
+    projection = graph["projections"][0]
+    parameter_id = projection["parameters"][0]
+    result = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            executor="graph",
+            graph=graph,
+            inputs=inputs,
+            seed=5,
+            options={
+                "inference_overrides": {"projection_scales": {projection["id"]: 0.25}}
+            },
+        )
+    )
+    torch.testing.assert_close(
+        result.parameters[parameter_id], baseline.parameters[parameter_id] * 0.25
+    )
+    assert graph["parameters"][0]["initializer"] != {"kind": "constant", "value": 0.25}
+
+
+def test_graph_inference_overrides_reject_ambiguous_or_unknown_requests():
+    graph = _standard_readout_graph("count")
+    with pytest.raises(ValueError, match="require Poisson"):
+        simulate(
+            ExecutionSpec(
+                kind="simulate",
+                executor="graph",
+                graph=graph,
+                inputs={"events": torch.zeros(2, 1, 2)},
+                options={"inference_overrides": {"duration_ms": 100.0}},
+            )
+        )
+    with pytest.raises(ValueError, match="unknown projections"):
+        simulate(
+            ExecutionSpec(
+                kind="simulate",
+                executor="graph",
+                graph=graph,
+                inputs={"events": torch.zeros(2, 1, 2)},
+                options={
+                    "inference_overrides": {"projection_scales": {"missing": 1.0}}
+                },
+            )
+        )
+
+
+def test_graph_inference_interventions_are_ordered_and_recorded():
+    graph = _coupled_graph(direction="uncoupled")
+    inputs = {
+        "drive_a": torch.zeros(3, 1, 3),
+        "drive_b": torch.zeros(3, 1, 2),
+    }
+    add = {
+        "kind": "add_poisson_spikes",
+        "population_id": "a_E",
+        "rate_hz": 10000.0,
+        "seed": 11,
+    }
+    drop = {
+        "kind": "drop_spikes",
+        "population_id": "a_E",
+        "probability": 1.0,
+        "seed": 12,
+    }
+    dropped = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            executor="graph",
+            graph=graph,
+            inputs=inputs,
+            options={"inference_interventions": [add, drop]},
+        )
+    )
+    added = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            executor="graph",
+            graph=graph,
+            inputs=inputs,
+            options={"inference_interventions": [drop, add]},
+        )
+    )
+    assert torch.count_nonzero(dropped.recordings["a_E.spikes"]) == 0
+    assert torch.all(added.recordings["a_E.spikes"] == 1)
+    provenance = added.metrics["inference_interventions"]
+    assert provenance["schema"] == "tools/snnsim.inference-interventions/v1"
+    assert provenance["requested"] == [drop, add]
+    assert provenance["resolved"][1]["probability_per_step"] == 1.0
+
+
+def test_graph_inference_intervention_stream_resumes_exactly():
+    graph = _coupled_graph(direction="uncoupled")
+    intervention = {
+        "kind": "add_poisson_spikes",
+        "population_id": "a_E",
+        "rate_hz": 5000.0,
+        "seed": 31,
+    }
+    full_model = GraphExecutor(plan_graph(graph), seed=4)
+    full = full_model(
+        {
+            "drive_a": torch.zeros(4, 2, 3),
+            "drive_b": torch.zeros(4, 2, 2),
+        },
+        interventions=(intervention,),
+    )
+    resumed_model = GraphExecutor(plan_graph(graph), seed=4)
+    first = resumed_model(
+        {
+            "drive_a": torch.zeros(2, 2, 3),
+            "drive_b": torch.zeros(2, 2, 2),
+        },
+        interventions=(intervention,),
+    )
+    second = resumed_model(
+        {
+            "drive_a": torch.zeros(2, 2, 3),
+            "drive_b": torch.zeros(2, 2, 2),
+        },
+        runtime_state=first.runtime_state,
+        interventions=(intervention,),
+    )
+    torch.testing.assert_close(
+        full.recordings["a_E.spikes"],
+        torch.cat((first.recordings["a_E.spikes"], second.recordings["a_E.spikes"])),
+        rtol=0,
+        atol=0,
+    )
+
+
+def test_graph_inference_interventions_reject_invalid_targets_and_values():
+    graph = _coupled_graph(direction="uncoupled")
+    inputs = {
+        "drive_a": torch.zeros(1, 1, 3),
+        "drive_b": torch.zeros(1, 1, 2),
+    }
+    with pytest.raises(ValueError, match="unknown population"):
+        simulate(
+            ExecutionSpec(
+                kind="simulate",
+                executor="graph",
+                graph=graph,
+                inputs=inputs,
+                options={
+                    "inference_interventions": [
+                        {
+                            "kind": "drop_spikes",
+                            "population_id": "missing",
+                            "probability": 0.5,
+                        }
+                    ]
+                },
+            )
+        )
+    with pytest.raises(ValueError, match="rate times dt"):
+        simulate(
+            ExecutionSpec(
+                kind="simulate",
+                executor="graph",
+                graph=graph,
+                inputs=inputs,
+                options={
+                    "inference_interventions": [
+                        {
+                            "kind": "add_poisson_spikes",
+                            "population_id": "a_E",
+                            "rate_hz": 10001.0,
+                        }
+                    ]
+                },
+            )
+        )

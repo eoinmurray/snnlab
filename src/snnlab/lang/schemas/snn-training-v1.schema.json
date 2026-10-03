@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pinglab.dev/schemas/snn-training-v1.schema.json",
+  "title": "snnlang training v1",
+  "type": "object",
+  "required": ["schema", "graph_digest", "objectives", "parameter_groups", "optimizer", "epochs"],
+  "properties": {
+    "schema": {"const": "snnlang.training/v1"},
+    "graph_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "objectives": {"type": "array"},
+    "parameter_groups": {"type": "array"},
+    "optimizer": {"type": "object"},
+    "epochs": {"type": "integer", "minimum": 1}
+  }
+}
