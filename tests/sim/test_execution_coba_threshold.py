@@ -20,7 +20,6 @@ def test_coba_threshold_is_population_specific():
                 capacitance_nf=1.0,
                 leak_us=0.05,
                 threshold_mv=threshold,
-                initial_voltage_mv=-49.0,
             ),
         )
         net.connect(
@@ -28,14 +27,14 @@ def test_coba_threshold_is_population_specific():
             cell.excitatory,
             name=f"input_{name}",
             synapse=snn.AMPA(tau=2 * snn.ms),
-            weight=snn.Constant(0.0),
+            weight=snn.Constant(2.85),
         )
     result = simulate(
         ExecutionSpec(
             kind="simulate",
             executor="graph",
             graph=snn.compile(net).graph,
-            inputs={"drive": torch.zeros(1, 1, 1)},
+            inputs={"drive": torch.ones(1, 1, 1)},
             recording="full",
         )
     )
