@@ -7,6 +7,8 @@ npm ci
 npm run dev
 ```
 
+The documentation overview opens at `/`; guides use paths such as `/quickstart/`. Cloudflare redirects previous `/docs/` links to the new paths.
+
 Author pages in `content/docs/` and order them in `content/docs/meta.json`.
 
 ```sh
