@@ -14,13 +14,13 @@ from fractions import Fraction
 import numpy as np
 import pytest
 import torch
-
-b2 = pytest.importorskip("brian2")
 from scipy.signal import find_peaks
 
 from snnlab.sim import models as M
 from snnlab.sim.config import build_net, set_sim_dt
 from snnlab.sim.timing import duration_steps, refractory_steps
+
+b2 = pytest.importorskip("brian2")
 
 pytestmark = [pytest.mark.integration, pytest.mark.brian2]
 
