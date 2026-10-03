@@ -1,0 +1,41 @@
+---
+title: Training
+description: Define objectives and parameter scope in the compiled recipe.
+---
+
+Training separates the authored recipe from the concrete samples and targets used for a run. The graph executor supports the validated cross-entropy, AdamW, fast-sigmoid surrogate, and spike-budget vocabulary.
+
+## Author a recipe
+
+After creating `net` and `scores` as in the [quickstart](/docs/quickstart):
+
+```python
+from snnlab.lang import training
+
+recipe = snn.TrainSpec(
+    objectives=[training.CrossEntropy(prediction=scores, target="class")],
+    parameter_groups=[training.ParameterGroup(
+        [row["id"] for row in net.parameters], name="all", lr=1e-3,
+    )],
+    optimizer=training.AdamW(weight_decay=1e-4),
+    surrogate=training.FastSigmoid(slope=1.0),
+    presentation_duration=100 * snn.ms,
+    epochs=20,
+)
+bundle = snn.compile(net, training=recipe, target="tools/snnsim")
+bundle.write("trainable.bundle")
+```
+
+Parameter groups must cover parameters exactly once. Frozen groups use zero learning rate; trainable groups require a positive finite rate. Compilation resolves parameter scope and checks that each objective and regularizer can reach a trainable parameter through enabled graph elements and stop-gradient boundaries.
+
+## Bind data and targets
+
+`ExecutionSpec` supplies concrete input bindings and named integer targets. Use the `train` function in `snnlab.sim.execution` for typed graph training. CLI runs select data files, sample caps, batch size, ordering, and execution seed independently of the recipe.
+
+The example builder includes complete one-layer and three-layer recipes. Generate these with `uv run python -m snnlab.lang.examples.build_examples`; they are starting points for protocol design, not evidence of dataset accuracy.
+
+## Checkpoints
+
+Graph training checkpoints use a versioned manifest and authenticated tensor payload. Stable graph ids key parameters and AdamW state. Resume checks graph and recipe identity, protocol, parameter inventory, shapes, dtypes, initialization metadata, and random backend/device topology.
+
+A training checkpoint can also provide parameters for graph inference, without restoring its optimizer or iterator. Accelerator trajectory parity remains a hardware validation concern; CPU fixtures do not establish cross-device equivalence.

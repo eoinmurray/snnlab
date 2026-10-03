@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "snnlab-docs",
+  "account_id": "642a8154f222d6e8e0816f014f92b29c",
+  "compatibility_date": "2026-10-03",
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    {
+      "pattern": "ssnlab.eoinmurray.info",
+      "custom_domain": true
+    }
+  ]
+}

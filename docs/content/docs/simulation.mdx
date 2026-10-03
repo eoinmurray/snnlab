@@ -1,0 +1,50 @@
+---
+title: Simulation and inputs
+description: Choose an executor and bind an explicit execution protocol.
+---
+
+The graph describes the circuit. Duration, seed, dataset selection, input realisation, output directory, and recording choices belong to the execution protocol.
+
+## Graph-native requests
+
+```python
+import torch
+from snnlab.sim.execution import ExecutionSpec, simulate
+
+# Assume graph is a compiled bundle's graph mapping.
+result = simulate(ExecutionSpec(
+    kind="simulate", executor="graph", graph=graph,
+    inputs={"events": torch.zeros(100, 1, 128)},
+    seed=17, device="cpu",
+))
+```
+
+The input must match the named graph contract. Use the complete [quickstart](/docs/quickstart) to create a graph first. `ExecutionResult` exposes named outputs, recordings, parameters, final state, and metrics. Typed `simulate` needs `executor="graph"` for graph execution; its legacy route returns routing metadata.
+
+## Exact dense replay
+
+```sh
+uv run snnsim sim \
+  --executor graph \
+  --bundle circuit.bundle \
+  --input-file replay.npz \
+  --input-dataset-id my-recording-v1 \
+  --input-split test \
+  --no-input-shuffle \
+  --seed 17 \
+  --out-dir artifacts/replay
+```
+
+NPY binds to the sole graph input. NPZ arrays bind by input id. Resolution requires exact input coverage, matching time and batch axes, declared feature dimensions, finite values, binary spikes, and boolean or zero/one masks.
+
+## Sparse events and datasets
+
+A single-input event NPZ stores `steps`, `batches`, `channels`, `steps_count`, and `batch_size`. Coordinates are zero-based integer steps, ordered by step, batch, and channel. Duplicate or out-of-bounds coordinates are rejected. For multiple inputs, prefix each field with its input id.
+
+`DatasetSnapshotBinding` consumes an external immutable NPZ snapshot using one of three standard encoders: `rate_poisson`, `prebinned_spikes`, or `event_bin`. Selection, encoding, source digest, labels, split, and seeds are recorded in provenance; the resolver does not download datasets.
+
+## Artifacts and continuation
+
+Graph CLI inference writes a digest-bearing `inference-manifest.json`. Use `validate_inference_artifacts` from `snnlab.sim.execution` before reusing a cache. Training checkpoints and resumable runtime state are different contracts: a checkpoint authenticates parameters and training state; runtime continuation carries dynamic simulation state.
+
+Use `uv run snnsim sim --help` for the complete option set. See [scientific contracts](/docs/contracts) before changing timesteps or delays.

@@ -35,6 +35,16 @@ uv run pytest -m "not slow"
 
 For development in Pinglab, use `uv add --editable ../snnlab`. For reproducible runs, use a Git tag or commit and commit the consumer lockfile.
 
+## Documentation
+
+The Fumadocs site lives in [`docs/`](docs/README.md), with guides for authoring, simulation, training, visualisation, and scientific contracts.
+
+```sh
+cd docs
+npm ci
+npm run dev
+```
+
 ## Compatibility
 
 This initial extraction retains the existing bundle schemas, backend target `tools/snnsim`, component format versions and numerical defaults. Those strings identify persisted scientific contracts; they are not Python import paths. Package version 0.1.0 identifies the combined distribution.

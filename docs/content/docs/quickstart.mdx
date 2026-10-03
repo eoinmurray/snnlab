@@ -1,0 +1,78 @@
+---
+title: Quickstart
+description: Compile and simulate a small excitatory–inhibitory circuit.
+---
+
+This example creates an eight-channel spike input, a 16-cell excitatory population, a four-cell inhibitory population, and a two-class mean-voltage readout. Its random weights are untrained; the scores demonstrate the execution interface, not classification accuracy.
+
+## Build and run
+
+After [installing snnlab](/docs/installation), save this as `quickstart.py`:
+
+```python
+from pathlib import Path
+
+import torch
+from snnlab import lang as snn
+from snnlab.sim.execution import ExecutionSpec, PoissonInputBinding, simulate
+
+net = snn.Network("small_ping")
+events = net.input(
+    "events", shape=("time", "batch", 8), signal_type="spikes", unit="spike"
+)
+cell = snn.components.ping(net, name="cell", n_e=16, n_i=4, source=events)
+scores = snn.readouts.MeanVoltage(
+    source=cell.E.spikes, classes=2, name="classifier"
+)
+net.output("scores", scores)
+net.expose(cell.E.spikes, cell.I.spikes, name="activity")
+
+bundle = snn.compile(net, target="tools/snnsim")
+bundle.write("small_ping.bundle")
+
+result = simulate(ExecutionSpec(
+    kind="simulate",
+    executor="graph",
+    bundle=Path("small_ping.bundle"),
+    poisson_bindings=(PoissonInputBinding(
+        input_id="events", steps_count=1000, batch_size=1,
+        rates_hz=(25.0,), seed=17,
+    ),),
+    seed=17,
+    device="cpu",
+))
+
+print(result.outputs["scores"].shape)  # torch.Size([1, 2])
+print(sorted(result.recordings))
+assert torch.isfinite(result.outputs["scores"]).all()
+
+```
+
+```sh
+uv run python quickstart.py
+```
+
+The default graph timestep is 0.1 ms, so 1,000 steps represent 100 ms. Each Poisson presentation uses 25 Hz input rates and a declared seed. The graph executor resolves the generated spikes against the input shape before stepping.
+
+## What you produced
+
+1. `small_ping.bundle/` contains the graph, its manifest, and a text summary.
+2. `result.outputs["scores"]` contains one two-class score vector per batch item.
+3. `result.recordings` contains named retained tensors; inspect its keys before selecting a signal.
+
+The typed request returns tensors in memory. Writing CLI run artifacts is a separate workflow.
+
+## Run the same bundle through the CLI
+
+```sh
+uv run snnsim sim \
+  --executor graph \
+  --bundle small_ping.bundle \
+  --input-rate 25 \
+  --n-batch 1 \
+  --t-ms 100 \
+  --seed 17 \
+  --out-dir artifacts/quickstart
+```
+
+Use [simulation](/docs/simulation) to replay exact inputs, and [authoring](/docs/authoring) to change the circuit.

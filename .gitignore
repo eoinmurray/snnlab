@@ -8,3 +8,4 @@ dist/
 artifacts/
 temp/
 src/snnlab/lang/examples/generated/
+examples/generated/

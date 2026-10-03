@@ -1,0 +1,47 @@
+---
+title: Scientific contracts
+description: Units, timing, and provenance are part of the model interface.
+---
+
+These contracts describe snnlab's implementation. The equations below restate its timing and input conventions; they are not a new neuron model.
+
+## Units and tensor axes
+
+Projection weights use microsiemens (`uS`), matching `leak_us`. Other projection-unit labels are rejected rather than silently rescaled. Some historical pre-0.2.0 authoring bundles carried an incorrect `nS` label despite executing values as `uS`; inspect provenance before interpreting old artifacts.
+
+Time-varying inputs use `(time, batch, channels)`. Spike values are binary. Masks are boolean or zero/one. Voltage parameters use millivolts, and graph timesteps use milliseconds.
+
+## Physical duration
+
+For $N$ simulation steps and timestep $\Delta t_{\mathrm{ms}}$ measured in milliseconds, the duration $T_{\mathrm{ms}}$ in milliseconds is
+
+$$
+T_{\mathrm{ms}} = N\,\Delta t_{\mathrm{ms}}.
+$$
+
+The default `Network` timestep is 0.1 ms. Physical durations and integer step counts are not interchangeable. The PING component declares refractory periods as explicit E/I step counts; changing timestep therefore changes their physical duration.
+
+## Discretised Poisson input
+
+Generated homogeneous Poisson inputs use a Bernoulli draw per channel and timestep with probability $p$:
+
+$$
+p = r_{\mathrm{Hz}}\frac{\Delta t_{\mathrm{ms}}}{1000}.
+$$
+
+Here $r_{\mathrm{Hz}}$ is the requested rate in spikes per second; $\Delta t_{\mathrm{ms}}$ is the timestep in milliseconds, and 1000 converts milliseconds to seconds. $p$ is dimensionless. Rates that make $p>1$ are rejected. This convention permits at most one emitted input spike per channel per timestep.
+
+## Delays and causality
+
+Positive projection delays must be exact integer multiples of the graph timestep. Zero-delay feedforward connections follow deterministic topological order. Recurrent and feedback paths remain causal: zero additional delay means one simulation step. Zero-delay cycles and unsupported structures fail before simulation.
+
+## Graph, recipe, and protocol
+
+| Contract | Owns |
+| --- | --- |
+| Graph | Populations, topology, parameters, units, timebase, outputs |
+| Training recipe | Objectives, regularizers, optimizer, gradient rules, parameter scope |
+| Execution protocol | Realised inputs, datasets, seeds, sample selection, ordering, timing |
+| Artifacts | Retained named tensors, manifests, digests, checkpoints |
+
+Keep physical dataset and checkpoint paths outside the authored graph. Authenticate artifacts before reuse. Matching seeds alone do not prove equivalence across devices or software versions.

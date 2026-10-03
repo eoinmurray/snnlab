@@ -1,0 +1,54 @@
+---
+title: Development and documentation
+description: Build, check, and extend snnlab and its documentation.
+---
+
+## Python checks
+
+From the repository root:
+
+```sh
+uv sync --dev
+uv run pytest -m "not slow"
+```
+
+Portable tests live in `tests/`. Historical retained-data regression remains in Pinglab; this repository does not ship scientific run artifacts or generated example bundles.
+
+## Run the docs site
+
+```sh
+cd docs
+npm ci
+npm run dev
+```
+
+Production and type checks:
+
+```sh
+npm run types:check
+npm run build
+npm run preview
+```
+
+The production build uses webpack and exports a static site to `docs/out/`. `npm run preview` serves that directory without a Next.js server. Development uses the default Next.js bundler.
+
+The site uses Next.js, Fumadocs MDX, Tailwind CSS, and browser-side document search. The root landing page links to documentation under `/docs`. Dependencies are locked in `docs/package-lock.json`.
+
+## Deployment
+
+The GitHub Actions workflow checks pull requests and deploys `main` to GitHub Pages under `/snnlab`. A separate root-path export is deployed to Cloudflare using the authenticated Wrangler CLI and `docs/wrangler.jsonc`. See `docs/README.md` for exact commands.
+
+## Add a page
+
+1. Create an MDX file under `docs/content/docs/` with `title` and `description` frontmatter.
+2. Add its filename, without extension, to `meta.json` to place it in navigation.
+3. Link related guides and verify examples against the public Python API.
+4. Run type and build checks, then inspect the rendered page.
+
+Use named source contracts and distinguish supported behaviour from experimental validation. Avoid copying old `tools/...` Python commands: persisted `tools/snnsim` identifiers may remain valid while executable import paths have moved to `snnlab`.
+
+## Write mathematics
+
+Inline math uses `$...$`; display math uses `$$` on separate lines. `source.config.ts` applies `remark-math` and `rehype-katex` before syntax highlighting, and the root layout imports KaTeX CSS. The [scientific contracts](/docs/contracts) page exercises both forms.
+
+Define every symbol and state units. Distinguish established theory, implementation conventions, and proposed models. Math is rendered during MDX compilation, so it does not require a browser-side equation renderer.
