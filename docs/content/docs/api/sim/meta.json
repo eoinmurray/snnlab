@@ -1,0 +1,24 @@
+{
+  "title": "snnlab.sim",
+  "pages": [
+    "index",
+    "accelerator_forward",
+    "bundle",
+    "config",
+    "conformance",
+    "datasets",
+    "encoders",
+    "execution",
+    "infer",
+    "inputs",
+    "metrics",
+    "models",
+    "profiling",
+    "runlog",
+    "scan",
+    "simulation_inputs",
+    "timing",
+    "tool",
+    "train"
+  ]
+}

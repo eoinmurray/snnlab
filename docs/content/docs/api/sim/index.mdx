@@ -1,0 +1,58 @@
+---
+title: snnlab.sim
+description: Complete API reference for sim, including exports and every declared module API.
+---
+
+Execute graphs, resolve reproducible inputs, train and resume models, authenticate retained artifacts, and compare numerical outputs. Graph-native typed requests and legacy runners have distinct entry points and defaults.
+
+## Imports
+
+```python
+from snnlab import sim
+```
+
+The package root exports only `__version__`. Import runtime APIs from their submodules:
+
+```python
+from snnlab.sim.execution import ExecutionSpec, simulate, train, infer
+from snnlab.sim import models, metrics
+```
+
+Select `executor="graph"` explicitly in typed graph requests. `snnlab.sim.train.train` is the separate legacy runner; it is not `snnlab.sim.execution.train`.
+
+## Package exports
+
+| Export | Defined in / value | Role |
+| --- | --- | --- |
+| `__version__` | `'0.1.0'` | Component format version; distinct from the combined distribution version. |
+
+## Modules
+
+| Module | Responsibility |
+| --- | --- |
+| [sim.accelerator_forward](/api/sim/accelerator_forward) | Bounded forward-only accelerator validation. This check compares graph and legacy forward outputs on the same accelerator under an explicit tolerance policy; it does not cover training, checkpoint trajectories or cross-device equality. |
+| [sim.bundle](/api/sim/bundle) | Data-only bundle authentication and the deliberately narrow legacy COBANet/training adapter. Graph-native execution is implemented in execution; translating a bundle to legacy settings is not a general graph lowering operation. |
+| [sim.config](/api/sim/config) | Configuration, network construction, and simulation runners. |
+| [sim.conformance](/api/sim/conformance) | Fail-closed comparison of complete named tensor layers under declared exact or numerical policies. Reports include coverage, shape, dtype and error bounds. This comparison framework does not itself establish scientific acceptance thresholds. |
+| [sim.datasets](/api/sim/datasets) | Dataset loaders — MNIST (static images) and SHD (spiking audio events). |
+| [sim.encoders](/api/sim/encoders) | Encoders that turn images into spike trains. |
+| [sim.execution](/api/sim/execution) | Graph-native entry points and typed data contracts. Explicitly select executor=graph for typed graph execution; legacy requests route through the established CLI handlers. Inputs use time, batch, feature axes; events use zero-based integer steps. Checkpoints and runtime states authenticate different contracts. All filesystem loaders treat bundles as data rather than importing authoring code. |
+| [sim.infer](/api/sim/infer) | Inference driver for the CLI. |
+| [sim.inputs](/api/sim/inputs) | Synthetic input generation for PING networks. |
+| [sim.metrics](/api/sim/metrics) | Reusable analysis functions for SNN spike data. |
+| [sim.models](/api/sim/models) | Legacy model primitives and COBANet. Module globals describe numerical defaults and can be mutated by legacy configuration helpers. They are distinct from graph-authored numerical contracts. COBANet inherits torch.nn.Module; framework methods such as to(), state_dict() and parameters() follow PyTorch's API. |
+| [sim.profiling](/api/sim/profiling) | Lightweight timing accumulator for the sim / render / encode phases. |
+| [sim.runlog](/api/sim/runlog) | Logging and progress utilities for legacy execution commands. Several helpers write to a supplied logger or a process-global event stream; they are operational support rather than neuron-model APIs. |
+| [sim.scan](/api/sim/scan) | Scan-mode utilities. |
+| [sim.simulation_inputs](/api/sim/simulation_inputs) | Deterministically realize authenticated SNNLang simulation recipes. |
+| [sim.timing](/api/sim/timing) | Physical-time conversion shared by simulation entry points. |
+| [sim.tool](/api/sim/tool) | PING network toolkit — CLI entrypoint. |
+| [sim.train](/api/sim/train) | Training driver for the CLI. |
+
+## Coverage and conventions
+
+This reference includes every top-level non-private function and class, module-owned constant/type alias, declared public method/property, constructor and relevant protocol special method in the modules above. Data-class constructor fields include local inheritance. Third-party inherited APIs belong to their own libraries; underscore-prefixed implementation helpers are excluded. Imported standard-library and third-party names are not snnlab APIs.
+
+Source docstrings are reproduced as text to preserve their parameter notes, examples, equations and formatting. Explicit exceptions are extracted from the implementation; indirect exceptions can also propagate. Expand the implementation panels for complete branch behavior, especially where legacy code has no annotations.
+
+Regenerate with `python3 docs/scripts/generate_api.py`; `--check` fails if source-derived reference pages drift. Authored explanatory notes live in `docs/scripts/api_notes.json`.

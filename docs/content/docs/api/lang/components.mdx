@@ -1,0 +1,234 @@
+---
+title: snnlab.lang.components
+description: Complete declared API of the components module, with signatures, data fields, validation and source.
+---
+
+[Back to lang reference](/api/lang)
+
+Reusable authoring functions; components expand before serialisation.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+| Symbol | Kind |
+| --- | --- |
+| [PING](/api/lang/components#ping) | class |
+| [ping](/api/lang/components#ping) | function |
+
+## PING
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/components.py#L21)
+
+Class decorators: `dataclass(frozen=True)`.
+
+Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
+
+```python
+PING(E: Population, I: Population)
+```
+
+Declared fields, including fields inherited from local data classes:
+
+| Field | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `E` | `Population` | required | Stored member of this data contract; see the class docstring and serialization methods. |
+| `I` | `Population` | required | Stored member of this data contract; see the class docstring and serialization methods. |
+
+<details>
+<summary>Complete class implementation</summary>
+
+```python
+class PING:
+    E: Population
+    I: Population
+```
+
+</details>
+
+## ping
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/components.py#L26)
+
+```python
+def ping(net: Network, *, name: str, n_e: int, n_i: int, source: Signal | None=None, source_e: Signal | None=None, source_i: Signal | None=None, tau_gaba=9 * ms, include_silent_recurrence: bool=False, w_ee=None, w_ei=None, w_ie=None, w_ii=None, w_in=None, w_in_e=None, w_in_i=None) -> PING
+```
+
+Source docstring:
+
+```text
+Author an explicit E/I PING circuit.
+
+Weight specs are optional so existing callers retain the canonical
+defaults. Passing ``w_ee`` or ``w_ii`` makes the corresponding same-
+population projection part of the authored graph; sparsity belongs in the
+initializer spec (for example ``LowerClampedNormal(..., zeroing='exact_k')``).
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `net` | `Network` | required | Network or model being authored or executed; see this callable’s contract. |
+| `name` | `str` | required | Name used to identify the authored or rendered object. |
+| `n_e` | `int` | required | Excitatory population size. |
+| `n_i` | `int` | required | Inhibitory population size. |
+| `source` | `Signal \| None` | `None` | Defined by the source contract and implementation below. |
+| `source_e` | `Signal \| None` | `None` | Defined by the source contract and implementation below. |
+| `source_i` | `Signal \| None` | `None` | Defined by the source contract and implementation below. |
+| `tau_gaba` | `unannotated` | `9 * ms` | Defined by the source contract and implementation below. |
+| `include_silent_recurrence` | `bool` | `False` | Defined by the source contract and implementation below. |
+| `w_ee` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+| `w_ei` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+| `w_ie` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+| `w_ii` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+| `w_in` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+| `w_in_e` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+| `w_in_i` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+
+Return annotation: `PING`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+PING(e, i)
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError('use source or source_e/source_i, not both')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def ping(
+    net: Network,
+    *,
+    name: str,
+    n_e: int,
+    n_i: int,
+    source: Signal | None = None,
+    source_e: Signal | None = None,
+    source_i: Signal | None = None,
+    tau_gaba=9 * ms,
+    include_silent_recurrence: bool = False,
+    w_ee=None,
+    w_ei=None,
+    w_ie=None,
+    w_ii=None,
+    w_in=None,
+    w_in_e=None,
+    w_in_i=None,
+) -> PING:
+    """Author an explicit E/I PING circuit.
+
+    Weight specs are optional so existing callers retain the canonical
+    defaults. Passing ``w_ee`` or ``w_ii`` makes the corresponding same-
+    population projection part of the authored graph; sparsity belongs in the
+    initializer spec (for example ``LowerClampedNormal(..., zeroing='exact_k')``).
+    """
+    w_ei = w_ei or Normal(0.5, 0.05)
+    w_ie = w_ie or Normal(1.0, 0.1)
+    if source is not None and (source_e is not None or source_i is not None):
+        raise ValueError("use source or source_e/source_i, not both")
+    source_e = source if source_e is None else source_e
+    w_in_e = w_in_e or w_in or Normal(0.2, 0.03)
+    w_in_i = w_in_i or w_in or Normal(0.2, 0.03)
+    with net.group(name):
+        # The explicit step counts preserve the legacy COBANet numerical
+        # contract: its refractory constants were derived at the historical
+        # 0.25 ms module default and are 12 E / 6 I steps for every run.
+        e = net.population(
+            f"{name}_E",
+            size=n_e,
+            neuron=COBA_LIF(
+                tau_mem=20 * ms,
+                capacitance_nf=1.0,
+                leak_us=0.05,
+                resting_mv=-65.0,
+                threshold_mv=-50.0,
+                reset_mv=-65.0,
+                refractory_steps=12,
+                voltage_grad_dampen=80.0,
+                initial_voltage_mv=-65.0,
+            ),
+        )
+        i = net.population(
+            f"{name}_I",
+            size=n_i,
+            neuron=COBA_LIF(
+                tau_mem=5 * ms,
+                capacitance_nf=0.5,
+                leak_us=0.1,
+                resting_mv=-65.0,
+                threshold_mv=-50.0,
+                reset_mv=-65.0,
+                refractory_steps=6,
+                voltage_grad_dampen=80.0,
+                initial_voltage_mv=-65.0,
+            ),
+        )
+        if include_silent_recurrence or w_ee is not None:
+            net.connect(
+                e.spikes,
+                e.excitatory,
+                name=f"{name}_E_to_E",
+                synapse=AMPA(tau=2 * ms),
+                weight=w_ee or Normal(0.0, 0.0),
+                constraint=NonNegative(),
+                connection="recurrent",
+                delay=0.1 * ms,
+            )
+        net.connect(
+            e.spikes,
+            i.excitatory,
+            name=f"{name}_E_to_I",
+            synapse=AMPA(tau=2 * ms),
+            weight=w_ei,
+            constraint=NonNegative(),
+            connection="recurrent",
+            delay=0.1 * ms,
+        )
+        net.connect(
+            i.spikes,
+            e.inhibitory,
+            name=f"{name}_I_to_E",
+            synapse=GABA(tau=tau_gaba),
+            weight=w_ie,
+            constraint=NonNegative(),
+            connection="recurrent",
+            delay=0.1 * ms,
+        )
+        if include_silent_recurrence or w_ii is not None:
+            net.connect(
+                i.spikes,
+                i.inhibitory,
+                name=f"{name}_I_to_I",
+                synapse=GABA(tau=tau_gaba),
+                weight=w_ii or Normal(0.0, 0.0),
+                constraint=NonNegative(),
+                connection="recurrent",
+                delay=0.1 * ms,
+            )
+        if source_e is not None:
+            net.connect(
+                source_e,
+                e.excitatory,
+                name=f"{name}_input" if source is not None else f"{name}_input_E",
+                synapse=AMPA(tau=2 * ms),
+                weight=w_in_e,
+                constraint=NonNegative(),
+            )
+        if source_i is not None:
+            net.connect(
+                source_i,
+                i.excitatory,
+                name=f"{name}_input_I",
+                synapse=AMPA(tau=2 * ms),
+                weight=w_in_i,
+                constraint=NonNegative(),
+            )
+    return PING(e, i)
+```
+
+</details>
+

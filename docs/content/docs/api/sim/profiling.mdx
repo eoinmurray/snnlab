@@ -1,0 +1,23 @@
+---
+title: snnlab.sim.profiling
+description: Complete declared API of the profiling module, with signatures, data fields, validation and source.
+---
+
+[Back to sim reference](/api/sim)
+
+Lightweight timing accumulator for the sim / render / encode phases.
+
+Pulled out of plot.py — it's a stopwatch utility, not plotting code. The
+shared ``prof`` instance is used by the scan runners to print a
+per-phase breakdown after a run.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+## Constants and type aliases
+
+Initial source expressions are shown, not evaluated runtime values. Legacy configuration may mutate module defaults.
+
+| Name | Annotation | Initial expression | Source |
+| --- | --- | --- | --- |
+| `prof` | `unannotated` | `_Profiler()` | [Source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/profiling.py#L73) |
+

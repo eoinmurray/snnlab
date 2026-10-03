@@ -34,3 +34,14 @@ SITE_URL=https://ssnlab.eoinmurray.info npm run deploy:cloudflare
 Cloudflare deployments are manual through Wrangler. GitHub Pages updates automatically from `main`. Never deploy a build made with `/snnlab` as its base path to the custom-domain root.
 
 `source.config.ts` configures remark-math and rehype-katex. Commit `package-lock.json`; `.next/`, `.source/`, `out/`, and `node_modules/` are generated and ignored.
+
+## API references
+
+Reference pages under `content/docs/api/` are generated from all non-private Python modules in `lang`, `sim`, and `viz`. They cover package exports, module-owned functions/classes/constants, public class members, constructor fields, return expressions, explicit exceptions and full implementation panels. Third-party inherited APIs and private helpers are excluded.
+
+```sh
+python3 docs/scripts/generate_api.py
+python3 docs/scripts/generate_api.py --check
+```
+
+Run these commands from the repository root. Edit explanatory contracts in `docs/scripts/api_notes.json`, then regenerate. The generator uses the Python AST without importing simulators, invoking training, or downloading datasets. `api-coverage.json` records the covered inventory. CI checks drift and rebuilds docs when source changes.

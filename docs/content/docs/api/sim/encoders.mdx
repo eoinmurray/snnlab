@@ -1,0 +1,162 @@
+---
+title: snnlab.sim.encoders
+description: Complete declared API of the encoders module, with signatures, data fields, validation and source.
+---
+
+[Back to sim reference](/api/sim)
+
+Encoders that turn images into spike trains.
+
+Everything here is pure-data — no model state, no CLI plumbing. Lifted out
+of cli.py.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+| Symbol | Kind |
+| --- | --- |
+| [encode_images_poisson](/api/sim/encoders#encode_images_poisson) | function |
+| [encode_batch](/api/sim/encoders#encode_batch) | function |
+
+## encode_images_poisson
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/encoders.py#L16)
+
+```python
+def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None)
+```
+
+Source docstring:
+
+```text
+Encode (B, N_in) pixel intensities as Poisson spike trains.
+
+Returns (T_steps, B, N_in) float spikes. Single canonical encoder used by
+train, infer, and image paths so identical pixels with the same dt
+and max_rate produce the same spike train regardless of mode.
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `images` | `unannotated` | required | Defined by the source contract and implementation below. |
+| `T_steps` | `unannotated` | required | Defined by the source contract and implementation below. |
+| `dt` | `unannotated` | required | Timestep; authoring uses a Quantity and legacy simulation uses milliseconds. |
+| `max_rate_hz` | `unannotated` | required | Maximum rate in spikes per second for encoded input. |
+| `generator` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+(rand < pixels.unsqueeze(0) * p).float()
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError(f'max_rate_hz must be scalar or shape ({B},), got {tuple(rates.shape)}')` |
+| `ValueError('input rates must be non-negative')` |
+| `ValueError('input rate and dt produce Bernoulli probability above one')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None):
+    """Encode (B, N_in) pixel intensities as Poisson spike trains.
+
+    Returns (T_steps, B, N_in) float spikes. Single canonical encoder used by
+    train, infer, and image paths so identical pixels with the same dt
+    and max_rate produce the same spike train regardless of mode.
+    """
+    pixels = images.clamp(0, 1)
+    B, n_in = pixels.shape
+    rates = torch.as_tensor(max_rate_hz, dtype=pixels.dtype, device=pixels.device)
+    if rates.ndim == 0:
+        rates = rates.expand(B)
+    if rates.shape != (B,):
+        raise ValueError(f"max_rate_hz must be scalar or shape ({B},), got {tuple(rates.shape)}")
+    if torch.any(rates < 0):
+        raise ValueError("input rates must be non-negative")
+    p = rates.reshape(1, B, 1) * dt / 1000.0
+    if torch.any(p > 1):
+        raise ValueError("input rate and dt produce Bernoulli probability above one")
+    if generator is not None:
+        # Generator dictates device (usually CPU); generate there then move.
+        rand = torch.rand(
+            T_steps, B, n_in, device=generator.device, generator=generator
+        ).to(pixels.device)
+    else:
+        rand = torch.rand(T_steps, B, n_in, device=pixels.device)
+    return (rand < pixels.unsqueeze(0) * p).float()
+```
+
+</details>
+
+## encode_batch
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/encoders.py#L45)
+
+```python
+def encode_batch(X_b, dt, generator=None, max_rate_hz=None)
+```
+
+Source docstring:
+
+```text
+Encode a pre-moved pixel batch as spikes using the canonical scheme.
+
+Shared by train, infer, and calibration loops so the three paths can't
+drift. Routes 3-d already-spiked tensors through a transpose passthrough
+and everything else through vanilla Poisson rate coding. Output is always
+returned on X_b.device. Pass `generator` (typically a CPU torch.Generator
+with a fixed seed) for deterministic eval — same weights + same split +
+same generator seed → identical spike trains → identical accuracy.
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `X_b` | `unannotated` | required | Defined by the source contract and implementation below. |
+| `dt` | `unannotated` | required | Timestep; authoring uses a Quantity and legacy simulation uses milliseconds. |
+| `generator` | `unannotated` | `None` | Defined by the source contract and implementation below. |
+| `max_rate_hz` | `unannotated` | `None` | Maximum rate in spikes per second for encoded input. |
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+X_b.permute(1, 0, 2).contiguous()
+```
+```python
+encode_images_poisson(X_b, M.T_steps, dt, rate, generator=generator)
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def encode_batch(X_b, dt, generator=None, max_rate_hz=None):
+    """Encode a pre-moved pixel batch as spikes using the canonical scheme.
+
+    Shared by train, infer, and calibration loops so the three paths can't
+    drift. Routes 3-d already-spiked tensors through a transpose passthrough
+    and everything else through vanilla Poisson rate coding. Output is always
+    returned on X_b.device. Pass `generator` (typically a CPU torch.Generator
+    with a fixed seed) for deterministic eval — same weights + same split +
+    same generator seed → identical spike trains → identical accuracy.
+    """
+    if X_b.ndim == 3:
+        # (B, T, N_in) pre-spiked → (T, B, N_in); ignore dt/generator.
+        return X_b.permute(1, 0, 2).contiguous()
+    rate = M.max_rate_hz if max_rate_hz is None else max_rate_hz
+    return encode_images_poisson(X_b, M.T_steps, dt, rate, generator=generator)
+```
+
+</details>
+
+## Constants and type aliases
+
+Initial source expressions are shown, not evaluated runtime values. Legacy configuration may mutate module defaults.
+
+| Name | Annotation | Initial expression | Source |
+| --- | --- | --- | --- |
+| `EVAL_SEED` | `unannotated` | `20260415` | [Source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/encoders.py#L13) |
+

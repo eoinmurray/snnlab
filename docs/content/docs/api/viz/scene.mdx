@@ -1,0 +1,287 @@
+---
+title: snnlab.viz.scene
+description: Complete declared API of the scene module, with signatures, data fields, validation and source.
+---
+
+[Back to viz reference](/api/viz)
+
+An intentionally thin composition layer over Matplotlib.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+| Symbol | Kind |
+| --- | --- |
+| [Panel](/api/viz/scene#panel) | class |
+| [Scene](/api/viz/scene#scene) | class |
+
+## Panel
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/scene.py#L14)
+
+Structural protocol for a reusable panel: draw(ax, recording) renders initial state and update(frame) supplies its animation update. The protocol does not prescribe panel-specific scientific meaning.
+
+Bases: `Protocol`. Inherited third-party framework APIs follow their owning library.
+
+### Panel.draw
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/scene.py#L15)
+
+```python
+def Panel.draw(self, ax: Any, recording: Recording) -> Any
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `ax` | `Any` | required | Defined by the source contract and implementation below. |
+| `recording` | `Recording` | required | Retained Recording or recording selection, as annotated. |
+
+Return annotation: `Any`.
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def draw(self, ax: Any, recording: Recording) -> Any: ...
+```
+
+</details>
+
+### Panel.update
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/scene.py#L17)
+
+```python
+def Panel.update(self, frame: int) -> object
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `frame` | `int` | required | Defined by the source contract and implementation below. |
+
+Return annotation: `object`.
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def update(self, frame: int) -> object: ...
+```
+
+</details>
+
+<details>
+<summary>Complete class implementation</summary>
+
+```python
+class Panel(Protocol):
+    def draw(self, ax: Any, recording: Recording) -> Any: ...
+
+    def update(self, frame: int) -> object: ...
+```
+
+</details>
+
+## Scene
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/scene.py#L21)
+
+Thin Matplotlib composition over a validated Recording. add() accepts an explicit axis or a named FigureGrid region; on_frame() registers scene callbacks; update() collects panel and callback update results. The scene does not fabricate missing signals.
+
+Source docstring:
+
+```text
+Compose reusable and bespoke panels without hiding Matplotlib.
+```
+
+Class decorators: `dataclass`.
+
+Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
+
+```python
+Scene(recording: Recording, figure: Any = None, layout: FigureGrid | None = None, panels: list[Panel] = field(default_factory=list), callbacks: list[Callable[[int, 'Scene'], object]] = field(default_factory=list))
+```
+
+Declared fields, including fields inherited from local data classes:
+
+| Field | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `recording` | `Recording` | required | Retained Recording or recording selection, as annotated. |
+| `figure` | `Any` | `None` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `layout` | `FigureGrid \| None` | `None` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `panels` | `list[Panel]` | `field(default_factory=list)` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `callbacks` | `list[Callable[[int, 'Scene'], object]]` | `field(default_factory=list)` | Stored member of this data contract; see the class docstring and serialization methods. |
+
+### Scene.add
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/scene.py#L36)
+
+```python
+def Scene.add(self, panel: Panel, *, axis: Any=None, region: str | None=None) -> Any
+```
+
+Source docstring:
+
+```text
+Draw a panel on an axis, a named region, or a default axis.
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `panel` | `Panel` | required | Defined by the source contract and implementation below. |
+| `axis` | `Any` | `None` | Defined by the source contract and implementation below. |
+| `region` | `str \| None` | `None` | Defined by the source contract and implementation below. |
+
+Return annotation: `Any`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+ax
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError('provide either an axis or a figure-grid region')` |
+| `ValueError('a figure-grid region requires a Scene layout')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def add(
+        self,
+        panel: Panel,
+        *,
+        axis: Any = None,
+        region: str | None = None,
+    ) -> Any:
+        """Draw a panel on an axis, a named region, or a default axis."""
+
+        if axis is not None and region is not None:
+            raise ValueError("provide either an axis or a figure-grid region")
+        if region is not None:
+            if self.layout is None:
+                raise ValueError("a figure-grid region requires a Scene layout")
+            ax = self.layout.add_axes(self.figure, region)
+        else:
+            ax = axis if axis is not None else self.figure.add_subplot(1, 1, 1)
+        panel.draw(ax, self.recording)
+        self.panels.append(panel)
+        return ax
+```
+
+</details>
+
+### Scene.on_frame
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/scene.py#L57)
+
+```python
+def Scene.on_frame(self, callback: Callable[[int, 'Scene'], object]) -> None
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `callback` | `Callable[[int, 'Scene'], object]` | required | Defined by the source contract and implementation below. |
+
+Return annotation: `None`.
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def on_frame(self, callback: Callable[[int, "Scene"], object]) -> None:
+        self.callbacks.append(callback)
+```
+
+</details>
+
+### Scene.update
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/scene.py#L60)
+
+```python
+def Scene.update(self, frame: int) -> tuple[object, ...]
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `frame` | `int` | required | Defined by the source contract and implementation below. |
+
+Return annotation: `tuple[object, ...]`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+tuple(artists)
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def update(self, frame: int) -> tuple[object, ...]:
+        artists = [panel.update(frame) for panel in self.panels]
+        artists.extend(
+            callback(frame, self) for callback in self.callbacks
+        )
+        return tuple(artists)
+```
+
+</details>
+
+<details>
+<summary>Complete class implementation</summary>
+
+```python
+class Scene:
+    """Compose reusable and bespoke panels without hiding Matplotlib."""
+
+    recording: Recording
+    figure: Any = None
+    layout: FigureGrid | None = None
+    panels: list[Panel] = field(default_factory=list)
+    callbacks: list[Callable[[int, "Scene"], object]] = field(
+        default_factory=list
+    )
+
+    def __post_init__(self) -> None:
+        if self.figure is None:
+            self.figure = plt.figure()
+
+    def add(
+        self,
+        panel: Panel,
+        *,
+        axis: Any = None,
+        region: str | None = None,
+    ) -> Any:
+        """Draw a panel on an axis, a named region, or a default axis."""
+
+        if axis is not None and region is not None:
+            raise ValueError("provide either an axis or a figure-grid region")
+        if region is not None:
+            if self.layout is None:
+                raise ValueError("a figure-grid region requires a Scene layout")
+            ax = self.layout.add_axes(self.figure, region)
+        else:
+            ax = axis if axis is not None else self.figure.add_subplot(1, 1, 1)
+        panel.draw(ax, self.recording)
+        self.panels.append(panel)
+        return ax
+
+    def on_frame(self, callback: Callable[[int, "Scene"], object]) -> None:
+        self.callbacks.append(callback)
+
+    def update(self, frame: int) -> tuple[object, ...]:
+        artists = [panel.update(frame) for panel in self.panels]
+        artists.extend(
+            callback(frame, self) for callback in self.callbacks
+        )
+        return tuple(artists)
+```
+
+</details>
+

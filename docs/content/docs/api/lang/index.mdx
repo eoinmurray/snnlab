@@ -1,0 +1,87 @@
+---
+title: snnlab.lang
+description: Complete API reference for lang, including exports and every declared module API.
+---
+
+Author graph structure, readouts, training and simulation recipes; compile them into deterministic data bundles. Creating declarations does not simulate or train a network.
+
+## Imports
+
+```python
+from snnlab import lang
+```
+
+## Package exports
+
+| Export | Defined in / value | Role |
+| --- | --- | --- |
+| `AMPA` | [lang.core](/api/lang/core#ampa) | re-export |
+| `BackgroundChannel` | [lang.simulation](/api/lang/simulation#backgroundchannel) | re-export |
+| `Bundle` | [lang.compiler](/api/lang/compiler#bundle) | re-export |
+| `COBA_LIF` | [lang.core](/api/lang/core#coba_lif) | re-export |
+| `CellDistribution` | [lang.simulation](/api/lang/simulation#celldistribution) | re-export |
+| `ConductanceBackground` | [lang.simulation](/api/lang/simulation#conductancebackground) | re-export |
+| `ConductanceSchedule` | [lang.simulation](/api/lang/simulation#conductanceschedule) | re-export |
+| `Constant` | [lang.core](/api/lang/core#constant) | re-export |
+| `CorrelatedPoissonAfferents` | [lang.simulation](/api/lang/simulation#correlatedpoissonafferents) | re-export |
+| `Diagnostic` | [lang.compiler](/api/lang/compiler#diagnostic) | re-export |
+| `GABA` | [lang.core](/api/lang/core#gaba) | re-export |
+| `GlobalShotNoise` | [lang.simulation](/api/lang/simulation#globalshotnoise) | re-export |
+| `GroupedShotNoise` | [lang.simulation](/api/lang/simulation#groupedshotnoise) | re-export |
+| `Hz` | [lang.core](/api/lang/core) | re-export |
+| `LIF` | [lang.core](/api/lang/core#lif) | re-export |
+| `LeakyIntegrator` | [lang.core](/api/lang/core#leakyintegrator) | re-export |
+| `LowerClampedNormal` | [lang.core](/api/lang/core#lowerclampednormal) | re-export |
+| `Modulatory` | [lang.core](/api/lang/core#modulatory) | re-export |
+| `Network` | [lang.core](/api/lang/core#network) | re-export |
+| `NonNegative` | [lang.core](/api/lang/core#nonnegative) | re-export |
+| `Normal` | [lang.core](/api/lang/core#normal) | re-export |
+| `ParameterRef` | [lang.core](/api/lang/core#parameterref) | re-export |
+| `Population` | [lang.core](/api/lang/core#population) | re-export |
+| `Projection` | [lang.core](/api/lang/core#projection) | re-export |
+| `Quantity` | [lang.core](/api/lang/core#quantity) | re-export |
+| `ShotNoise` | [lang.simulation](/api/lang/simulation#shotnoise) | re-export |
+| `Signal` | [lang.core](/api/lang/core#signal) | re-export |
+| `SignedNormal` | [lang.core](/api/lang/core#signednormal) | re-export |
+| `SimulationSpec` | [lang.simulation](/api/lang/simulation#simulationspec) | re-export |
+| `StationaryRateWeather` | [lang.simulation](/api/lang/simulation#stationaryrateweather) | re-export |
+| `StructuredPoisson` | [lang.simulation](/api/lang/simulation#structuredpoisson) | re-export |
+| `TrainSpec` | [lang.training](/api/lang/training#trainspec) | re-export |
+| `TransientAfferentWave` | [lang.simulation](/api/lang/simulation#transientafferentwave) | re-export |
+| `Uniform` | [lang.core](/api/lang/core#uniform) | re-export |
+| `Zeros` | [lang.core](/api/lang/core#zeros) | re-export |
+| `__version__` | `'0.2.0'` | Component format version; distinct from the combined distribution version. |
+| `compile` | [lang.compiler](/api/lang/compiler#compile) | re-export |
+| `components` | [lang.components](/api/lang/components) | module |
+| `diagram` | [lang.diagram](/api/lang/diagram#diagram) | re-export |
+| `load_bundle` | [lang.compiler](/api/lang/compiler#load_bundle) | re-export |
+| `mV` | [lang.core](/api/lang/core) | re-export |
+| `ms` | [lang.core](/api/lang/core) | re-export |
+| `nS` | [lang.core](/api/lang/core) | re-export |
+| `ops` | [lang.ops](/api/lang/ops) | module |
+| `readouts` | [lang.readouts](/api/lang/readouts) | module |
+| `simulation` | [lang.simulation](/api/lang/simulation) | module |
+| `training` | [lang.training](/api/lang/training) | module |
+| `uS` | [lang.core](/api/lang/core) | re-export |
+| `validate_graph` | [lang.compiler](/api/lang/compiler#validate_graph) | re-export |
+
+## Modules
+
+| Module | Responsibility |
+| --- | --- |
+| [lang.compiler](/api/lang/compiler) | Validation, canonical serialisation, bundle I/O, and reports. |
+| [lang.components](/api/lang/components) | Reusable authoring functions; components expand before serialisation. |
+| [lang.core](/api/lang/core) | Authoring objects are mutable until compilation. Signal shapes use explicit axis names such as time and batch. Projection weights use uS; neuron and synapse factories produce data specifications, not running models. Factory keyword arguments are serialized into the specification and validated when the graph is compiled. Use the compiler and graph executor capability checks before assuming a specification is executable. |
+| [lang.diagram](/api/lang/diagram) | Lower snnlang bundle semantics into renderer-neutral diagrams. |
+| [lang.ops](/api/lang/ops) | Small serialisable operation vocabulary. |
+| [lang.readouts](/api/lang/readouts) | Readout factories expand into ordinary network populations, projections and operations. They mutate the source network and return a Readout handle rather than computing scores immediately. The Readout forwards attribute lookup to its Signal. |
+| [lang.simulation](/api/lang/simulation) | Simulation recipes describe structured spike sources, background conductances, rate weather, afferent waves and schedules. compile(simulation=...) stores a graph-bound simulation.json. These records do not produce samples until realized by the simulator. |
+| [lang.training](/api/lang/training) | Training declarations are serialized by compile(training=...). They specify objectives, parameter scope, optimizer and gradient rules; concrete datasets, targets and execution ordering remain request inputs. |
+
+## Coverage and conventions
+
+This reference includes every top-level non-private function and class, module-owned constant/type alias, declared public method/property, constructor and relevant protocol special method in the modules above. Data-class constructor fields include local inheritance. Third-party inherited APIs belong to their own libraries; underscore-prefixed implementation helpers are excluded. Imported standard-library and third-party names are not snnlab APIs.
+
+Source docstrings are reproduced as text to preserve their parameter notes, examples, equations and formatting. Explicit exceptions are extracted from the implementation; indirect exceptions can also propagate. Expand the implementation panels for complete branch behavior, especially where legacy code has no annotations.
+
+Regenerate with `python3 docs/scripts/generate_api.py`; `--check` fails if source-derived reference pages drift. Authored explanatory notes live in `docs/scripts/api_notes.json`.

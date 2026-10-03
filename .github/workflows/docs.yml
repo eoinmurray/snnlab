@@ -3,9 +3,9 @@ name: Deploy documentation
 on:
   push:
     branches: [main]
-    paths: ['docs/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'src/snnlab/**', '.github/workflows/docs.yml']
   pull_request:
-    paths: ['docs/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'src/snnlab/**', '.github/workflows/docs.yml']
   workflow_dispatch:
 
 permissions:
@@ -28,6 +28,8 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: docs/package-lock.json
+      - name: Check API reference coverage
+        run: python3 scripts/generate_api.py --check
       - run: npm ci
       - run: npm run types:check
       - run: npm run build

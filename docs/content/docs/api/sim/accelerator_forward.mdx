@@ -1,0 +1,271 @@
+---
+title: snnlab.sim.accelerator_forward
+description: Complete declared API of the accelerator_forward module, with signatures, data fields, validation and source.
+---
+
+[Back to sim reference](/api/sim)
+
+Bounded forward-only accelerator validation. This check compares graph and legacy forward outputs on the same accelerator under an explicit tolerance policy; it does not cover training, checkpoint trajectories or cross-device equality.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+| Symbol | Kind |
+| --- | --- |
+| [ForwardAcceleratorResult](/api/sim/accelerator_forward#forwardacceleratorresult) | class |
+| [run_forward_accelerator_check](/api/sim/accelerator_forward#run_forward_accelerator_check) | function |
+| [main](/api/sim/accelerator_forward#main) | function |
+
+## ForwardAcceleratorResult
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/accelerator_forward.py#L42)
+
+Result record for the bounded forward accelerator fixture and its conformance report.
+
+Class decorators: `dataclass(frozen=True)`.
+
+Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
+
+```python
+ForwardAcceleratorResult(device: str, snnlang_reproducibility: ConformanceReport, legacy_graph_parity: ConformanceReport)
+```
+
+Declared fields, including fields inherited from local data classes:
+
+| Field | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `device` | `str` | required | Requested or resolved tensor execution device. |
+| `snnlang_reproducibility` | `ConformanceReport` | required | Stored member of this data contract; see the class docstring and serialization methods. |
+| `legacy_graph_parity` | `ConformanceReport` | required | Stored member of this data contract; see the class docstring and serialization methods. |
+
+### ForwardAcceleratorResult.passed
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/accelerator_forward.py#L48)
+
+Decorators: `property`.
+
+```python
+def ForwardAcceleratorResult.passed(self) -> bool
+```
+
+Return annotation: `bool`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+self.snnlang_reproducibility.passed and self.legacy_graph_parity.passed
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def passed(self) -> bool:
+        return self.snnlang_reproducibility.passed and self.legacy_graph_parity.passed
+```
+
+</details>
+
+### ForwardAcceleratorResult.to_dict
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/accelerator_forward.py#L51)
+
+```python
+def ForwardAcceleratorResult.to_dict(self) -> dict[str, Any]
+```
+
+Return annotation: `dict[str, Any]`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+{'device': self.device, 'passed': self.passed, 'tolerances': {'atol': ATOL, 'rtol': RTOL}, 'snnlang_reproducibility': self.snnlang_reproducibility.to_dict(), 'legacy_graph_parity': self.legacy_graph_parity.to_dict()}
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def to_dict(self) -> dict[str, Any]:
+        return {
+            "device": self.device,
+            "passed": self.passed,
+            "tolerances": {"atol": ATOL, "rtol": RTOL},
+            "snnlang_reproducibility": self.snnlang_reproducibility.to_dict(),
+            "legacy_graph_parity": self.legacy_graph_parity.to_dict(),
+        }
+```
+
+</details>
+
+### ForwardAcceleratorResult.require_passed
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/accelerator_forward.py#L60)
+
+```python
+def ForwardAcceleratorResult.require_passed(self) -> None
+```
+
+Return annotation: `None`.
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def require_passed(self) -> None:
+        self.snnlang_reproducibility.require_passed()
+        self.legacy_graph_parity.require_passed()
+```
+
+</details>
+
+<details>
+<summary>Complete class implementation</summary>
+
+```python
+class ForwardAcceleratorResult:
+    device: str
+    snnlang_reproducibility: ConformanceReport
+    legacy_graph_parity: ConformanceReport
+
+    @property
+    def passed(self) -> bool:
+        return self.snnlang_reproducibility.passed and self.legacy_graph_parity.passed
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "device": self.device,
+            "passed": self.passed,
+            "tolerances": {"atol": ATOL, "rtol": RTOL},
+            "snnlang_reproducibility": self.snnlang_reproducibility.to_dict(),
+            "legacy_graph_parity": self.legacy_graph_parity.to_dict(),
+        }
+
+    def require_passed(self) -> None:
+        self.snnlang_reproducibility.require_passed()
+        self.legacy_graph_parity.require_passed()
+```
+
+</details>
+
+## run_forward_accelerator_check
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/accelerator_forward.py#L229)
+
+```python
+def run_forward_accelerator_check(device: str) -> ForwardAcceleratorResult
+```
+
+Run the bounded graph/legacy forward conformance fixture on the selected accelerator and return its named comparison report.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `device` | `str` | required | Requested or resolved tensor execution device. |
+
+Return annotation: `ForwardAcceleratorResult`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+ForwardAcceleratorResult(device=str(resolved), snnlang_reproducibility=reproducibility, legacy_graph_parity=parity)
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError('MPS was requested but is unavailable')` |
+| `ValueError('CUDA was requested but is unavailable')` |
+| `ValueError(f'accelerator device expected mps or cuda, got {device!r}')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def run_forward_accelerator_check(device: str) -> ForwardAcceleratorResult:
+    resolved = torch.device(device)
+    if resolved.type == "mps" and not torch.backends.mps.is_available():
+        raise ValueError("MPS was requested but is unavailable")
+    if resolved.type == "cuda" and not torch.cuda.is_available():
+        raise ValueError("CUDA was requested but is unavailable")
+    if resolved.type not in {"mps", "cuda"}:
+        raise ValueError(f"accelerator device expected mps or cuda, got {device!r}")
+
+    with tempfile.TemporaryDirectory(prefix="snnlang-forward-") as scratch:
+        root = Path(scratch)
+        first = _subprocess_forward("graph", device, root / "graph-first.pt")
+        second = _subprocess_forward("graph", device, root / "graph-second.pt")
+        legacy = _subprocess_forward("legacy", device, root / "legacy.pt")
+        reproducibility = compare_conformance_layers(
+            "snnlang-same-accelerator-forward",
+            {"forward": first},
+            {"forward": second},
+            policies=_policies(first),
+        )
+        parity = compare_conformance_layers(
+            "legacy-snnlang-same-accelerator-forward",
+            {"forward": legacy},
+            {"forward": first},
+            policies=_policies(legacy),
+        )
+    return ForwardAcceleratorResult(
+        device=str(resolved),
+        snnlang_reproducibility=reproducibility,
+        legacy_graph_parity=parity,
+    )
+```
+
+</details>
+
+## main
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/accelerator_forward.py#L262)
+
+```python
+def main() -> None
+```
+
+Command entry point for the bounded accelerator validation utility.
+
+Return annotation: `None`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+None
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Check graph repeatability and legacy parity for one forward PING case."
+    )
+    parser.add_argument("--device", required=True, choices=("mps", "cuda"))
+    parser.add_argument("--worker", choices=("graph", "legacy"), help=argparse.SUPPRESS)
+    parser.add_argument("--output", type=Path, help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if args.worker:
+        if args.output is None:
+            parser.error("--worker requires --output")
+        _run_worker(args.worker, args.device, args.output)
+        return
+    if args.output is not None:
+        parser.error("--output requires --worker")
+    result = run_forward_accelerator_check(args.device)
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    result.require_passed()
+```
+
+</details>
+
+## Constants and type aliases
+
+Initial source expressions are shown, not evaluated runtime values. Legacy configuration may mutate module defaults.
+
+| Name | Annotation | Initial expression | Source |
+| --- | --- | --- | --- |
+| `ATOL` | `unannotated` | `1e-06` | [Source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/accelerator_forward.py#L37) |
+| `RTOL` | `unannotated` | `1e-06` | [Source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/accelerator_forward.py#L38) |
+

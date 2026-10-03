@@ -1,0 +1,14 @@
+{
+  "title": "snnlab.lang",
+  "pages": [
+    "index",
+    "compiler",
+    "components",
+    "core",
+    "diagram",
+    "ops",
+    "readouts",
+    "simulation",
+    "training"
+  ]
+}

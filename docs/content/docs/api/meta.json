@@ -1,0 +1,9 @@
+{
+  "title": "API reference",
+  "pages": [
+    "index",
+    "lang",
+    "sim",
+    "viz"
+  ]
+}

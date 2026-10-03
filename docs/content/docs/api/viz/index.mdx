@@ -1,0 +1,62 @@
+---
+title: snnlab.viz
+description: Complete API reference for viz, including exports and every declared module API.
+---
+
+Validate retained recordings, project renderer-neutral diagrams, compose deterministic figure layouts, and encode animations. Rendering must consume retained evidence with consistent physical timelines.
+
+## Imports
+
+```python
+from snnlab import viz
+```
+
+## Package exports
+
+| Export | Defined in / value | Role |
+| --- | --- | --- |
+| `Diagram` | [viz.diagrams](/api/viz/diagrams#diagram) | re-export |
+| `DiagramEdge` | [viz.diagrams](/api/viz/diagrams#diagramedge) | re-export |
+| `DiagramGroup` | [viz.diagrams](/api/viz/diagrams#diagramgroup) | re-export |
+| `DiagramNode` | [viz.diagrams](/api/viz/diagrams#diagramnode) | re-export |
+| `DiagramTheme` | [viz.diagrams](/api/viz/diagrams#diagramtheme) | re-export |
+| `FigureGrid` | [viz.figure_grid](/api/viz/figure_grid#figuregrid) | re-export |
+| `FigureRect` | [viz.figure_grid](/api/viz/figure_grid#figurerect) | re-export |
+| `FigureRegion` | [viz.figure_grid](/api/viz/figure_grid#figureregion) | re-export |
+| `FrameTimeline` | [viz.animation](/api/viz/animation#frametimeline) | re-export |
+| `Panel` | [viz.scene](/api/viz/scene#panel) | re-export |
+| `Recording` | [viz.contracts](/api/viz/contracts#recording) | re-export |
+| `RecordingError` | [viz.contracts](/api/viz/contracts#recordingerror) | re-export |
+| `Scene` | [viz.scene](/api/viz/scene#scene) | re-export |
+| `Theme` | [viz.styles](/api/viz/styles#theme) | re-export |
+| `__version__` | `'0.1.0'` | Component format version; distinct from the combined distribution version. |
+| `diagram_to_dot` | [viz.diagrams](/api/viz/diagrams#diagram_to_dot) | re-export |
+| `exponential_trace` | [viz.transforms](/api/viz/transforms#exponential_trace) | re-export |
+| `grid_layout` | [viz.layouts](/api/viz/layouts#grid_layout) | re-export |
+| `load_snnsim_recording` | [viz.loaders](/api/viz/loaders#load_snnsim_recording) | re-export |
+| `projection_activity` | [viz.transforms](/api/viz/transforms#projection_activity) | re-export |
+| `render_diagram` | [viz.diagrams](/api/viz/diagrams#render_diagram) | re-export |
+| `representative_frame` | [viz.transforms](/api/viz/transforms#representative_frame) | re-export |
+| `save_animation` | [viz.animation](/api/viz/animation#save_animation) | re-export |
+
+## Modules
+
+| Module | Responsibility |
+| --- | --- |
+| [viz.animation](/api/viz/animation) | Timeline sampling and backend encoding helpers. |
+| [viz.contracts](/api/viz/contracts) | Renderer-neutral retained evidence. All time-varying signal arrays must share a leading time axis, and dt_ms must be positive and finite. A Recording is not an instruction to rerun a simulation or replace absent evidence. |
+| [viz.diagrams](/api/viz/diagrams) | Renderer-neutral structural diagrams. Node ids are unique and all edge/group references must resolve. Graphviz renders the generated DOT; SVG and PNG are supported by render_diagram. Diagram styles and labels do not alter the source graph. |
+| [viz.figure_grid](/api/viz/figure_grid) | Deterministic geometry in normalized figure coordinates. Row indices run top to bottom and columns left to right. Weighted tracks, gaps and reserved regions define a stable layout shared by stills and animation frames. |
+| [viz.layouts](/api/viz/layouts) | Deterministic geometry helpers with no plotting-backend dependency. |
+| [viz.loaders](/api/viz/loaders) | Adapters from native tool artifacts into renderer-neutral recordings. |
+| [viz.scene](/api/viz/scene) | An intentionally thin composition layer over Matplotlib. |
+| [viz.styles](/api/viz/styles) | The default snnviz house-style tokens. |
+| [viz.transforms](/api/viz/transforms) | Reusable numerical transforms, independent of Matplotlib. |
+
+## Coverage and conventions
+
+This reference includes every top-level non-private function and class, module-owned constant/type alias, declared public method/property, constructor and relevant protocol special method in the modules above. Data-class constructor fields include local inheritance. Third-party inherited APIs belong to their own libraries; underscore-prefixed implementation helpers are excluded. Imported standard-library and third-party names are not snnlab APIs.
+
+Source docstrings are reproduced as text to preserve their parameter notes, examples, equations and formatting. Explicit exceptions are extracted from the implementation; indirect exceptions can also propagate. Expand the implementation panels for complete branch behavior, especially where legacy code has no annotations.
+
+Regenerate with `python3 docs/scripts/generate_api.py`; `--check` fails if source-derived reference pages drift. Authored explanatory notes live in `docs/scripts/api_notes.json`.

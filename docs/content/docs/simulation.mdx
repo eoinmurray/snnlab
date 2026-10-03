@@ -48,3 +48,7 @@ A single-input event NPZ stores `steps`, `batches`, `channels`, `steps_count`, a
 Graph CLI inference writes a digest-bearing `inference-manifest.json`. Use `validate_inference_artifacts` from `snnlab.sim.execution` before reusing a cache. Training checkpoints and resumable runtime state are different contracts: a checkpoint authenticates parameters and training state; runtime continuation carries dynamic simulation state.
 
 Use `uv run snnsim sim --help` for the complete option set. See [scientific contracts](/contracts) before changing timesteps or delays.
+
+## API reference
+
+See the complete [snnlab.sim API reference](/api/sim) for signatures, defaults, fields, methods and validation.

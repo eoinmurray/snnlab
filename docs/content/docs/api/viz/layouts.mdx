@@ -1,0 +1,76 @@
+---
+title: snnlab.viz.layouts
+description: Complete declared API of the layouts module, with signatures, data fields, validation and source.
+---
+
+[Back to viz reference](/api/viz)
+
+Deterministic geometry helpers with no plotting-backend dependency.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+| Symbol | Kind |
+| --- | --- |
+| [grid_layout](/api/viz/layouts#grid_layout) | function |
+
+## grid_layout
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/layouts.py#L8)
+
+```python
+def grid_layout(count: int, *, columns: int, x_range: tuple[float, float]=(0.0, 1.0), y_range: tuple[float, float]=(0.0, 1.0)) -> np.ndarray
+```
+
+Return a NumPy array of shape (count, 2) containing regular grid coordinates within x_range and y_range. columns determines the number of columns; the row count is rounded up to fit count. A zero count returns an empty (0, 2) array. Negative counts and non-positive column counts raise ValueError.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `count` | `int` | required | Defined by the source contract and implementation below. |
+| `columns` | `int` | required | Defined by the source contract and implementation below. |
+| `x_range` | `tuple[float, float]` | `(0.0, 1.0)` | Defined by the source contract and implementation below. |
+| `y_range` | `tuple[float, float]` | `(0.0, 1.0)` | Defined by the source contract and implementation below. |
+
+Return annotation: `np.ndarray`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+np.empty((0, 2), dtype=float)
+```
+```python
+np.c_[x.ravel()[:count], y.ravel()[:count]]
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError('count must be non-negative')` |
+| `ValueError('columns must be positive')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def grid_layout(
+    count: int,
+    *,
+    columns: int,
+    x_range: tuple[float, float] = (0.0, 1.0),
+    y_range: tuple[float, float] = (0.0, 1.0),
+) -> np.ndarray:
+    if count < 0:
+        raise ValueError("count must be non-negative")
+    if columns <= 0:
+        raise ValueError("columns must be positive")
+    if count == 0:
+        return np.empty((0, 2), dtype=float)
+    rows = int(np.ceil(count / columns))
+    x, y = np.meshgrid(
+        np.linspace(*x_range, columns), np.linspace(*y_range, rows)
+    )
+    return np.c_[x.ravel()[:count], y.ravel()[:count]]
+```
+
+</details>
+

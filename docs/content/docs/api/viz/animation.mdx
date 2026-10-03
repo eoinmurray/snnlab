@@ -1,0 +1,280 @@
+---
+title: snnlab.viz.animation
+description: Complete declared API of the animation module, with signatures, data fields, validation and source.
+---
+
+[Back to viz reference](/api/viz)
+
+Timeline sampling and backend encoding helpers.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+| Symbol | Kind |
+| --- | --- |
+| [FrameTimeline](/api/viz/animation#frametimeline) | class |
+| [save_animation](/api/viz/animation#save_animation) | function |
+
+## FrameTimeline
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/animation.py#L14)
+
+Explicit source-step sequence with a physical timestep in milliseconds. sample() uniformly selects inclusive steps; compose() supports paced segments, backward ranges and holds. time_ms(frame) maps an animation-frame index to its source simulation time.
+
+Class decorators: `dataclass(frozen=True)`.
+
+Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
+
+```python
+FrameTimeline(steps: np.ndarray, dt_ms: float)
+```
+
+Declared fields, including fields inherited from local data classes:
+
+| Field | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `steps` | `np.ndarray` | required | Stored member of this data contract; see the class docstring and serialization methods. |
+| `dt_ms` | `float` | required | Simulation timestep in milliseconds. |
+
+### FrameTimeline.sample
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/animation.py#L19)
+
+Decorators: `classmethod`.
+
+```python
+def FrameTimeline.sample(cls, steps: int, *, frames: int, dt_ms: float) -> 'FrameTimeline'
+```
+
+Select frames integer source indices uniformly between zero and steps-1, inclusive. Require 0 &lt; frames &lt;= steps.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `steps` | `int` | required | Defined by the source contract and implementation below. |
+| `frames` | `int` | required | Number of output animation frames. |
+| `dt_ms` | `float` | required | Simulation timestep in milliseconds. |
+
+Return annotation: `'FrameTimeline'`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+cls(np.linspace(0, steps - 1, frames, dtype=int), dt_ms)
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError('require 0 < frames <= steps')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def sample(
+        cls, steps: int, *, frames: int, dt_ms: float
+    ) -> "FrameTimeline":
+        if steps <= 0 or frames <= 0 or frames > steps:
+            raise ValueError("require 0 < frames <= steps")
+        return cls(np.linspace(0, steps - 1, frames, dtype=int), dt_ms)
+```
+
+</details>
+
+### FrameTimeline.compose
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/animation.py#L27)
+
+Decorators: `classmethod`.
+
+```python
+def FrameTimeline.compose(cls, segments: list[tuple[int, int, int]], *, dt_ms: float) -> 'FrameTimeline'
+```
+
+Source docstring:
+
+```text
+Compose paced, repeated, or held inclusive step ranges.
+
+Each segment is ``(start_step, end_step, frame_count)``. A reversed
+range plays backward and equal endpoints create a hold. This gives a
+composition full pacing control without coupling it to a plot type.
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `segments` | `list[tuple[int, int, int]]` | required | Defined by the source contract and implementation below. |
+| `dt_ms` | `float` | required | Simulation timestep in milliseconds. |
+
+Return annotation: `'FrameTimeline'`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+cls(np.concatenate(sampled), dt_ms)
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError('at least one timeline segment is required')` |
+| `ValueError('timeline steps must be non-negative and frames positive')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def compose(
+        cls,
+        segments: list[tuple[int, int, int]],
+        *,
+        dt_ms: float,
+    ) -> "FrameTimeline":
+        """Compose paced, repeated, or held inclusive step ranges.
+
+        Each segment is ``(start_step, end_step, frame_count)``. A reversed
+        range plays backward and equal endpoints create a hold. This gives a
+        composition full pacing control without coupling it to a plot type.
+        """
+
+        if not segments:
+            raise ValueError("at least one timeline segment is required")
+        sampled = []
+        for start, end, frames in segments:
+            if start < 0 or end < 0 or frames <= 0:
+                raise ValueError("timeline steps must be non-negative and frames positive")
+            sampled.append(np.linspace(start, end, frames, dtype=int))
+        return cls(np.concatenate(sampled), dt_ms)
+```
+
+</details>
+
+### FrameTimeline.time_ms
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/animation.py#L49)
+
+```python
+def FrameTimeline.time_ms(self, frame: int) -> float
+```
+
+Return the source step selected for frame multiplied by dt_ms. frame is an animation-frame index, not a simulation step.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `frame` | `int` | required | Defined by the source contract and implementation below. |
+
+Return annotation: `float`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+float(self.steps[frame] * self.dt_ms)
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def time_ms(self, frame: int) -> float:
+        return float(self.steps[frame] * self.dt_ms)
+```
+
+</details>
+
+<details>
+<summary>Complete class implementation</summary>
+
+```python
+class FrameTimeline:
+    steps: np.ndarray
+    dt_ms: float
+
+    @classmethod
+    def sample(
+        cls, steps: int, *, frames: int, dt_ms: float
+    ) -> "FrameTimeline":
+        if steps <= 0 or frames <= 0 or frames > steps:
+            raise ValueError("require 0 < frames <= steps")
+        return cls(np.linspace(0, steps - 1, frames, dtype=int), dt_ms)
+
+    @classmethod
+    def compose(
+        cls,
+        segments: list[tuple[int, int, int]],
+        *,
+        dt_ms: float,
+    ) -> "FrameTimeline":
+        """Compose paced, repeated, or held inclusive step ranges.
+
+        Each segment is ``(start_step, end_step, frame_count)``. A reversed
+        range plays backward and equal endpoints create a hold. This gives a
+        composition full pacing control without coupling it to a plot type.
+        """
+
+        if not segments:
+            raise ValueError("at least one timeline segment is required")
+        sampled = []
+        for start, end, frames in segments:
+            if start < 0 or end < 0 or frames <= 0:
+                raise ValueError("timeline steps must be non-negative and frames positive")
+            sampled.append(np.linspace(start, end, frames, dtype=int))
+        return cls(np.concatenate(sampled), dt_ms)
+
+    def time_ms(self, frame: int) -> float:
+        return float(self.steps[frame] * self.dt_ms)
+```
+
+</details>
+
+## save_animation
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/animation.py#L53)
+
+```python
+def save_animation(figure, update: Callable[[int], object], output: str | Path, *, frames: int, fps: int=25, bitrate: int=3800) -> FuncAnimation
+```
+
+Create and save a Matplotlib FuncAnimation using FFmpeg. The callback receives the frame index. Defaults are 25 frames per second and 3800 kbps, with blit disabled. Return the animation object; FFmpeg must be installed separately.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `figure` | `unannotated` | required | Defined by the source contract and implementation below. |
+| `update` | `Callable[[int], object]` | required | Defined by the source contract and implementation below. |
+| `output` | `str \| Path` | required | Defined by the source contract and implementation below. |
+| `frames` | `int` | required | Number of output animation frames. |
+| `fps` | `int` | `25` | Encoded video frames per second. |
+| `bitrate` | `int` | `3800` | FFmpeg video bitrate in kilobits per second. |
+
+Return annotation: `FuncAnimation`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+animation
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def save_animation(
+    figure,
+    update: Callable[[int], object],
+    output: str | Path,
+    *,
+    frames: int,
+    fps: int = 25,
+    bitrate: int = 3800,
+) -> FuncAnimation:
+    animation = FuncAnimation(
+        figure, update, frames=frames, interval=1000 / fps, blit=False
+    )
+    animation.save(
+        Path(output), writer=FFMpegWriter(fps=fps, bitrate=bitrate)
+    )
+    return animation
+```
+
+</details>
+

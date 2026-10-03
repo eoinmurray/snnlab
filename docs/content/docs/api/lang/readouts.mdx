@@ -1,0 +1,381 @@
+---
+title: snnlab.lang.readouts
+description: Complete declared API of the readouts module, with signatures, data fields, validation and source.
+---
+
+[Back to lang reference](/api/lang)
+
+Readout factories expand into ordinary network populations, projections and operations. They mutate the source network and return a Readout handle rather than computing scores immediately. The Readout forwards attribute lookup to its Signal.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+| Symbol | Kind |
+| --- | --- |
+| [Readout](/api/lang/readouts#readout) | class |
+| [MeanVoltage](/api/lang/readouts#meanvoltage) | function |
+| [FinalVoltage](/api/lang/readouts#finalvoltage) | function |
+| [SpikeCount](/api/lang/readouts#spikecount) | function |
+| [SpikeRate](/api/lang/readouts#spikerate) | function |
+| [CumulativePotential](/api/lang/readouts#cumulativepotential) | function |
+
+## Readout
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/readouts.py#L12)
+
+Class decorators: `dataclass(frozen=True)`.
+
+Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
+
+```python
+Readout(signal: Signal, parameters: tuple = ())
+```
+
+Declared fields, including fields inherited from local data classes:
+
+| Field | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `signal` | `Signal` | required | Stored member of this data contract; see the class docstring and serialization methods. |
+| `parameters` | `tuple` | `()` | Stored member of this data contract; see the class docstring and serialization methods. |
+
+### Readout.__getattr__
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/readouts.py#L16)
+
+```python
+def Readout.__getattr__(self, item)
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `item` | `unannotated` | required | Defined by the source contract and implementation below. |
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+getattr(self.signal, item)
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def __getattr__(self, item):
+        return getattr(self.signal, item)
+```
+
+</details>
+
+### Readout.id
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/readouts.py#L20)
+
+Decorators: `property`.
+
+```python
+def Readout.id(self) -> str
+```
+
+Return annotation: `str`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+self.signal.id
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def id(self) -> str:
+        return self.signal.id
+```
+
+</details>
+
+<details>
+<summary>Complete class implementation</summary>
+
+```python
+class Readout:
+    signal: Signal
+    parameters: tuple = ()
+
+    def __getattr__(self, item):
+        return getattr(self.signal, item)
+
+    @property
+    def id(self) -> str:
+        return self.signal.id
+```
+
+</details>
+
+## MeanVoltage
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/readouts.py#L24)
+
+```python
+def MeanVoltage(*, source: Signal, classes: int, name: str, tau=2 * ms, weight: Spec=Normal(1.0, 0.1)) -> Readout
+```
+
+Connect spikes through a non-negative weighted projection into a non-spiking leaky integrator with one unit per class, then reduce its voltage by a mean over time. The returned Readout records the projection parameter ids.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `source` | `Signal` | required | Defined by the source contract and implementation below. |
+| `classes` | `int` | required | Number of output/readout classes. |
+| `name` | `str` | required | Name used to identify the authored or rendered object. |
+| `tau` | `unannotated` | `2 * ms` | Defined by the source contract and implementation below. |
+| `weight` | `Spec` | `Normal(1.0, 0.1)` | Defined by the source contract and implementation below. |
+
+Return annotation: `Readout`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+Readout(mean, projection.parameter_ids)
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def MeanVoltage(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+    tau=2 * ms,
+    weight: Spec = Normal(1.0, 0.1),
+) -> Readout:
+    net = source.network
+    with net.group(name):
+        layer = net.population(
+            f"{name}_integrator",
+            size=classes,
+            neuron=LeakyIntegrator(
+                tau=tau,
+                soft_reset_threshold=1.0,
+                surrogate_slope=5.0,
+                initial_voltage=0.0,
+            ),
+            spiking=False,
+        )
+        projection = net.connect(
+            source,
+            layer.excitatory,
+            name=f"{name}_projection",
+            synapse=LeakyIntegrator(tau=tau),
+            weight=weight,
+            constraint=NonNegative(),
+            connection="feedforward",
+        )
+        mean = ops.reduce(
+            layer.voltage, operation="mean", over="time", name=f"{name}_mean"
+        )
+    return Readout(mean, projection.parameter_ids)
+```
+
+</details>
+
+## FinalVoltage
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/readouts.py#L60)
+
+```python
+def FinalVoltage(*, source: Signal, classes: int, name: str) -> Readout
+```
+
+Apply a linear projection to classes, then select its final timestep. Leading non-time dimensions remain.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `source` | `Signal` | required | Defined by the source contract and implementation below. |
+| `classes` | `int` | required | Number of output/readout classes. |
+| `name` | `str` | required | Name used to identify the authored or rendered object. |
+
+Return annotation: `Readout`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+Readout(signal)
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def FinalVoltage(*, source: Signal, classes: int, name: str) -> Readout:
+    with source.network.group(name):
+        projected = ops.linear(source, size=classes, name=f"{name}_projection")
+        signal = source.network.operation(
+            "select_final",
+            projected,
+            name=f"{name}_final",
+            shape=tuple(
+                dimension for dimension in projected.shape if dimension != "time"
+            ),
+            unit=projected.unit,
+        )
+    return Readout(signal)
+```
+
+</details>
+
+## SpikeCount
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/readouts.py#L75)
+
+```python
+def SpikeCount(*, source: Signal, classes: int, name: str) -> Readout
+```
+
+Linearly project the source to classes and sum over time. The linear parameter starts at zero; this is an authored weighted readout, not a raw unweighted population count.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `source` | `Signal` | required | Defined by the source contract and implementation below. |
+| `classes` | `int` | required | Number of output/readout classes. |
+| `name` | `str` | required | Name used to identify the authored or rendered object. |
+
+Return annotation: `Readout`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+Readout(result)
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def SpikeCount(*, source: Signal, classes: int, name: str) -> Readout:
+    with source.network.group(name):
+        projected = ops.linear(source, size=classes, name=f"{name}_projection")
+        result = ops.reduce(
+            projected, operation="sum", over="time", name=f"{name}_count"
+        )
+    return Readout(result)
+```
+
+</details>
+
+## SpikeRate
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/readouts.py#L84)
+
+```python
+def SpikeRate(*, source: Signal, classes: int, name: str, duration: float | None=None, mask: Signal | None=None, window: str='full') -> Readout
+```
+
+Sum the projected source over time and normalize by a physical duration in seconds or a valid-time mask whose duration is inferred from graph dt. Output unit is Hz. Compilation rejects conflicting duration/mask declarations.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `source` | `Signal` | required | Defined by the source contract and implementation below. |
+| `classes` | `int` | required | Number of output/readout classes. |
+| `name` | `str` | required | Name used to identify the authored or rendered object. |
+| `duration` | `float \| None` | `None` | Defined by the source contract and implementation below. |
+| `mask` | `Signal \| None` | `None` | Defined by the source contract and implementation below. |
+| `window` | `str` | `'full'` | Defined by the source contract and implementation below. |
+
+Return annotation: `Readout`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+Readout(signal)
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError('SpikeRate requires a duration or valid-time mask')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def SpikeRate(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+    duration: float | None = None,
+    mask: Signal | None = None,
+    window: str = "full",
+) -> Readout:
+    if duration is None and mask is None:
+        raise ValueError("SpikeRate requires a duration or valid-time mask")
+    with source.network.group(name):
+        projected = ops.linear(source, size=classes, name=f"{name}_projection")
+        count = ops.reduce(
+            projected,
+            operation="sum",
+            over="time",
+            name=f"{name}_count",
+            window=window,
+            mask=mask,
+        )
+        signal = source.network.operation(
+            "duration_normalise",
+            [count] + ([mask] if mask else []),
+            name=f"{name}_rate",
+            shape=count.shape,
+            unit="Hz",
+            duration=duration,
+            mask=mask.id if mask else None,
+            window=window,
+        )
+    return Readout(signal)
+```
+
+</details>
+
+## CumulativePotential
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/readouts.py#L118)
+
+```python
+def CumulativePotential(*, source: Signal, classes: int, name: str) -> Readout
+```
+
+Linearly project the source and produce a cumulative sum that retains the time axis.
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `source` | `Signal` | required | Defined by the source contract and implementation below. |
+| `classes` | `int` | required | Number of output/readout classes. |
+| `name` | `str` | required | Name used to identify the authored or rendered object. |
+
+Return annotation: `Readout`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+Readout(signal)
+```
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def CumulativePotential(*, source: Signal, classes: int, name: str) -> Readout:
+    with source.network.group(name):
+        projected = ops.linear(source, size=classes, name=f"{name}_projection")
+        signal = source.network.operation(
+            "cumulative_sum",
+            projected,
+            name=f"{name}_cumulative",
+            shape=projected.shape,
+            unit=projected.unit,
+        )
+    return Readout(signal)
+```
+
+</details>
+

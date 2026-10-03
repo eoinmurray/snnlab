@@ -1,0 +1,237 @@
+---
+title: snnlab.viz.styles
+description: Complete declared API of the styles module, with signatures, data fields, validation and source.
+---
+
+[Back to viz reference](/api/viz)
+
+The default snnviz house-style tokens.
+
+The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
+
+| Symbol | Kind |
+| --- | --- |
+| [Theme](/api/viz/styles#theme) | class |
+
+## Theme
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/styles.py#L7)
+
+Shared scientific color tokens. colour(role) returns a named token and rejects unknown roles; apply() updates global Matplotlib rcParams, including monospace typography, white backgrounds and the categorical color cycle.
+
+Class decorators: `dataclass(frozen=True)`.
+
+Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
+
+```python
+Theme(background: str = '#ffffff', ink: str = '#1a1a1a', accent: str = '#c8102e', muted: str = '#666666', rule: str = '#e7e5df', cyan: str = '#00b4d8', amber: str = '#e89400', dark_grey: str = '#3a3a3a', mid_grey: str = '#6a6a6a')
+```
+
+Declared fields, including fields inherited from local data classes:
+
+| Field | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `background` | `str` | `'#ffffff'` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `ink` | `str` | `'#1a1a1a'` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `accent` | `str` | `'#c8102e'` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `muted` | `str` | `'#666666'` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `rule` | `str` | `'#e7e5df'` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `cyan` | `str` | `'#00b4d8'` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `amber` | `str` | `'#e89400'` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `dark_grey` | `str` | `'#3a3a3a'` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `mid_grey` | `str` | `'#6a6a6a'` | Stored member of this data contract; see the class docstring and serialization methods. |
+
+### Theme.colour
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/styles.py#L18)
+
+```python
+def Theme.colour(self, role: str) -> str
+```
+
+| Parameter | Annotation | Default | Meaning |
+| --- | --- | --- | --- |
+| `role` | `str` | required | Defined by the source contract and implementation below. |
+
+Return annotation: `str`.
+
+Return expressions (branch-dependent; names refer to the linked implementation):
+
+```python
+{'background': self.background, 'ink': self.ink, 'accent': self.accent, 'muted': self.muted, 'rule': self.rule, 'cyan': self.cyan, 'amber': self.amber, 'dark_grey': self.dark_grey, 'mid_grey': self.mid_grey}[role]
+```
+
+Explicit exceptions in this implementation; called helpers may raise additional errors:
+
+| Explicit exception expression |
+| --- |
+| `ValueError(f'unknown snnviz colour role: {role}')` |
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def colour(self, role: str) -> str:
+        try:
+            return {
+                "background": self.background,
+                "ink": self.ink,
+                "accent": self.accent,
+                "muted": self.muted,
+                "rule": self.rule,
+                "cyan": self.cyan,
+                "amber": self.amber,
+                "dark_grey": self.dark_grey,
+                "mid_grey": self.mid_grey,
+            }[role]
+        except KeyError as error:
+            raise ValueError(f"unknown snnviz colour role: {role}") from error
+```
+
+</details>
+
+### Theme.apply
+
+[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/viz/styles.py#L34)
+
+```python
+def Theme.apply(self) -> None
+```
+
+Source docstring:
+
+```text
+Apply the house style used by new snnviz figures.
+```
+
+Return annotation: `None`.
+
+<details>
+<summary>Implementation</summary>
+
+```python
+def apply(self) -> None:
+        """Apply the house style used by new snnviz figures."""
+
+        import matplotlib as mpl
+        from cycler import cycler
+
+        mpl.rcParams.update(
+            {
+                "font.family": "monospace",
+                "font.monospace": [
+                    "JetBrains Mono",
+                    "IBM Plex Mono",
+                    "Menlo",
+                    "Consolas",
+                    "Courier New",
+                    "DejaVu Sans Mono",
+                ],
+                "font.size": 10.5,
+                "axes.facecolor": self.background,
+                "axes.edgecolor": self.ink,
+                "axes.linewidth": 1.4,
+                "axes.prop_cycle": cycler(
+                    color=(
+                        self.ink,
+                        self.accent,
+                        self.cyan,
+                        self.amber,
+                        self.dark_grey,
+                        self.mid_grey,
+                    )
+                ),
+                "figure.facecolor": self.background,
+                "savefig.facecolor": self.background,
+                "xtick.color": self.ink,
+                "ytick.color": self.ink,
+                "xtick.direction": "in",
+                "ytick.direction": "in",
+                "legend.fancybox": False,
+                "legend.framealpha": 1.0,
+                "lines.solid_capstyle": "butt",
+                "lines.solid_joinstyle": "miter",
+            }
+        )
+```
+
+</details>
+
+<details>
+<summary>Complete class implementation</summary>
+
+```python
+class Theme:
+    background: str = "#ffffff"
+    ink: str = "#1a1a1a"
+    accent: str = "#c8102e"
+    muted: str = "#666666"
+    rule: str = "#e7e5df"
+    cyan: str = "#00b4d8"
+    amber: str = "#e89400"
+    dark_grey: str = "#3a3a3a"
+    mid_grey: str = "#6a6a6a"
+
+    def colour(self, role: str) -> str:
+        try:
+            return {
+                "background": self.background,
+                "ink": self.ink,
+                "accent": self.accent,
+                "muted": self.muted,
+                "rule": self.rule,
+                "cyan": self.cyan,
+                "amber": self.amber,
+                "dark_grey": self.dark_grey,
+                "mid_grey": self.mid_grey,
+            }[role]
+        except KeyError as error:
+            raise ValueError(f"unknown snnviz colour role: {role}") from error
+
+    def apply(self) -> None:
+        """Apply the house style used by new snnviz figures."""
+
+        import matplotlib as mpl
+        from cycler import cycler
+
+        mpl.rcParams.update(
+            {
+                "font.family": "monospace",
+                "font.monospace": [
+                    "JetBrains Mono",
+                    "IBM Plex Mono",
+                    "Menlo",
+                    "Consolas",
+                    "Courier New",
+                    "DejaVu Sans Mono",
+                ],
+                "font.size": 10.5,
+                "axes.facecolor": self.background,
+                "axes.edgecolor": self.ink,
+                "axes.linewidth": 1.4,
+                "axes.prop_cycle": cycler(
+                    color=(
+                        self.ink,
+                        self.accent,
+                        self.cyan,
+                        self.amber,
+                        self.dark_grey,
+                        self.mid_grey,
+                    )
+                ),
+                "figure.facecolor": self.background,
+                "savefig.facecolor": self.background,
+                "xtick.color": self.ink,
+                "ytick.color": self.ink,
+                "xtick.direction": "in",
+                "ytick.direction": "in",
+                "legend.fancybox": False,
+                "legend.framealpha": 1.0,
+                "lines.solid_capstyle": "butt",
+                "lines.solid_joinstyle": "miter",
+            }
+        )
+```
+
+</details>
+

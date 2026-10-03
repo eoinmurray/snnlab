@@ -1,0 +1,15 @@
+{
+  "title": "snnlab.viz",
+  "pages": [
+    "index",
+    "animation",
+    "contracts",
+    "diagrams",
+    "figure_grid",
+    "layouts",
+    "loaders",
+    "scene",
+    "styles",
+    "transforms"
+  ]
+}
