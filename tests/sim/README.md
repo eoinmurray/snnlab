@@ -21,7 +21,7 @@ The registered cross-cutting markers are:
 The normal fast lane is:
 
 ```sh
-uv run pytest tools/snnsim/tests -m "not slow"
+uv run pytest tests/sim -m "not slow"
 ```
 
 Markers compose, so the Brian2 comparisons can be selected with

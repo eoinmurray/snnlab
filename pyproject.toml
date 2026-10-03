@@ -22,7 +22,7 @@ build-backend = "hatchling.build"
 packages = ["src/snnlab"]
 
 [dependency-groups]
-dev = ["pytest>=9.0.1", "pytest-cov>=7.1.0", "ruff>=0.15.20", "brian2>=2.9,<2.10"]
+dev = ["pytest>=9.0.1", "pytest-cov>=7.1.0", "ruff>=0.15.20", "brian2>=2.10; python_version >= '3.12'"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
@@ -37,3 +37,12 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = ["E501", "E741"]
+
+[tool.coverage.run]
+source = ["snnlab.sim"]
+omit = ["*/profiling.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 85

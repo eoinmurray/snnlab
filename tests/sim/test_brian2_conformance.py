@@ -11,10 +11,11 @@ from __future__ import annotations
 import math
 from fractions import Fraction
 
-import brian2 as b2
 import numpy as np
 import pytest
 import torch
+
+b2 = pytest.importorskip("brian2")
 from scipy.signal import find_peaks
 
 from snnlab.sim import models as M

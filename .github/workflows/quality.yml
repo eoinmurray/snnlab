@@ -1,0 +1,21 @@
+name: Package checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: sudo apt-get update && sudo apt-get install --yes graphviz ffmpeg
+      - run: uv sync --dev --python 3.12
+      - run: uv run ruff check .
+      - run: uv run pytest -q -m "not slow"
+        env:
+          PINGLAB_NO_COMPILE: "1"
+          OMP_NUM_THREADS: "1"
+          MPLBACKEND: Agg
+      - run: uv build
