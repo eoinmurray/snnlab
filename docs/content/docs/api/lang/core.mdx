@@ -212,7 +212,7 @@ Return annotation: `dict[str, Any]`.
 Return expressions (branch-dependent; names refer to the linked implementation):
 
 ```python
-{'kind': self.kind, **{k: _value(v) for (k, v) in sorted(self.values.items())}}
+{'kind': self.kind, **{k: _value(v) for k, v in sorted(self.values.items())}}
 ```
 
 <details>

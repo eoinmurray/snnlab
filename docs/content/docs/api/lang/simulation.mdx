@@ -253,15 +253,15 @@ Class decorators: `dataclass(frozen=True)`.
 Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
 
 ```python
-CellDistribution(rate: Spec = field(default_factory=lambda : Spec('constant', {'value': 1.0})), amplitude: Spec = field(default_factory=lambda : Spec('constant', {'value': 1.0})))
+CellDistribution(rate: Spec = field(default_factory=lambda: Spec('constant', {'value': 1.0})), amplitude: Spec = field(default_factory=lambda: Spec('constant', {'value': 1.0})))
 ```
 
 Declared fields, including fields inherited from local data classes:
 
 | Field | Annotation | Default | Meaning |
 | --- | --- | --- | --- |
-| `rate` | `Spec` | `field(default_factory=lambda : Spec('constant', {'value': 1.0}))` | Stored member of this data contract; see the class docstring and serialization methods. |
-| `amplitude` | `Spec` | `field(default_factory=lambda : Spec('constant', {'value': 1.0}))` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `rate` | `Spec` | `field(default_factory=lambda: Spec('constant', {'value': 1.0}))` | Stored member of this data contract; see the class docstring and serialization methods. |
+| `amplitude` | `Spec` | `field(default_factory=lambda: Spec('constant', {'value': 1.0}))` | Stored member of this data contract; see the class docstring and serialization methods. |
 
 ### CellDistribution.json
 

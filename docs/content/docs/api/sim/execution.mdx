@@ -631,7 +631,7 @@ Return expressions (branch-dependent; names refer to the linked implementation):
 (DenseArrayBinding(input_ids[0], torch.as_tensor(loaded), {**source_base, 'array': None}),)
 ```
 ```python
-tuple((DenseArrayBinding(input_id, torch.as_tensor(value), {**source_base, 'array': keys[input_id]}) for (input_id, value) in arrays.items()))
+tuple((DenseArrayBinding(input_id, torch.as_tensor(value), {**source_base, 'array': keys[input_id]}) for input_id, value in arrays.items()))
 ```
 
 Explicit exceptions in this implementation; called helpers may raise additional errors:
@@ -3558,7 +3558,7 @@ Return annotation: `tuple[str, dict[str, torch.Tensor]]`.
 Return expressions (branch-dependent; names refer to the linked implementation):
 
 ```python
-('cuda', {f'cuda:{index}': state.detach().cpu().clone() for (index, state) in enumerate(states)})
+('cuda', {f'cuda:{index}': state.detach().cpu().clone() for index, state in enumerate(states)})
 ```
 ```python
 ('mps', {'mps': torch.mps.get_rng_state().detach().cpu().clone()})
@@ -4266,7 +4266,7 @@ Return annotation: `dict[str, torch.Tensor]`.
 Return expressions (branch-dependent; names refer to the linked implementation):
 
 ```python
-{name.replace('__', '.'): value for (name, value) in self.weights.items()}
+{name.replace('__', '.'): value for name, value in self.weights.items()}
 ```
 
 <details>
@@ -4300,7 +4300,7 @@ Return annotation: `ExecutionResult`.
 Return expressions (branch-dependent; names refer to the linked implementation):
 
 ```python
-ExecutionResult(executor='graph', outputs=outputs, recordings=packed, parameters={k: v.detach().clone() for (k, v) in self.parameter_map().items()}, final_state={f'{k}.voltage': v.detach().clone() for (k, v) in voltage.items()}, runtime_state=next_runtime_state, metrics={'resolved_interventions': resolved_interventions}, model=self)
+ExecutionResult(executor='graph', outputs=outputs, recordings=packed, parameters={k: v.detach().clone() for k, v in self.parameter_map().items()}, final_state={f'{k}.voltage': v.detach().clone() for k, v in voltage.items()}, runtime_state=next_runtime_state, metrics={'resolved_interventions': resolved_interventions}, model=self)
 ```
 
 Explicit exceptions in this implementation; called helpers may raise additional errors:
@@ -6191,7 +6191,7 @@ Return expressions (branch-dependent; names refer to the linked implementation):
 ExecutionResult(executor='legacy', metrics={'request': 'train', 'routing': 'legacy'})
 ```
 ```python
-ExecutionResult(executor='graph', outputs=final_forward.outputs, recordings=final_forward.recordings, parameters={name: value.detach().clone() for (name, value) in parameter_map.items()}, gradients=last_gradients, optimizer_state=optimizer_state_by_name(), training_checkpoint=final_checkpoint, selected_checkpoint=selected_checkpoint, model=model, metrics={**built.metrics, 'updates': history, 'execution_protocol': resolved_inputs.protocol, 'trainable_parameters': sorted(last_gradients), 'optimizer': optimizer_spec, 'training_checkpoint_schema': TRAINING_CHECKPOINT_SCHEMA, 'training_checkpoint_rng': {'backend': final_checkpoint.rng_backend, 'devices': sorted(final_checkpoint.accelerator_rng_states)}, 'resumed_from_update': completed_updates})
+ExecutionResult(executor='graph', outputs=final_forward.outputs, recordings=final_forward.recordings, parameters={name: value.detach().clone() for name, value in parameter_map.items()}, gradients=last_gradients, optimizer_state=optimizer_state_by_name(), training_checkpoint=final_checkpoint, selected_checkpoint=selected_checkpoint, model=model, metrics={**built.metrics, 'updates': history, 'execution_protocol': resolved_inputs.protocol, 'trainable_parameters': sorted(last_gradients), 'optimizer': optimizer_spec, 'training_checkpoint_schema': TRAINING_CHECKPOINT_SCHEMA, 'training_checkpoint_rng': {'backend': final_checkpoint.rng_backend, 'devices': sorted(final_checkpoint.accelerator_rng_states)}, 'resumed_from_update': completed_updates})
 ```
 
 Explicit exceptions in this implementation; called helpers may raise additional errors:
@@ -6702,7 +6702,7 @@ Return annotation: `ExecutionSpec`.
 Return expressions (branch-dependent; names refer to the linked implementation):
 
 ```python
-ExecutionSpec(kind=resolved_kind, executor=getattr(args, 'executor', 'legacy'), bundle=Path(args.bundle) if getattr(args, 'bundle', None) else None, seed=int(getattr(args, 'seed', 0) or 0), device=resolve_device(getattr(args, 'device', 'auto')), recording=getattr(args, 'recording', 'full'), checkpoint=Path(args.load_weights) if getattr(args, 'load_weights', None) else None, options={key: value for (key, value) in vars(args).items() if key not in {'bundle', 'executor'}})
+ExecutionSpec(kind=resolved_kind, executor=getattr(args, 'executor', 'legacy'), bundle=Path(args.bundle) if getattr(args, 'bundle', None) else None, seed=int(getattr(args, 'seed', 0) or 0), device=resolve_device(getattr(args, 'device', 'auto')), recording=getattr(args, 'recording', 'full'), checkpoint=Path(args.load_weights) if getattr(args, 'load_weights', None) else None, options={key: value for key, value in vars(args).items() if key not in {'bundle', 'executor'}})
 ```
 
 <details>

@@ -91,7 +91,7 @@ Return annotation: `Signal`.
 Return expressions (branch-dependent; names refer to the linked implementation):
 
 ```python
-source.network.operation(f'reduce_{operation}', sources, name=name, shape=tuple((dimension for (index, dimension) in enumerate(source.shape) if index != time_axis)), unit=source.unit, window=window, mask=mask.id if mask else None)
+source.network.operation(f'reduce_{operation}', sources, name=name, shape=tuple((dimension for index, dimension in enumerate(source.shape) if index != time_axis)), unit=source.unit, window=window, mask=mask.id if mask else None)
 ```
 
 Explicit exceptions in this implementation; called helpers may raise additional errors:
