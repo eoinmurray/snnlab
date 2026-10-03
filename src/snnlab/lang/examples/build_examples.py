@@ -5,7 +5,7 @@ from pathlib import Path
 from snnlab import lang as snn
 from snnlab.lang import training
 
-OUT = Path(__file__).parent / "generated"
+OUT = Path.cwd() / "examples" / "generated"
 
 
 def ping_classifier():
