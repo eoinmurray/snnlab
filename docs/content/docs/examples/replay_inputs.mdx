@@ -1,0 +1,106 @@
+---
+title: Replay dense and sparse spikes
+description: Express one input stream in two representations and verify identical counts.
+---
+
+Use four known spikes across two presentations and two channels to learn input binding without neuron dynamics. The same stream is represented first by a dense tensor and then by integer event coordinates. A time reduction returns raw counts per channel, and assertions compare both results to counts you can verify by hand.
+
+[Download the standalone script](/examples/replay_inputs.py) · [View source](https://github.com/eoinmurray/snnlab/blob/main/examples/replay_inputs.py)
+
+## Run it
+
+After [installation](/installation), run from the repository root:
+
+```sh
+uv run python examples/replay_inputs.py
+```
+
+For the download, save the Python file and run it in an environment with snnlab installed. Every example is self-contained, uses CPU, and runs without a dataset download, Graphviz or FFmpeg.
+
+Files, when produced, are written below `artifacts/examples/replay_inputs/` relative to your working directory. A repeated run replaces that example’s outputs.
+
+## Complete code
+
+```python
+"""Represent the same four spikes as a dense array and sparse events."""
+
+from pathlib import Path
+
+import torch
+
+from snnlab import lang as snn
+from snnlab.sim.execution import EventStreamBinding, ExecutionSpec, simulate
+
+
+def main(out=Path("artifacts/examples/replay_inputs")):
+    net = snn.Network("raw_counts", dt=1 * snn.ms)
+    events = net.input(
+        "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+    )
+    counts = snn.ops.reduce(events, operation="sum", over="time", name="channel_totals")
+    net.output("counts", counts)
+    graph = snn.compile(net, target="tools/snnsim").graph
+
+    dense = torch.zeros(3, 2, 2)  # time, batch, channel
+    steps = torch.tensor([0, 1, 2, 2])
+    batches = torch.tensor([0, 0, 0, 1])
+    channels = torch.tensor([0, 1, 0, 1])
+    dense[steps, batches, channels] = 1
+    sparse = EventStreamBinding(
+        "events",
+        steps=steps,
+        batches=batches,
+        channels=channels,
+        steps_count=3,
+        batch_size=2,
+    )
+    dense_result = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            executor="graph",
+            graph=graph,
+            inputs={"events": dense},
+            device="cpu",
+            seed=17,
+        )
+    )
+    event_result = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            executor="graph",
+            graph=graph,
+            event_bindings=(sparse,),
+            device="cpu",
+            seed=17,
+        )
+    )
+    expected = torch.tensor([[2.0, 1.0], [0.0, 1.0]])
+    torch.testing.assert_close(dense_result.outputs["counts"], expected, rtol=0, atol=0)
+    torch.testing.assert_close(event_result.outputs["counts"], expected, rtol=0, atol=0)
+    print("Counts per presentation and channel:", expected.tolist())
+    print("Dense and sparse outputs match exactly")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## What to notice
+
+1. Dense spike tensors use time, batch and channel axes. Each value here is either zero or one.
+2. Sparse coordinates are zero-based and ordered by step, batch and channel; duplicate coordinates are rejected.
+3. `steps_count` and `batch_size` describe the whole presentation, including positions with no spikes.
+4. A direct sum reduction produces raw channel counts. The `SpikeCount` readout additionally applies a learned linear projection, so it is a different operation.
+
+With a 1 ms timestep and three steps, each presentation lasts 3 ms. Presentation zero contains two spikes on channel zero and one on channel one; presentation one contains one spike on channel one. Each invocation is a fresh run over the complete stream. Runtime continuation is a separate contract.
+
+## Expected result
+
+```text
+Counts per presentation and channel: [[2.0, 1.0], [0.0, 1.0]]
+Dense and sparse outputs match exactly
+```
+
+## API links
+
+[reduce](/api/lang/ops#reduce), [EventStreamBinding](/api/sim/execution#eventstreambinding), [ExecutionSpec](/api/sim/execution#executionspec).

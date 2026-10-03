@@ -1,0 +1,102 @@
+---
+title: Simulate a driven E/I circuit
+description: Generate seeded Poisson input and inspect a small excitatory/inhibitory circuit.
+---
+
+Drive an eight-cell excitatory population and a two-cell inhibitory population with four Poisson input channels. The PING component authors the recurrent E/I connections, and an explicit graph request runs 100 ms on CPU. The script reports retained spike tensor shapes and mean population firing rates, then saves the outputs in a NumPy archive.
+
+[Download the standalone script](/examples/poisson_circuit.py) · [View source](https://github.com/eoinmurray/snnlab/blob/main/examples/poisson_circuit.py)
+
+## Run it
+
+After [installation](/installation), run from the repository root:
+
+```sh
+uv run python examples/poisson_circuit.py
+```
+
+For the download, save the Python file and run it in an environment with snnlab installed. Every example is self-contained, uses CPU, and runs without a dataset download, Graphviz or FFmpeg.
+
+Files, when produced, are written below `artifacts/examples/poisson_circuit/` relative to your working directory. A repeated run replaces that example’s outputs.
+
+## Complete code
+
+```python
+"""Run a small excitatory/inhibitory circuit with seeded Poisson drive."""
+
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from snnlab import lang as snn
+from snnlab.sim.execution import ExecutionSpec, PoissonInputBinding, simulate
+
+
+def main(out=Path("artifacts/examples/poisson_circuit")):
+    net = snn.Network("driven_ei", dt=0.1 * snn.ms)
+    events = net.input(
+        "events", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
+    )
+    cell = snn.components.ping(
+        net, name="cell", n_e=8, n_i=2, source=events, w_in=snn.Constant(0.5)
+    )
+    net.output("excitatory_spikes", cell.E.spikes)
+    net.output("inhibitory_spikes", cell.I.spikes)
+    bundle = snn.compile(net, target="tools/snnsim")
+    result = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            executor="graph",
+            graph=bundle.graph,
+            poisson_bindings=(
+                PoissonInputBinding(
+                    input_id="events",
+                    steps_count=1000,
+                    batch_size=1,
+                    rates_hz=(100.0,),
+                    seed=17,
+                ),
+            ),
+            seed=17,
+            device="cpu",
+        )
+    )
+    duration_seconds = 1000 * 0.1 / 1000
+    for name, spikes in result.outputs.items():
+        assert torch.isfinite(spikes).all()
+        rate_hz = spikes.sum().item() / (
+            spikes.shape[1] * spikes.shape[2] * duration_seconds
+        )
+        print(f"{name}: shape={tuple(spikes.shape)}, mean rate={rate_hz:.1f} Hz")
+    Path(out).mkdir(parents=True, exist_ok=True)
+    np.savez(
+        Path(out) / "activity.npz",
+        dt_ms=0.1,
+        **{name: value.detach().numpy() for name, value in result.outputs.items()},
+    )
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## What to notice
+
+1. `executor="graph"` selects graph-native execution; the typed request otherwise defaults to the legacy route.
+2. A timestep of 0.1 ms and 1,000 steps give a 100 ms presentation. A single supplied rate is broadcast across input channels.
+3. Input generation and parameter initialization have explicit seeds. Changing either seed changes the experiment.
+4. The reported rate is total spikes divided by presentation count, population size and duration in seconds. It is a population mean rather than the rate of a selected cell.
+
+`activity.npz` contains `dt_ms`, `excitatory_spikes` and `inhibitory_spikes`. The spike arrays have time, batch and cell axes. This small illustrative run does not establish sustained oscillation or a scientific PING acceptance criterion. Exact observed rates can vary with library/backend changes.
+
+## Expected result
+
+```text
+excitatory_spikes: shape=(1000, 1, 8), mean rate=30.0 Hz
+inhibitory_spikes: shape=(1000, 1, 2), mean rate=90.0 Hz
+```
+
+## API links
+
+[ping](/api/lang/components#ping), [PoissonInputBinding](/api/sim/execution#poissoninputbinding), [simulate](/api/sim/execution#simulate).

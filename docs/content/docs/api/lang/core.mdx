@@ -253,7 +253,7 @@ class Spec:
 def COBA_LIF(**values: Any) -> Spec
 ```
 
-Create a coba_lif neuron specification. Supported graph neuron fields include tau_mem, capacitance_nf, leak_us, resting_mv, threshold_mv, reset_mv, refractory_steps, voltage_grad_dampen and initial_voltage_mv. Use Quantity values for tau_mem, and numerical nF, uS and mV fields as named. Execution fills defaults for omitted fields; see plan_graph and GraphExecutor for the current lowering contract.
+Create a coba_lif neuron specification. Graph execution requires tau_mem as a time Quantity, for example 20 * ms. Other supported fields include capacitance_nf, leak_us, resting_mv, threshold_mv, reset_mv, refractory_steps, voltage_grad_dampen and initial_voltage_mv. Numerical nF, uS and mV fields use the units named. See plan_graph and GraphExecutor for the current lowering contract.
 
 | Parameter | Annotation | Default | Meaning |
 | --- | --- | --- | --- |

@@ -1,0 +1,86 @@
+---
+title: Build a portable circuit
+description: Author a feedforward circuit, write a bundle and check that it can be planned.
+---
+
+Start here to learn the authoring boundary. Two input channels drive four conductance-based leaky integrate-and-fire cells through an AMPA projection. The script compiles this graph, writes a bundle, reloads it and asks the graph executor to plan it. It does not run the dynamics.
+
+[Download the standalone script](/examples/build_bundle.py) · [View source](https://github.com/eoinmurray/snnlab/blob/main/examples/build_bundle.py)
+
+## Run it
+
+After [installation](/installation), run from the repository root:
+
+```sh
+uv run python examples/build_bundle.py
+```
+
+For the download, save the Python file and run it in an environment with snnlab installed. Every example is self-contained, uses CPU, and runs without a dataset download, Graphviz or FFmpeg.
+
+Files, when produced, are written below `artifacts/examples/build_bundle/` relative to your working directory. A repeated run replaces that example’s outputs.
+
+## Complete code
+
+```python
+"""Author a feedforward circuit and round-trip its portable bundle."""
+
+from pathlib import Path
+
+from snnlab import lang as snn
+from snnlab.lang.compiler import load_bundle
+from snnlab.sim.execution import plan_graph
+
+
+def main(out=Path("artifacts/examples/build_bundle")):
+    net = snn.Network("feedforward", dt=0.1 * snn.ms)
+    events = net.input(
+        "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+    )
+    cells = net.population("cells", size=4, neuron=snn.COBA_LIF(tau_mem=20 * snn.ms))
+    net.connect(
+        events,
+        cells.excitatory,
+        name="input_to_cells",
+        synapse=snn.AMPA(tau=2 * snn.ms),
+        weight=snn.Constant(0.5),
+        constraint=snn.NonNegative(),
+        connection="feedforward",
+    )
+    net.output("spikes", cells.spikes)
+    net.expose(cells.voltage, name="voltage")
+
+    bundle = snn.compile(net, target="tools/snnsim")
+    path = bundle.write(Path(out) / "feedforward.bundle")
+    restored = load_bundle(path)
+    assert restored.graph == bundle.graph
+    plan = plan_graph(restored.graph)
+    assert len(plan.populations) == 1
+    print("Bundle round-trip: identical graph")
+    print(
+        f"Plan: {len(plan.populations)} population, {len(plan.projections)} projection"
+    )
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## What to notice
+
+1. Inputs declare symbolic time and batch axes; concrete dimensions arrive when you execute the graph.
+2. The timestep and membrane time constant are explicit time quantities. Graph execution requires `COBA_LIF(tau_mem=...)`.
+3. Projection weights are conductances in uS, and `NonNegative()` declares their constraint.
+4. `compile()` validates and serializes authoring objects; `plan_graph()` checks the execution topology. Neither call is a simulation.
+
+The output directory contains `feedforward.bundle/graph.json`, its manifest and a Markdown summary. Reloading verifies the bundle's declared digests, and the example asserts that the restored graph is unchanged. Graphviz is unnecessary because this example does not request diagram rendering.
+
+## Expected result
+
+```text
+Bundle round-trip: identical graph
+Plan: 1 population, 1 projection
+```
+
+## API links
+
+[Network](/api/lang/core#network), [compile and bundle I/O](/api/lang/compiler), [plan_graph](/api/sim/execution#plan_graph).

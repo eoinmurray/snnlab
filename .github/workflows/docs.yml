@@ -3,9 +3,9 @@ name: Deploy documentation
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'src/snnlab/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'src/snnlab/**', 'examples/**', '.github/workflows/docs.yml']
   pull_request:
-    paths: ['docs/**', 'src/snnlab/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'src/snnlab/**', 'examples/**', '.github/workflows/docs.yml']
   workflow_dispatch:
 
 permissions:
@@ -33,6 +33,8 @@ jobs:
           python-version: '3.12'
       - name: Check API reference coverage
         run: python3 scripts/generate_api.py --check
+      - name: Check example pages and downloads
+        run: python3 scripts/generate_examples.py --check
       - run: npm ci
       - run: npm run types:check
       - run: npm run build

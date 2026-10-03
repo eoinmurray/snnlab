@@ -1,0 +1,34 @@
+---
+title: Examples
+description: Small runnable examples for authoring, simulation, training and visualisation.
+---
+
+These standalone examples demonstrate the general workflow with small CPU runs. Each page contains complete code, a Python download, expected results and links to its API contracts. No dataset download is required.
+
+## Choose an example
+
+| Example | Learn how to | Produces |
+| --- | --- | --- |
+| [Build a portable circuit](/examples/build_bundle) | Author, compile, reload and plan a graph | A portable bundle |
+| [Simulate a driven E/I circuit](/examples/poisson_circuit) | Generate Poisson input and inspect spikes | An activity archive |
+| [Replay dense and sparse spikes](/examples/replay_inputs) | Bind an exact event stream in two representations | Checked raw counts |
+| [Train a two-class readout](/examples/train_readout) | Declare a recipe, update weights and infer | A training checkpoint |
+| [Save and resume training](/examples/resume_training) | Continue training and compare to a full run | A checkpoint and equality checks |
+| [Plot retained activity](/examples/plot_recording) | Turn retained arrays into a raster and voltage figure | A PNG and recording archive |
+
+## Getting started
+
+1. [Install snnlab](/installation), or run `uv sync` from a repository checkout.
+2. Choose a page and run its script from the repository root. Downloads also run in an environment with snnlab installed.
+3. Inspect the printed results and any files under `artifacts/examples/`.
+4. Change one declared setting, such as the input rate, timestep or learning rate, and rerun the example.
+
+The examples use explicit graph execution, physical timing and small synthetic fixtures. They teach interfaces; they do not report dataset accuracy, establish scientific acceptance criteria or guarantee cross-device equality. The training example evaluates its own fixture and says so explicitly.
+
+## Check every example
+
+```sh
+uv run python docs/scripts/check_examples.py
+```
+
+This runs the exact downloadable scripts in a temporary directory and checks their assertions. The package CI runs the same command. The rendered pages and downloads are generated from the scripts so copying code from a page cannot drift away from its executable source.
