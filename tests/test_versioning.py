@@ -21,6 +21,11 @@ def release_tree(tmp_path):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text((ROOT / relative).read_text())
+    (tmp_path / "src/snnlab/__init__.py").write_text('__version__ = "0.1.0"\n')
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n\n### Added\n\n1. New example.\n\n"
+        "## [0.1.0] - 2026-10-03\n\n### Added\n\n1. Initial release.\n"
+    )
     return tmp_path
 
 
@@ -40,7 +45,7 @@ def test_preparation_preserves_history_and_synchronizes_versions(
     changelog = (release_tree / "CHANGELOG.md").read_text()
     assert f"## [Unreleased]\n\n## [{expected}] - 2026-10-04" in changelog
     assert original[original.index("## [0.1.0]") :] in changelog
-    assert changelog.count("Six runnable general examples") == 1
+    assert changelog.count("New example.") == 1
 
 
 def test_rejects_duplicate_lock_version_and_wrong_tag(release_tree):
