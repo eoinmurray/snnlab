@@ -6,6 +6,8 @@ serialized-schema versions identify separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-04
+
 ### Added
 
 1. Static Fumadocs documentation with KaTeX, search, GitHub Pages and Cloudflare hosting.
