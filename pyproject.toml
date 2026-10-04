@@ -25,7 +25,7 @@ packages = ["src/snnlab"]
 path = "src/snnlab/__init__.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["/examples/current-lif", "/examples/quickstart", "/examples/training", "/examples/inference", "/examples/pytorch", "/examples/customisation", "/src", "/tests", "/scripts", "/docs", "/README.md", "/CHANGELOG.md", "/VERSIONING.md", "/LICENSE", "/pyproject.toml", "/uv.lock"]
+include = ["/examples/current-lif", "/examples/quickstart", "/examples/training", "/examples/inference", "/examples/pytorch", "/examples/customisation", "/src", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE", "/pyproject.toml", "/uv.lock"]
 exclude = ["/examples/customisation/network.bundle", "/examples/pytorch/trained.pt", "/examples/pytorch/metrics.json", "/examples/inference/predictions.json", "/examples/training/network.bundle", "/examples/training/trained.checkpoint", "/examples/training/metrics.json", "/docs/node_modules", "/docs/.next", "/docs/.source", "/docs/.astro", "/docs/out", "/docs/.wrangler", "/docs/.env*", "/docs/next-env.d.ts", "**/__pycache__", "**/*.pyc", "**/*.tsbuildinfo", "**/.DS_Store"]
 
 [dependency-groups]

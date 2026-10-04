@@ -38,9 +38,18 @@ jobs:
       - name: Read and validate the package version
         id: version
         run: |
-          uv run --no-project --python 3.12 python scripts/version.py check
-          version=$(uv run --no-project --python 3.12 python -c 'from scripts.version import ROOT, package_version; print(package_version(ROOT))')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          uv run --no-project --python 3.12 python - <<'PYTHON'
+          import os
+          import re
+          import runpy
+          import sys
+
+          version = runpy.run_path("src/snnlab/__init__.py")["__version__"]
+          if not isinstance(version, str) or not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version):
+              sys.exit("Expected a MAJOR.MINOR.PATCH package version")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\n")
+          PYTHON
 
       - run: uv build
 

@@ -126,7 +126,11 @@ def main():
     bundle = lang.compile(net, training=recipe, target="tools/snnsim")
     diagram = lang.diagram(bundle, view="expanded")
     viz.render_diagram(
-        diagram, OUTPUT_DIR / "network.png", scale=2, height_to_width_ratio=None
+        diagram,
+        OUTPUT_DIR / "network.png",
+        scale=2,
+        height_to_width_ratio=None,
+        canvas_size=(1920, 900),
     )
     bundle_path = bundle.write(OUTPUT_DIR / "network.bundle")
     checkpoint_path = OUTPUT_DIR / "trained.checkpoint"

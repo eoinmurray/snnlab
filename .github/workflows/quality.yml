@@ -13,11 +13,19 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: sudo apt-get update && sudo apt-get install --yes graphviz ffmpeg
       - run: uv sync --dev --python 3.12
-      - name: Check release version metadata
-        run: uv run python scripts/version.py check
       - name: Check release tag matches the package version
         if: startsWith(github.ref, 'refs/tags/v')
-        run: uv run python scripts/version.py check --tag "$RELEASE_TAG"
+        run: |
+          uv run python - <<'PYTHON'
+          import os
+          import runpy
+          import sys
+
+          version = runpy.run_path("src/snnlab/__init__.py")["__version__"]
+          tag = os.environ["RELEASE_TAG"]
+          if tag != f"v{version}":
+              sys.exit(f"Expected tag v{version}, got {tag}")
+          PYTHON
         env:
           RELEASE_TAG: ${{ github.ref_name }}
       - run: uv run ruff check .

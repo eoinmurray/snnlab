@@ -140,10 +140,10 @@ def test_diagram_contract_compiles_deterministically():
     assert '"input" -> "cell"' in diagram_to_dot(diagram)
     assert 'subgraph "cluster_n_network"' in diagram_to_dot(diagram)
     assert 'style="filled"' in diagram_to_dot(diagram)
-    assert 'fontname="Menlo"' in diagram_to_dot(diagram)
+    assert 'fontname="Helvetica"' in diagram_to_dot(diagram)
     assert 'ratio="0.6"' in diagram_to_dot(diagram, height_to_width_ratio=0.6)
 
-    assert 'ratio="0.58"' in diagram_to_dot(diagram)
+    assert "ratio=" not in diagram_to_dot(diagram)
     assert "ratio=" not in diagram_to_dot(diagram, height_to_width_ratio=None)
 
     with pytest.raises(ValueError, match="finite and positive"):
@@ -246,7 +246,7 @@ def test_diagram_aligns_external_inputs_and_population_targets(tmp_path):
     assert positions["drive_i"][1] == pytest.approx(positions["i"][1])
 
 
-def test_wrapped_diagram_text_preserves_content_and_explicit_bold(tmp_path):
+def test_wrapped_diagram_text_preserves_case_and_typographic_hierarchy(tmp_path):
     if shutil.which("dot") is None:
         pytest.skip("Graphviz 'dot' is required for diagram rendering")
     import xml.etree.ElementTree as ET
@@ -261,8 +261,79 @@ def test_wrapped_diagram_text_preserves_content_and_explicit_bold(tmp_path):
     root = ET.parse(render_diagram(diagram, tmp_path / "readable.svg")).getroot()
     text = root.findall(".//{http://www.w3.org/2000/svg}text")
     rendered = " ".join(element.text or "" for element in text)
-    assert "LONG POPULATION TITLE" in rendered
-    assert "400 UNITS & CONDUCTANCE MODEL" in rendered
-    assert "SPIKING POPULATION" in rendered
-    assert all(element.attrib.get("font-weight") == "bold" for element in text)
-    assert min(float(element.attrib["font-size"]) for element in text) >= 13
+    assert "Long population title" in rendered
+    assert "400 units & conductance model" in rendered
+    assert "spiking population" in rendered
+    title = next(element for element in text if element.text == "Long population title")
+    detail = next(element for element in text if "400 units" in (element.text or ""))
+    assert title.attrib.get("font-weight") == "bold"
+    assert detail.attrib.get("font-weight") != "bold"
+    assert float(title.attrib["font-size"]) > float(detail.attrib["font-size"])
+    assert min(float(element.attrib["font-size"]) for element in text) >= 10
+
+
+def test_forward_path_and_training_annotations_remain_aligned(tmp_path):
+    if shutil.which("dot") is None:
+        pytest.skip("Graphviz 'dot' is required for diagram rendering")
+    # Component creation order differs from signal-flow order.
+    diagram = Diagram(
+        "training_layout",
+        nodes=(
+            DiagramNode("input", "Input", "64 channels", "spikes", kind="input"),
+            DiagramNode("classifier", "Classifier", "10 units", "component", kind="component"),
+            DiagramNode("hidden", "Hidden", "128 units", "component", kind="component"),
+            DiagramNode("scores", "Scores", "10 classes", "output", kind="output"),
+            DiagramNode("learned", "Learned", "2 tensors", "trainable", kind="training"),
+            DiagramNode("frozen", "Recurrent", "2 tensors", "frozen", kind="training"),
+        ),
+        edges=(
+            DiagramEdge("input", "hidden", role="excitatory"),
+            DiagramEdge("hidden", "classifier", role="excitatory"),
+            DiagramEdge("classifier", "scores", role="output"),
+            DiagramEdge("learned", "classifier", role="training", constraint=False),
+            DiagramEdge("learned", "hidden", role="training", constraint=False),
+            DiagramEdge("frozen", "hidden", role="training", constraint=False, frozen=True),
+        ),
+    )
+    dot = render_diagram(diagram, tmp_path / "training.dot")
+    result = subprocess.run(["dot", "-Tplain", str(dot)], capture_output=True, text=True, check=True)
+    rows = [shlex.split(line) for line in result.stdout.splitlines()]
+    positions = {row[1]: (float(row[2]), float(row[3])) for row in rows if row[0] == "node"}
+    baseline = positions["hidden"][1]
+    for identifier in ("input", "classifier", "scores"):
+        assert positions[identifier][1] == pytest.approx(baseline, abs=0.01)
+    for annotation, anchor in (("learned", "classifier"), ("frozen", "hidden")):
+        assert positions[annotation][0] == pytest.approx(positions[anchor][0], abs=0.01)
+        assert positions[annotation][1] < positions[anchor][1]
+    text = dot.read_text()
+    assert 'arrowhead=none, style=dashed' in text
+    assert 'arrowhead=vee, style=dotted' in text
+
+
+def test_diagram_canvas_has_matching_svg_and_png_dimensions(tmp_path):
+    if shutil.which("dot") is None:
+        pytest.skip("Graphviz 'dot' is required for diagram rendering")
+    import struct
+    import xml.etree.ElementTree as ET
+
+    diagram = Diagram("canvas", (DiagramNode("cell", "Cell", "32 units", "spiking"),), ())
+    svg = render_diagram(diagram, tmp_path / "canvas.svg", canvas_size=(640, 320))
+    root = ET.parse(svg).getroot()
+    assert (root.attrib["width"], root.attrib["height"]) == ("640px", "320px")
+    assert root.attrib["viewBox"] == "0.00 0.00 320.00 160.00"
+    graph = root.find("{http://www.w3.org/2000/svg}g")
+    assert graph.attrib["transform"].startswith("scale(1 1)")
+    png = render_diagram(diagram, tmp_path / "canvas.png", canvas_size=(640, 320))
+    assert struct.unpack(">II", png.read_bytes()[16:24]) == (640, 320)
+    scaled = render_diagram(diagram, tmp_path / "scaled.png", canvas_size=(640, 320), scale=2)
+    assert struct.unpack(">II", scaled.read_bytes()[16:24]) == (1280, 640)
+    with pytest.raises(ValueError, match="too small"):
+        render_diagram(diagram, tmp_path / "clipped.svg", canvas_size=(10, 10))
+    assert not (tmp_path / "clipped.svg").exists()
+
+
+def test_diagram_canvas_rejects_invalid_dimensions():
+    diagram = Diagram("canvas", (), ())
+    for size in ((0, 320), (640, -1), (640.5, 320), (True, 320), (640,)):
+        with pytest.raises(ValueError, match="two positive integers"):
+            diagram_to_dot(diagram, canvas_size=size)

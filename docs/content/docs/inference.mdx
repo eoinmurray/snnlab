@@ -53,7 +53,11 @@ for path in (bundle_path, checkpoint_path):
 bundle = lang.load_bundle(bundle_path)
 diagram = lang.diagram(bundle, view="expanded")
 viz.render_diagram(
-    diagram, OUTPUT_DIR / "network.png", scale=2, height_to_width_ratio=None
+    diagram,
+    OUTPUT_DIR / "network.png",
+    scale=2,
+    height_to_width_ratio=None,
+    canvas_size=(1920, 900),
 )
 ```
 
@@ -234,7 +238,11 @@ def main():
     bundle = lang.load_bundle(bundle_path)
     diagram = lang.diagram(bundle, view="expanded")
     viz.render_diagram(
-        diagram, OUTPUT_DIR / "network.png", scale=2, height_to_width_ratio=None
+        diagram,
+        OUTPUT_DIR / "network.png",
+        scale=2,
+        height_to_width_ratio=None,
+        canvas_size=(1920, 900),
     )
     # 3. Generate fresh inputs and bind them to the saved network.
     input_spikes, labels = make_dataset(TEST_SAMPLES, seed=DATA_SEED)

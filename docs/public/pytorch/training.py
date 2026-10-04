@@ -167,6 +167,7 @@ def main():
         OUTPUT_DIR / "network.png",
         scale=2,
         height_to_width_ratio=None,
+        canvas_size=(1920, 900),
     )
     initial_parameters = {
         name: value.detach().clone() for name, value in model.named_parameters()

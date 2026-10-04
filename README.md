@@ -47,9 +47,20 @@ bun run dev
 
 ## Compatibility
 
-Release history is recorded in [CHANGELOG.md](CHANGELOG.md). See
-[VERSIONING.md](VERSIONING.md) for the version policy, release preparation and
-tagging workflow. Check release metadata with `uv run python scripts/version.py check`.
+Release history is recorded in [CHANGELOG.md](CHANGELOG.md). The package version
+is defined in `src/snnlab/__init__.py`; Hatchling reads it when building.
+
+To prepare a release, update that version and move the Unreleased changelog notes
+into a dated section matching the new version. Use patch versions for compatible
+fixes and minor versions for new functionality or breaking changes before 1.0.
+Changes to public APIs, numerical defaults or persisted formats need explicit
+changelog notes.
+
+After checks pass, pushing the version change to `main` triggers the publishing
+workflow, which publishes to PyPI and creates the matching `v<VERSION>` Git tag.
+Publishing requires the repository's `pypi` environment and a PyPI Trusted Publisher
+configured for `.github/workflows/publish.yml`. The workflow can also be run
+manually to retry a release.
 
 This initial extraction retains the existing bundle schemas, backend target `tools/snnsim`, component format versions and numerical defaults. Those strings identify persisted scientific contracts; they are not Python import paths. Package version 0.1.0 identifies the combined distribution.
 

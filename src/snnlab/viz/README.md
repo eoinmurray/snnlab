@@ -52,42 +52,36 @@ visual = snn.diagram(bundle, view="circuit", expand_groups={"cell"})
 snnviz.render_diagram(visual, "circuit.svg")
 ```
 
-Structural diagrams default to a height-to-width layout target of `0.58`,
-following EXP099 Figure 2's approximately 3:2 article composition. Graphviz
-arranges the graph before rendering; text and boxes are never stretched.
-The final bounding box also includes titles and margins, so the ratio is a
-layout target rather than an exact export size. Pass
-`height_to_width_ratio=None` for unconstrained natural layout, or another
-positive ratio for a deliberately different composition.
+Structural diagrams use a natural layout by default (`height_to_width_ratio=None`).
+Pass a positive ratio when a publication requires a particular composition;
+Graphviz arranges the graph before rendering without stretching text or boxes.
+Use `canvas_size=(1920, 900)` in `diagram_to_dot` or `render_diagram` for a
+common export canvas. Layouts are centred with their type and node scale retained.
+SVG and PNG dimensions match; PNG `scale` multiplies both dimensions.
+Rendering rejects a canvas smaller than the natural layout to prevent cropping.
 
-The default diagram house style follows the lab's EXP099 input-map precedent:
-opaque white canvas, hard rectangular geometry, bold uppercase monospace text,
-generous spacing, black excitatory or ordinary flow, deep-red inhibitory flow,
-and amber or cyan only for distinct output or training roles. Diagram labels
-name the scientific mechanism rather than internal renderer details. Authored
-component membership becomes visible clustering; related populations occupy a
-shared target column and use short local names, while mixed computational groups
-retain their internal signal-flow order. `DiagramGroup.same_row` lays members
-out in their declared order, keeping recurrent arrows from reversing that order;
-`same_rank` remains available for deliberately vertical groups. The two options
-are mutually exclusive. Ungrouped external inputs without incoming edges align
-in one entry column.
-The shared `DiagramTheme` typography uses a 26-point title, 16-point node and
-cluster labels, and 13-point secondary and edge labels. All text is explicitly
-bold Menlo; secondary text uses full-contrast ink. Long card and edge labels
-wrap at 14 characters, with 1.2 line spacing inside cards and six-point gaps
-between text roles. Wrapping preserves the complete display text and avoids
-making the whole graph wider merely to fit one long label.
+The default diagram style uses a white canvas, pale node fills, fine borders,
+and Helvetica with a clear hierarchy: 18-point figure titles, 14-point bold node
+names, 11-point regular detail, and 10-point badges and edge labels. Original
+case and scientific acronyms are preserved. Cards wrap at 26 characters and
+respect explicit line breaks. `DiagramTheme.font_name` selects another font.
 
-These sizes are calibrated against EXP099 Figure 2 **at equal displayed
-width**, not by comparing source font-size numbers alone. At 720 pixels wide,
-EXP099's generated diagram has approximately 19.6-pixel title, 12.1-pixel labels
-and 9.8-pixel secondary text, compared with 19.5, 11.7 and 9.4 pixels in Figure 2.
-For new graph shapes, inspect exports at the intended article width: increasing
-font sizes can also increase Graphviz's bounding box and leave displayed text
-no larger. Wrap labels or simplify the declared view before accepting small
-text. Do not stretch SVGs or remove scientific content to meet a ratio. SNNLang places related populations vertically using
-`same_rank`; explicitly authored `same_row` groups retain horizontal ordering.
+Muted red distinguishes inhibitory flow, slate blue marks outputs, and subdued
+teal marks trainable parameters. Frozen training links are grey and dashed;
+trainable links are teal and dotted. Colours remain secondary to arrowheads,
+line styles and written labels. Ordinary forward flow remains dark grey.
+
+The longest acyclic forward path receives alignment priority. Feedback loops
+route beneath the signal path, and training annotations share the column of
+the last component they describe. External inputs share an entry column and
+terminal outputs share an exit column. Component details use short local names
+and output cards show signal dimensions.
+
+Authored component membership becomes visible clustering. SNNLang places related
+populations vertically using `same_rank`; `DiagramGroup.same_row` arranges them
+horizontally in their declared order. The two options are mutually exclusive.
+For publication, inspect the export at its intended display width and choose
+an appropriate view or grouping before reducing type sizes.
 
 ## Scientific visual style guide
 

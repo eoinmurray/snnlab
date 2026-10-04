@@ -79,9 +79,18 @@ def diagram(
             ]
             if not populations and not operations:
                 continue
-            detail = " · ".join(
-                [f"{pop['id']} {pop['size']}" for pop in populations]
-                + ([f"{len(operations)} ops"] if operations else [])
+            detail = "\n".join(
+                [
+                    f"{local_title(pop['id'], group_id)} · {pop['size']:,} units"
+                    for pop in populations
+                ]
+                + (
+                    [
+                        f"{len(operations)} operation{'s' if len(operations) != 1 else ''}"
+                    ]
+                    if operations
+                    else []
+                )
             )
             add_node(
                 DiagramNode(
@@ -91,7 +100,7 @@ def diagram(
                     badge="component",
                     kind="component",
                     classes=("component",),
-                    pen_width=1.5,
+                    pen_width=1.0,
                 )
             )
 
@@ -115,8 +124,17 @@ def diagram(
                     if view == "expanded" or population.get("group") in expanded_groups
                     else population["id"].replace("_", " ")
                 ),
-                detail=f"{population['size']:,} units · {population['neuron']['kind']}",
-                badge="spiking population" if spiking else "analogue population",
+                detail=f"{population['size']:,} units\n"
+                + {
+                    "coba_lif": "COBA-LIF",
+                    "cuba_lif": "CUBA-LIF",
+                    "lif": "LIF",
+                    "leaky_integrator": "Leaky integrator",
+                }.get(
+                    population["neuron"]["kind"],
+                    population["neuron"]["kind"].replace("_", " "),
+                ),
+                badge="spiking" if spiking else "analogue",
                 kind="population",
                 accent_role="inhibitory" if inhibitory else "ink",
                 classes=("population", "spiking" if spiking else "analogue"),
@@ -157,17 +175,25 @@ def diagram(
                 )
             )
 
+    signal_shapes = {f"{row['id']}.value": row["shape"] for row in graph["operations"]}
+    for population in graph["populations"]:
+        for signal in ("spikes", "voltage"):
+            signal_shapes[f"{population['id']}.{signal}"] = (
+                "time",
+                "batch",
+                population["size"],
+            )
     for output in graph["outputs"]:
         add_node(
             DiagramNode(
                 id="out:" + output["id"],
                 title=output["id"].replace("_", " "),
-                detail="named graph interface",
+                detail=" × ".join(map(str, signal_shapes.get(output["signal"], ()))),
                 badge="output",
                 kind="output",
                 accent_role="output_line",
                 classes=("output",),
-                pen_width=1.5,
+                pen_width=1.0,
                 margin=(0.16, 0.12),
             )
         )
@@ -201,7 +227,10 @@ def diagram(
                 target=target,
                 role=polarity,
                 label=(
-                    projection["synapse"]["kind"].replace("_", " ")
+                    {"ampa": "AMPA", "gaba": "GABA"}.get(
+                        projection["synapse"]["kind"],
+                        projection["synapse"]["kind"].replace("_", " "),
+                    )
                     if view != "circuit" and show_receptor
                     else ""
                 ),
@@ -209,7 +238,7 @@ def diagram(
                 id=projection["id"],
                 classes=(polarity, connection),
                 constraint=connection != "feedback",
-                pen_width=2.2 if connection in {"recurrent", "feedback"} else 1.7,
+                pen_width=1.3 if connection in {"recurrent", "feedback"} else 1.1,
             )
         )
 
@@ -232,7 +261,7 @@ def diagram(
                             target=target,
                             role="signal",
                             label="signal",
-                            pen_width=1.5,
+                            pen_width=1.0,
                         )
                     )
 
@@ -268,7 +297,7 @@ def diagram(
                         source=owner,
                         target="out:" + output["id"],
                         role="output",
-                        pen_width=2.0,
+                        pen_width=1.1,
                     )
                 )
     else:
@@ -285,7 +314,7 @@ def diagram(
                         source=owner,
                         target="out:" + output["id"],
                         role="output",
-                        pen_width=2.0,
+                        pen_width=1.1,
                     )
                 )
 
@@ -337,7 +366,7 @@ def diagram(
                         source="out:" + matching,
                         target=objective_id,
                         role="output",
-                        pen_width=2.0,
+                        pen_width=1.1,
                     )
                 )
         for parameter_group in bundle.training["parameter_groups"]:

@@ -9,6 +9,21 @@ import rehypeKatex from 'rehype-katex';
 
 const base = process.env.SITE_BASE_PATH || '/';
 
+function isolatedCaches() {
+  return {
+    name: 'isolated-command-caches',
+    hooks: {
+      'astro:config:setup': ({ command, updateConfig }) => {
+        // Builds and checks must not replace a running server's dependencies.
+        updateConfig({
+          cacheDir: new URL(`./node_modules/.astro-${command}/`, import.meta.url),
+          vite: { cacheDir: `./node_modules/.vite-${command}` },
+        });
+      },
+    },
+  };
+}
+
 function baseLinks() {
   return (tree) => {
     function visit(node) {
@@ -40,6 +55,6 @@ export default defineConfig({
       rehypePlugins: [[rehypeKatex, { strict: 'error', throwOnError: true }], rehypeCode, baseLinks],
     }),
   },
-  integrations: [react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false })],
+  integrations: [isolatedCaches(), react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false })],
   vite: { plugins: [tailwindcss()] },
 });
