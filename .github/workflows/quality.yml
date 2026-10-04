@@ -12,6 +12,13 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: sudo apt-get update && sudo apt-get install --yes graphviz ffmpeg
       - run: uv sync --dev --python 3.12
+      - name: Check release version metadata
+        run: uv run python scripts/version.py check
+      - name: Check release tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: uv run python scripts/version.py check --tag "$RELEASE_TAG"
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
       - run: uv run ruff check .
       - run: uv run pytest -q -m "not slow"
         env:

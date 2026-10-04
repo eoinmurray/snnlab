@@ -47,6 +47,10 @@ npm run dev
 
 ## Compatibility
 
+Release history is recorded in [CHANGELOG.md](CHANGELOG.md). See
+[VERSIONING.md](VERSIONING.md) for the version policy, release preparation and
+tagging workflow. Check release metadata with `uv run python scripts/version.py check`.
+
 This initial extraction retains the existing bundle schemas, backend target `tools/snnsim`, component format versions and numerical defaults. Those strings identify persisted scientific contracts; they are not Python import paths. Package version 0.1.0 identifies the combined distribution.
 
 The retained-data regression against historical Pinglab runs remains in Pinglab. The portable tests live here. No scientific runs or generated example bundles are shipped.

@@ -14,6 +14,19 @@ uv run pytest -m "not slow"
 
 Portable tests live in `tests/`. Historical retained-data regression remains in Pinglab; this repository does not ship scientific run artifacts or generated example bundles.
 
+## Versioning and releases
+
+The combined Python package uses one version source in `src/snnlab/__init__.py`, read by Hatchling when building package metadata. Component versions and serialized schemas remain separate compatibility identities.
+
+Changes awaiting a release are recorded under Unreleased in the [changelog](https://github.com/eoinmurray/snnlab/blob/main/CHANGELOG.md). The [versioning policy](https://github.com/eoinmurray/snnlab/blob/main/VERSIONING.md) explains patch, minor and major changes, scientific compatibility and the release checklist.
+
+```sh
+uv run python scripts/version.py check
+uv run python scripts/version.py bump patch --dry-run
+```
+
+The dry run previews the next version. An actual bump updates package version and dated changelog notes; committing, tagging and publishing are separate actions. CI rejects inconsistent version configuration or changelog metadata.
+
 ## Run the docs site
 
 ```sh
