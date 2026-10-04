@@ -30,8 +30,8 @@ jobs:
       - run: bun run types:check
       - run: bun run build
         env:
-          SITE_BASE_PATH: /snnlab
-          SITE_URL: https://eoinmurray.github.io/snnlab/
+          SITE_BASE_PATH: /
+          SITE_URL: https://snnlab.eoinmurray.info
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/out

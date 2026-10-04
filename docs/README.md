@@ -23,9 +23,11 @@ The build exports plain HTML, CSS, JavaScript, search data, and KaTeX fonts into
 
 ## GitHub Pages
 
-`.github/workflows/docs.yml` checks and builds docs on pull requests and deploys `main` through GitHub Pages Actions. The GitHub build sets `SITE_BASE_PATH=/snnlab` and `SITE_URL=https://eoinmurray.github.io/snnlab/`.
+`.github/workflows/docs.yml` checks and builds docs on pull requests and deploys relevant pushes to `main` through GitHub Pages Actions. The production build sets `SITE_BASE_PATH=/` and `SITE_URL=https://snnlab.eoinmurray.info` so documentation is served at the custom-domain root.
 
-## Cloudflare
+Set the repository's GitHub Pages custom domain to `snnlab.eoinmurray.info`. In Cloudflare DNS, use a DNS-only CNAME record named `snnlab` pointing to `eoinmurray.github.io` (without `/snnlab`). GitHub Actions deployments use the Pages repository setting; a `CNAME` file in the export is ignored. Wrangler configures Workers deployments, not this DNS alias.
+
+## Legacy Cloudflare Worker
 
 `wrangler.jsonc` deploys the root-path static export as Workers Static Assets at `ssnlab.eoinmurray.info`. Bun runs Wrangler through `bunx`; Cloudflare authentication is required.
 
@@ -33,7 +35,7 @@ The build exports plain HTML, CSS, JavaScript, search data, and KaTeX fonts into
 SITE_URL=https://ssnlab.eoinmurray.info bun run deploy:cloudflare
 ```
 
-Cloudflare deployments are manual through Wrangler. GitHub Pages updates automatically from `main`. Never deploy a build made with `/snnlab` as its base path to the custom-domain root.
+The existing Worker at the separate hostname `ssnlab.eoinmurray.info` is deployed manually through Wrangler. The production hostname `snnlab.eoinmurray.info` points to GitHub Pages and updates automatically from relevant pushes to `main`. Never deploy a build made with `/snnlab` as its base path to a custom-domain root.
 
 `astro.config.mjs` configures remark-math and rehype-katex. Commit `bun.lock`; `.astro/`, `out/`, and `node_modules/` are generated and ignored.
 

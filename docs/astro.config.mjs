@@ -30,7 +30,7 @@ export default defineConfig({
   output: 'static',
   outDir: './out',
   server: { port: 3001 },
-  site: process.env.SITE_URL || 'https://ssnlab.eoinmurray.info',
+  site: process.env.SITE_URL || 'https://snnlab.eoinmurray.info',
   base,
   trailingSlash: 'ignore',
   markdown: {
