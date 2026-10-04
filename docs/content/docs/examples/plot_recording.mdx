@@ -3,8 +3,6 @@ title: Plot retained activity
 description: Create a spike raster and membrane-voltage figure from actual simulation outputs.
 ---
 
-import Image from 'next/image';
-
 Simulate six COBA-LIF cells driven by alternating spikes on two input channels. Convert the actual output tensors into a validated Recording, then use FigureGrid to place a spike raster above a mean-voltage trace. The example saves both the figure and its retained numerical evidence.
 
 [Download the standalone script](/examples/plot_recording.py) · [View source](https://github.com/eoinmurray/snnlab/blob/main/examples/plot_recording.py)
@@ -127,7 +125,7 @@ Recording: 1000 steps, 100.0 ms
 Exported recording.png and recording.npz
 ```
 
-<Image src={`${process.env.NEXT_PUBLIC_BASE_PATH || ""}/examples/recording.png`} width={1280} height={800} alt="Spike raster for six simulated cells above their mean membrane voltage over a 100 millisecond presentation." />
+![Spike raster for six simulated cells above their mean membrane voltage over a 100 millisecond presentation.](/examples/recording.png)
 
 ## API links
 

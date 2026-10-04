@@ -43,9 +43,9 @@ npm run build
 npm run preview
 ```
 
-The production build uses webpack and exports a static site to `docs/out/`. `npm run preview` serves that directory without a Next.js server. Development uses the default Next.js bundler.
+Astro builds the complete static site into `docs/out/`. `npm run preview` serves the exported files without an application server. Astro uses Vite for development and production builds.
 
-The site uses Next.js, Fumadocs MDX, Tailwind CSS, and browser-side document search. The documentation overview opens at `/`, with each guide directly beneath it. Dependencies are locked in `docs/package-lock.json`.
+The site uses Astro, Fumadocs React islands, Tailwind CSS, and browser-side document search. The documentation overview opens at `/`, with each guide directly beneath it. Dependencies are locked in `docs/package-lock.json`.
 
 ## Deployment
 
@@ -62,6 +62,6 @@ Use named source contracts and distinguish supported behaviour from experimental
 
 ## Write mathematics
 
-Inline math uses `$...$`; display math uses `$$` on separate lines. `source.config.ts` applies `remark-math` and `rehype-katex` before syntax highlighting, and the root layout imports KaTeX CSS. The [scientific contracts](/contracts) page exercises both forms.
+Inline math uses `$...$`; display math uses `$$` on separate lines. `astro.config.mjs` applies `remark-math` and `rehype-katex` before syntax highlighting, and the Astro page imports KaTeX CSS. The [scientific contracts](/contracts) page exercises both forms.
 
 Define every symbol and state units. Distinguish established theory, implementation conventions, and proposed models. Math is rendered during MDX compilation, so it does not require a browser-side equation renderer.

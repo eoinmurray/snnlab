@@ -20,8 +20,6 @@ def main():
         page = (
             f"---\ntitle: {note['title']}\ndescription: {note['description']}\n---\n\n"
         )
-        if note.get("preview"):
-            page += "import Image from 'next/image';\n\n"
         page += note["intro"] + "\n\n"
         page += f"[Download the standalone script](/examples/{name}.py) · [View source](https://github.com/eoinmurray/snnlab/blob/main/examples/{name}.py)\n\n"
         page += "## Run it\n\nAfter [installation](/installation), run from the repository root:\n\n"
@@ -32,7 +30,7 @@ def main():
         page += note["details"] + "\n\n## Expected result\n\n"
         page += f"```text\n{note['output']}\n```\n\n"
         if note.get("preview"):
-            page += '<Image src={`${process.env.NEXT_PUBLIC_BASE_PATH || ""}/examples/recording.png`} width={1280} height={800} alt="Spike raster for six simulated cells above their mean membrane voltage over a 100 millisecond presentation." />\n\n'
+            page += "![Spike raster for six simulated cells above their mean membrane voltage over a 100 millisecond presentation.](/examples/recording.png)\n\n"
         page += "## API links\n\n" + note["api"] + ".\n"
         expected[DEST / f"{name}.mdx"] = page
         expected[ROOT / "docs/public/examples" / f"{name}.py"] = script

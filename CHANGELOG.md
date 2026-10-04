@@ -16,7 +16,8 @@ serialized-schema versions identify separate compatibility contracts.
 ### Changed
 
 1. The documentation opens at the site root; previous `/docs/` paths redirect there.
-2. Package builds read the runtime version directly, and source archives exclude local documentation dependencies, caches and generated output.
+2. Documentation builds use Astro static output with Fumadocs React islands in place of Next.js.
+3. Package builds read the runtime version directly, and source archives exclude local documentation dependencies, caches and generated output.
 
 ## [0.1.0] - 2026-10-03
 

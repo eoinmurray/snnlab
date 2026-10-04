@@ -39,7 +39,7 @@ jobs:
       - run: npm run types:check
       - run: npm run build
         env:
-          NEXT_PUBLIC_BASE_PATH: /snnlab
+          SITE_BASE_PATH: /snnlab
           SITE_URL: https://eoinmurray.github.io/snnlab/
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -3,37 +3,40 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build --webpack",
-    "dev": "next dev",
+    "build": "astro build",
+    "dev": "astro dev",
     "start": "npm run preview",
-    "types:check": "next typegen && tsc --noEmit",
+    "types:check": "astro check",
     "preview": "python3 -m http.server 3000 --directory out",
     "deploy:cloudflare": "npm run build && wrangler deploy"
   },
   "dependencies": {
+    "@astrojs/check": "0.9.10",
+    "@astrojs/markdown-remark": "7.3.1",
+    "@astrojs/mdx": "8.0.2",
+    "@astrojs/react": "7.0.0",
+    "@tailwindcss/vite": "4.3.3",
+    "astro": "7.3.5",
     "cn": "^0.3.0",
     "fumadocs-core": "16.15.18",
-    "fumadocs-mdx": "15.4.6",
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.15.18",
+    "katex": "^0.16.22",
     "lucide-react": "^1.47.0",
-    "next": "16.3.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "katex": "^0.16.22",
     "rehype-katex": "^7.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
     "@types/mdx": "^2.0.14",
     "@types/node": "^26.6.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   }
 }

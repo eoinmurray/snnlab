@@ -26,7 +26,7 @@ path = "src/snnlab/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/tests", "/examples", "/scripts", "/docs", "/README.md", "/CHANGELOG.md", "/VERSIONING.md", "/LICENSE", "/pyproject.toml", "/uv.lock"]
-exclude = ["/docs/node_modules", "/docs/.next", "/docs/.source", "/docs/out", "/docs/.wrangler", "/docs/.env*", "/docs/next-env.d.ts", "/examples/generated", "**/__pycache__", "**/*.pyc", "**/*.tsbuildinfo", "**/.DS_Store"]
+exclude = ["/docs/node_modules", "/docs/.next", "/docs/.source", "/docs/.astro", "/docs/out", "/docs/.wrangler", "/docs/.env*", "/docs/next-env.d.ts", "/examples/generated", "**/__pycache__", "**/*.pyc", "**/*.tsbuildinfo", "**/.DS_Store"]
 
 [dependency-groups]
 dev = ["pytest>=9.0.1", "pytest-cov>=7.1.0", "ruff>=0.15.20", "brian2>=2.10; python_version >= '3.12'"]

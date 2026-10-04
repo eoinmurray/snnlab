@@ -1,0 +1,63 @@
+---
+import { render } from 'astro:content';
+import { ClientRouter } from 'astro:transitions';
+import defaultMdxComponents from 'fumadocs-ui/mdx';
+import { Docs } from '../components/Docs';
+import { source, markdownUrl } from '../lib/source';
+import '../styles/global.css';
+import 'katex/dist/katex.css';
+
+export function getStaticPaths() {
+  return source.getPages().map((page) => ({
+    params: { slug: page.slugs.length ? page.slugs.join('/') : undefined }, props: { page },
+  }));
+}
+const { page } = Astro.props;
+const { Content, headings } = await render(page.data._raw);
+const toc = headings.map((heading) => ({ depth: heading.depth, title: heading.text, url: `#${heading.slug}` }));
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{page.data.title} | snnlab</title>
+    <meta name="description" content={page.data.description} />
+    <meta property="og:image" content={new URL(`${import.meta.env.BASE_URL}og/docs/${[...page.slugs, 'image.png'].join('/')}`, Astro.site).href} />
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <ClientRouter />
+  </head>
+  <body class="flex flex-col min-h-screen">
+    <Docs tree={source.getPageTree()} pathname={Astro.url.pathname}
+      page={{ toc, full: page.data.full }} markdown={markdownUrl(page.slugs)} file={page.path}
+      title={page.data.title} description={page.data.description} client:load>
+      <div class="prose flex-1" data-static-content>
+        <Content components={{ ...defaultMdxComponents }} />
+      </div>
+    </Docs>
+  </body>
+</html>
+
+<script>
+  // MDX remains static HTML; delegate its copy controls across Astro navigation.
+  document.addEventListener('click', async (event) => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest<HTMLButtonElement>('[data-static-content] button');
+    const label = button?.querySelector<HTMLSpanElement>('.sr-only');
+    if (!button || !label) return;
+    const original = label.textContent;
+    let text: string | undefined;
+    if (original === 'Copy Text') text = button.closest('figure')?.querySelector('pre')?.textContent || undefined;
+    if (original === 'Copy Anchor Link') {
+      const id = button.closest('h1,h2,h3,h4,h5,h6')?.id;
+      if (id) { const url = new URL(location.href); url.hash = id; text = url.href; }
+    }
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      label.textContent = 'Copied';
+      button.dataset.copied = 'true';
+      setTimeout(() => { label.textContent = original; delete button.dataset.copied; }, 1500);
+    } catch { label.textContent = 'Copy failed'; }
+  });
+</script>
