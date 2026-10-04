@@ -1,6 +1,7 @@
 import { RootProvider } from 'fumadocs-ui/provider/astro';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
-import { DocsPage, DocsTitle, DocsDescription, MarkdownCopyButton, ViewOptionsPopover, type DocsPageProps } from 'fumadocs-ui/layouts/docs/page';
+import { DocsPage, DocsTitle, DocsDescription, MarkdownCopyButton, type DocsPageProps } from 'fumadocs-ui/layouts/docs/page';
+import { ViewOptionsPopover } from './ViewOptionsPopover';
 import type { Root } from 'fumadocs-core/page-tree';
 import type { ReactNode } from 'react';
 import { navigate } from 'astro:transitions/client';
@@ -16,7 +17,7 @@ export function Docs({ tree, pathname, page, markdown, file, title, description,
         <DocsDescription className="mb-0">{description}</DocsDescription>
         <div className="flex flex-row gap-2 items-center border-b pb-6">
           <MarkdownCopyButton markdownUrl={markdown} />
-          <ViewOptionsPopover markdownUrl={markdown} githubUrl={`https://github.com/eoinmurray/snnlab/blob/main/docs/content/docs/${file}`} />
+          <ViewOptionsPopover pathname={pathname} markdownUrl={markdown} githubUrl={`https://github.com/eoinmurray/snnlab/blob/main/docs/content/docs/${file}`} />
         </div>
         {children}
       </DocsPage>

@@ -6,6 +6,10 @@ serialized-schema versions identify separate compatibility contracts.
 
 ## [Unreleased]
 
+### Changed
+
+1. Removed Scira AI and Cursor from the documentation's Open menu.
+
 ## [0.1.1] - 2026-10-04
 
 ### Added
