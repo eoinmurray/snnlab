@@ -13,7 +13,6 @@ import torch
 import torch.nn.functional as F
 
 from snnlab import lang as snn
-from snnlab.lang.examples.build_examples import ping_classifier
 from snnlab.sim import config
 from snnlab.sim import models as M
 from snnlab.sim.bundle import (
@@ -26,6 +25,7 @@ from snnlab.sim.bundle import (
 )
 from snnlab.sim.simulation_inputs import realize_simulation_inputs
 from snnlab.sim.tool import _bundle_transition_schedule, parse_args
+from tests.sim._bundle_builders import ping_classifier
 
 
 def _write_bundle(tmp_path):

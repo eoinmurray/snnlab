@@ -29,7 +29,14 @@ from tests.sim._execution_builders import (
 
 def test_categorical_poisson_samples_one_reproducible_rate_per_presentation():
     graph = _standard_readout_graph("count")
-    binding = PoissonInputBinding("events", 4, 5, (0.0, 1.0, 5.0), 41, categorical=True)
+    binding = PoissonInputBinding(
+        input_id="events",
+        steps_count=4,
+        batch_size=5,
+        rates_hz=(0.0, 1.0, 5.0),
+        seed=41,
+        categorical=True,
+    )
     first = resolve_poisson_input_bindings(graph, bindings=(binding,))
     second = resolve_poisson_input_bindings(graph, bindings=(binding,))
     torch.testing.assert_close(first.tensors["events"], second.tensors["events"])
@@ -94,13 +101,15 @@ def test_prebinned_dataset_snapshot_trains_with_bound_labels(tmp_path):
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            dataset_binding=DatasetSnapshotBinding(
-                path=snapshot,
-                input_id="events",
-                target_id="label",
-                dataset_id="prebinned-fixture",
-                split="train",
-                encoder=DatasetEncoder("prebinned_spikes"),
+            input_bindings=(
+                DatasetSnapshotBinding(
+                    path=snapshot,
+                    input_id="events",
+                    target_id="label",
+                    dataset_id="prebinned-fixture",
+                    split="train",
+                    encoder=DatasetEncoder("prebinned_spikes"),
+                ),
             ),
             seed=13,
         )
@@ -186,7 +195,15 @@ def test_poisson_binding_rejects_invalid_rate_probability():
     with pytest.raises(ValueError, match="rate times dt exceeds probability one"):
         resolve_poisson_input_bindings(
             graph,
-            bindings=(PoissonInputBinding("events", 1, 1, (10001.0,), 0),),
+            bindings=(
+                PoissonInputBinding(
+                    input_id="events",
+                    steps_count=1,
+                    batch_size=1,
+                    rates_hz=(10001.0,),
+                    seed=0,
+                ),
+            ),
         )
 
 

@@ -6,9 +6,55 @@ serialized-schema versions identify separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-04
+
 ### Changed
 
 1. Removed Scira AI and Cursor from the documentation's Open menu.
+2. `ExecutionSpec` now defaults to the graph executor. Typed requests requiring legacy routing must explicitly set `executor="legacy"`; the CLI retains its existing legacy default.
+3. `ExecutionSpec` now exposes one `input_bindings` sequence accepting `DenseArrayBinding`, `EventStreamBinding`, `PoissonInputBinding` and `DatasetSnapshotBinding` through the public `InputBinding` type alias. Removed the separate `inputs`, `event_bindings`, `poisson_bindings` and `dataset_binding` constructor arguments; callers must migrate to typed bindings. Existing input compatibility rules and serialized execution protocols are retained.
+
+4. `PoissonInputBinding.batch_size` now defaults to `1`. Required fields precede optional fields in its constructor; positional callers must migrate to the new order `(input_id, steps_count, rates_hz, seed, batch_size=1, categorical=False)` or use keyword arguments.
+
+5. Replaced `ExecutionSpec.recording` and `recording_fields` with `diagnostics: bool = True`. Declared outputs always return; only explicitly exposed diagnostics return by default, and `diagnostics=False` disables them for simulation, inference and training. Renamed `ExecutionResult.recordings` to `diagnostics`, replaced the graph CLI `--recording` profile with `--diagnostics` / `--no-diagnostics`, and added `Projection.conductance` for explicit diagnostic exposure. Training regularizers and runtime continuation state remain independent of diagnostic retention.
+
+6. The training example now learns both input-to-E and E-to-readout weights, with explicit fast-sigmoid surrogate gradients, separate learning rates and gradient clipping. Input weights remain constrained to be non-negative.
+
+7. `ExecutionSpec` exposes `epochs`, `batch_size`, `shuffle`, `updates`, `save_final_checkpoint` and `save_selected_checkpoint` directly. Graph training rejects these settings inside `options`; callers must move them to constructor fields. The CLI adapter, examples and API reference use the direct fields. Inference-specific options remain in `options`.
+
+8. The PyTorch Integration example now composes the bundled SNN with an external `Linear(2, 8) → ReLU → Linear(8, 2)` head. Both modules train together, share a saved state dictionary, and appear in the introductory diagram.
+
+9. Consolidated input documentation: Network covers declarations, and ExecutionSpec covers binding types and compatibility rules. Removed the standalone Inputs reference from navigation; former routes redirect to ExecutionSpec.
+
+10. `lang.LIF` now creates a supported current-based LIF specification (also available explicitly as `CUBA_LIF`), replacing the previously unsupported `lif` declaration. Projection weights and trace ports use synapse-specific units: `uS`/`.conductance` for conductance, `nA`/`.current` for current.
+
+### Added
+
+1. `ExecutionResult.numpy(batch=None)` returns named output and diagnostic arrays through `NumpyExecutionResult`, with an execution-derived `time_ms` axis. Optional batch selection uses declared signal axes, supporting both time-series and reduced outputs. Arrays are independent copies; original tensors and gradients remain intact. Quickstart now uses this API for plotting.
+
+2. Added a runnable spike-pattern training example and Training documentation page with an explicit E-to-readout connection and named `w_out` weights, per-epoch training/validation loss and accuracy curves, and saved artifacts for later inference. `SpikeCount.parameters` now includes its readout weight so training recipes can select it directly.
+
+3. Graph `train` now returns baseline and completed-epoch loss, accuracy and component metrics in `result.metrics["epochs"]`. `ExecutionSpec.validation` accepts a `ValidationSpec` containing held-out bindings and targets for evaluation without optimizer updates. Training now demonstrates one call handling all epochs and one final checkpoint save.
+
+4. Added a paired Inference example and documentation page alongside Training. It loads Training's saved bundle and learned checkpoint, classifies fresh spike patterns without retraining, and saves predictions, checkpoint provenance, a network diagram and response plots.
+
+5. Added a PyTorch Integration walkthrough and `examples/pytorch/training.py`. The example wraps Training's saved graph in an ordinary `nn.Module`, trains fresh weights using PyTorch data loaders and an external optimization loop, enforces graph constraints, plots per-epoch metrics, and saves/reloads a standard PyTorch state dictionary for test inference.
+
+6. Expanded API Reference with Lang, Sim and Viz subgroups covering authoring, components, parameters, training recipes, compilation, operations/readouts, execution results, PyTorch integration, diagrams and plotting. Existing API URLs redirect to the grouped pages.
+
+7. Added `CUBA_LIF`, `ExponentialCurrent` and the `nA` unit, with configurable rest/reset/initial voltage, refractory steps, surrogate gradients, training and runtime continuation. Current and conductance families are checked for compatibility.
+
+8. Added versioned named registrations in `snnlab.extensions` for neurons, synapses, initializers, constraints, operations, objectives, regularizers, optimizers, surrogates and dataset encoders. Bundles retain definition/config dependencies without embedding code. Custom tensor state supports save/load continuation, regression objectives retain real targets, and external PyTorch loops can call `GraphExecutor.enforce_constraints()`.
+
+9. Added a runnable Customisation example and documentation comparing standard current LIF and a registered adaptive neuron using matched weights, custom initialization, input/response/adaptation plots and an introductory diagram.
+
+10. Added a standalone current-based LIF simulation tutorial and runnable example, with input, spikes, voltage and current plotted together; Customisation follows it with registered adaptive dynamics and a custom weight initializer.
+
+### Fixed
+
+1. Zero-delay feedforward connections between populations now retain a valid spike history for execution and runtime continuation.
+2. `SignalLike.id` is now read-only, matching immutable `Signal` objects and readout properties. Network outputs and cross-entropy objectives share the same protocol, eliminating incorrect editor type errors for valid signals. Examples also check optional checkpoint and time-axis results before use.
+3. Documentation navigation, search and LLM exports now use the current content collections instead of a module-level snapshot. Content and sidebar metadata changes invalidate development routes so newly added pages appear without restarting the server.
 
 ## [0.1.1] - 2026-10-04
 

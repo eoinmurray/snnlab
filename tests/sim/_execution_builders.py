@@ -48,7 +48,8 @@ def coupled_graph(*, direction="reciprocal", delay_ms=0.1):
             delay=delay_ms * snn.ms,
         )
     net.expose(a.E.spikes, a.I.spikes, b.E.spikes, b.I.spikes, name="coupled")
-    return snn.compile(net, target=None).graph
+    net.output("a_spikes", a.E.spikes)
+    return expose_graph_diagnostics(snn.compile(net, target=None).graph)
 
 
 def direct_train_bundle():
@@ -113,4 +114,19 @@ def standard_readout_graph(
     graph = snn.compile(net, target="tools/snnsim").graph
     for parameter in graph["parameters"]:
         parameter["initializer"] = {"kind": "constant", "value": 1.0}
+    return graph
+
+
+def expose_graph_diagnostics(graph):
+    """Explicitly declare internal traces used by numerical regression fixtures."""
+    rows = graph.setdefault("observables", [])
+    names = {row["id"] for row in rows}
+    signals = [
+        f"{row['id']}.{port}"
+        for row in graph["populations"]
+        for port in (["voltage", "spikes"] if row["spiking"] else ["voltage"])
+    ] + [f"{row['id']}.conductance" for row in graph["projections"]]
+    rows.extend(
+        {"id": signal, "signal": signal} for signal in signals if signal not in names
+    )
     return graph

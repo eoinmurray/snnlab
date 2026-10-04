@@ -24,12 +24,13 @@ import numpy as np
 import torch
 from torch import nn
 
+from snnlab import extensions as E
+from snnlab.sim import extensions as X
 from snnlab.sim import models as M
 from snnlab.sim.bundle import load_graph_bundle, load_training_recipe
 
 ExecutorName = Literal["legacy", "graph"]
 RequestKind = Literal["build", "simulate", "train", "infer"]
-RecordingProfile = Literal["full", "observables", "none"]
 
 
 DENSE_ARRAY_BINDING_SCHEMA = "tools/snnsim.dense-array-binding/v1"
@@ -83,9 +84,9 @@ class PoissonInputBinding:
 
     input_id: str
     steps_count: int
-    batch_size: int
     rates_hz: Sequence[float]
     seed: int
+    batch_size: int = 1
     categorical: bool = False
 
 
@@ -93,10 +94,12 @@ class PoissonInputBinding:
 class DatasetEncoder:
     """Portable standard encoding recipe for an immutable dataset snapshot."""
 
-    kind: Literal["rate_poisson", "prebinned_spikes", "event_bin"]
+    kind: Literal["rate_poisson", "prebinned_spikes", "event_bin", "custom"]
     duration_ms: float | None = None
     max_rate_hz: float | None = None
     seed: int = 0
+    definition: str | None = None
+    config: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,52 @@ class DatasetSnapshotBinding:
     order_seed: int = 0
 
 
+InputBinding = (
+    DenseArrayBinding
+    | EventStreamBinding
+    | PoissonInputBinding
+    | DatasetSnapshotBinding
+)
+
+
+@dataclass(frozen=True)
+class _InputSources:
+    dense: tuple[DenseArrayBinding, ...]
+    events: tuple[EventStreamBinding, ...]
+    poisson: tuple[PoissonInputBinding, ...]
+    dataset: DatasetSnapshotBinding | None
+
+
+def _split_input_bindings(bindings: Sequence[InputBinding]) -> _InputSources:
+    dense, events, poisson, datasets = [], [], [], []
+    input_ids: set[str] = set()
+    for binding in bindings:
+        if isinstance(binding, DenseArrayBinding):
+            dense.append(binding)
+        elif isinstance(binding, EventStreamBinding):
+            events.append(binding)
+        elif isinstance(binding, PoissonInputBinding):
+            poisson.append(binding)
+        elif isinstance(binding, DatasetSnapshotBinding):
+            datasets.append(binding)
+        else:
+            raise TypeError(f"unsupported input binding type: {type(binding).__name__}")
+        if binding.input_id in input_ids:
+            raise ValueError(
+                f"duplicate input binding for graph input {binding.input_id}"
+            )
+        input_ids.add(binding.input_id)
+    if datasets and len(bindings) != 1:
+        raise ValueError(
+            "dataset snapshot binding cannot be combined with other input bindings"
+        )
+    if poisson and (dense or events):
+        raise ValueError("Poisson bindings cannot yet be mixed with replay bindings")
+    return _InputSources(
+        tuple(dense), tuple(events), tuple(poisson), datasets[0] if datasets else None
+    )
+
+
 @dataclass(frozen=True)
 class ResolvedDenseInputs:
     tensors: Mapping[str, torch.Tensor]
@@ -123,34 +172,55 @@ class ResolvedDenseInputs:
 
 
 @dataclass(frozen=True)
+class ValidationSpec:
+    """Held-out inputs and labels evaluated without optimizer updates."""
+
+    input_bindings: Sequence[InputBinding] = field(default_factory=tuple)
+    targets: Mapping[str, torch.Tensor] = field(default_factory=dict)
+    target_bindings: Sequence[TargetArrayBinding] = field(default_factory=tuple)
+    protocol: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ExecutionSpec:
     kind: RequestKind
-    executor: ExecutorName = "legacy"
+    executor: ExecutorName = "graph"
     bundle: Path | None = None
     graph: Mapping[str, Any] | None = None
-    inputs: Mapping[str, torch.Tensor] = field(default_factory=dict)
-    input_bindings: Sequence[DenseArrayBinding] = field(default_factory=tuple)
-    event_bindings: Sequence[EventStreamBinding] = field(default_factory=tuple)
-    poisson_bindings: Sequence[PoissonInputBinding] = field(default_factory=tuple)
-    dataset_binding: DatasetSnapshotBinding | None = None
+    input_bindings: Sequence[InputBinding] = field(default_factory=tuple)
     protocol: Mapping[str, Any] = field(default_factory=dict)
     training: Mapping[str, Any] | None = None
     targets: Mapping[str, torch.Tensor] = field(default_factory=dict)
     target_bindings: Sequence[TargetArrayBinding] = field(default_factory=tuple)
+    validation: ValidationSpec | None = None
+    epochs: int = 0
+    batch_size: int | None = None
+    shuffle: bool = False
+    updates: int | None = None
+    save_final_checkpoint: str | Path | None = None
+    save_selected_checkpoint: str | Path | None = None
     seed: int = 0
     device: str = "auto"
-    recording: RecordingProfile = "full"
-    recording_fields: Sequence[str] | None = None
+    diagnostics: bool = True
     checkpoint: Path | None = None
     runtime_state: GraphRuntimeState | None = None
     options: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class NumpyExecutionResult:
+    """Independent CPU arrays for plotting and analysis of an execution."""
+
+    outputs: dict[str, np.ndarray]
+    diagnostics: dict[str, np.ndarray]
+    time_ms: np.ndarray | None
 
 
 @dataclass
 class ExecutionResult:
     executor: ExecutorName
     outputs: dict[str, torch.Tensor] = field(default_factory=dict)
-    recordings: dict[str, torch.Tensor] = field(default_factory=dict)
+    diagnostics: dict[str, torch.Tensor] = field(default_factory=dict)
     parameters: dict[str, torch.Tensor] = field(default_factory=dict)
     gradients: dict[str, torch.Tensor] = field(default_factory=dict)
     optimizer_state: dict[str, Any] = field(default_factory=dict)
@@ -160,6 +230,61 @@ class ExecutionResult:
     runtime_state: GraphRuntimeState | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     model: nn.Module | None = None
+
+    _output_axes: dict[str, tuple[int | str, ...]] = field(
+        default_factory=dict, repr=False
+    )
+    _diagnostic_axes: dict[str, tuple[int | str, ...]] = field(
+        default_factory=dict, repr=False
+    )
+    _timebase: tuple[float, int, int] | None = field(default=None, repr=False)
+    _batch_size: int | None = field(default=None, repr=False)
+
+    def numpy(self, *, batch: int | None = None) -> NumpyExecutionResult:
+        """Copy outputs/diagnostics to NumPy, optionally selecting one batch item.
+
+        Batch axes come from signal declarations, not tensor rank. Time values
+        use the effective timestep and include any runtime continuation offset.
+        The original tensors and their computation graphs are left intact.
+        """
+        if batch is not None:
+            if not isinstance(batch, Integral) or isinstance(batch, bool):
+                raise TypeError("batch must be an integer or None")
+            if self._batch_size is None:
+                raise ValueError("batch selection requires execution metadata")
+            if not 0 <= batch < self._batch_size:
+                raise IndexError(f"batch {batch} is outside [0, {self._batch_size})")
+
+        def arrays(values, axes):
+            converted = {}
+            for name, tensor in values.items():
+                selected = tensor.detach()
+                if batch is not None:
+                    if name not in axes:
+                        raise ValueError(f"batch axis metadata is missing for {name!r}")
+                    dimensions = axes[name]
+                    if len(dimensions) != tensor.ndim:
+                        raise ValueError(
+                            f"signal axis metadata does not match tensor {name!r}"
+                        )
+                    if "batch" in dimensions:
+                        selected = selected.select(
+                            dimensions.index("batch"), int(batch)
+                        )
+                converted[name] = selected.cpu().numpy().copy()
+            return converted
+
+        time_ms = None
+        if self._timebase is not None:
+            dt_ms, start_step, steps = self._timebase
+            time_ms = (
+                np.arange(start_step, start_step + steps, dtype=np.float64) * dt_ms
+            )
+        return NumpyExecutionResult(
+            outputs=arrays(self.outputs, self._output_axes),
+            diagnostics=arrays(self.diagnostics, self._diagnostic_axes),
+            time_ms=time_ms,
+        )
 
 
 @dataclass(frozen=True)
@@ -193,8 +318,14 @@ class ParameterInterchange:
 
 GRAPH_CAPABILITIES_V1 = {
     "schema": "tools/snnsim.capabilities/v1",
-    "neurons": {"coba_lif", "leaky_integrator"},
-    "synapses": {"ampa", "gaba", "leaky_integrator"},
+    "neurons": {"coba_lif", "cuba_lif", "leaky_integrator", "custom_neuron"},
+    "synapses": {
+        "ampa",
+        "gaba",
+        "leaky_integrator",
+        "exponential_current",
+        "custom_synapse",
+    },
     "operations": {
         "linear",
         "reduce_mean",
@@ -202,17 +333,19 @@ GRAPH_CAPABILITIES_V1 = {
         "select_final",
         "duration_normalise",
         "cumulative_sum",
+        "custom_operation",
+        "divide",
     },
     "connections": {"feedforward", "recurrent", "feedback"},
     "recordings": {"spikes", "voltage"},
     "delays": "integer_steps",
     "training": {
-        "objectives": {"cross_entropy"},
-        "regularizers": {"spike_budget"},
-        "optimizers": {"adamw"},
+        "objectives": {"cross_entropy", "custom_objective"},
+        "regularizers": {"spike_budget", "custom_regularizer"},
+        "optimizers": {"adamw", "custom_optimizer"},
         "parameter_groups": "named_trainable_and_frozen",
         "updates": "deterministic_epochs_and_minibatches",
-        "targets": "named_integer_arrays",
+        "targets": "named_classification_or_regression_arrays",
     },
 }
 
@@ -308,7 +441,7 @@ def resolve_target_array_bindings(
     sample_count: int,
     device: str | torch.device = "cpu",
 ) -> tuple[dict[str, torch.Tensor], list[dict[str, Any]]]:
-    """Validate named one-dimensional integer targets and retain their provenance."""
+    """Validate named classification/regression targets and retain provenance."""
     if bindings and targets:
         raise ValueError("provide target bindings or target tensors, not both")
     if not bindings:
@@ -332,13 +465,29 @@ def resolve_target_array_bindings(
     for target_id in sorted(by_name):
         binding = by_name[target_id]
         value = binding.value
-        if value.ndim != 1 or value.shape[0] != sample_count:
+        classification = any(
+            X.classification(row)
+            for row in training.get("objectives", [])
+            if row.get("target") == target_id
+        )
+        if (
+            value.ndim < 1
+            or value.shape[0] != sample_count
+            or (classification and value.ndim != 1)
+        ):
             raise ValueError(
                 f"training target {target_id} expected shape [{sample_count}], got {list(value.shape)}"
             )
-        if value.dtype not in integer_dtypes:
+        if classification and value.dtype not in integer_dtypes:
             raise ValueError(f"training target {target_id} must use an integer dtype")
-        resolved[target_id] = value.to(device=device, dtype=torch.long)
+        if not classification and (
+            not (value.is_floating_point() or value.dtype in integer_dtypes)
+            or not torch.isfinite(value).all()
+        ):
+            raise ValueError(f"training target {target_id} must use finite real values")
+        resolved[target_id] = value.to(
+            device=device, dtype=torch.long if classification else value.dtype
+        )
         rows.append(
             {
                 "target_id": target_id,
@@ -1204,6 +1353,31 @@ def resolve_dataset_snapshot_binding(
             "retained_events": retained,
             "binary_collisions": collisions,
         }
+    elif encoder.kind == "custom":
+        spec_row = {"definition": encoder.definition, "config": dict(encoder.config)}
+        definition = E.resolve("encoder", spec_row)
+        spikes = definition.function(
+            arrays,
+            selected,
+            dt_ms=dt_ms,
+            channels=channels,
+            config=encoder.config,
+            seed=encoder.seed,
+        )
+        if (
+            not isinstance(spikes, torch.Tensor)
+            or spikes.ndim != 3
+            or spikes.shape[1:] != (cap, channels)
+        ):
+            raise ValueError(
+                f"{definition.name} must return (time, selected_samples, channels) spikes"
+            )
+        encoder_row = {
+            "kind": "custom",
+            "definition": encoder.definition,
+            "config": dict(encoder.config),
+            "seed": encoder.seed,
+        }
     else:
         raise ValueError(f"unsupported dataset encoder {encoder.kind!r}")
     source = {
@@ -1302,8 +1476,19 @@ def resolve_dataset_snapshot_binding(
 def graph_capability_issues(graph: Mapping[str, Any]) -> list[CapabilityIssue]:
     """Return precise graph-executor capability failures."""
     issues: list[CapabilityIssue] = []
-    neuron_capabilities: set[str] = {"coba_lif", "leaky_integrator"}
-    synapse_capabilities: set[str] = {"ampa", "gaba", "leaky_integrator"}
+    neuron_capabilities: set[str] = {
+        "coba_lif",
+        "cuba_lif",
+        "leaky_integrator",
+        "custom_neuron",
+    }
+    synapse_capabilities: set[str] = {
+        "ampa",
+        "gaba",
+        "leaky_integrator",
+        "exponential_current",
+        "custom_synapse",
+    }
     operation_capabilities: set[str] = {
         "linear",
         "reduce_mean",
@@ -1311,15 +1496,21 @@ def graph_capability_issues(graph: Mapping[str, Any]) -> list[CapabilityIssue]:
         "select_final",
         "duration_normalise",
         "cumulative_sum",
+        "custom_operation",
+        "divide",
     }
     connection_capabilities: set[str] = {"feedforward", "recurrent", "feedback"}
     for pop in graph.get("populations", []):
+        if pop.get("neuron", {}).get("kind") == "custom_neuron":
+            E.resolve("neuron", pop["neuron"])
         kind = pop.get("neuron", {}).get("kind")
         if kind not in neuron_capabilities:
             issues.append(
                 CapabilityIssue(pop["id"], f"neuron:{kind}", "unsupported neuron kind")
             )
     for projection in graph.get("projections", []):
+        if projection.get("synapse", {}).get("kind") == "custom_synapse":
+            E.resolve("synapse", projection["synapse"])
         synapse = projection.get("synapse", {}).get("kind")
         if synapse not in synapse_capabilities:
             issues.append(
@@ -1337,6 +1528,14 @@ def graph_capability_issues(graph: Mapping[str, Any]) -> list[CapabilityIssue]:
                 )
             )
     for operation in graph.get("operations", []):
+        if operation.get("kind") == "custom_operation":
+            E.resolve(
+                "operation",
+                {
+                    "definition": operation["config"]["definition"],
+                    "config": operation["config"].get("settings", {}),
+                },
+            )
         kind = operation.get("kind")
         if kind not in operation_capabilities:
             issues.append(
@@ -1369,6 +1568,36 @@ class GraphPlan:
     outputs: tuple[Mapping[str, Any], ...]
 
 
+def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
+    axes = {
+        f"{row['id']}.value": tuple(row["shape"])
+        for row in (*graph.get("inputs", []), *graph.get("operations", []))
+    }
+    populations = {row["id"]: row for row in graph["populations"]}
+    for name, population in populations.items():
+        shape = ("time", "batch", population["size"])
+        axes[f"{name}.voltage"] = shape
+        if population["spiking"]:
+            axes[f"{name}.spikes"] = shape
+    for row in graph.get("projections", []):
+        target = row["target"].partition(".")[0]
+        axes[f"{row['id']}.{E.projection_port(row['synapse'])}"] = (
+            "time",
+            "batch",
+            populations[target]["size"],
+        )
+    for row in graph.get("populations", []):
+        if row["neuron"]["kind"] == "custom_neuron":
+            for port in E.resolve("neuron", row["neuron"]).state_units:
+                axes[f"{row['id']}.{port}"] = ("time", "batch", row["size"])
+    for row in graph.get("projections", []):
+        if row["synapse"]["kind"] == "custom_synapse":
+            size = populations[row["target"].partition(".")[0]]["size"]
+            for port in E.resolve("synapse", row["synapse"]).state_units:
+                axes[f"{row['id']}.{port}"] = ("time", "batch", size)
+    return axes
+
+
 RUNTIME_STATE_SCHEMA = "tools/snnsim.graph-runtime-state/v1"
 
 
@@ -1389,6 +1618,8 @@ class GraphRuntimeState:
     conductances: dict[str, torch.Tensor]
     population_histories: dict[str, torch.Tensor]
     input_histories: dict[str, torch.Tensor]
+    custom_state: dict[str, torch.Tensor] = field(default_factory=dict)
+    currents: dict[str, torch.Tensor] = field(default_factory=dict)
 
     def detached(self, *, device: str | torch.device = "cpu") -> GraphRuntimeState:
         def moved(values: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
@@ -1406,6 +1637,8 @@ class GraphRuntimeState:
             conductances=moved(self.conductances),
             population_histories=moved(self.population_histories),
             input_histories=moved(self.input_histories),
+            custom_state=moved(self.custom_state),
+            currents=moved(self.currents),
         )
 
 
@@ -1494,6 +1727,8 @@ def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path:
         "conductances": state.conductances,
         "population_histories": state.population_histories,
         "input_histories": state.input_histories,
+        "custom_state": state.custom_state,
+        "currents": state.currents,
     }
     arrays: dict[str, np.ndarray] = {}
     tensors: list[dict[str, Any]] = []
@@ -1522,7 +1757,7 @@ def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path:
         temporary_tensors.unlink(missing_ok=True)
     manifest = {
         "schema": RUNTIME_STATE_SCHEMA,
-        "schema_version": 1,
+        "schema_version": 2 if state.custom_state or state.currents else 1,
         "signature": state.signature,
         "compatibility": state.compatibility,
         "completed_steps": state.completed_steps,
@@ -1550,10 +1785,9 @@ def load_runtime_state(
     """Load and authenticate a portable graph-runtime state artifact."""
     root = Path(path)
     manifest = json.loads((root / "manifest.json").read_text())
-    if (
-        manifest.get("schema") != RUNTIME_STATE_SCHEMA
-        or manifest.get("schema_version") != 1
-    ):
+    if manifest.get("schema") != RUNTIME_STATE_SCHEMA or manifest.get(
+        "schema_version"
+    ) not in {1, 2}:
         raise ValueError(f"unsupported runtime-state schema: {manifest.get('schema')}")
     tensors_path = root / manifest.get("tensors_file", "tensors.npz")
     actual_digest = _file_digest(tensors_path)
@@ -1567,6 +1801,8 @@ def load_runtime_state(
         "conductances": {},
         "population_histories": {},
         "input_histories": {},
+        "custom_state": {},
+        "currents": {},
     }
     with np.load(tensors_path, allow_pickle=False) as archive:
         expected_keys = {row["key"] for row in manifest["tensors"]}
@@ -1592,6 +1828,8 @@ def load_runtime_state(
         conductances=groups["conductances"],
         population_histories=groups["population_histories"],
         input_histories=groups["input_histories"],
+        custom_state=groups["custom_state"],
+        currents=groups["currents"],
     )
 
 
@@ -1613,7 +1851,7 @@ def write_inference_artifacts(
     root = Path(path)
     root.mkdir(parents=True, exist_ok=True)
     payloads = {
-        "recording.npz": result.recordings,
+        "recording.npz": result.diagnostics,
         "outputs.npz": result.outputs,
         "parameters.npz": result.parameters,
     }
@@ -1648,7 +1886,7 @@ def write_inference_artifacts(
         "checkpoint": result.metrics.get("checkpoint"),
         "inference_overrides": result.metrics.get("inference_overrides"),
         "inference_interventions": result.metrics.get("inference_interventions"),
-        "recording": result.metrics.get("recording"),
+        "diagnostics": result.metrics.get("diagnostics"),
         "device": result.metrics.get("device"),
         "source_graph_digest": result.metrics.get("source_graph_digest"),
         "effective_graph_digest": result.metrics.get("effective_graph_digest"),
@@ -1747,7 +1985,7 @@ def validate_inference_artifacts(
         "checkpoint": metrics.get("checkpoint"),
         "inference_overrides": metrics.get("inference_overrides"),
         "inference_interventions": metrics.get("inference_interventions"),
-        "recording": metrics.get("recording"),
+        "diagnostics": metrics.get("diagnostics"),
         "device": metrics.get("device"),
         "source_graph_digest": metrics.get("source_graph_digest"),
         "effective_graph_digest": metrics.get("effective_graph_digest"),
@@ -2371,11 +2609,21 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
     parameter_rows = {row["id"]: row for row in graph.get("parameters", [])}
     planned = []
     for row in graph.get("projections", []):
+        expected_unit = E.synapse_unit(row["synapse"])
+        target_neuron = next(
+            p["neuron"]
+            for p in graph["populations"]
+            if p["id"] == row["target"].partition(".")[0]
+        )
+        if expected_unit != E.neuron_unit(target_neuron):
+            raise ValueError(
+                f"{row['id']}: synapse unit {expected_unit} incompatible with neuron input unit {E.neuron_unit(target_neuron)}"
+            )
         for parameter_id in row.get("parameters", []):
             unit = parameter_rows.get(parameter_id, {}).get("unit")
-            if unit != "uS":
+            if unit != expected_unit:
                 raise ValueError(
-                    f"{row['id']}: projection parameter {parameter_id} requires unit uS, got {unit}"
+                    f"{row['id']}: projection parameter {parameter_id} requires unit {expected_unit}, got {unit}"
                 )
         delay = row.get("delay")
         delay_ms = 0.0 if delay is None else float(delay["value"])
@@ -2394,7 +2642,9 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
             and row.get("connection") != "feedforward"
         ):
             steps = max(1, steps)
-        tau = float(row["synapse"]["tau"]["value"])
+        tau = float(row["synapse"].get("tau", {"value": 1.0})["value"])
+        if tau <= 0 or not math.isfinite(tau):
+            raise ValueError(f"{row['id']}: synapse tau must be finite and positive")
         decay = (
             0.0 if row["synapse"]["kind"] == "leaky_integrator" else math.exp(-dt / tau)
         )
@@ -2453,9 +2703,15 @@ class GraphExecutor(nn.Module):
         seed: int = 0,
         trainable_parameters: Sequence[str] = (),
         surrogate_slope: float = M.SURROGATE_SLOPE,
+        surrogate: Mapping[str, Any] | None = None,
     ):
         super().__init__()
         self.plan = plan
+        self.surrogate = (
+            surrogate if (surrogate or {}).get("kind") == "custom_surrogate" else None
+        )
+        if self.surrogate is not None:
+            E.resolve("surrogate", self.surrogate)
         self.surrogate_slope = float(surrogate_slope)
         torch.manual_seed(seed)
         rows = {row["id"]: row for row in plan.graph.get("parameters", [])}
@@ -2472,7 +2728,22 @@ class GraphExecutor(nn.Module):
         ) -> torch.Tensor:
             init = row["initializer"]
             kind = init["kind"]
-            if kind in {"normal", "lower_clamped_normal"}:
+            if kind == "custom_initializer":
+                definition = E.resolve("initializer", init)
+                value = definition.function(
+                    runtime_shape,
+                    init.get("config", {}),
+                    device=torch.device("cpu"),
+                    dtype=torch.float32,
+                )
+                X.checked_tensor(
+                    value,
+                    shape=runtime_shape,
+                    device="cpu",
+                    dtype=torch.float32,
+                    name=definition.name,
+                )
+            elif kind in {"normal", "lower_clamped_normal"}:
                 value = (
                     torch.randn(*runtime_shape)
                     .mul_(float(init["std"]))
@@ -2526,14 +2797,10 @@ class GraphExecutor(nn.Module):
                         f"{row['id']}: unsupported initializer zeroing {zeroing}"
                     )
             constraint = row.get("constraint")
-            if constraint is not None:
-                if constraint.get("kind") != "non_negative":
-                    raise ValueError(
-                        f"{row['id']}: unsupported constraint {constraint.get('kind')}"
-                    )
-                value = value.clamp(min=0)
             if scale_by_fanin:
                 value = value / runtime_shape[0]
+            if constraint:
+                value = X.apply_constraint(value, constraint)
             flat = value.reshape(-1)
             self.initialization_metadata[row["id"]] = {
                 "initializer": dict(init),
@@ -2574,13 +2841,15 @@ class GraphExecutor(nn.Module):
                 row, runtime_shape=shape, scale_by_fanin=True
             )
         for operation in plan.graph.get("operations", []):
-            if operation.get("kind") != "linear":
-                continue
             for parameter in operation.get("parameters", []):
                 if parameter in realised:
                     continue
                 row = rows[parameter]
-                shape = tuple(reversed(row["shape"]))  # runtime is [source, target]
+                shape = (
+                    tuple(reversed(row["shape"]))
+                    if operation["kind"] == "linear"
+                    else tuple(row["shape"])
+                )
                 realised[parameter] = initialise(
                     row, runtime_shape=shape, scale_by_fanin=False
                 )
@@ -2598,22 +2867,42 @@ class GraphExecutor(nn.Module):
     def parameter_map(self) -> dict[str, torch.Tensor]:
         return {name.replace("__", "."): value for name, value in self.weights.items()}
 
+    def enforce_constraints(self) -> None:
+        """Apply declared constraints after an external optimizer step."""
+        rows = {row["id"]: row for row in self.plan.graph.get("parameters", [])}
+        with torch.no_grad():
+            for name, parameter in self.parameter_map().items():
+                parameter.copy_(
+                    X.apply_constraint(parameter, rows[name].get("constraint"))
+                )
+
     def forward(
         self,
         inputs: Mapping[str, torch.Tensor],
         *,
-        record: bool | RecordingProfile = True,
-        recording_fields: Sequence[str] | None = None,
+        diagnostics: bool = True,
         runtime_state: GraphRuntimeState | None = None,
         interventions: Sequence[Mapping[str, Any]] = (),
     ) -> ExecutionResult:
-        recording: RecordingProfile = (
-            "full" if record is True else "none" if record is False else record
+        result, _ = self._forward(
+            inputs,
+            diagnostics=diagnostics,
+            runtime_state=runtime_state,
+            interventions=interventions,
         )
-        if recording not in {"full", "observables", "none"}:
-            raise ValueError(
-                f"recording profile expected full, observables, or none; got {recording!r}"
-            )
+        return result
+
+    def _forward(
+        self,
+        inputs: Mapping[str, torch.Tensor],
+        *,
+        diagnostics: bool = True,
+        runtime_state: GraphRuntimeState | None = None,
+        interventions: Sequence[Mapping[str, Any]] = (),
+        required_signals: Sequence[str] = (),
+    ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
+        if not isinstance(diagnostics, bool):
+            raise TypeError("diagnostics must be boolean")
         if not inputs:
             raise ValueError("graph execution requires at least one input tensor")
         first = next(iter(inputs.values()))
@@ -2705,12 +2994,14 @@ class GraphExecutor(nn.Module):
                         "seed": seed,
                     }
                 )
+        # Zero-delay edges use current-step spikes, but continuation still needs
+        # the last spike tensor for every population.
         population_history_lengths = {
             name: max(
                 (
                     p.delay_steps
                     for p in self.plan.projections
-                    if p.source.startswith(name + ".")
+                    if p.source.startswith(name + ".") and p.delay_steps > 0
                 ),
                 default=1,
             )
@@ -2734,7 +3025,13 @@ class GraphExecutor(nn.Module):
                 name: (
                     torch.zeros((batch, p["size"]), device=device)
                     if p["neuron"]["kind"] == "leaky_integrator"
-                    else torch.full((batch, p["size"]), M.E_L, device=device)
+                    else torch.full(
+                        (batch, p["size"]),
+                        float(p["neuron"].get("initial_voltage_mv", M.E_L))
+                        if p["neuron"]["kind"] == "cuba_lif"
+                        else M.E_L,
+                        device=device,
+                    )
                 )
                 for name, p in populations.items()
             }
@@ -2816,14 +3113,25 @@ class GraphExecutor(nn.Module):
                     raise ValueError(
                         f"runtime state refractory.{name} dtype expected torch.int64, got {value.dtype}"
                     )
-            conductance_by_id = restore_group(
-                "conductances",
-                runtime_state.conductances,
-                {
-                    p.id: (batch, int(populations[p.target.partition(".")[0]]["size"]))
-                    for p in self.plan.projections
-                },
-            )
+            by_projection = {row["id"]: row for row in self.plan.graph["projections"]}
+            conductance_by_id = {}
+            for group_name, values, unit in (
+                ("conductances", runtime_state.conductances, "uS"),
+                ("currents", runtime_state.currents, "nA"),
+            ):
+                restored = restore_group(
+                    group_name,
+                    values,
+                    {
+                        p.id: (
+                            batch,
+                            int(populations[p.target.partition(".")[0]]["size"]),
+                        )
+                        for p in self.plan.projections
+                        if E.synapse_unit(by_projection[p.id]["synapse"]) == unit
+                    },
+                )
+                conductance_by_id.update(restored)
             conductance = {
                 (p.id, p.polarity): conductance_by_id[p.id]
                 for p in self.plan.projections
@@ -2866,51 +3174,139 @@ class GraphExecutor(nn.Module):
                         f"runtime state input_histories.{name} dtype expected {inputs[name].dtype}, got {value.dtype}"
                     )
             completed_steps = int(runtime_state.completed_steps)
-        recordings: dict[str, list[torch.Tensor]] = {
-            o["id"]: [] for o in self.plan.observables
+        neuron_states = {}
+        synapse_states = {}
+        custom_state = {}
+        projection_rows = {row["id"]: row for row in self.plan.graph["projections"]}
+        projection_ports = {
+            name: E.projection_port(row["synapse"])
+            for name, row in projection_rows.items()
         }
-        state_recordings: dict[str, list[torch.Tensor]] = {
-            f"{name}.voltage": [] for name in populations
-        }
-        projection_recordings: dict[str, list[torch.Tensor]] = {
-            f"{p.id}.conductance": [] for p in self.plan.projections
-        }
-        selected_fields = None if recording_fields is None else set(recording_fields)
-        if selected_fields is not None:
-            available = set(recordings) if recording != "none" else set()
-            if recording == "full":
-                available |= set(state_recordings) | set(projection_recordings)
-                available |= {f"{name}.spikes" for name in populations}
-            unknown = selected_fields - available
-            if unknown:
-                raise ValueError(f"unavailable recording fields: {sorted(unknown)}")
-            recordings = {k: v for k, v in recordings.items() if k in selected_fields}
-            state_recordings = {
-                k: v for k, v in state_recordings.items() if k in selected_fields
-            }
-            projection_recordings = {
-                k: v for k, v in projection_recordings.items() if k in selected_fields
-            }
+        saved_custom = runtime_state.custom_state if runtime_state is not None else {}
+        for category, rows in (
+            ("neuron", self.plan.populations),
+            ("synapse", self.plan.graph["projections"]),
+        ):
+            for row in rows:
+                spec = row[category]
+                if spec["kind"] != f"custom_{category}":
+                    continue
+                definition = E.resolve(category, spec)
+                owner = row["id"]
+                target = (
+                    owner if category == "neuron" else row["target"].partition(".")[0]
+                )
+                shape = (batch, populations[target]["size"])
+                context = E.StateContext(
+                    shape,
+                    device,
+                    parameter_dtype,
+                    self.plan.dt_ms,
+                    spec.get("config", {}),
+                )
+                if definition.initialize is None:
+                    state = {
+                        "value": torch.zeros(
+                            shape, device=device, dtype=parameter_dtype
+                        )
+                    }
+                else:
+                    state = X.checked_state(
+                        definition.initialize(context),
+                        None,
+                        definition.name,
+                        required=("voltage",) if category == "neuron" else ("value",),
+                    )
+                if category == "neuron":
+                    state.setdefault(
+                        "refractory",
+                        torch.zeros(shape, device=device, dtype=torch.long),
+                    )
+                for key in (
+                    ("voltage", "refractory") if category == "neuron" else ("value",)
+                ):
+                    X.checked_tensor(
+                        state[key],
+                        shape=shape,
+                        device=device,
+                        dtype=torch.long if key == "refractory" else parameter_dtype,
+                        name=f"{definition.name}.{key}",
+                    )
+                for key, value in state.items():
+                    if value.device != torch.device(device):
+                        raise ValueError(
+                            f"{definition.name}.{key}: state must use execution device {device}"
+                        )
+                for port in definition.state_units:
+                    if port not in state:
+                        raise ValueError(
+                            f"{definition.name}: declared state port {port} missing"
+                        )
+                    X.checked_tensor(
+                        state[port],
+                        shape=shape,
+                        device=device,
+                        dtype=parameter_dtype,
+                        name=f"{definition.name}.{port}",
+                    )
+                for key, value in state.items():
+                    state_key = f"{category}/{owner}/{key}"
+                    custom_state[state_key] = value
+                    if runtime_state is not None:
+                        if state_key not in saved_custom:
+                            raise ValueError(f"runtime state missing {state_key}")
+                        restored = saved_custom[state_key].to(device)
+                        X.checked_tensor(
+                            restored,
+                            shape=value.shape,
+                            device=device,
+                            dtype=value.dtype,
+                            name=state_key,
+                        )
+                        if category == "neuron" and key in {"voltage", "refractory"}:
+                            standard = (
+                                voltage[owner]
+                                if key == "voltage"
+                                else refractory[owner]
+                            )
+                            if not torch.equal(restored, standard):
+                                raise ValueError(
+                                    f"runtime state {state_key} disagrees with standard neuron state"
+                                )
+                        elif category == "synapse" and key == "value":
+                            standard = conductance[(owner, row["polarity"])]
+                            if not torch.equal(restored, standard):
+                                raise ValueError(
+                                    f"runtime state {state_key} disagrees with synapse output state"
+                                )
+                        state[key] = restored.detach().clone()
+                if category == "neuron":
+                    neuron_states[owner] = state
+                    voltage[owner] = state["voltage"]
+                    refractory[owner] = state["refractory"]
+                else:
+                    synapse_states[owner] = state
+        if set(saved_custom) - set(custom_state):
+            raise ValueError("runtime state has unexpected custom state tensors")
+        state_traces = {}
+        needed_signals = set(required_signals)
+        needed_signals.update(row["signal"] for row in self.plan.outputs)
+        if diagnostics:
+            needed_signals.update(row["signal"] for row in self.plan.observables)
+        for operation in self.plan.graph.get("operations", []):
+            needed_signals.update(operation["sources"])
         integrator_sum: dict[str, torch.Tensor] = {}
-        spike_traces: dict[str, list[torch.Tensor]] = {name: [] for name in populations}
-        voltage_traces: dict[str, list[torch.Tensor]] = {
-            name: [] for name in populations
+        spike_traces: dict[str, list[torch.Tensor]] = {
+            name: [] for name in populations if f"{name}.spikes" in needed_signals
         }
-        if selected_fields is not None:
-            required_signals = {row["signal"] for row in self.plan.outputs}
-            for operation in self.plan.graph.get("operations", []):
-                required_signals.update(operation["sources"])
-            named_spikes = selected_fields if recording == "full" else set()
-            spike_traces = {
-                name: []
-                for name in populations
-                if f"{name}.spikes" in required_signals | named_spikes
-            }
-            voltage_traces = {
-                name: []
-                for name in populations
-                if f"{name}.voltage" in required_signals
-            }
+        voltage_traces: dict[str, list[torch.Tensor]] = {
+            name: [] for name in populations if f"{name}.voltage" in needed_signals
+        }
+        conductance_traces: dict[str, list[torch.Tensor]] = {
+            p.id: []
+            for p in self.plan.projections
+            if f"{p.id}.{projection_ports[p.id]}" in needed_signals
+        }
 
         for t in range(steps):
             new_spikes: dict[str, torch.Tensor] = {}
@@ -2944,9 +3340,76 @@ class GraphExecutor(nn.Module):
                     drive = (
                         source @ self.weights[projection.parameter.replace(".", "__")]
                     )
-                    conductance[key] = conductance[key] * projection.decay + drive
+                    spec = projection_rows[projection.id]["synapse"]
+                    if spec["kind"] == "custom_synapse":
+                        definition = E.resolve("synapse", spec)
+                        previous = synapse_states[projection.id]
+                        context = E.SynapseContext(
+                            previous, drive, self.plan.dt_ms, spec.get("config", {})
+                        )
+                        state = X.checked_state(
+                            definition.function(context), previous, definition.name
+                        )
+                        synapse_states[projection.id] = state
+                        conductance[key] = state["value"]
+                    else:
+                        conductance[key] = conductance[key] * projection.decay + drive
                     incoming[projection.polarity] += conductance[key]
                 neuron = pop["neuron"]
+
+                def spike_function(value):
+                    return X.spike(
+                        value, slope=self.surrogate_slope, custom=self.surrogate
+                    )
+
+                if neuron["kind"] == "custom_neuron":
+                    definition = E.resolve("neuron", neuron)
+                    previous = neuron_states[name]
+                    context = E.NeuronContext(
+                        previous,
+                        incoming["excitatory"],
+                        incoming["inhibitory"],
+                        self.plan.dt_ms,
+                        neuron.get("config", {}),
+                        spike_function,
+                    )
+                    response = definition.function(context)
+                    if not isinstance(response, tuple) or len(response) != 2:
+                        raise TypeError(
+                            f"{definition.name} must return (state, spikes)"
+                        )
+                    state, spike_values = response
+                    state = X.checked_state(state, previous, definition.name)
+                    X.checked_tensor(
+                        spike_values,
+                        shape=voltage[name].shape,
+                        device=device,
+                        dtype=parameter_dtype,
+                        name=f"{definition.name}.spikes",
+                    )
+                    if torch.any((spike_values != 0) & (spike_values != 1)):
+                        raise ValueError(f"{definition.name} spikes must be binary")
+                    neuron_states[name] = state
+                    voltage[name], refractory[name] = (
+                        state["voltage"],
+                        state["refractory"],
+                    )
+                    new_spikes[name] = (
+                        spike_values
+                        if pop["spiking"]
+                        else torch.zeros_like(spike_values)
+                    )
+                    continue
+                if neuron["kind"] == "cuba_lif":
+                    voltage[name], new_spikes[name], refractory[name] = X.current_lif(
+                        {"voltage": voltage[name], "refractory": refractory[name]},
+                        incoming["excitatory"],
+                        incoming["inhibitory"],
+                        dt_ms=self.plan.dt_ms,
+                        config=neuron,
+                        spike_function=spike_function,
+                    )
+                    continue
                 if neuron["kind"] == "leaky_integrator":
                     beta = math.exp(-self.plan.dt_ms / float(neuron["tau"]["value"]))
                     voltage[name] = (
@@ -2994,9 +3457,7 @@ class GraphExecutor(nn.Module):
                     g_l,
                     ref_steps,
                     lambda value, threshold_offset=0.0, threshold=threshold: (
-                        M.fast_sigmoid_spike(
-                            value - threshold - threshold_offset, self.surrogate_slope
-                        )
+                        spike_function(value - threshold - threshold_offset)
                     ),
                     dt_override=self.plan.dt_ms,
                     v_grad_dampen=dampen,
@@ -3029,6 +3490,18 @@ class GraphExecutor(nn.Module):
                             new_spikes[name].dtype
                         )
                         new_spikes[name] = torch.maximum(new_spikes[name], added)
+            for category, states, rows in (
+                ("neuron", neuron_states, populations),
+                ("synapse", synapse_states, projection_rows),
+            ):
+                for owner, state in states.items():
+                    spec = rows[owner][category]
+                    for key, value in state.items():
+                        custom_state[f"{category}/{owner}/{key}"] = value
+                    for port in E.resolve(category, spec).state_units:
+                        signal = f"{owner}.{port}"
+                        if signal in needed_signals:
+                            state_traces.setdefault(signal, []).append(state[port])
             spikes = new_spikes
             for name in spike_traces:
                 spike_traces[name].append(spikes[name])
@@ -3036,31 +3509,13 @@ class GraphExecutor(nn.Module):
                 voltage_traces[name].append(voltage[name])
             for name in populations:
                 histories[name].push(spikes[name])
-            if recording != "none":
-                for observable in self.plan.observables:
-                    if observable["id"] not in recordings:
-                        continue
-                    owner, _, port = observable["signal"].partition(".")
-                    recordings[observable["id"]].append(
-                        (spikes if port == "spikes" else voltage)[owner]
-                        .detach()
-                        .clone()
-                    )
-            if recording == "full":
-                for name in populations:
-                    if f"{name}.voltage" not in state_recordings:
-                        continue
-                    state_recordings[f"{name}.voltage"].append(
-                        voltage[name].detach().clone()
-                    )
-                for projection in self.plan.projections:
-                    if f"{projection.id}.conductance" not in projection_recordings:
-                        continue
-                    projection_recordings[f"{projection.id}.conductance"].append(
-                        conductance[(projection.id, projection.polarity)]
-                        .detach()
-                        .clone()
-                    )
+            for projection_id in conductance_traces:
+                projection = next(
+                    p for p in self.plan.projections if p.id == projection_id
+                )
+                conductance_traces[projection_id].append(
+                    conductance[(projection.id, projection.polarity)]
+                )
 
         outputs: dict[str, torch.Tensor] = {}
         signal_values: dict[str, torch.Tensor] = {
@@ -3070,6 +3525,11 @@ class GraphExecutor(nn.Module):
             signal_values[f"{name}.spikes"] = torch.stack(values)
         for name, values in voltage_traces.items():
             signal_values[f"{name}.voltage"] = torch.stack(values)
+
+        for name, values in conductance_traces.items():
+            signal_values[f"{name}.{projection_ports[name]}"] = torch.stack(values)
+        for signal, values in state_traces.items():
+            signal_values[signal] = torch.stack(values)
 
         def time_mask(
             mask: torch.Tensor, *, target: torch.Tensor, op_id: str
@@ -3176,25 +3636,49 @@ class GraphExecutor(nn.Module):
                             f"{op['id']}: spike-rate duration must be positive seconds"
                         )
                     signal_values[f"{op['id']}.value"] = sources[0] / duration_s
+            elif kind == "divide":
+                signal_values[f"{op['id']}.value"] = sources[0] / sources[1]
+            elif kind == "custom_operation":
+                config = op.get("config", {})
+                definition = E.resolve(
+                    "operation",
+                    {
+                        "definition": config["definition"],
+                        "config": config.get("settings", {}),
+                    },
+                )
+                parameters = {
+                    name: self.parameter_map()[name]
+                    for name in op.get("parameters", [])
+                }
+                value = definition.function(
+                    tuple(sources), parameters, config.get("settings", {})
+                )
+                shape = tuple(
+                    steps if d == "time" else batch if d == "batch" else d
+                    for d in op["shape"]
+                )
+                signal_values[f"{op['id']}.value"] = X.checked_tensor(
+                    value,
+                    shape=shape,
+                    device=device,
+                    dtype=parameter_dtype,
+                    name=definition.name,
+                )
             elif kind == "cumulative_sum":
                 signal_values[f"{op['id']}.value"] = sources[0].cumsum(dim=0)
             else:
                 raise ValueError(f"{op['id']}: unsupported operation {kind}")
         for output in self.plan.outputs:
             outputs[output["id"]] = signal_values[output["signal"]]
-        packed = {k: torch.stack(v) for k, v in recordings.items() if v}
-        packed.update({k: torch.stack(v) for k, v in state_recordings.items() if v})
-        packed.update(
-            {k: torch.stack(v) for k, v in projection_recordings.items() if v}
+        packed = (
+            {
+                row["id"]: signal_values[row["signal"]].detach().clone()
+                for row in self.plan.observables
+            }
+            if diagnostics
+            else {}
         )
-        if recording == "full":
-            packed.update(
-                {
-                    f"{name}.spikes": torch.stack(values)
-                    for name, values in spike_traces.items()
-                    if selected_fields is None or f"{name}.spikes" in selected_fields
-                }
-            )
         next_input_histories = {
             name: torch.cat((history, inputs[name]), dim=0)[-history.shape[0] :]
             .detach()
@@ -3212,24 +3696,45 @@ class GraphExecutor(nn.Module):
             conductances={
                 p.id: conductance[(p.id, p.polarity)].detach().clone()
                 for p in self.plan.projections
+                if projection_ports[p.id] == "conductance"
+            },
+            currents={
+                p.id: conductance[(p.id, p.polarity)].detach().clone()
+                for p in self.plan.projections
+                if projection_ports[p.id] == "current"
             },
             population_histories={
                 name: history.export() for name, history in histories.items()
             },
             input_histories=next_input_histories,
+            custom_state={
+                key: value.detach().clone() for key, value in custom_state.items()
+            },
         )
-        return ExecutionResult(
+        signal_axes = _signal_axes(self.plan.graph)
+        result = ExecutionResult(
             executor="graph",
             outputs=outputs,
-            recordings=packed,
+            diagnostics=packed,
             parameters={k: v.detach().clone() for k, v in self.parameter_map().items()},
             final_state={
                 f"{k}.voltage": v.detach().clone() for k, v in voltage.items()
             },
             runtime_state=next_runtime_state,
             metrics={"resolved_interventions": resolved_interventions},
+            _output_axes={
+                row["id"]: signal_axes[row["signal"]] for row in self.plan.outputs
+            },
+            _diagnostic_axes={
+                row["id"]: signal_axes[row["signal"]]
+                for row in self.plan.observables
+                if diagnostics
+            },
+            _timebase=(self.plan.dt_ms, completed_steps, steps),
+            _batch_size=batch,
             model=self,
         )
+        return result, signal_values
 
 
 def build(spec: ExecutionSpec) -> ExecutionResult:
@@ -3257,6 +3762,7 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
         seed=spec.seed,
         trainable_parameters=trainable,
         surrogate_slope=surrogate_slope,
+        surrogate=surrogate,
     ).to(device)
     return ExecutionResult(
         executor="graph",
@@ -3277,6 +3783,7 @@ def simulate(
         return ExecutionResult(
             executor="legacy", metrics={"request": "simulate", "routing": "legacy"}
         )
+    sources = _split_input_bindings(spec.input_bindings)
     overrides = dict(spec.options.get("inference_overrides", {}))
     requested_interventions = tuple(spec.options.get("inference_interventions", ()))
     interventions = tuple(
@@ -3304,12 +3811,7 @@ def simulate(
             raise ValueError(
                 "inference timestep recompilation cannot convert runtime state"
             )
-        if (
-            not spec.poisson_bindings
-            or spec.input_bindings
-            or spec.event_bindings
-            or spec.inputs
-        ):
+        if not sources.poisson or sources.dense or sources.events:
             raise ValueError(
                 "inference timestep recompilation requires resampleable Poisson input bindings"
             )
@@ -3330,18 +3832,13 @@ def simulate(
     built = build(build_spec)
     assert isinstance(built.model, GraphExecutor)
     device = resolve_device(spec.device)
-    poisson_bindings = spec.poisson_bindings
+    poisson_bindings = sources.poisson
     if (
         "duration_ms" in overrides
         or "input_rate_hz" in overrides
         or "timestep_ms" in overrides
     ):
-        if (
-            not poisson_bindings
-            or spec.input_bindings
-            or spec.event_bindings
-            or spec.inputs
-        ):
+        if not poisson_bindings or sources.dense or sources.events:
             raise ValueError(
                 "duration and input-rate inference overrides require Poisson input bindings"
             )
@@ -3449,19 +3946,10 @@ def simulate(
                 parameters[projection_parameters[projection_id]].mul_(factor)
     tracemalloc.start()
     started = time.perf_counter()
-    if spec.dataset_binding is not None:
-        if (
-            spec.input_bindings
-            or spec.event_bindings
-            or poisson_bindings
-            or spec.inputs
-        ):
-            raise ValueError(
-                "dataset snapshot binding cannot be combined with other input bindings"
-            )
+    if sources.dataset is not None:
         resolved_inputs, _ = resolve_dataset_snapshot_binding(
             built.model.plan.graph,
-            spec.dataset_binding,
+            sources.dataset,
             device=device,
             execution_seed=spec.seed,
             protocol=spec.protocol,
@@ -3469,22 +3957,16 @@ def simulate(
     else:
         resolved_inputs = resolve_input_bindings(
             built.model.plan.graph,
-            dense_bindings=spec.input_bindings,
-            event_bindings=spec.event_bindings,
+            dense_bindings=sources.dense,
+            event_bindings=sources.events,
             poisson_bindings=poisson_bindings,
-            inputs=spec.inputs,
             device=device,
             seed=spec.seed,
             protocol=spec.protocol,
         )
     result = built.model(
         resolved_inputs.tensors,
-        record=spec.recording,
-        **(
-            {"recording_fields": spec.recording_fields}
-            if spec.recording_fields is not None
-            else {}
-        ),
+        diagnostics=spec.diagnostics,
         runtime_state=runtime_state
         if runtime_state is not None
         else spec.runtime_state,
@@ -3499,7 +3981,7 @@ def simulate(
             "simulate_s": elapsed,
             "peak_python_bytes": peak,
             "device": device,
-            "recording": spec.recording,
+            "diagnostics": spec.diagnostics,
             "execution_protocol": resolved_inputs.protocol,
             "checkpoint": checkpoint_provenance,
             "inference_overrides": {
@@ -3546,6 +4028,31 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         return ExecutionResult(
             executor="legacy", metrics={"request": "train", "routing": "legacy"}
         )
+    moved_options = set(spec.options) & {
+        "epochs",
+        "batch_size",
+        "shuffle",
+        "updates",
+        "save_final_checkpoint",
+        "save_selected_checkpoint",
+    }
+    if moved_options:
+        raise ValueError(
+            f"training settings must be ExecutionSpec fields, not options: {sorted(moved_options)}"
+        )
+    for name, minimum in (("epochs", 0), ("batch_size", 1), ("updates", 1)):
+        value = getattr(spec, name)
+        if value is None and name != "epochs":
+            continue
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, Integral)
+            or value < minimum
+        ):
+            raise ValueError(f"training {name} must be an integer >= {minimum}")
+    if not isinstance(spec.shuffle, bool):
+        raise TypeError("training shuffle must be boolean")
+    sources = _split_input_bindings(spec.input_bindings)
     built = build(spec)
     assert isinstance(built.model, GraphExecutor)
     model = built.model
@@ -3559,60 +4066,65 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     if (
         not spec.targets
         and not spec.target_bindings
-        and not (spec.dataset_binding and spec.dataset_binding.target_id)
+        and not (sources.dataset and sources.dataset.target_id)
     ):
         raise ValueError("graph training requires external target tensors")
     device = resolve_device(spec.device)
-    dataset_targets: tuple[TargetArrayBinding, ...] = ()
-    if spec.dataset_binding is not None:
-        if (
-            spec.input_bindings
-            or spec.event_bindings
-            or spec.poisson_bindings
-            or spec.inputs
-            or spec.target_bindings
-            or spec.targets
-        ):
-            raise ValueError(
-                "dataset snapshot binding cannot be combined with other input or target bindings"
-            )
-        resolved_inputs, dataset_targets = resolve_dataset_snapshot_binding(
-            graph,
-            spec.dataset_binding,
-            device=device,
-            execution_seed=spec.seed,
-            protocol=spec.protocol,
-        )
-    else:
-        resolved_inputs = resolve_input_bindings(
-            graph,
-            dense_bindings=spec.input_bindings,
-            event_bindings=spec.event_bindings,
-            poisson_bindings=spec.poisson_bindings,
-            inputs=spec.inputs,
-            device=device,
-            seed=spec.seed,
-            protocol=spec.protocol,
-        )
-    dataset_epochs = int(spec.options.get("epochs", 0) or 0)
+    dataset_epochs = spec.epochs
     dataset_mode = dataset_epochs > 0
+    if spec.validation is not None:
+        if not isinstance(spec.validation, ValidationSpec):
+            raise TypeError("validation must be a ValidationSpec")
+        if not dataset_mode:
+            raise ValueError("validation requires training with positive epochs")
+
+    def resolve_data(data: ExecutionSpec | ValidationSpec):
+        bindings = _split_input_bindings(data.input_bindings)
+        dataset_targets: tuple[TargetArrayBinding, ...] = ()
+        if bindings.dataset is not None:
+            if data.target_bindings or data.targets:
+                raise ValueError(
+                    "dataset snapshot binding cannot be combined with other input or target bindings"
+                )
+            inputs, dataset_targets = resolve_dataset_snapshot_binding(
+                graph,
+                bindings.dataset,
+                device=device,
+                execution_seed=spec.seed,
+                protocol=data.protocol,
+            )
+        else:
+            inputs = resolve_input_bindings(
+                graph,
+                dense_bindings=bindings.dense,
+                event_bindings=bindings.events,
+                poisson_bindings=bindings.poisson,
+                device=device,
+                seed=spec.seed,
+                protocol=data.protocol,
+            )
+        sample_count = next(iter(inputs.tensors.values())).shape[1]
+        if any(value.shape[1] != sample_count for value in inputs.tensors.values()):
+            raise ValueError("graph training inputs must share one dataset sample axis")
+        targets, rows = resolve_target_array_bindings(
+            training,
+            bindings=dataset_targets or data.target_bindings,
+            targets=data.targets,
+            sample_count=sample_count,
+            device=device,
+        )
+        return inputs, targets, rows
+
+    resolved_inputs, resolved_targets, target_rows = resolve_data(spec)
     dataset_size = next(iter(resolved_inputs.tensors.values())).shape[1]
-    if any(
-        value.shape[1] != dataset_size for value in resolved_inputs.tensors.values()
-    ):
-        raise ValueError("graph training inputs must share one dataset sample axis")
-    resolved_targets, target_rows = resolve_target_array_bindings(
-        training,
-        bindings=dataset_targets or spec.target_bindings,
-        targets=spec.targets,
-        sample_count=dataset_size,
-        device=device,
+    validation_data = (
+        resolve_data(spec.validation) if spec.validation is not None else None
     )
-    batch_size = int(spec.options.get("batch_size") or dataset_size)
+    batch_size = spec.batch_size if spec.batch_size is not None else dataset_size
     if batch_size <= 0:
         raise ValueError("graph training batch size must be positive")
     batches_per_epoch = math.ceil(dataset_size / batch_size)
-    shuffle = bool(spec.options.get("shuffle", False))
+    shuffle = spec.shuffle
     protocol = {**resolved_inputs.protocol, "targets": target_rows}
     if dataset_mode:
         protocol = {
@@ -3717,11 +4229,17 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             "graph training requires at least one trainable parameter group"
         )
     optimizer_spec = training.get("optimizer", {})
-    if optimizer_spec.get("kind") != "adamw":
+    if optimizer_spec.get("kind") == "custom_optimizer":
+        definition = E.resolve("optimizer", optimizer_spec)
+        optimizer = definition.function(groups, optimizer_spec.get("config", {}))
+        if not isinstance(optimizer, torch.optim.Optimizer):
+            raise TypeError(f"{definition.name} must return torch.optim.Optimizer")
+    elif optimizer_spec.get("kind") == "adamw":
+        optimizer = torch.optim.AdamW(groups, **dict(optimizer_spec.get("config", {})))
+    else:
         raise ValueError(
             f"graph training unsupported optimizer {optimizer_spec.get('kind')}"
         )
-    optimizer = torch.optim.AdamW(groups, **dict(optimizer_spec.get("config", {})))
     if resumed is not None:
         trainable_names = {
             name for name, parameter in parameter_map.items() if parameter.requires_grad
@@ -3739,7 +4257,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             }
         restore_training_rng_state(resumed, device)
     output_ids = {row["signal"]: row["id"] for row in graph.get("outputs", [])}
-    updates_option = spec.options.get("updates")
+    updates_option = spec.updates
     updates = int(
         updates_option
         if updates_option is not None
@@ -3758,6 +4276,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         packed = {}
         for name, parameter in parameter_map.items():
             if parameter not in optimizer.state:
+                if (
+                    optimizer_spec.get("kind") == "custom_optimizer"
+                    and parameter.requires_grad
+                ):
+                    packed[name] = {}
                 continue
             packed[name] = {
                 key: value.detach().clone()
@@ -3788,6 +4311,170 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             data_state=dict(next_data_state),
         )
 
+    def compute_loss(forward, signal_values, batch_targets, input_protocol):
+        components: dict[str, torch.Tensor] = {}
+        loss = torch.zeros((), device=device)
+        for index, objective in enumerate(training.get("objectives", [])):
+            output_id = output_ids.get(objective["prediction"])
+            if output_id is None:
+                raise ValueError(
+                    f"objective[{index}] prediction {objective['prediction']} is not a graph output"
+                )
+            target_name = objective["target"]
+            if target_name not in batch_targets:
+                raise ValueError(
+                    f"objective[{index}] missing target tensor {target_name}"
+                )
+            target = batch_targets[target_name].to(device=device)
+            prediction = forward.outputs[output_id]
+            if objective.get("kind") == "custom_objective":
+                definition = E.resolve("objective", objective)
+                raw = definition.function(
+                    prediction, target, objective.get("config", {})
+                )
+                X.checked_tensor(
+                    raw,
+                    shape=(),
+                    device=device,
+                    dtype=prediction.dtype,
+                    name=definition.name,
+                )
+            elif objective.get("kind") == "cross_entropy":
+                raw = torch.nn.functional.cross_entropy(
+                    prediction, target.to(dtype=torch.long)
+                )
+            else:
+                raise ValueError(
+                    f"objective[{index}] unsupported kind {objective.get('kind')}"
+                )
+            value = raw * float(objective.get("weight", 1.0))
+            components[f"objective[{index}]"] = value
+            loss = loss + value
+        duration = training.get("presentation_duration")
+        duration_s = (
+            float(duration["value"]) / 1000.0
+            if duration
+            else input_protocol["timing"]["duration_ms"] / 1000.0
+        )
+        for index, regularizer in enumerate(training.get("regularizers", [])):
+            if regularizer.get("kind") == "custom_regularizer":
+                definition = E.resolve("regularizer", regularizer)
+                values = tuple(signal_values[name] for name in regularizer["signals"])
+                raw = definition.function(
+                    values, duration_s, regularizer.get("config", {})
+                )
+                X.checked_tensor(
+                    raw,
+                    shape=(),
+                    device=device,
+                    dtype=values[0].dtype,
+                    name=definition.name,
+                )
+                value = float(regularizer["strength"]) * raw
+                components[f"regularizer[{index}]"] = value
+                loss = loss + value
+                continue
+            if regularizer.get("kind") != "spike_budget":
+                raise ValueError(
+                    f"regularizer[{index}] unsupported kind {regularizer.get('kind')}"
+                )
+            ceiling = float(regularizer["config"]["ceiling"]["value"])
+            penalties = []
+            for signal in regularizer["signals"]:
+                spikes = signal_values.get(signal)
+                if spikes is None:
+                    raise ValueError(
+                        f"regularizer[{index}] spike signal {signal} is unavailable"
+                    )
+                sample_rates = spikes.sum(dim=0).mean(dim=1) / duration_s
+                penalties.append(torch.relu(sample_rates - ceiling).square())
+            value = float(regularizer["strength"]) * torch.stack(penalties).mean()
+            components[f"regularizer[{index}]"] = value
+            loss = loss + value
+        return loss, components
+
+    required_signals = tuple(
+        signal
+        for regularizer in training.get("regularizers", [])
+        for signal in regularizer["signals"]
+    )
+    epoch_history: list[dict[str, Any]] = []
+
+    def evaluate_split(inputs, targets):
+        sample_count = next(iter(inputs.tensors.values())).shape[1]
+        total_loss = 0.0
+        components_total: dict[str, float] = {}
+        correct = {
+            f"objective[{i}]": 0
+            for i, row in enumerate(training.get("objectives", []))
+            if X.classification(row)
+        }
+        was_training = model.training
+        model.eval()
+        try:
+            with torch.no_grad():
+                for start in range(0, sample_count, batch_size):
+                    end = min(start + batch_size, sample_count)
+                    evaluation_targets = {
+                        name: value[start:end] for name, value in targets.items()
+                    }
+                    forward, signals = model._forward(
+                        {
+                            name: value[:, start:end]
+                            for name, value in inputs.tensors.items()
+                        },
+                        diagnostics=False,
+                        required_signals=required_signals,
+                    )
+                    loss, components = compute_loss(
+                        forward, signals, evaluation_targets, inputs.protocol
+                    )
+                    count = end - start
+                    total_loss += float(loss) * count
+                    for name, value in components.items():
+                        components_total[name] = (
+                            components_total.get(name, 0.0) + float(value) * count
+                        )
+                    for i, objective in enumerate(training.get("objectives", [])):
+                        if not X.classification(objective):
+                            continue
+                        prediction = forward.outputs[
+                            output_ids[objective["prediction"]]
+                        ].argmax(dim=-1)
+                        correct[f"objective[{i}]"] += int(
+                            (
+                                prediction == evaluation_targets[objective["target"]]
+                            ).sum()
+                        )
+        finally:
+            model.train(was_training)
+        metrics = {
+            "loss": total_loss / sample_count,
+            "components": {
+                name: value / sample_count for name, value in components_total.items()
+            },
+            "accuracies": {
+                name: value / sample_count for name, value in correct.items()
+            },
+        }
+        if len(correct) == 1:
+            metrics["accuracy"] = next(iter(correct.values())) / sample_count
+        return metrics
+
+    def record_epoch(epoch):
+        row = {"epoch": epoch}
+        splits = {"train": (resolved_inputs, resolved_targets)}
+        if validation_data is not None:
+            splits["validation"] = validation_data[:2]
+        for split, (inputs, targets) in splits.items():
+            row.update(
+                {
+                    f"{split}_{key}": value
+                    for key, value in evaluate_split(inputs, targets).items()
+                }
+            )
+        epoch_history.append(row)
+
     scheduled: list[tuple[int, int, torch.Tensor]] = []
     if dataset_mode:
         for epoch in range(data_state["epoch"], dataset_epochs):
@@ -3812,6 +4499,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             (-1, update, torch.arange(dataset_size)) for update in range(updates)
         ]
 
+    if dataset_mode and data_state["batch"] == 0:
+        record_epoch(data_state["epoch"])
+
     for update, (epoch, batch, sample_indices) in enumerate(scheduled):
         optimizer.zero_grad(set_to_none=True)
         batch_inputs = {
@@ -3822,54 +4512,14 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             name: value.index_select(0, sample_indices.to(value.device))
             for name, value in resolved_targets.items()
         }
-        forward = model(batch_inputs, record="full")
-        components: dict[str, torch.Tensor] = {}
-        loss = torch.zeros((), device=device)
-        for index, objective in enumerate(training.get("objectives", [])):
-            if objective.get("kind") != "cross_entropy":
-                raise ValueError(
-                    f"objective[{index}] unsupported kind {objective.get('kind')}"
-                )
-            output_id = output_ids.get(objective["prediction"])
-            if output_id is None:
-                raise ValueError(
-                    f"objective[{index}] prediction {objective['prediction']} is not a graph output"
-                )
-            target_name = objective["target"]
-            if target_name not in resolved_targets:
-                raise ValueError(
-                    f"objective[{index}] missing target tensor {target_name}"
-                )
-            target = batch_targets[target_name].to(device=device, dtype=torch.long)
-            value = torch.nn.functional.cross_entropy(
-                forward.outputs[output_id], target
-            ) * float(objective.get("weight", 1.0))
-            components[f"objective[{index}]"] = value
-            loss = loss + value
-        duration = training.get("presentation_duration")
-        duration_s = (
-            float(duration["value"]) / 1000.0
-            if duration
-            else resolved_inputs.protocol["timing"]["duration_ms"] / 1000.0
+        forward, signal_values = model._forward(
+            batch_inputs,
+            diagnostics=spec.diagnostics,
+            required_signals=required_signals,
         )
-        for index, regularizer in enumerate(training.get("regularizers", [])):
-            if regularizer.get("kind") != "spike_budget":
-                raise ValueError(
-                    f"regularizer[{index}] unsupported kind {regularizer.get('kind')}"
-                )
-            ceiling = float(regularizer["config"]["ceiling"]["value"])
-            penalties = []
-            for signal in regularizer["signals"]:
-                spikes = forward.recordings.get(signal)
-                if spikes is None:
-                    raise ValueError(
-                        f"regularizer[{index}] spike signal {signal} is not recorded"
-                    )
-                sample_rates = spikes.sum(dim=0).mean(dim=1) / duration_s
-                penalties.append(torch.relu(sample_rates - ceiling).square())
-            value = float(regularizer["strength"]) * torch.stack(penalties).mean()
-            components[f"regularizer[{index}]"] = value
-            loss = loss + value
+        loss, components = compute_loss(
+            forward, signal_values, batch_targets, resolved_inputs.protocol
+        )
         loss.backward()
         last_gradients = {
             name: parameter.grad.detach().clone()
@@ -3886,8 +4536,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         rows = {row["id"]: row for row in graph.get("parameters", [])}
         with torch.no_grad():
             for name, parameter in parameter_map.items():
-                if (rows[name].get("constraint") or {}).get("kind") == "non_negative":
-                    parameter.clamp_(min=0)
+                constraint = rows[name].get("constraint")
+                if constraint:
+                    parameter.copy_(X.apply_constraint(parameter, constraint))
         absolute_update = completed_updates + update + 1
         next_data_state: dict[str, Any] = {}
         if dataset_mode:
@@ -3911,6 +4562,8 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         ):
             selected_checkpoint = candidate
         final_forward = forward
+        if dataset_mode and next_data_state["batch"] == 0:
+            record_epoch(next_data_state["epoch"])
     assert final_forward is not None
     completed_this_call = len(scheduled)
     final_checkpoint = checkpoint_at(
@@ -3918,16 +4571,20 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         history[-1]["loss"],
         next_data_state,
     )
-    if save_final := spec.options.get("save_final_checkpoint"):
+    if save_final := spec.save_final_checkpoint:
         save_training_checkpoint(save_final, final_checkpoint)
-    if save_selected := spec.options.get("save_selected_checkpoint"):
+    if save_selected := spec.save_selected_checkpoint:
         assert selected_checkpoint is not None
         save_training_checkpoint(save_selected, selected_checkpoint)
 
     return ExecutionResult(
         executor="graph",
         outputs=final_forward.outputs,
-        recordings=final_forward.recordings,
+        diagnostics=final_forward.diagnostics,
+        _output_axes=final_forward._output_axes,
+        _diagnostic_axes=final_forward._diagnostic_axes,
+        _timebase=final_forward._timebase,
+        _batch_size=final_forward._batch_size,
         parameters={
             name: value.detach().clone() for name, value in parameter_map.items()
         },
@@ -3938,7 +4595,14 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         model=model,
         metrics={
             **built.metrics,
+            "diagnostics": spec.diagnostics,
             "updates": history,
+            "epochs": epoch_history,
+            "validation_protocol": (
+                {**validation_data[0].protocol, "targets": validation_data[2]}
+                if validation_data is not None
+                else None
+            ),
             "execution_protocol": resolved_inputs.protocol,
             "trainable_parameters": sorted(last_gradients),
             "optimizer": optimizer_spec,
@@ -3975,14 +4639,30 @@ def execution_spec_from_args(
         bundle=Path(args.bundle) if getattr(args, "bundle", None) else None,
         seed=int(getattr(args, "seed", 0) or 0),
         device=resolve_device(getattr(args, "device", "auto")),
-        recording=getattr(args, "recording", "full"),
+        diagnostics=getattr(args, "diagnostics", True),
         checkpoint=(
             Path(args.load_weights) if getattr(args, "load_weights", None) else None
         ),
+        epochs=int(getattr(args, "epochs", 0) or 0),
+        batch_size=getattr(args, "batch_size", None),
+        shuffle=bool(getattr(args, "input_shuffle", False)),
+        updates=getattr(args, "updates", None),
+        save_final_checkpoint=getattr(args, "save_final_checkpoint", None),
+        save_selected_checkpoint=getattr(args, "save_selected_checkpoint", None),
         options={
             key: value
             for key, value in vars(args).items()
-            if key not in {"bundle", "executor"}
+            if key
+            not in {
+                "bundle",
+                "executor",
+                "epochs",
+                "batch_size",
+                "shuffle",
+                "updates",
+                "save_final_checkpoint",
+                "save_selected_checkpoint",
+            }
         },
     )
 

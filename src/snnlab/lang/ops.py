@@ -5,6 +5,34 @@ from __future__ import annotations
 from .core import Constant, Signal
 
 
+def custom(
+    definition: str,
+    sources,
+    *,
+    name: str,
+    shape,
+    unit: str,
+    parameters=(),
+    signal_type="continuous",
+    **config,
+) -> Signal:
+    from snnlab.extensions import get
+
+    get("operation", definition)
+    source = sources if isinstance(sources, Signal) else sources[0]
+    return source.network.operation(
+        "custom_operation",
+        sources,
+        name=name,
+        shape=shape,
+        unit=unit,
+        parameters=parameters,
+        signal_type=signal_type,
+        definition=definition,
+        settings=config,
+    )
+
+
 def linear(source: Signal, *, size: int, name: str, trainable: bool = True) -> Signal:
     net = source.network
     weight = net.parameter(

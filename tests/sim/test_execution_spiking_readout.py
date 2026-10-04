@@ -6,13 +6,14 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.lang.examples.build_examples import ping_classifier
 from snnlab.sim.execution import (
+    DenseArrayBinding,
     ExecutionSpec,
     build,
     export_legacy_parameters_v1,
     simulate,
 )
+from tests.sim._bundle_builders import ping_classifier
 
 
 @pytest.mark.parametrize("spiking", [False, True])
@@ -34,14 +35,16 @@ def test_soft_reset_integrator_records_spikes_only_when_declared(spiking):
         weight=snn.Constant(1.0),
         synapse=snn.LeakyIntegrator(tau=2 * snn.ms),
     )
+    net.expose(cell.voltage, name="out.voltage")
+    if spiking:
+        net.expose(cell.spikes, name="out.spikes")
     graph = snn.compile(net).graph
     result = simulate(
         ExecutionSpec(
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs={"drive": torch.ones(8, 1, 1)},
-            recording="full",
+            input_bindings=(DenseArrayBinding("drive", torch.ones(8, 1, 1)),),
         )
     )
     voltage = 0.0
@@ -53,11 +56,14 @@ def test_soft_reset_integrator_records_spikes_only_when_declared(spiking):
         voltage -= spike
         expected_spikes.append(spike if spiking else 0.0)
         expected_voltage.append(voltage)
+    if spiking:
+        torch.testing.assert_close(
+            result.diagnostics["out.spikes"].flatten(), torch.tensor(expected_spikes)
+        )
+    else:
+        assert "out.spikes" not in result.diagnostics
     torch.testing.assert_close(
-        result.recordings["out.spikes"].flatten(), torch.tensor(expected_spikes)
-    )
-    torch.testing.assert_close(
-        result.recordings["out.voltage"].flatten(), torch.tensor(expected_voltage)
+        result.diagnostics["out.voltage"].flatten(), torch.tensor(expected_voltage)
     )
 
 
@@ -74,7 +80,7 @@ def test_graph_inference_restores_complete_legacy_checkpoint(tmp_path):
             graph=graph,
             seed=99,
             checkpoint=path,
-            inputs={"image": torch.zeros(2, 1, 784)},
+            input_bindings=(DenseArrayBinding("image", torch.zeros(2, 1, 784)),),
         )
     )
     for name, expected in built.model.parameter_map().items():
@@ -90,6 +96,6 @@ def test_graph_inference_restores_complete_legacy_checkpoint(tmp_path):
                 executor="graph",
                 graph=graph,
                 checkpoint=path,
-                inputs={"image": torch.zeros(2, 1, 784)},
+                input_bindings=(DenseArrayBinding("image", torch.zeros(2, 1, 784)),),
             )
         )

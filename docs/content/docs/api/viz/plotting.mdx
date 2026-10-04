@@ -1,0 +1,202 @@
+---
+title: Plotting and animation
+description: Figure layouts, recording adapters, scenes, transforms, themes and animation.
+---
+
+`snnlab.viz` provides composition tools around Matplotlib and NumPy. It does not prescribe one plot type. Import the helpers through `from snnlab import viz`; choose Matplotlib artists appropriate to your data.
+
+## Execution arrays and Recording
+
+Use [ExecutionResult.numpy](/api/sim/execution-result#numpy) for named plotting arrays. A `viz.Recording` is a separate visualization container for time series; it is not the removed execution `recordings` field.
+
+```python
+class Recording:
+    dt_ms: float
+    signals: Mapping[str, np.ndarray]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    source: Path | None = None
+```
+
+`dt_ms` must be finite and positive. At least one signal must vary over time, and all non-scalar signals must have the same leading time length; otherwise `RecordingError` is raised. `.steps` is that length, `.duration_ms` is `steps * dt_ms`, and `.require(*names)` returns arrays in the requested order or raises for missing names. Keep static weight matrices and time-reduced scores in metadata, not in the time-series signal mapping.
+
+```python
+data = result.numpy(batch=0)
+recording = viz.Recording(
+    dt_ms=DT_MS,
+    signals={
+        "spikes": data.outputs["spikes"],
+        "voltage": data.diagnostics["e_voltage"],
+    },
+)
+```
+
+### load_snnsim_recording
+
+```python
+def load_snnsim_recording(run_dir: str | Path) -> Recording: ...
+```
+
+Loads a legacy/native `recording.npz` snapshot containing `dt` and a recognized time-series anchor (`spk_e`, `v_e_1` or `input_spikes`). It retains time-varying signal fields and stores other array fields under `metadata["retained_static"]`; optional `config.json` is loaded as metadata. It does not directly load a training checkpoint or `ExecutionResult`.
+
+## FigureGrid
+
+```python
+class FigureGrid:
+    rows: int | Sequence[float]
+    columns: int | Sequence[float]
+    bounds: FigureRect | tuple[float, float, float, float] = FigureRect(
+        0.06, 0.06, 0.88, 0.88
+    )
+    row_gap: float | Sequence[float] = 0.03
+    column_gap: float | Sequence[float] = 0.03
+    theme: Theme = field(default_factory=Theme)
+```
+
+Rows run from top to bottom and columns from left to right. Integers create equal tracks; sequences create positively weighted tracks. Bounds and gaps use normalized figure coordinates. Region names are unique; overlaps, out-of-bounds spans and gaps consuming the available area are rejected.
+
+| Method | Arguments and return |
+| --- | --- |
+| `place` | `place(name, *, row, column, rowspan=1, colspan=1)` → `FigureRegion`. Declares an axes region. |
+| `reserve` | Same arguments as `place`; reserves space that cannot become axes. |
+| `names` | `names()` → tuple of registered names. |
+| `region` | `region(name)` → `FigureRegion`; unknown names raise `KeyError`. |
+| `rect` | `rect(name, *, padding=0.0)` → normalized `FigureRect`. |
+| `subgrid` | `subgrid(name, *, rows, columns, padding=0.0, row_gap=0.02, column_gap=0.02)` → nested grid sharing the theme. |
+| `figure` | `figure(*, figsize, dpi=120)` → styled Matplotlib figure. |
+| `add_axes` | `add_axes(figure, name, *, padding=0.0, frame=True, **kwargs)` → axes; `kwargs` go to Matplotlib. |
+| `style_axis` | `style_axis(axis, *, frame=True)` applies the theme's axis styling. |
+| `draw_region` | `draw_region(figure, name, *, role="ink", fill=None, linewidth=1.4, dashed=False, zorder=-10)` → rectangle artist. |
+
+```python
+layout = viz.FigureGrid(rows=3, columns=1)
+layout.place("inputs", row=0, column=0)
+layout.place("spikes", row=1, column=0)
+layout.place("voltage", row=2, column=0)
+figure = layout.figure(figsize=(10, 8))
+input_axis = layout.add_axes(figure, "inputs")
+spike_axis = layout.add_axes(figure, "spikes", sharex=input_axis)
+voltage_axis = layout.add_axes(figure, "voltage", sharex=input_axis)
+```
+
+### FigureRect and FigureRegion
+
+### FigureRect
+
+```python
+class FigureRect:
+    x: float
+    y: float
+    width: float
+    height: float
+```
+
+### FigureRegion
+
+```python
+class FigureRegion:
+    name: str
+    row: int
+    column: int
+    rowspan: int = 1
+    colspan: int = 1
+    reserved: bool = False
+```
+
+`FigureRect.mpl` returns `(x, y, width, height)`. `.inset(padding)` uses relative left/bottom/right/top fractions, or one fraction for all sides; negative padding or padding consuming the rectangle raises `ValueError`.
+
+## Scene and Panel
+
+```python
+class Scene:
+    recording: Recording
+    figure: Any = None
+    layout: FigureGrid | None = None
+    panels: list[Panel] = field(default_factory=list)
+    callbacks: list[Callable[[int, "Scene"], object]] = field(default_factory=list)
+```
+
+A `Panel` implements `draw(ax, recording)` and `update(frame)`. It is a protocol for your own plot objects, rather than a built-in raster or voltage plot.
+
+`Scene` creates a Matplotlib figure when one is not supplied. `.add(panel, *, axis=None, region=None)` draws and registers a panel, returning its axes. Choose either an explicit axis or a named layout region; a region requires a layout. `.on_frame(callback)` registers a callback accepting `(frame, scene)`. `.update(frame)` updates all panels and callbacks and returns their artists.
+
+## Numerical transforms
+
+### exponential_trace
+
+```python
+def exponential_trace(
+    events: np.ndarray, *, dt_ms: float, tau_ms: float
+) -> np.ndarray: ...
+```
+
+### projection_activity
+
+```python
+def projection_activity(
+    weights: np.ndarray, source_trace: np.ndarray, *, scale: np.ndarray | float = 1.0
+) -> np.ndarray: ...
+```
+
+### representative_frame
+
+```python
+def representative_frame(
+    *signals: np.ndarray, candidates: np.ndarray | None = None
+) -> int: ...
+```
+```python
+def grid_layout(
+    count: int,
+    *,
+    columns: int,
+    x_range: tuple[float, float] = (0.0, 1.0),
+    y_range: tuple[float, float] = (0.0, 1.0),
+) -> np.ndarray: ...
+```
+
+| Helper | Behaviour |
+| --- | --- |
+| `exponential_trace` | Input `(time, units)` events → float32 exponentially decaying trace. Positive `dt_ms` and `tau_ms` are required. Step zero is zero; each following step includes events from the preceding step. |
+| `projection_activity` | Source-major `(source, target)` weights and `(time, source)` trace → `(time, nonzero_edges)` activity. Optional scale is a scalar or one value per time step. |
+| `representative_frame` | Returns the candidate time index with greatest summed activity across signals. Signals must share their leading time length. |
+| `grid_layout` | Returns `(count, 2)` coordinates on a regular grid. Requires non-negative count and positive columns. |
+
+## Theme
+
+```python
+class Theme:
+    background: str = "#ffffff"
+    ink: str = "#1a1a1a"
+    accent: str = "#c8102e"
+    muted: str = "#666666"
+    rule: str = "#e7e5df"
+    cyan: str = "#00b4d8"
+    amber: str = "#e89400"
+    dark_grey: str = "#3a3a3a"
+    mid_grey: str = "#6a6a6a"
+```
+
+`.colour(role)` returns a named colour or raises `ValueError` for an unknown role. `.apply()` changes Matplotlib defaults for subsequently created figures. `FigureGrid.figure()` applies it automatically. Viz does not force a Matplotlib backend: for headless scripts configure your environment or backend before importing plotting helpers when needed.
+
+## Animation
+
+```python
+class FrameTimeline:
+    steps: np.ndarray
+    dt_ms: float
+```
+```python
+def save_animation(
+    figure,
+    update: Callable[[int], object],
+    output: str | Path,
+    *,
+    frames: int,
+    fps: int = 25,
+    bitrate: int = 3800,
+) -> FuncAnimation: ...
+```
+
+`FrameTimeline.sample(steps, *, frames, dt_ms)` uniformly samples step indices and requires `0 < frames <= steps`. `.compose(segments, *, dt_ms)` accepts `(start_step, end_step, frame_count)` segments; reversed ranges play backward and equal endpoints create holds. `.time_ms(frame)` converts the selected step to milliseconds.
+
+`save_animation` passes frame indices to the update callback, saves through Matplotlib's FFmpeg writer, and returns `FuncAnimation`. FFmpeg must be available. A timeline's selected simulation steps are distinct from animation frame indices: use `timeline.steps[frame]` inside your update callback.

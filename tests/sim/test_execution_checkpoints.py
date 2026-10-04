@@ -10,6 +10,7 @@ import torch
 
 from snnlab.sim.conformance import canonical_json_tensor, compare_conformance_layers
 from snnlab.sim.execution import (
+    DenseArrayBinding,
     ExecutionSpec,
     capture_training_rng_state,
     load_training_checkpoint,
@@ -33,20 +34,18 @@ def test_training_checkpoint_round_trip_and_resume_are_exact(tmp_path):
         executor="graph",
         graph=bundle.graph,
         training=bundle.training,
-        inputs={"events": inputs},
+        input_bindings=(DenseArrayBinding("events", inputs),),
         targets={"label": torch.tensor([0, 1])},
         seed=17,
     )
-    uninterrupted = train(ExecutionSpec(**common, options={"updates": 4}))
+    uninterrupted = train(ExecutionSpec(**common, updates=4))
     checkpoint_dir = tmp_path / "checkpoint"
     first_half = train(
         ExecutionSpec(
             **common,
-            options={
-                "updates": 2,
-                "save_final_checkpoint": checkpoint_dir,
-                "save_selected_checkpoint": tmp_path / "selected",
-            },
+            updates=2,
+            save_final_checkpoint=checkpoint_dir,
+            save_selected_checkpoint=tmp_path / "selected",
         )
     )
     loaded = load_training_checkpoint(checkpoint_dir)
@@ -57,7 +56,7 @@ def test_training_checkpoint_round_trip_and_resume_are_exact(tmp_path):
         ExecutionSpec(
             **common,
             checkpoint=checkpoint_dir,
-            options={"updates": 2},
+            updates=2,
         )
     )
     assert resumed.metrics["resumed_from_update"] == 2
@@ -137,7 +136,7 @@ def test_accelerator_rng_checkpoint_round_trip_and_topology_restore(
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": torch.zeros(3, 1, 2)},
+            input_bindings=(DenseArrayBinding("events", torch.zeros(3, 1, 2)),),
             targets={"label": torch.tensor([0])},
         )
     )
@@ -195,7 +194,7 @@ def test_v1_cpu_checkpoint_remains_loadable(tmp_path):
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": torch.zeros(3, 1, 2)},
+            input_bindings=(DenseArrayBinding("events", torch.zeros(3, 1, 2)),),
             targets={"label": torch.tensor([0])},
         )
     )
@@ -220,7 +219,7 @@ def test_training_checkpoint_rejects_partial_parameter_mapping(tmp_path):
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": torch.tensor([0, 1])},
         )
     )
@@ -235,7 +234,7 @@ def test_training_checkpoint_rejects_partial_parameter_mapping(tmp_path):
                 executor="graph",
                 graph=bundle.graph,
                 training=bundle.training,
-                inputs={"events": inputs},
+                input_bindings=(DenseArrayBinding("events", inputs),),
                 targets={"label": torch.tensor([0, 1])},
                 checkpoint=root,
             )
@@ -254,10 +253,11 @@ def test_graph_inference_loads_portable_selected_checkpoint_with_provenance(tmp_
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": torch.tensor([0, 1])},
             seed=17,
-            options={"updates": 3, "save_selected_checkpoint": selected_path},
+            updates=3,
+            save_selected_checkpoint=selected_path,
         )
     )
     selected = load_training_checkpoint(selected_path)
@@ -266,7 +266,7 @@ def test_graph_inference_loads_portable_selected_checkpoint_with_provenance(tmp_
             kind="simulate",
             executor="graph",
             graph=bundle.graph,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             seed=17,
             checkpoint=selected_path,
         )
@@ -293,7 +293,7 @@ def test_graph_inference_loads_portable_selected_checkpoint_with_provenance(tmp_
                 kind="simulate",
                 executor="graph",
                 graph=incompatible,
-                inputs={"events": inputs},
+                input_bindings=(DenseArrayBinding("events", inputs),),
                 checkpoint=selected_path,
             )
         )
@@ -309,21 +309,19 @@ def test_dataset_training_resume_preserves_shuffle_and_batch_position(tmp_path):
         executor="graph",
         graph=bundle.graph,
         training=bundle.training,
-        inputs={"events": inputs},
+        input_bindings=(DenseArrayBinding("events", inputs),),
         targets={"label": torch.tensor([0, 1, 0, 1, 0])},
         seed=23,
     )
     trajectory = {"epochs": 2, "batch_size": 2, "shuffle": True}
-    uninterrupted = train(ExecutionSpec(**common, options=trajectory))
+    uninterrupted = train(ExecutionSpec(**common, **trajectory))
     checkpoint_dir = tmp_path / "dataset-checkpoint"
     first = train(
         ExecutionSpec(
             **common,
-            options={
-                **trajectory,
-                "updates": 1,
-                "save_final_checkpoint": checkpoint_dir,
-            },
+            **trajectory,
+            updates=1,
+            save_final_checkpoint=checkpoint_dir,
         )
     )
     assert first.training_checkpoint is not None
@@ -332,7 +330,7 @@ def test_dataset_training_resume_preserves_shuffle_and_batch_position(tmp_path):
         ExecutionSpec(
             **common,
             checkpoint=checkpoint_dir,
-            options=trajectory,
+            **trajectory,
         )
     )
     assert resumed.metrics["updates"] == uninterrupted.metrics["updates"][1:]

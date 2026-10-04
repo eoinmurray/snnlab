@@ -77,6 +77,12 @@ def _author_ping() -> snn.Bundle:
     )
     scores = snn.readouts.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_logits", scores)
+    net.expose(cell.E.spikes, name="cell_E.spikes")
+    net.expose(cell.I.spikes, name="cell_I.spikes")
+    net.expose(cell.E.voltage, name="cell_E.voltage")
+    net.expose(cell.I.voltage, name="cell_I.voltage")
+    for name in ("cell_input", "cell_E_to_I", "cell_I_to_E"):
+        net.expose(net._signal(f"{name}.conductance"), name=f"{name}.conductance")
     return snn.compile(net)
 
 
@@ -136,15 +142,15 @@ def _fixed_legacy_model(
 def _graph_forward(
     model: GraphExecutor, inputs: Mapping[str, torch.Tensor]
 ) -> dict[str, torch.Tensor]:
-    result = model(inputs, record="full")
+    result = model(inputs)
     return {
-        "e_spikes": result.recordings["cell_E.spikes"],
-        "i_spikes": result.recordings["cell_I.spikes"],
-        "e_voltage": result.recordings["cell_E.voltage"],
-        "i_voltage": result.recordings["cell_I.voltage"],
-        "input_conductance": result.recordings["cell_input.conductance"],
-        "e_to_i_conductance": result.recordings["cell_E_to_I.conductance"],
-        "i_to_e_conductance": result.recordings["cell_I_to_E.conductance"],
+        "e_spikes": result.diagnostics["cell_E.spikes"],
+        "i_spikes": result.diagnostics["cell_I.spikes"],
+        "e_voltage": result.diagnostics["cell_E.voltage"],
+        "i_voltage": result.diagnostics["cell_I.voltage"],
+        "input_conductance": result.diagnostics["cell_input.conductance"],
+        "e_to_i_conductance": result.diagnostics["cell_E_to_I.conductance"],
+        "i_to_e_conductance": result.diagnostics["cell_I_to_E.conductance"],
         "logits": result.outputs["class_logits"],
     }
 

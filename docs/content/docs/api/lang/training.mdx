@@ -1,500 +1,11 @@
 ---
-title: snnlab.lang.training
-description: Complete declared API of the training module, with signatures, data fields, validation and source.
+title: Training
+description: Training recipes, objectives, parameter groups, optimizers and surrogate gradients.
 ---
 
-[Back to lang reference](/api/lang)
-
-Training declarations are serialized by compile(training=...). They specify objectives, parameter scope, optimizer and gradient rules; concrete datasets, targets and execution ordering remain request inputs.
-
-The signatures, defaults, fields, docstrings and implementation excerpts below are generated from the Python source. Annotations are shown as declared; `unannotated` means the source supplies no type annotation. These pages document callable surfaces, including legacy support utilities, without promising backend support for every declaration.
-
-| Symbol | Kind |
-| --- | --- |
-| [SignalLike](/api/lang/training#signallike) | class |
-| [Objective](/api/lang/training#objective) | class |
-| [CrossEntropy](/api/lang/training#crossentropy) | function |
-| [ParameterGroup](/api/lang/training#parametergroup) | class |
-| [Regularizer](/api/lang/training#regularizer) | class |
-| [UpperRatePenalty](/api/lang/training#upperratepenalty) | function |
-| [SpikeBudgetPenalty](/api/lang/training#spikebudgetpenalty) | function |
-| [Optimizer](/api/lang/training#optimizer) | class |
-| [AdamW](/api/lang/training#adamw) | function |
-| [FastSigmoid](/api/lang/training#fastsigmoid) | function |
-| [StopGradient](/api/lang/training#stopgradient) | class |
-| [TrainSpec](/api/lang/training#trainspec) | class |
-
-## SignalLike
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L11)
-
-Bases: `Protocol`. Inherited third-party framework APIs follow their owning library.
-
-Declared fields, including fields inherited from local data classes:
-
-| Field | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `id` | `str` | required | Stable identifier in the relevant graph or data contract. |
-
-<details>
-<summary>Complete class implementation</summary>
-
-```python
-class SignalLike(Protocol):
-    id: str
-```
-
-</details>
-
-## Objective
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L16)
-
-Class decorators: `dataclass(frozen=True)`.
-
-Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
-
-```python
-Objective(kind: str, prediction: str, target: str, weight: float = 1.0)
-```
-
-Declared fields, including fields inherited from local data classes:
-
-| Field | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `kind` | `str` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `prediction` | `str` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `target` | `str` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `weight` | `float` | `1.0` | Stored member of this data contract; see the class docstring and serialization methods. |
-
-<details>
-<summary>Complete class implementation</summary>
-
-```python
-class Objective:
-    kind: str
-    prediction: str
-    target: str
-    weight: float = 1.0
-```
-
-</details>
-
-## CrossEntropy
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L23)
-
-```python
-def CrossEntropy(*, prediction: SignalLike | str, target: str, weight: float=1.0) -> Objective
-```
-
-Create a cross_entropy objective binding prediction.id (or a supplied signal id string) to a named integer target, with the supplied scalar objective weight.
-
-| Parameter | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `prediction` | `SignalLike \| str` | required | Defined by the source contract and implementation below. |
-| `target` | `str` | required | Defined by the source contract and implementation below. |
-| `weight` | `float` | `1.0` | Defined by the source contract and implementation below. |
-
-Return annotation: `Objective`.
-
-Return expressions (branch-dependent; names refer to the linked implementation):
-
-```python
-Objective('cross_entropy', value, target, weight)
-```
-
-<details>
-<summary>Implementation</summary>
-
-```python
-def CrossEntropy(
-    *, prediction: SignalLike | str, target: str, weight: float = 1.0
-) -> Objective:
-    value = prediction if isinstance(prediction, str) else prediction.id
-    return Objective("cross_entropy", value, target, weight)
-```
-
-</details>
-
-## ParameterGroup
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L31)
-
-Named trainable or frozen parameter scope. Groups must be exhaustive and non-overlapping. Frozen groups use zero learning rate; trainable groups require a positive finite rate.
-
-Class decorators: `dataclass(frozen=True)`.
-
-Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
-
-```python
-ParameterGroup(parameters: Sequence[ParameterRef | str], name: str, lr: float, frozen: bool = False)
-```
-
-Declared fields, including fields inherited from local data classes:
-
-| Field | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `parameters` | `Sequence[ParameterRef \| str]` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `name` | `str` | required | Name used to identify the authored or rendered object. |
-| `lr` | `float` | required | Learning rate; frozen groups require zero and trainable groups require a positive value. |
-| `frozen` | `bool` | `False` | Whether this parameter scope is excluded from optimizer updates. |
-
-### ParameterGroup.ids
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L37)
-
-```python
-def ParameterGroup.ids(self) -> list[str]
-```
-
-Return annotation: `list[str]`.
-
-Return expressions (branch-dependent; names refer to the linked implementation):
-
-```python
-[p.id if isinstance(p, ParameterRef) else p for p in self.parameters]
-```
-
-<details>
-<summary>Implementation</summary>
-
-```python
-def ids(self) -> list[str]:
-        return [p.id if isinstance(p, ParameterRef) else p for p in self.parameters]
-```
-
-</details>
-
-<details>
-<summary>Complete class implementation</summary>
-
-```python
-class ParameterGroup:
-    parameters: Sequence[ParameterRef | str]
-    name: str
-    lr: float
-    frozen: bool = False
-
-    def ids(self) -> list[str]:
-        return [p.id if isinstance(p, ParameterRef) else p for p in self.parameters]
-```
-
-</details>
-
-## Regularizer
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L42)
-
-Class decorators: `dataclass(frozen=True)`.
-
-Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
-
-```python
-Regularizer(kind: str, signals: tuple[str, ...], strength: float, config: dict[str, Any] = field(default_factory=dict))
-```
-
-Declared fields, including fields inherited from local data classes:
-
-| Field | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `kind` | `str` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `signals` | `tuple[str, ...]` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `strength` | `float` | required | Regularizer or adaptation scale, according to the containing contract. |
-| `config` | `dict[str, Any]` | `field(default_factory=dict)` | Stored member of this data contract; see the class docstring and serialization methods. |
-
-<details>
-<summary>Complete class implementation</summary>
-
-```python
-class Regularizer:
-    kind: str
-    signals: tuple[str, ...]
-    strength: float
-    config: dict[str, Any] = field(default_factory=dict)
-```
-
-</details>
-
-## UpperRatePenalty
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L49)
-
-```python
-def UpperRatePenalty(*, signal: Signal, threshold: float, strength: float) -> Regularizer
-```
-
-Compatibility convenience for SpikeBudgetPenalty on a single signal, using threshold as the rate ceiling in Hz.
-
-| Parameter | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `signal` | `Signal` | required | Defined by the source contract and implementation below. |
-| `threshold` | `float` | required | Defined by the source contract and implementation below. |
-| `strength` | `float` | required | Regularizer or adaptation scale, according to the containing contract. |
-
-Return annotation: `Regularizer`.
-
-Return expressions (branch-dependent; names refer to the linked implementation):
-
-```python
-SpikeBudgetPenalty(signals=(signal,), ceiling_hz=threshold, strength=strength)
-```
-
-<details>
-<summary>Implementation</summary>
-
-```python
-def UpperRatePenalty(
-    *, signal: Signal, threshold: float, strength: float
-) -> Regularizer:
-    return SpikeBudgetPenalty(
-        signals=(signal,), ceiling_hz=threshold, strength=strength
-    )
-```
-
-</details>
-
-## SpikeBudgetPenalty
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L57)
-
-```python
-def SpikeBudgetPenalty(*, signals: Sequence[Signal | str], ceiling_hz: float, strength: float) -> Regularizer
-```
-
-Declare a squared-hinge penalty above ceiling_hz, aggregated as the mean over presentations and layers of each population's mean-rate overshoot squared. strength scales the penalty.
-
-| Parameter | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `signals` | `Sequence[Signal \| str]` | required | Defined by the source contract and implementation below. |
-| `ceiling_hz` | `float` | required | Mean-rate ceiling in spikes per second. |
-| `strength` | `float` | required | Regularizer or adaptation scale, according to the containing contract. |
-
-Return annotation: `Regularizer`.
-
-Return expressions (branch-dependent; names refer to the linked implementation):
-
-```python
-Regularizer('spike_budget', ids, strength, {'ceiling': {'value': ceiling_hz, 'unit': 'Hz'}, 'penalty': 'squared_hinge', 'aggregation': 'mean_presentations_then_layers_of_population_mean_rate'})
-```
-
-<details>
-<summary>Implementation</summary>
-
-```python
-def SpikeBudgetPenalty(
-    *, signals: Sequence[Signal | str], ceiling_hz: float, strength: float
-) -> Regularizer:
-    ids = tuple(signal if isinstance(signal, str) else signal.id for signal in signals)
-    return Regularizer(
-        "spike_budget",
-        ids,
-        strength,
-        {
-            "ceiling": {"value": ceiling_hz, "unit": "Hz"},
-            "penalty": "squared_hinge",
-            "aggregation": "mean_presentations_then_layers_of_population_mean_rate",
-        },
-    )
-```
-
-</details>
-
-## Optimizer
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L74)
-
-Class decorators: `dataclass(frozen=True)`.
-
-Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
-
-```python
-Optimizer(kind: str, config: dict[str, Any] = field(default_factory=dict))
-```
-
-Declared fields, including fields inherited from local data classes:
-
-| Field | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `kind` | `str` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `config` | `dict[str, Any]` | `field(default_factory=dict)` | Stored member of this data contract; see the class docstring and serialization methods. |
-
-<details>
-<summary>Complete class implementation</summary>
-
-```python
-class Optimizer:
-    kind: str
-    config: dict[str, Any] = field(default_factory=dict)
-```
-
-</details>
-
-## AdamW
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L79)
-
-```python
-def AdamW(**config: Any) -> Optimizer
-```
-
-Create an adamw optimizer declaration. Keyword configuration is stored for recipe validation and execution rather than creating a torch optimizer immediately.
-
-| Parameter | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `**config` | `Any` | `variadic` | Defined by the source contract and implementation below. |
-
-Return annotation: `Optimizer`.
-
-Return expressions (branch-dependent; names refer to the linked implementation):
-
-```python
-Optimizer('adamw', config)
-```
-
-<details>
-<summary>Implementation</summary>
-
-```python
-def AdamW(**config: Any) -> Optimizer:
-    return Optimizer("adamw", config)
-```
-
-</details>
-
-## FastSigmoid
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L83)
-
-```python
-def FastSigmoid(*, slope: float=1.0) -> Spec
-```
-
-Source docstring:
-
-```text
-Fast-sigmoid surrogate used by the collection's spike backward pass.
-```
-
-| Parameter | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `slope` | `float` | `1.0` | Defined by the source contract and implementation below. |
-
-Return annotation: `Spec`.
-
-Return expressions (branch-dependent; names refer to the linked implementation):
-
-```python
-Spec('fast_sigmoid', {'slope': slope})
-```
-
-<details>
-<summary>Implementation</summary>
-
-```python
-def FastSigmoid(*, slope: float = 1.0) -> Spec:
-    """Fast-sigmoid surrogate used by the collection's spike backward pass."""
-    return Spec("fast_sigmoid", {"slope": slope})
-```
-
-</details>
-
-## StopGradient
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L89)
-
-Class decorators: `dataclass(frozen=True)`.
-
-Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
-
-```python
-StopGradient(signal: str)
-```
-
-Declared fields, including fields inherited from local data classes:
-
-| Field | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `signal` | `str` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-
-### StopGradient.at
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L93)
-
-Decorators: `classmethod`.
-
-```python
-def StopGradient.at(cls, signal: Signal) -> 'StopGradient'
-```
-
-Declare a stop-gradient boundary at a supplied Signal's id.
-
-| Parameter | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `signal` | `Signal` | required | Defined by the source contract and implementation below. |
-
-Return annotation: `'StopGradient'`.
-
-Return expressions (branch-dependent; names refer to the linked implementation):
-
-```python
-cls(signal.id)
-```
-
-<details>
-<summary>Implementation</summary>
-
-```python
-def at(cls, signal: Signal) -> "StopGradient":
-        return cls(signal.id)
-```
-
-</details>
-
-<details>
-<summary>Complete class implementation</summary>
-
-```python
-class StopGradient:
-    signal: str
-
-    @classmethod
-    def at(cls, signal: Signal) -> "StopGradient":
-        return cls(signal.id)
-```
-
-</details>
+Import recipe helpers from `snnlab.lang.training`; `TrainSpec` is also available as `lang.TrainSpec`. A recipe declares what should learn and how; [ExecutionSpec](/api/sim/execution-spec#training-controls) controls the actual epochs, minibatches and checkpoint paths. Compile it with [lang.compile](/api/lang/compilation#compile).
 
 ## TrainSpec
-
-[View source](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/lang/training.py#L98)
-
-Full training recipe. Compile it with the graph to resolve parameter groups and check objective/regularizer reachability. presentation_duration is physical time; epochs and gradient clipping are recipe settings.
-
-Class decorators: `dataclass`.
-
-Dataclass constructor parameters. Factory defaults are shown as field declarations; omit these arguments to create fresh values per instance:
-
-```python
-TrainSpec(objectives: Sequence[Objective], parameter_groups: Sequence[ParameterGroup], optimizer: Optimizer, regularizers: Sequence[Regularizer] = (), stop_gradients: Sequence[StopGradient] = (), epochs: int = 1, gradient_clip: float | None = None, surrogate: Spec | None = None, presentation_duration: Quantity | None = None)
-```
-
-Declared fields, including fields inherited from local data classes:
-
-| Field | Annotation | Default | Meaning |
-| --- | --- | --- | --- |
-| `objectives` | `Sequence[Objective]` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `parameter_groups` | `Sequence[ParameterGroup]` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `optimizer` | `Optimizer` | required | Stored member of this data contract; see the class docstring and serialization methods. |
-| `regularizers` | `Sequence[Regularizer]` | `()` | Stored member of this data contract; see the class docstring and serialization methods. |
-| `stop_gradients` | `Sequence[StopGradient]` | `()` | Stored member of this data contract; see the class docstring and serialization methods. |
-| `epochs` | `int` | `1` | Number of training passes over the selected presentations. |
-| `gradient_clip` | `float \| None` | `None` | Stored member of this data contract; see the class docstring and serialization methods. |
-| `surrogate` | `Spec \| None` | `None` | Stored member of this data contract; see the class docstring and serialization methods. |
-| `presentation_duration` | `Quantity \| None` | `None` | Stored member of this data contract; see the class docstring and serialization methods. |
-
-<details>
-<summary>Complete class implementation</summary>
 
 ```python
 class TrainSpec:
@@ -509,5 +20,123 @@ class TrainSpec:
     presentation_duration: Quantity | None = None
 ```
 
-</details>
+| Field | Behaviour |
+| --- | --- |
+| `objectives` | Predictions, target names and objective weights. |
+| `parameter_groups` | Named parameter selections, learning rates and frozen flags. |
+| `optimizer` | Serializable optimizer specification; graph training supports AdamW and registered optimizer factories. |
+| `regularizers` | Optional additional loss terms. |
+| `stop_gradients` | Signal locations where the training graph should detach. |
+| `epochs` | Recipe metadata; specify run iteration using `ExecutionSpec.epochs`. |
+| `gradient_clip` | Optional global gradient norm limit. |
+| `surrogate` | Spike backward rule; `FastSigmoid(slope=1.0)` is the public helper. |
+| `presentation_duration` | Time quantity used by the recipe, including rate regularizers. |
 
+## Objectives
+
+### CrossEntropy
+
+```python
+def CrossEntropy(
+    *, prediction: SignalLike | str, target: str, weight: float = 1.0
+) -> Objective: ...
+```
+
+### Objective
+
+```python
+class Objective:
+    kind: str
+    prediction: str
+    target: str
+    weight: float = 1.0
+```
+
+`prediction` accepts a signal-like object or signal ID. `target` names a label tensor supplied through the execution request. Cross entropy uses class logits and integer class labels. Do not apply softmax before this loss. `weight` scales the objective contribution to total loss. Multiple objectives are allowed.
+
+## Parameter groups
+
+### ParameterGroup
+
+```python
+class ParameterGroup:
+    parameters: Sequence[ParameterRef | str]
+    name: str
+    lr: float
+    frozen: bool = False
+```
+
+Use `projection.weight`, an explicit `ParameterRef`, or a graph parameter ID. `ids()` returns the resolved ID strings. Each group supplies its own learning rate; `frozen=True` excludes its parameters from optimization. Merely declaring a network parameter does not select it for training. Group membership and objective references are validated at compilation.
+
+## Optimizer and surrogate
+
+### AdamW
+
+```python
+def AdamW(**config: Any) -> Optimizer: ...
+```
+
+### Optimizer
+
+```python
+class Optimizer:
+    kind: str
+    config: dict[str, Any] = field(default_factory=dict)
+```
+
+### FastSigmoid
+
+```python
+def FastSigmoid(*, slope: float = 1.0) -> Spec: ...
+```
+
+`AdamW` stores keyword configuration for the runtime optimizer, such as `weight_decay=0.0`. Group learning rates come from `ParameterGroup`. `FastSigmoid` stores a positive slope; forward spikes remain threshold events and the surrogate supplies their backward derivative. It does not replace the forward signal with a sigmoid. Built-in graph training applies the compiled surrogate slope; an external [GraphExecutor](/api/sim/pytorch) must receive it explicitly.
+
+## Regularizers
+
+### SpikeBudgetPenalty
+
+```python
+def SpikeBudgetPenalty(
+    *, signals: Sequence[Signal | str], ceiling_hz: float, strength: float
+) -> Regularizer: ...
+```
+
+### UpperRatePenalty
+
+```python
+def UpperRatePenalty(
+    *, signal: Signal, threshold: float, strength: float
+) -> Regularizer: ...
+```
+
+### Regularizer
+
+```python
+class Regularizer:
+    kind: str
+    signals: tuple[str, ...]
+    strength: float
+    config: dict[str, Any] = field(default_factory=dict)
+```
+
+`SpikeBudgetPenalty` penalizes population mean rates exceeding `ceiling_hz`, using a squared hinge. It averages presentations and then layers. Supply spike signals or IDs and the penalty strength. `UpperRatePenalty` is the single-signal convenience wrapper: `threshold` is in Hz. Rate evaluation requires an appropriate presentation duration. Regularizers are part of both total training and validation loss.
+
+## StopGradient
+
+```python
+class StopGradient:
+    signal: str
+```
+
+`StopGradient.at(signal)` constructs a declaration from a signal ID. It prevents downstream losses from propagating through that location; it does not remove the forward signal.
+
+## Execution and validation
+
+Call `train(ExecutionSpec(...))` once to run the built-in loop. Use positive `epochs`, optional `batch_size`, and `shuffle` for dataset iteration. [ValidationSpec](/api/sim/execution-spec#validation) supplies held-out inputs and targets; it evaluates without updates. [ExecutionResult metrics](/api/sim/execution-result#epoch-metrics) distinguish initial baseline, completed epochs and per-update losses.
+
+See [Training](/training) for a complete recipe and [PyTorch Integration](/pytorch-integration) for an external optimizer loop.
+
+## Custom training definitions
+
+`CustomObjective`, `CustomRegularizer`, `CustomOptimizer` and `CustomSurrogate` select versioned registered definitions. See [Extensions](/api/lang/extensions#objectives-and-regularizers) for callback contracts, regression targets, optional classification metrics and checkpoint limits.

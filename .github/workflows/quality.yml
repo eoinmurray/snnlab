@@ -26,9 +26,4 @@ jobs:
           PINGLAB_NO_COMPILE: "1"
           OMP_NUM_THREADS: "1"
           MPLBACKEND: Agg
-      - name: Run documentation examples
-        run: uv run python docs/scripts/check_examples.py
-        env:
-          MPLBACKEND: Agg
-          OMP_NUM_THREADS: '1'
       - run: uv build

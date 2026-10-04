@@ -267,9 +267,7 @@ def test_projection_weights_use_microsiemens_and_reject_unit_drift():
         for parameter in projection["parameters"]
     }
     rows = {row["id"]: row for row in graph["parameters"]}
-    assert {rows[parameter]["unit"] for parameter in projection_parameter_ids} == {
-        "uS"
-    }
+    assert {rows[parameter]["unit"] for parameter in projection_parameter_ids} == {"uS"}
 
     rows[next(iter(projection_parameter_ids))]["unit"] = "nS"
     result = validate_graph(graph)
@@ -722,3 +720,23 @@ def test_circuit_visualisation_rejects_unknown_expanded_group(tmp_path):
             view="circuit",
             expand_groups=("missing",),
         )
+
+
+def test_spike_count_parameters_can_define_its_training_group():
+    net = snn.Network("readout_parameters")
+    inputs = net.input(
+        "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
+    )
+    scores = snn.readouts.SpikeCount(source=inputs, classes=2, name="scores")
+    net.output("class_scores", scores)
+    recipe = snn.TrainSpec(
+        objectives=(training.CrossEntropy(prediction=scores, target="class"),),
+        parameter_groups=(
+            training.ParameterGroup(scores.parameters, name="readout", lr=0.01),
+        ),
+        optimizer=training.AdamW(),
+    )
+    bundle = snn.compile(net, training=recipe, target="tools/snnsim")
+    assert bundle.training["resolved_parameters"]["trainable"] == [
+        "scores_projection.weight"
+    ]

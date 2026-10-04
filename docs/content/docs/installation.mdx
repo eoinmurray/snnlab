@@ -1,52 +1,28 @@
 ---
 title: Installation
-description: Install the Python library and optional rendering tools.
+description: Install snnlab from PyPI.
 ---
 
-## Use snnlab in a project
+## Install snnlab
+
+Add snnlab to your Python project from PyPI:
 
 ```sh
-uv add git+https://github.com/eoinmurray/snnlab
+uv add snnlab
 ```
 
-For reproducible work, pin a Git tag or commit and commit your project's lockfile. The distribution declares Python 3.10 or newer; dependency availability can further constrain the interpreter and platform you use.
+For a pip-managed environment:
+
+```sh
+python -m pip install snnlab
+```
+
+snnlab requires Python 3.10 or newer. Commit your project's lockfile when using uv to preserve the resolved dependency versions.
+
+## Check the installation
 
 ```python
 from snnlab import lang, sim, viz
 ```
 
-## Develop from this checkout
-
-Run from the repository root:
-
-```sh
-uv sync --dev
-uv run snnsim --help
-```
-
-Use an editable dependency in a sibling project:
-
-```sh
-uv add --editable ../snnlab
-```
-
-## Optional system tools
-
-| Tool | Required for |
-| --- | --- |
-| Graphviz (`dot`) | SVG and PNG diagram exports |
-| FFmpeg | Video exports |
-
-Install these with your operating system package manager. Core authoring and simulation do not require either executable. The [quickstart](/quickstart) writes a bundle without diagram rendering.
-
-## Documentation site
-
-The separate Next.js app lives in `docs/`. Use Node.js 22 or newer:
-
-```sh
-cd docs
-npm ci
-npm run dev
-```
-
-Open `http://localhost:3000`. See [development](/development) for build and documentation commands.
+Continue with the [quickstart](/quickstart) to build and simulate a small circuit.

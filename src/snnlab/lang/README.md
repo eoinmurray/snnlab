@@ -26,10 +26,11 @@ digest-bearing `manifest.json`, copied logical assets, a text summary, and
 optional circuit/training/expanded SVG and PNG reports. Physical dataset and
 checkpoint paths deliberately do not belong in the graph.
 
-Projection weights use `uS` (microsiemens), matching the conductance convention
-of the graph executor and its `leak_us` neuron parameters. SNNLang and the graph
-executor both reject projection parameters labelled with another unit; values
-are never silently rescaled. Bundles produced before SNNLang 0.2.0 may carry an
+Conductance projection weights use `uS` (microsiemens), matching the graph
+executor and its `leak_us` neuron parameters. Current projection weights use
+`nA` (nanoamperes) with `CUBA_LIF`/`LIF` and `ExponentialCurrent`. Authoring and
+execution validate the synapse/neuron family and parameter units; values are
+never silently converted between physical units. Bundles produced before SNNLang 0.2.0 may carry an
 incorrect legacy `nS` label even though their values were executed as `uS`.
 
 `snnlang` owns the semantic projection of a bundle through `snn.diagram(...)`;
@@ -126,21 +127,6 @@ uv run python -m snnlab.sim sim \
   --out-dir run/
 ```
 
-Run all examples:
-
-```sh
-uv run python -m snnlab.lang.examples.build_examples
-```
-
-The generated examples include a 784-channel, 10-class one-layer PING recipe
-and a 700-channel, 20-class three-layer PING hierarchy. The deep example now
-contains an executable training recipe with every feedforward, recurrent, and
-readout parameter assigned to an explicit group plus a six-population spike
-budget. Focused local acceptance cases use tiny synthetic batches to validate
-their production-shaped public tensors, recurrent gradients, fine-timestep
-recompilation, and categorical variable-rate protocol. They do not substitute
-for dataset accuracy, accelerator parity, or the final campaign comparison.
-
 Graph validity is checked independently of a simulator backend. Passing
 `target="tools/snnsim"` adds capability diagnostics but never changes the graph.
 The first additive `tools/snnsim` backend route accepts the deliberately narrow
@@ -153,7 +139,7 @@ uv run python -m snnlab.sim sim \
   --out-dir run/
 
 uv run python -m snnlab.sim train \
-  --bundle tools/snnlang/examples/generated/ping_classifier.bundle \
+  --bundle classifier.bundle \
   --max-samples 1000 \
   --batch-size 64 \
   --out-dir train-run/
@@ -191,25 +177,26 @@ still data-only and does not import this authoring package.
 
 ```python
 import torch
-from snnlab.sim.execution import ExecutionSpec, simulate
+from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, simulate
 
 result = simulate(ExecutionSpec(
     kind="simulate",
     executor="graph",
     bundle="small_ping.bundle",
-    inputs={"events": torch.zeros(100, 1, 128)},
+    input_bindings=(DenseArrayBinding("events", torch.zeros(100, 1, 128)),),
 ))
 ```
 
-For explicit provenance, pass `DenseArrayBinding` objects through
-`ExecutionSpec.input_bindings`; the original `inputs={...}` tensor mapping is a
-compatible in-memory shorthand and is resolved through the same validator.
+Pass dense tensors, sparse events, generated Poisson spikes or dataset snapshots
+as typed binding objects through the single `ExecutionSpec.input_bindings`
+sequence. Dense bindings can include explicit provenance in their `source`
+mapping.
 
 The planner lowers the complete dense topology before stepping. It supports
 arbitrarily named COBA-LIF and leaky-integrator populations, independent spike
 inputs, AMPA and GABA projections, feedforward/recurrent/feedback paths,
-integral delay buffers, standard readout operations, and recordings from every
-named population. Mean voltage, final voltage, spike count, spike rate, and
+integral delay buffers, standard readout operations, and explicitly exposed diagnostics from
+named populations and projections. Mean voltage, final voltage, spike count, spike rate, and
 cumulative-potential readouts execute through the graph operation vocabulary.
 Spike-rate readouts report spikes/s from either an explicit duration in seconds
 or a `(time, batch)` valid-time mask whose duration is inferred from graph
@@ -330,7 +317,7 @@ result = simulate(ExecutionSpec(
     executor="graph",
     bundle="small_ping.bundle",
     checkpoint="train-run/selected.checkpoint",
-    poisson_bindings=(binding,),
+    input_bindings=(binding,),
     options={"inference_overrides": {
         "duration_ms": 400.0,
         "input_rate_hz": 25.0,
@@ -367,7 +354,7 @@ Every graph CLI inference directory also contains
 `inference-manifest.json` using `tools/snnsim.inference-artifacts/v1`. It records
 the graph and request identity, request seed, and the names, shapes, dtypes, and
 SHA-256 digest of each NPZ payload. The request digest binds the execution
-protocol, checkpoint, overrides, interventions, recording profile, and device.
+protocol, checkpoint, overrides, interventions, diagnostics flag, and device.
 Use `validate_inference_artifacts(path, graph=graph, seed=seed)` before cache
 reuse; it rejects manifest drift, a different graph or seed, missing files,
 payload corruption, and array-inventory changes. Task-specific accuracy and
@@ -383,3 +370,9 @@ sparse zero-based time/batch/cell rasters. The
 retains the source artifact digest. `validate_derived_inference_products`
 rejects corruption or reuse against a different source cache. Scientific
 acceptance thresholds remain campaign decisions rather than executor defaults.
+
+### Diagnostic retention
+
+`net.output` declares results returned in `result.outputs`. `net.expose` declares diagnostics returned by default in `result.diagnostics`; pass `diagnostics=False` to `ExecutionSpec` to disable those tensors without affecting outputs or training regularizers. There are no `recording` or `recording_fields` request arguments. Population signals and `projection.conductance` must be explicitly exposed to collect their diagnostic histories.
+
+Custom specifications (`CustomNeuron`, `CustomSynapse`, `CustomInitializer`, `CustomConstraint` and custom operations/training helpers) refer to versioned definitions registered through `snnlab.extensions`. Bundles store names/configuration and required dependency names, not Python code.

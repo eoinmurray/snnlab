@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -10,13 +11,64 @@ import torch
 
 from snnlab import lang as snn
 from snnlab.sim.execution import (
+    DatasetEncoder,
+    DatasetSnapshotBinding,
     DenseArrayBinding,
+    EventStreamBinding,
     ExecutionSpec,
+    PoissonInputBinding,
     load_dense_array_bindings,
     resolve_dense_array_bindings,
     simulate,
 )
 from snnlab.sim.tool import main
+
+
+@pytest.mark.parametrize(
+    "case, error, message",
+    [
+        ("unsupported", TypeError, "unsupported input binding type"),
+        ("duplicate", ValueError, "duplicate input binding"),
+        ("poisson_replay", ValueError, "Poisson bindings cannot"),
+        ("dataset_replay", ValueError, "dataset snapshot binding cannot"),
+    ],
+)
+def test_unified_input_bindings_reject_invalid_combinations(case, error, message):
+    graph = _standard_readout_graph("rate", mask=True)
+    events = DenseArrayBinding("events", torch.zeros(2, 1, 2))
+    valid = DenseArrayBinding("valid", torch.ones(2, 1, dtype=torch.bool))
+    bindings = {
+        "unsupported": (object(),),
+        "duplicate": (
+            events,
+            EventStreamBinding(
+                "events",
+                torch.tensor([], dtype=torch.long),
+                torch.tensor([], dtype=torch.long),
+                torch.tensor([], dtype=torch.long),
+                steps_count=2,
+                batch_size=1,
+            ),
+        ),
+        "poisson_replay": (
+            PoissonInputBinding(
+                input_id="events", steps_count=2, batch_size=1, rates_hz=(0.0,), seed=17
+            ),
+            valid,
+        ),
+        "dataset_replay": (
+            DatasetSnapshotBinding(
+                Path("not-read.npz"),
+                "events",
+                "fixture",
+                "test",
+                DatasetEncoder("prebinned_spikes"),
+            ),
+            valid,
+        ),
+    }[case]
+    with pytest.raises(error, match=message):
+        simulate(ExecutionSpec(kind="simulate", graph=graph, input_bindings=bindings))
 
 
 def _standard_readout_graph(

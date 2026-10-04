@@ -18,6 +18,7 @@ from snnlab.sim.conformance import (
     write_conformance_report,
 )
 from snnlab.sim.execution import (
+    DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
     build,
@@ -26,6 +27,7 @@ from snnlab.sim.execution import (
     legacy_parameter_map_v1,
     train,
 )
+from tests.sim._execution_builders import expose_graph_diagnostics
 
 
 def test_layered_conformance_requires_complete_exact_named_coverage(tmp_path):
@@ -101,7 +103,8 @@ def test_explicit_name_remapping_rejects_partial_and_duplicate_maps():
 @pytest.mark.parametrize("active_recurrence", [False, True])
 @pytest.mark.parametrize("dt_ms", [0.05, 0.1, 0.2, 0.3, 0.6])
 def test_minimal_legacy_and_graph_ping_forward_share_parameters_and_logits(
-    active_recurrence, dt_ms,
+    active_recurrence,
+    dt_ms,
 ):
     M.N_IN = 2
     M.N_OUT = 2
@@ -130,7 +133,9 @@ def test_minimal_legacy_and_graph_ping_forward_share_parameters_and_logits(
     for population in bundle.graph["populations"]:
         if population["id"] in {"cell_E", "cell_I"}:
             neuron = population["neuron"]
-            assert neuron["refractory_steps"] == (12 if population["id"] == "cell_E" else 6)
+            assert neuron["refractory_steps"] == (
+                12 if population["id"] == "cell_E" else 6
+            )
             physical_ms = "1.2" if population["id"] == "cell_E" else "0.6"
             count = Fraction(physical_ms) / Fraction(str(dt_ms))
             assert count.denominator == 1
@@ -139,7 +144,12 @@ def test_minimal_legacy_and_graph_ping_forward_share_parameters_and_logits(
         if projection.get("connection") == "recurrent":
             projection["delay"]["value"] = dt_ms
     built = build(
-        ExecutionSpec(kind="build", executor="graph", graph=bundle.graph, seed=7)
+        ExecutionSpec(
+            kind="build",
+            executor="graph",
+            graph=expose_graph_diagnostics(bundle.graph),
+            seed=7,
+        )
     )
     assert isinstance(built.model, GraphExecutor)
     graph_model = built.model
@@ -189,7 +199,7 @@ def test_minimal_legacy_and_graph_ping_forward_share_parameters_and_logits(
     inputs = torch.zeros(M.T_steps, 2, 2)
     inputs[:, 0, 0] = 1
     inputs[::2, 1, 1] = 1
-    graph = graph_model({"events": inputs}, record="full")
+    graph = graph_model({"events": inputs})
     legacy_logits = legacy(input_spikes=inputs)
     assert legacy.timing_metadata["duration_steps"] == inputs.shape[0]
     assert legacy.timing_metadata["nominal_duration_ms"] == 200.0
@@ -219,13 +229,13 @@ def test_minimal_legacy_and_graph_ping_forward_share_parameters_and_logits(
                 name: value.detach() for name, value in legacy_parameters.items()
             },
             "forward": {
-                "e_spikes": graph.recordings["cell_E.spikes"],
-                "i_spikes": graph.recordings["cell_I.spikes"],
-                "e_voltage": graph.recordings["cell_E.voltage"],
-                "i_voltage": graph.recordings["cell_I.voltage"],
-                "input_conductance": graph.recordings["cell_input.conductance"],
-                "e_to_i_conductance": graph.recordings["cell_E_to_I.conductance"],
-                "i_to_e_conductance": graph.recordings["cell_I_to_E.conductance"],
+                "e_spikes": graph.diagnostics["cell_E.spikes"],
+                "i_spikes": graph.diagnostics["cell_I.spikes"],
+                "e_voltage": graph.diagnostics["cell_E.voltage"],
+                "i_voltage": graph.diagnostics["cell_I.voltage"],
+                "input_conductance": graph.diagnostics["cell_input.conductance"],
+                "e_to_i_conductance": graph.diagnostics["cell_E_to_I.conductance"],
+                "i_to_e_conductance": graph.diagnostics["cell_I_to_E.conductance"],
                 "logits": graph.outputs["class_logits"].detach(),
             },
         },
@@ -321,10 +331,10 @@ def test_legacy_and_graph_four_update_trajectory_and_resume_are_conformant(tmp_p
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": labels},
             seed=7,
-            options={"updates": update_count},
+            updates=update_count,
         )
     )
     checkpoint_path = tmp_path / "trajectory-checkpoint"
@@ -334,10 +344,11 @@ def test_legacy_and_graph_four_update_trajectory_and_resume_are_conformant(tmp_p
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": labels},
             seed=7,
-            options={"updates": 2, "save_final_checkpoint": checkpoint_path},
+            updates=2,
+            save_final_checkpoint=checkpoint_path,
         )
     )
     resumed = train(
@@ -346,11 +357,11 @@ def test_legacy_and_graph_four_update_trajectory_and_resume_are_conformant(tmp_p
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": labels},
             seed=7,
             checkpoint=checkpoint_path,
-            options={"updates": 2},
+            updates=2,
         )
     )
     assert [
@@ -470,10 +481,12 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": labels},
             seed=seed,
-            options={"epochs": 2, "batch_size": batch_size, "shuffle": True},
+            epochs=2,
+            batch_size=batch_size,
+            shuffle=True,
         )
     )
     initial = build(
@@ -553,16 +566,14 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": labels},
             seed=seed,
-            options={
-                "epochs": 2,
-                "batch_size": batch_size,
-                "shuffle": True,
-                "updates": 2,
-                "save_final_checkpoint": checkpoint,
-            },
+            epochs=2,
+            batch_size=batch_size,
+            shuffle=True,
+            updates=2,
+            save_final_checkpoint=checkpoint,
         )
     )
     with pytest.raises(ValueError, match="execution protocol does not match"):
@@ -572,10 +583,12 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
                 executor="graph",
                 graph=bundle.graph,
                 training=bundle.training,
-                inputs={"events": inputs},
+                input_bindings=(DenseArrayBinding("events", inputs),),
                 targets={"label": labels},
                 seed=seed,
                 checkpoint=checkpoint,
-                options={"epochs": 2, "batch_size": batch_size, "shuffle": False},
+                epochs=2,
+                batch_size=batch_size,
+                shuffle=False,
             )
         )

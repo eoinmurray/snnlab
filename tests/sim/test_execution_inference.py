@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from snnlab.sim.execution import (
+    DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
     PoissonInputBinding,
@@ -26,17 +27,39 @@ from tests.sim._execution_builders import (
 )
 
 
+def test_poisson_binding_defaults_to_one_batch_item():
+    graph = _standard_readout_graph("count")
+    binding = PoissonInputBinding(
+        input_id="events", steps_count=3, rates_hz=(0.0,), seed=7
+    )
+    resolved = resolve_poisson_input_bindings(graph, bindings=(binding,))
+    assert binding.batch_size == 1
+    assert resolved.tensors["events"].shape[:2] == (3, 1)
+
+
 def test_fixed_rate_poisson_binding_has_exact_boundary_fixtures():
     graph = _standard_readout_graph("count")
     zero = resolve_poisson_input_bindings(
         graph,
-        bindings=(PoissonInputBinding("events", 3, 2, (0.0,), 7),),
+        bindings=(
+            PoissonInputBinding(
+                input_id="events", steps_count=3, batch_size=2, rates_hz=(0.0,), seed=7
+            ),
+        ),
     )
     assert torch.count_nonzero(zero.tensors["events"]) == 0
     graph["timebase"]["dt"] = {"value": 1.0, "unit": "ms"}
     full = resolve_poisson_input_bindings(
         graph,
-        bindings=(PoissonInputBinding("events", 3, 2, (1000.0,), 7),),
+        bindings=(
+            PoissonInputBinding(
+                input_id="events",
+                steps_count=3,
+                batch_size=2,
+                rates_hz=(1000.0,),
+                seed=7,
+            ),
+        ),
     )
     assert torch.all(full.tensors["events"] == 1)
     assert full.protocol["binding_schema"] == "tools/snnsim.poisson-input-binding/v1"
@@ -50,7 +73,15 @@ def test_graph_inference_overrides_poisson_duration_and_rate():
             kind="simulate",
             executor="graph",
             graph=graph,
-            poisson_bindings=(PoissonInputBinding("events", 2, 1, (0.0,), 7),),
+            input_bindings=(
+                PoissonInputBinding(
+                    input_id="events",
+                    steps_count=2,
+                    batch_size=1,
+                    rates_hz=(0.0,),
+                    seed=7,
+                ),
+            ),
             options={
                 "inference_overrides": {
                     "duration_ms": 300.0,
@@ -87,10 +118,10 @@ def test_graph_inference_timestep_recompiles_and_preserves_duration(tmp_path):
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": torch.ones(3, 1, 2)},
+            input_bindings=(DenseArrayBinding("events", torch.ones(3, 1, 2)),),
             targets={"label": torch.tensor([0])},
             seed=7,
-            options={"save_final_checkpoint": checkpoint},
+            save_final_checkpoint=checkpoint,
         )
     )
     result = simulate(
@@ -99,7 +130,15 @@ def test_graph_inference_timestep_recompiles_and_preserves_duration(tmp_path):
             executor="graph",
             graph=bundle.graph,
             checkpoint=checkpoint,
-            poisson_bindings=(PoissonInputBinding("events", 3, 1, (0.0,), 13),),
+            input_bindings=(
+                PoissonInputBinding(
+                    input_id="events",
+                    steps_count=3,
+                    batch_size=1,
+                    rates_hz=(0.0,),
+                    seed=13,
+                ),
+            ),
             options={"inference_overrides": {"timestep_ms": 0.05}},
         )
     )
@@ -127,7 +166,7 @@ def test_graph_inference_timestep_rejects_non_resampleable_inputs():
                 kind="simulate",
                 executor="graph",
                 graph=graph,
-                inputs={"events": torch.zeros(2, 1, 2)},
+                input_bindings=(DenseArrayBinding("events", torch.zeros(2, 1, 2)),),
                 options={"inference_overrides": {"timestep_ms": 50.0}},
             )
         )
@@ -147,7 +186,9 @@ def test_graph_inference_projection_scale_is_request_local():
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs=inputs,
+            input_bindings=tuple(
+                DenseArrayBinding(name, value) for name, value in (inputs).items()
+            ),
             seed=5,
             options={
                 "inference_overrides": {"projection_scales": {projection["id"]: 0.25}}
@@ -168,7 +209,7 @@ def test_graph_inference_overrides_reject_ambiguous_or_unknown_requests():
                 kind="simulate",
                 executor="graph",
                 graph=graph,
-                inputs={"events": torch.zeros(2, 1, 2)},
+                input_bindings=(DenseArrayBinding("events", torch.zeros(2, 1, 2)),),
                 options={"inference_overrides": {"duration_ms": 100.0}},
             )
         )
@@ -178,7 +219,7 @@ def test_graph_inference_overrides_reject_ambiguous_or_unknown_requests():
                 kind="simulate",
                 executor="graph",
                 graph=graph,
-                inputs={"events": torch.zeros(2, 1, 2)},
+                input_bindings=(DenseArrayBinding("events", torch.zeros(2, 1, 2)),),
                 options={
                     "inference_overrides": {"projection_scales": {"missing": 1.0}}
                 },
@@ -209,7 +250,9 @@ def test_graph_inference_interventions_are_ordered_and_recorded():
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs=inputs,
+            input_bindings=tuple(
+                DenseArrayBinding(name, value) for name, value in (inputs).items()
+            ),
             options={"inference_interventions": [add, drop]},
         )
     )
@@ -218,12 +261,14 @@ def test_graph_inference_interventions_are_ordered_and_recorded():
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs=inputs,
+            input_bindings=tuple(
+                DenseArrayBinding(name, value) for name, value in (inputs).items()
+            ),
             options={"inference_interventions": [drop, add]},
         )
     )
-    assert torch.count_nonzero(dropped.recordings["a_E.spikes"]) == 0
-    assert torch.all(added.recordings["a_E.spikes"] == 1)
+    assert torch.count_nonzero(dropped.diagnostics["a_E.spikes"]) == 0
+    assert torch.all(added.diagnostics["a_E.spikes"] == 1)
     provenance = added.metrics["inference_interventions"]
     assert provenance["schema"] == "tools/snnsim.inference-interventions/v1"
     assert provenance["requested"] == [drop, add]
@@ -263,8 +308,8 @@ def test_graph_inference_intervention_stream_resumes_exactly():
         interventions=(intervention,),
     )
     torch.testing.assert_close(
-        full.recordings["a_E.spikes"],
-        torch.cat((first.recordings["a_E.spikes"], second.recordings["a_E.spikes"])),
+        full.diagnostics["a_E.spikes"],
+        torch.cat((first.diagnostics["a_E.spikes"], second.diagnostics["a_E.spikes"])),
         rtol=0,
         atol=0,
     )
@@ -282,7 +327,9 @@ def test_graph_inference_interventions_reject_invalid_targets_and_values():
                 kind="simulate",
                 executor="graph",
                 graph=graph,
-                inputs=inputs,
+                input_bindings=tuple(
+                    DenseArrayBinding(name, value) for name, value in (inputs).items()
+                ),
                 options={
                     "inference_interventions": [
                         {
@@ -300,7 +347,9 @@ def test_graph_inference_interventions_reject_invalid_targets_and_values():
                 kind="simulate",
                 executor="graph",
                 graph=graph,
-                inputs=inputs,
+                input_bindings=tuple(
+                    DenseArrayBinding(name, value) for name, value in (inputs).items()
+                ),
                 options={
                     "inference_interventions": [
                         {

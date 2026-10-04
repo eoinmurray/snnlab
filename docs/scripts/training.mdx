@@ -1,0 +1,173 @@
+---
+title: Training
+description: Train a spike-pattern classifier, plot loss and accuracy per epoch, and save weights for inference.
+---
+
+Teach the network to recognise **which pair of input channels is more active**. Each example is a short burst of spikes across four channels. In class A, channels 0 and 1 fire frequently and channels 2 and 3 fire less often; in class B, the pattern is reversed. The exact spikes change from sample to sample, so the network must learn the pattern rather than memorise one spike train.
+
+The network passes these inputs through 16 excitatory neurons into two readout cells, one for each class. Its prediction is the class with the higher score. During training, it compares that prediction with the correct label and adjusts both connections to make future predictions better. Separate validation examples check whether it recognises spike patterns it has not trained on.
+
+![Network diagram: four input channels connect to sixteen excitatory neurons, then two non-spiking readout cells. Mean readout voltage produces two class scores.](/training/network.png)
+
+Both the input-to-E weights (`w_in`) and E-to-readout weights (`w_out`) learn. Surrogate gradients carry the loss backward through the E neurons’ spikes. The curves below show loss and accuracy after each epoch.
+
+This extends [Quickstart](/quickstart) with labelled data, minibatches, validation and saved weights. No dataset download is needed. All files live in `examples/training/`; the saved model can later be reused from the [Inference example](/inference).
+
+## 1. Imports and network definition
+
+```python
+import json
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from snnlab import lang, viz
+from snnlab.lang import training
+from snnlab.sim.execution import (
+    DenseArrayBinding,
+    ExecutionSpec,
+    ValidationSpec,
+    save_training_checkpoint,
+    train,
+)
+
+OUTPUT_DIR = Path(__file__).resolve().parent
+DT_MS = 0.5
+DURATION_MS = 200
+HIGH_RATE_HZ = 100
+LOW_RATE_HZ = 10
+TRAIN_SAMPLES = 128
+VALIDATION_SAMPLES = 64
+BATCH_SIZE = 32
+EPOCHS = 20
+INPUT_LEARNING_RATE = 0.001
+READOUT_LEARNING_RATE = 1.0
+SEED = 17
+```
+
+```python
+{{SETUP}}
+```
+
+Each presentation lasts 200 ms, sampled in 0.5 ms steps. The execution seed fixes initialization and the shuffled training order.
+
+## 2. Define inputs, labels and bindings
+
+The dataset helper makes balanced classes. Class A has nominal rates `[100, 100, 10, 10]` Hz and class B has `[10, 10, 100, 100]` Hz. Each sample receives independent rate variation of ±15% and independent Bernoulli-discretized Poisson spikes.
+
+```python
+{{DATASET}}
+```
+
+```python
+{{INPUTS}}
+```
+
+Input tensors have `(400, samples, 4)` axes: time, sample/batch and input channel. Labels are integer class IDs `0` or `1`. Training and validation use different random seeds and share no samples.
+
+[`DenseArrayBinding`](/api/sim/execution-spec#densearraybinding) supplies these custom spike tensors. The training label vector is supplied separately through `ExecutionSpec.targets`, under the name used by the loss.
+
+## 3. Define the network and readout
+
+```python
+{{NETWORK}}
+```
+
+[`net.connect`](/api/lang/network#connect) automatically creates 64 input-to-E weights, with compiled shape `(16, 4)`. `w_in = input_projection.weight` names the reference to these automatically created weights. They start with a uniform initialization and learn during training, while remaining non-negative. Their initialization is divided by the four input channels at execution, as described in the [weight reference](/api/lang/parameters#weights).
+
+The readout is an explicit population of **two non-spiking leaky-integrator cells**, one per class. `E_to_readout` connects all 16 E cells to both readout cells.
+
+`w_out` is explicitly declared with shape `(2, 16)`: 32 output weights, one row per readout cell and one column per E cell. It starts with small normally distributed values and is passed to `net.connect` as `weight=w_out`. The executor divides projection weights by the source count (16 here). These classifier weights have no non-negative constraint, so learning can make them positive or negative; the input-to-E conductance weights remain non-negative.
+
+Each readout cell integrates its weighted E spikes without emitting spikes. `lang.ops.reduce` averages the readout voltage over time to produce two class scores per sample, with shape `(batch, 2)`. Cross-entropy treats these scores as logits, rather than probabilities.
+
+This trains both connections: the E layer learns spike features through `w_in`, and the readout learns how to combine them through `w_out`. The neuron time constants and other neuron settings remain fixed.
+
+## 4. Choose outputs and expose diagnostics
+
+```python
+{{OUTPUTS}}
+```
+
+The official output is `result.outputs["class_scores"]`. Inputs, E spikes and readout voltages are exposed for optional diagnostic inspection. Training and evaluation use `diagnostics=False` to avoid storing these traces while measuring the learning curves.
+
+## 5. Define the training recipe
+
+See the [Training API reference](/api/lang/training) for objectives, parameter groups, optimizer settings and surrogate gradients.
+
+```python
+{{RECIPE}}
+```
+
+`CrossEntropy` associates the class scores with a target named `"class"`. Its labels must be integers in the range `0` to `1`. The two parameter groups select `(w_in,)` and `(w_out,)`. Their learning rates are `INPUT_LEARNING_RATE` and `READOUT_LEARNING_RATE`; the smaller input rate limits changes to the E neurons’ conductances. Neither group is frozen. Every parameter belongs to exactly one group.
+
+`training.FastSigmoid(slope=1.0)` explicitly enables the fast-sigmoid surrogate for the E neurons. The forward pass still emits discrete spikes; the backward pass uses a smooth approximation to the threshold derivative so gradients reach `w_in`. Small nonzero initial `w_out` values allow this gradient path to carry a signal from the first update. `gradient_clip=1.0` caps the combined gradient norm before the optimizer step.
+
+`AdamW(weight_decay=0.0)` updates both connections. `TrainSpec` declares the loss and optimization rules. The direct `ExecutionSpec` fields below determine the epoch and minibatch schedule.
+
+## 6. Bundle the network and recipe
+
+```python
+{{BUNDLE}}
+```
+
+Compilation validates both the graph and training recipe. `network.bundle` contains the model structure, initialization and recipe; it does not contain learned weights. The separate `trained.checkpoint` directory will contain those weights, optimizer state and resume coordinates.
+
+## 7. Train and evaluate in one call
+
+[`ValidationSpec`](/api/sim/execution-spec#validation) supplies held-out input bindings and labels. Pass it to `ExecutionSpec.validation`, then call `train` once:
+
+```python
+{{TRAIN}}
+```
+
+`train` handles all 20 epochs internally. Each epoch processes four minibatches of 32 training samples, with `shuffle=True` changing their order each epoch. Validation samples are evaluated without gradients or optimizer updates.
+
+`result.metrics["epochs"]` contains loss and accuracy measured **after each epoch on the whole training and validation split**, plus epoch 0 before learning. These are evaluations of fixed weights, not the last minibatch's loss or an average collected while weights were changing. Accuracy is the fraction of samples whose highest-scoring class matches the label.
+
+The final checkpoint is saved once for later inference. There is no external epoch loop or intermediate checkpoint management.
+
+## 8. Save metrics and plot curves
+
+```python
+{{METRICS}}
+```
+
+`metrics.json` contains one row per epoch, with training and validation loss and accuracy. Accuracy values are fractions from 0 to 1; the figure displays percentages.
+
+The plotting code makes one two-row figure with a shared epoch axis: cross-entropy above and accuracy below. It is included only in the full example.
+
+## 9. Full example
+
+Save the [complete script](/training/training.py) as `examples/training/training.py`. In a repository checkout it is already there.
+
+```sh
+uv run python examples/training/training.py
+```
+
+It saves these files beside the script, regardless of the working directory:
+
+1. `network.bundle/`: compiled graph and training recipe.
+2. `trained.checkpoint/`: final learned weights, optimizer state and resume coordinates.
+3. `metrics.json`: training and validation measurements for epochs 0–20.
+4. `training.png`: loss and accuracy curves.
+5. `network.png`: diagram generated from the compiled network.
+
+Rendering the network diagram requires Graphviz’s `dot` executable on your PATH; on macOS, install it with `brew install graphviz`.
+
+Rerunning starts training from scratch and replaces those generated outputs. It does not automatically resume an earlier run. The [Inference example](/inference) loads `examples/training/network.bundle` and `examples/training/trained.checkpoint`, rather than creating new weights or retraining.
+
+```python
+{{SCRIPT}}
+```
+
+## 10. Training curves
+
+![Training and validation cross-entropy and classification accuracy over 20 epochs, with a shared epoch axis and a 50 percent chance baseline.](/training/training.png)
+
+With the supplied seeds, both accuracies rise from 50% at epoch 0 to 100% after the first epoch, while cross-entropy continues to decrease. This is deliberately an easy classification problem.
+
+The held-out validation curve measures this synthetic task, not generalization to real neural recordings. A gap between training and validation accuracy indicates that training performance alone overstates performance on unseen samples.
+
+Change `EPOCHS`, `INPUT_LEARNING_RATE` or `READOUT_LEARNING_RATE`, rerun, and compare the curves while keeping the data seeds fixed.

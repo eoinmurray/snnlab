@@ -1,0 +1,251 @@
+---
+title: Network
+description: Complete reference for authoring networks, populations, connections, parameters, outputs and diagnostics.
+---
+
+`lang.Network` is the mutable authoring object for a spiking network. Its methods declare a graph; they do not execute it. Compile the network with `lang.compile`, then pass the compiled graph or bundle to [ExecutionSpec](/api/sim/execution-spec).
+
+```python
+from snnlab import lang
+
+net = lang.Network("quickstart", dt=0.1 * lang.ms)
+```
+
+## Constructor
+
+```python
+lang.Network(name: str, *, dt: Quantity = 0.1 * lang.ms)
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | The network's name, retained in its compiled graph. |
+| `dt` | Simulation timestep as a time quantity; defaults to 0.1 ms. |
+
+Shapes are tuples of integers and symbolic axes, such as `("time", "batch", 4)`. Execution inputs supply the concrete time and batch sizes. Quantities use unit constructors such as `0.1 * lang.ms`; available units include `ms`, `mV`, `Hz`, `nS`, `uS` and `nA`.
+
+Named elements share a network namespace: inputs, populations, explicitly named parameters, projections, operations, outputs, exposed diagnostics, assets and groups. Names must be non-empty, contain no whitespace and be unique. Methods check basic authoring conditions; compilation and execution perform additional shape, unit and backend validation.
+
+## Methods
+
+| Method | Purpose | Returns |
+| --- | --- | --- |
+| [input](#input) | Declare an external signal. | `Signal` |
+| [population](#population) | Declare a neuron population. | `Population` |
+| [connect](#connect) | Connect a signal to a population port. | `Projection` |
+| [parameter](#parameter) | Declare a named parameter with an initializer. | `ParameterRef` |
+| [constant](#constant) | Declare a constant in graph metadata. | `str` |
+| [operation](#operation) | Declare a graph operation. | `Signal` |
+| [output](#output) | Declare an official network result. | The supplied signal-like object |
+| [expose](#expose) | Declare an optional diagnostic signal. | `None` |
+| [asset](#asset) | Declare asset metadata. | `str` |
+| [group](#group) | Group elements created inside a context. | Context manager yielding `Component` |
+
+## input
+
+```python
+net.input(name, *, shape, signal_type, unit="1")
+```
+
+Declares an external signal and returns a `Signal` with ID `"<name>.value"` that can be connected to populations or used by operations. It does not generate or load input data.
+
+| Argument | Type / default | Meaning |
+| --- | --- | --- |
+| `name` | `str`, required | Unique, non-empty network name without whitespace. Bindings use this exact name as `input_id`. |
+| `shape` | `Shape`, required | Signal axes, commonly `("time", "batch", channels)`. Time and batch sizes are supplied by the binding. |
+| `signal_type` | `str`, required | Signal kind, for example `"spikes"`. Must be compatible with the receiving graph port. |
+| `unit` | `str = "1"` | Physical unit, for example `"spike"` for spikes. |
+
+```python
+inputs = net.input(
+    "inputs", shape=("time", "batch", 16), signal_type="spikes", unit="spike"
+)
+```
+
+The network timestep determines the physical duration of each time step. Sixteen channels means sixteen input signals per time step and batch item; it does not specify the number of neurons in the receiving population.
+
+See [ExecutionSpec input bindings](/api/sim/execution-spec#input_bindings) for supplying dense tensors, sparse events, Poisson spike trains or datasets.
+
+## population
+
+```python
+net.population(name, *, size, neuron, spiking=True)
+```
+
+| Argument | Type / default | Meaning |
+| --- | --- | --- |
+| `name` | `str`, required | Unique population name. |
+| `size` | `int`, required | Positive number of neurons. |
+| `neuron` | `Spec`, required | Neuron dynamics; see [neuron models](#neuron-models). |
+| `spiking` | `bool = True` | Whether to declare a spikes port. |
+
+Returns a `Population`. `cells.voltage` is a `Signal` with `(time, batch, size)` axes and unit `mV`. `cells.spikes` has the same axes and unit `spike`; accessing it on a non-spiking population raises `AttributeError`.
+
+The `cells.excitatory`, `cells.inhibitory` and `cells.modulatory` properties return target port strings for `connect`. Population metadata includes `id`, `size`, `neuron`, `spiking` and `group`.
+
+```python
+cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
+```
+
+### Neuron models
+
+See [Components](/api/lang/components#neuron-models) for neuron specifications, parameters, signals and backend support.
+
+## connect
+
+```python
+net.connect(
+    source,
+    target,
+    *,
+    name,
+    synapse,
+    weight=lang.Constant(1.0),
+    constraint=None,
+    connection="feedforward",
+    delay=None,
+    enabled=True,
+)
+```
+
+### Arguments
+
+| Argument | Type / default | Meaning |
+| --- | --- | --- |
+| `source` | `Signal`, required | A signal from this network, such as `inputs` or `cells.spikes`. |
+| `target` | `str`, required | A population input port: `cells.excitatory`, `cells.inhibitory` or `cells.modulatory`. These properties return strings. |
+| `name` | `str`, required | Unique, non-empty network name without whitespace. |
+| `synapse` | `Spec`, required | The projection dynamics; see [synapses](#synapses). |
+| `weight` | `Spec` or `ParameterRef`, default `Constant(1.0)` | A [weight initializer](#weights) or an existing parameter. |
+| `constraint` | `Spec` or `None`, default `None` | A [parameter constraint](#constraints), applied to automatically created weights. |
+| `connection` | `str = "feedforward"` | One of `"feedforward"`, `"recurrent"`, `"feedback"`, `"modulatory"`. |
+| `delay` | `Quantity` or `None`, default `None` | Additional transmission delay, expressed using `lang.ms`. |
+| `enabled` | `bool = True` | Whether this projection participates in execution. |
+
+The connection kind describes graph routing; the target port determines excitatory, inhibitory or modulatory polarity. Feedback requires an explicit positive delay. Graph execution requires delays to be integer multiples of the network timestep. Recurrent and feedback connections from populations use at least one timestep of causal delay.
+
+## Synapses
+
+See [Components](/api/lang/components#synapses) for available synapses and graph support.
+
+## Weights
+
+See [Parameters](/api/lang/parameters#weights) for initializers, automatic matrix sizing and graph versus runtime axes.
+
+## Constraints
+
+See [Parameters and constraints](/api/lang/parameters#constraints).
+
+## Returned Projection
+
+The returned `Projection` records its `id`, source and target IDs, synapse, connection kind, delay, parameter IDs, group and enabled flag. `projection.conductance` (conductance synapses) or `projection.current` (current synapses) is a signal you can expose with `net.expose(projection.conductance, name="input_conductance")` for diagnostic traces. `projection.weight` returns a `ParameterRef` for its weight parameter, useful when selecting trainable parameters.
+
+```python
+projection = net.connect(
+    inputs,
+    cells.excitatory,
+    name="input_to_E",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=lang.Uniform(0.1, 0.5),
+    constraint=lang.NonNegative(),
+)
+```
+
+See [Quickstart](/quickstart) for a complete simulation and [ExecutionSpec](/api/sim/execution-spec) for execution settings.
+
+## parameter
+
+```python
+net.parameter(name, *, shape, initializer, unit="1", constraint=None)
+```
+
+Declares a parameter and returns a `ParameterRef`. `shape` explicitly defines its axes, `initializer` specifies initial values, and `constraint` optionally constrains the parameter. See [weights](#weights) and [constraints](#constraints) for available constructors.
+
+Projection parameters require unit `"uS"` for conductance synapses or `"nA"` for current synapses and graph shape `(target_cells, source_channels)`. Use a returned reference as `connect(..., weight=weights)` to reuse that parameter. Set its initializer and constraint here; the projection's `constraint` argument does not modify an existing parameter.
+
+## constant
+
+```python
+net.constant(name, value, *, unit="1")
+```
+
+Adds named constant data and its unit to `net.constants`, converting quantity/specification values to their serialized representation. Returns the name string. This is a metadata declaration; it does not create a connectable `Signal` or an execution input.
+
+## operation
+
+```python
+net.operation(
+    kind, sources, *, name, shape, unit,
+    signal_type="continuous", parameters=(), **config
+)
+```
+
+Adds an operation consuming one signal or a sequence of signals from this network. Returns a `Signal` with ID `"<name>.value"` and the explicitly declared shape, unit and signal type. `parameters` supplies `ParameterRef` objects; `config` supplies operation-specific settings.
+
+This is the lower-level operation declaration API. Prefer the helpers in `lang.ops` and `lang.readouts` when they cover the desired operation. Declaring an arbitrary `kind` does not make it executable; compilation/execution check backend capabilities.
+
+## output
+
+```python
+net.output(name, signal)
+```
+
+Names an official network result and returns the supplied signal-like object. Multiple outputs are allowed; each output name must be unique. The signal must resolve in the compiled graph.
+
+```python
+net.output("spikes", cells.spikes)
+```
+
+The result appears in `result.outputs["spikes"]`. Declared outputs always return, independently of the diagnostic setting. Outputs retain their computation graph for training and can supply training objective predictions.
+
+## expose
+
+```python
+net.expose(*signals, name=None)
+```
+
+Declares diagnostic signals and returns `None`. Inputs, population spikes/voltages, operation signals and projection conductance can be exposed.
+
+```python
+net.expose(inputs, name="input_spikes")
+net.expose(cells.voltage, name="e_voltage")
+net.expose(projection.conductance, name="input_conductance")
+```
+
+With one signal and an explicit name, that name becomes the diagnostic key. With multiple signals and a name, keys are `"<name>_0"`, `"<name>_1"`, and so on. Without a name, each key is `"<signal-owner>_<signal-port>"`, for example `"E_voltage"`. These names must be unique in the network.
+
+Exposed signals return by default as detached tensors in `result.diagnostics`. Set `ExecutionSpec(diagnostics=False, ...)` to disable them for one run without changing official outputs. Use [result.numpy](/api/sim/execution-result#numpy) to retrieve independent NumPy arrays for plotting.
+
+## asset
+
+```python
+net.asset(name, *, media_type, description="")
+```
+
+Declares an asset's name, media type and optional description, and returns its name string. It records metadata; it does not read, download or embed an asset file.
+
+## group
+
+```python
+with net.group(name, parent=None) as component:
+    # Declare elements belonging to this group.
+    ...
+```
+
+`parent` is keyword-only and, when supplied, must identify an existing group. The context yields a `Component` with `name`, `members` and `parent`. Elements declared inside are added to the current group's membership. Nested contexts use the innermost group; supply `parent` explicitly to record the group hierarchy.
+
+`net.current_group` returns the active group's name, or `None` outside a context. Exiting the context restores the previous active group, including when its body raises an exception.
+
+## Network attributes
+
+| Attribute | Contents |
+| --- | --- |
+| `name`, `dt` | Network identity and timestep. |
+| `inputs`, `populations`, `projections`, `operations` | Lists of authoring declarations. |
+| `parameters`, `constants` | Parameter and constant declarations. |
+| `outputs`, `observables` | Official output and exposed diagnostic declarations. |
+| `assets` | Asset metadata declarations. |
+| `groups` | Mapping of group names to `Component` objects. |
+| `current_group` | Active group name, or `None`. |
+
+The object and its declaration collections are mutable. Prefer the authoring methods so names and signal references are registered consistently. Compilation produces bundle data; execution works from that compiled graph rather than running methods on the authoring object.

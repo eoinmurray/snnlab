@@ -1,0 +1,117 @@
+---
+title: Parameters and constraints
+description: Named parameters, weight initializers, automatic sizing and constraints.
+---
+
+Declare explicit weights with [Network.parameter](/api/lang/network#parameter), or let [Network.connect](/api/lang/network#connect) create and size them. `ParameterRef` identifies a graph parameter; it is not a live PyTorch tensor. [GraphExecutor.parameter_map](/api/sim/pytorch#parameter-map) supplies live runtime tensors.
+
+## Weights
+
+When `weight` is an initializer, `connect` automatically sizes and creates a parameter named `"<projection-name>.weight"`, with graph shape `(target_cells, source_channels)` and unit `uS` (microsiemens) for conductance synapses or `nA` (nanoamperes) for current synapses.
+
+| Constructor | Initial values |
+| --- | --- |
+| `lang.Constant(value)` | Every entry starts at the same value. The default is `Constant(1.0)`. |
+| `lang.Zeros()` | All entries start at zero. |
+| `lang.Uniform(low, high)` | Uniform random samples between the supplied bounds. |
+| `lang.LowerClampedNormal(mean, std, initial_zero_fraction=0.0, zeroing="bernoulli")` | Normal random samples with negative draws clamped to zero; optionally zero additional entries. The final two arguments are keyword-only. |
+| `lang.Normal(mean, std)` | Compatibility alias for `LowerClampedNormal(mean, std)`. Negative draws are clamped to zero. |
+| `lang.SignedNormal(mean, std)` | Normal random samples retaining both signs, unless a constraint clamps them. |
+
+The execution seed controls random initialization. The graph executor divides initialized projection weights by the source channel count (fan-in), so initializer values describe the distribution before this normalization. Runtime weights use `(source_channels, target_cells)` ordering.
+
+For `LowerClampedNormal`, `initial_zero_fraction` must satisfy `0 <= fraction < 1`. `zeroing="bernoulli"` independently removes entries; `zeroing="exact_k"` keeps a fixed number of incoming entries per target cell. Both rescale retained values to compensate for initial zeroing. This specifies initial sparsity rather than a persistent connectivity constraint.
+
+### Existing parameters
+
+Supply a `ParameterRef` to reuse a parameter declared with `net.parameter`. Its graph shape must match `(target_cells, source_channels)` and its unit must match the synapse (`"uS"` or `"nA"`).
+
+```python
+weights = net.parameter(
+    "input_weights",
+    shape=(16, 4),
+    unit="uS",
+    initializer=lang.Uniform(0.1, 0.5),
+    constraint=lang.NonNegative(),
+)
+projection = net.connect(
+    inputs,
+    cells.excitatory,
+    name="input_to_E",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=weights,
+)
+```
+
+With an existing parameter, set its initializer and constraint on `net.parameter`. The `constraint` argument to `connect` does not modify that parameter.
+
+## Constraints
+
+| Value | Behavior |
+| --- | --- |
+| `None` | No explicit parameter constraint. An initializer may still clamp its own initial draws. |
+| `lang.NonNegative()` | Clamp weights to zero or above at initialization and after training optimizer updates. |
+
+`NonNegative` is the built-in constraint; registered custom constraints are also supported. Use the inhibitory target port and GABA synapse to express inhibition with non-negative conductance weights. A non-negative initializer alone does not constrain later training updates.
+
+## Constructor signatures
+
+### Normal
+
+```python
+def Normal(mean: float, std: float) -> Spec: ...
+```
+
+### LowerClampedNormal
+
+```python
+def LowerClampedNormal(
+    mean: float,
+    std: float,
+    *,
+    initial_zero_fraction: float = 0.0,
+    zeroing: str = "bernoulli",
+) -> Spec: ...
+```
+
+### SignedNormal
+
+```python
+def SignedNormal(mean: float, std: float) -> Spec: ...
+```
+
+### Uniform
+
+```python
+def Uniform(low: float, high: float) -> Spec: ...
+```
+
+### Zeros
+
+```python
+def Zeros() -> Spec: ...
+```
+
+### Constant
+
+```python
+def Constant(value: float) -> Spec: ...
+```
+
+### NonNegative
+
+```python
+def NonNegative() -> Spec: ...
+```
+
+## References and units
+
+`ParameterRef.network` identifies its authoring network; `.id` is the graph name. `projection.weight` returns this reference. Put it in a [ParameterGroup](/api/lang/training#parameter-groups) to make it trainable.
+
+Projection matrices require `unit="uS"` for conductance or `unit="nA"` for current. Quantity helpers `ms`, `mV`, `Hz`, `nS`, `uS` and `nA` create `Quantity(value, unit)` when multiplied by a number. `Quantity.json()` returns its value and unit. Declared units are validated metadata, not automatic conversions of arbitrary numeric arrays.
+
+Built-in graph training enforces supported constraints after optimizer steps. Ordinary PyTorch optimizers do not read graph constraints; external loops must enforce them explicitly, as shown in [PyTorch Integration](/pytorch-integration).
+
+## Custom initializers and constraints
+
+Use `CustomInitializer(definition, **config)` and `CustomConstraint(definition, **config)` after registering Python callbacks. Custom initializers receive the runtime tensor shape/device/dtype. Constraints apply after fan-in normalization and after optimizer updates. Call `GraphExecutor.enforce_constraints()` in an external PyTorch loop. See [Extensions](/api/lang/extensions#initializers-and-constraints) for callback contracts and persistent masking.

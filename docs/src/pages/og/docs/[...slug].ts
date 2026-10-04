@@ -1,8 +1,9 @@
 import sharp from 'sharp';
-import { source } from '../../../lib/source';
+import { getSource } from '../../../lib/source';
 import type { APIRoute } from 'astro';
 
-export function getStaticPaths() {
+export async function getStaticPaths() {
+  const source = await getSource();
   return source.getPages().map(page => ({
     params: { slug: [...page.slugs, 'image.png'].join('/') }, props: { page },
   }));

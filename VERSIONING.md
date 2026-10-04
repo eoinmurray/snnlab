@@ -22,7 +22,7 @@ does not explain their effect or establish numerical equivalence.
 1. `snnlab.__version__` identifies the installable distribution and matches Git tags such as `v0.1.0`.
 2. `snnlab.lang.__version__`, `snnlab.sim.__version__` and `snnlab.viz.__version__` are retained component compatibility identities. Change them deliberately when their owning contract changes; a package bump does not automatically bump them.
 3. Serialized schema strings and `tools/snnsim` identify persisted scientific contracts. Change their versions only with a corresponding schema migration or explicit compatibility policy.
-4. The docs npm package is tooling for the website. Its version does not identify a Python or scientific release.
+4. The docs JavaScript package is tooling for the website. Its version does not identify a Python or scientific release.
 
 ## Prepare a release
 
@@ -38,7 +38,7 @@ uv lock --check
 uv run python scripts/version.py check
 uv run ruff check .
 uv run pytest -q -m "not slow"
-uv run python docs/scripts/check_examples.py
+(cd docs && bun run types:check && bun run build)
 uv build
 ```
 

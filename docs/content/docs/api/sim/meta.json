@@ -1,24 +1,10 @@
 {
-  "title": "snnlab.sim",
+  "title": "Sim",
   "pages": [
-    "index",
-    "accelerator_forward",
-    "bundle",
-    "config",
-    "conformance",
-    "datasets",
-    "encoders",
-    "execution",
-    "infer",
-    "inputs",
-    "metrics",
-    "models",
-    "profiling",
-    "runlog",
-    "scan",
-    "simulation_inputs",
-    "timing",
-    "tool",
-    "train"
-  ]
+    "execution-spec",
+    "execution-result",
+    "pytorch"
+  ],
+  "collapsible": true,
+  "defaultOpen": false
 }

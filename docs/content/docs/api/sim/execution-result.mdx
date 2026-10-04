@@ -1,0 +1,104 @@
+---
+title: ExecutionResult
+description: Returned tensors, diagnostics, training metrics, checkpoints and NumPy conversion.
+---
+
+Import result types from `snnlab.sim.execution`. [ExecutionSpec](/api/sim/execution-spec) configures a run; these objects carry its results.
+
+```python
+from snnlab.sim.execution import ExecutionResult, NumpyExecutionResult
+```
+
+## Fields
+
+| Attribute | Contents |
+| --- | --- |
+| `executor` | Execution backend label. |
+| `outputs` | Named declared graph outputs. |
+| `diagnostics` | Detached tensors for explicitly exposed signals; empty when disabled. |
+| `parameters` | Named graph parameters; training returns detached final copies. |
+| `gradients` | Named gradients from the final training update, when applicable. |
+| `optimizer_state` | Named AdamW state from training. |
+| `training_checkpoint` | Final in-memory training checkpoint. |
+| `selected_checkpoint` | In-memory selected training checkpoint. |
+| `final_state` | Named final dynamic tensors from graph forward execution. |
+| `runtime_state` | Structured continuation state from graph forward execution. |
+| `metrics` | Build/run timing, initialization/protocol and operation-specific evidence. |
+| `model` | Built model where the handler supplies it. |
+
+The result class uses empty mappings/`None` for absent data. Attributes are populated by the operation; do not assume every handler returns all state. For example, graph training returns final-update outputs/diagnostics and checkpoints but does not populate its result's `runtime_state` field.
+
+## Epoch metrics
+
+In dataset iteration mode (`epochs > 0`), `train` evaluates the complete training split at initialization and after each completed epoch. Supplying `validation` also evaluates the held-out split at those points. Results are returned as `result.metrics["epochs"]`:
+
+| Field | Meaning |
+| --- | --- |
+| `epoch` | Number of completed epochs; `0` is the initial baseline. |
+| `train_loss`, `validation_loss` | Sample-weighted mean total loss, including weighted objectives and regularizers. Validation fields appear only when validation data is supplied. |
+| `train_accuracy`, `validation_accuracy` | Fraction correctly classified, from 0 to 1. Present when the recipe has exactly one classification objective (cross entropy or a custom objective registered with `classification=True`). |
+| `train_components`, `validation_components` | Sample-weighted means by `objective[i]` and `regularizer[i]`. |
+| `train_accuracies`, `validation_accuracies` | Accuracy by `objective[i]`, including recipes with multiple objectives. |
+
+Each evaluation uses fixed weights and minibatches bounded by `batch_size`. The final smaller batch is weighted by its actual sample count. Training samples are not shuffled during evaluation. `result.metrics["updates"]` retains the separate per-update losses measured before each optimizer step.
+
+Resuming at an epoch boundary evaluates that starting boundary and subsequent completed epochs. Resuming partway through an epoch reports only subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. The returned history covers this invocation; previous history is not stored in the checkpoint. Full-batch update mode without positive epochs returns an empty epoch history.
+
+Epoch evaluations do not replace the final update's returned outputs or diagnostics, and do not affect checkpoint selection, which continues to use update loss. Validation does not perform early stopping or select checkpoints. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
+
+## numpy
+
+```python
+data = result.numpy(batch=0)
+spikes = data.outputs["spikes"]
+voltages = data.diagnostics["e_voltage"]
+time_ms = data.time_ms
+```
+
+`ExecutionResult.numpy(*, batch: int | None = None)` returns `NumpyExecutionResult` for plotting or analysis:
+
+| Attribute | Contents |
+| --- | --- |
+| `outputs` | Named output NumPy arrays. |
+| `diagnostics` | Named diagnostic NumPy arrays; empty when diagnostics were disabled. |
+| `time_ms` | One-dimensional simulation time axis in milliseconds, or `None` when no execution occurred. |
+
+The method detaches tensors, transfers them to CPU, and copies their NumPy arrays. Changing the arrays cannot modify the original tensors, and the original result retains its computation graphs. Conversion uses PyTorch's NumPy-supported dtypes.
+
+Without `batch`, all batch items and tensor axes are preserved. Passing a non-negative integer selects that item and removes its batch axis. Selection uses the compiled signal shape: `(time, batch, cells)` becomes `(time, cells)`, while `(batch, classes)` becomes `(classes,)`. Signals without a batch axis are unchanged. Booleans and non-integer indices raise `TypeError`; negative or out-of-range indices raise `IndexError`. Selection requires metadata supplied by the graph executor, and is unavailable on a build-only or manually constructed result without that metadata.
+
+`time_ms` comes from the effective execution timestep and step count, including timestep/duration overrides. It starts at zero for a fresh run; a resumed runtime trajectory starts at its absolute continuation step. Time-reduced outputs such as class scores do not have a time axis, even though `data.time_ms` still describes the run. Training converts its final-update outputs and diagnostics, with time referring to that update's input presentation.
+
+Import `ExecutionResult` and `NumpyExecutionResult` from `snnlab.sim.execution` if needed for type annotations.
+
+## Shapes and gradients
+
+Shapes follow the declared graph signal, rather than one universal result layout. A population trace typically has `(time, batch, cells)` axes; time-reduced class scores have `(batch, classes)` axes. Keys in `outputs` are names from `net.output`; keys in `diagnostics` are names from `net.expose`.
+
+Declared outputs always return, and direct graph forward outputs retain autograd. Diagnostics and continuation state are detached; `diagnostics=False` returns an empty diagnostic mapping. The built-in training result carries the last optimizer update's outputs, not an aggregate of all training presentations. Use `metrics` for epoch curves.
+
+For a differentiable PyTorch loss use `result.outputs` tensors directly. Use `.numpy()` only for plotting or analysis. It converts outputs and diagnostics, not parameters, optimizer state or metrics.
+
+## Constructor defaults
+
+```python
+class ExecutionResult:
+    executor: ExecutorName
+    outputs: dict[str, torch.Tensor] = field(default_factory=dict)
+    diagnostics: dict[str, torch.Tensor] = field(default_factory=dict)
+    parameters: dict[str, torch.Tensor] = field(default_factory=dict)
+    gradients: dict[str, torch.Tensor] = field(default_factory=dict)
+    optimizer_state: dict[str, Any] = field(default_factory=dict)
+    training_checkpoint: TrainingCheckpoint | None = None
+    selected_checkpoint: TrainingCheckpoint | None = None
+    final_state: dict[str, torch.Tensor] = field(default_factory=dict)
+    runtime_state: GraphRuntimeState | None = None
+    metrics: dict[str, Any] = field(default_factory=dict)
+    model: nn.Module | None = None
+```
+```python
+class NumpyExecutionResult:
+    outputs: dict[str, np.ndarray]
+    diagnostics: dict[str, np.ndarray]
+    time_ms: np.ndarray | None
+```

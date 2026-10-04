@@ -1,0 +1,78 @@
+---
+title: Customisation
+description: Compare a built-in current-based LIF neuron with a custom adaptive neuron and weight distribution.
+---
+
+Building on [Current-based LIF](/current-lif), this example asks a simple question: **how does spike-triggered adaptation change a neuron's response to sustained input?** Four input channels drive two populations of eight cells with exactly the same weights and current-based synapses. One uses the built-in `CUBA_LIF`; the other uses a registered Python neuron definition that builds an opposing current after each spike.
+
+![Four input channels connect through exponential current synapses to standard and adaptive populations, each with eight cells and its own spike output.](/customisation/network.png)
+
+The stimulus starts at 20 Hz, rises to 120 Hz between 100 and 400 ms, then returns to 20 Hz. The custom population's adaptation builds up during stimulation and decays afterwards. This is an illustrative discrete-time adaptive model; it is not a claim that one parameterization describes every biological neuron.
+
+Run from the repository root:
+
+```bash
+uv run python examples/customisation/customisation.py
+```
+
+The script saves `network.bundle`, `network.png` and `customisation.png` beside itself. Graphviz's `dot` executable is needed for the diagram. In a headless environment you can set `MPLBACKEND=Agg` when running the script.
+
+## 1. Define the custom neuron
+
+A custom neuron has an initial tensor state and a step function. The step receives previous state, excitatory and inhibitory input, timestep, configuration and a spike function compatible with the run's surrogate gradient.
+
+```python
+{{NEURON}}
+```
+
+The initial state provides voltage and adaptation. The executor adds a zero-valued integer refractory tensor when absent. The step returns the updated state and binary spikes. Here adaptation subtracts from the net current and increases by `adaptation_na` after each spike; its exponential decay is controlled by `tau_adapt_ms`.
+
+Registration assigns a stable, versioned name. `state_units` makes adaptation available through `population.state("adaptation")`. For callback contracts and additional extension categories, see [Extensions](/api/lang/extensions).
+
+## 2. Define a custom weight distribution
+
+```python
+{{INITIALIZER}}
+```
+
+The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. Projection initialization subsequently divides by fan-in, and then applies the declared constraint. The name and configuration are stored in the bundle; the Python function remains in the registration module.
+
+See [Parameters](/api/lang/parameters#custom-initializers-and-constraints).
+
+## 3. Define inputs and the network
+
+```python
+{{NETWORK}}
+```
+
+`DenseArrayBinding` supplies the custom stimulus. The shared parameter has graph shape `(8, 4)` and unit `"nA"`; both projections reference it, so differences in response come from neuron dynamics. `ExponentialCurrent` adds incoming spike-weighted current and lets it decay with a 5 ms time constant. Inhibitory current projections would subtract from membrane drive.
+
+The standard neuron uses the new [CUBA_LIF](/api/lang/components#current-based-lif), and the adaptive population uses `CustomNeuron`. Both expect current input. Mixing these with a conductance synapse is rejected rather than silently interpreting incompatible units.
+
+## 4. Declare outputs and diagnostics
+
+The loop declares official spike outputs and exposes voltage and synaptic current for both populations. The custom adaptation signal is also exposed. `.current` belongs to current-based projections; `.conductance` belongs to conductance-based projections.
+
+Custom state ports participate in normal outputs, diagnostics and operations. Their declared units and `(time, batch, cells)` axes are preserved in the compiled graph's signal validation.
+
+## 5. Compile and simulate
+
+```python
+{{EXECUTION}}
+```
+
+The bundle manifest lists required extension names. Import the registration module before loading or executing this bundle in another process. Loading never imports Python code from a bundle. Additional custom state is included in runtime continuation artifacts, so splitting an execution does not reset adaptation or synaptic history.
+
+## 6. Full example
+
+[Download customisation.py](/customisation/customisation.py).
+
+```python title="examples/customisation/customisation.py"
+{{SCRIPT}}
+```
+
+## 7. Plots
+
+![Input spike raster, standard and adaptive population spike rasters, their first cells' voltages, and the adaptive cell's adaptation current, all sharing time.](/customisation/customisation.png)
+
+With the supplied seed, the standard population produces 469 spikes and the adaptive population 177. The shaded region marks the increased input rate. Set `adaptation_na=0` and rerun: with these matched weights and zero refractory periods, both populations should produce the same response. Then vary the adaptation decay to examine recovery after the stimulus.

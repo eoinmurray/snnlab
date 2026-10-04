@@ -3,15 +3,17 @@ import { render } from 'astro:content';
 import { ClientRouter } from 'astro:transitions';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import { Docs } from '../components/Docs';
-import { source, markdownUrl } from '../lib/source';
+import { getSource, markdownUrl, docsBaseUrl } from '../lib/source';
 import '../styles/global.css';
 import 'katex/dist/katex.css';
 
-export function getStaticPaths() {
+export async function getStaticPaths() {
+  const source = await getSource();
   return source.getPages().map((page) => ({
     params: { slug: page.slugs.length ? page.slugs.join('/') : undefined }, props: { page },
   }));
 }
+const source = await getSource();
 const { page } = Astro.props;
 const { Content, headings } = await render(page.data._raw);
 const toc = headings.map((heading) => ({ depth: heading.depth, title: heading.text, url: `#${heading.slug}` }));
@@ -23,7 +25,7 @@ const toc = headings.map((heading) => ({ depth: heading.depth, title: heading.te
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{page.data.title} | snnlab</title>
     <meta name="description" content={page.data.description} />
-    <meta property="og:image" content={new URL(`${import.meta.env.BASE_URL}og/docs/${[...page.slugs, 'image.png'].join('/')}`, Astro.site).href} />
+    <meta property="og:image" content={new URL(`${docsBaseUrl}og/docs/${[...page.slugs, 'image.png'].join('/')}`, Astro.site).href} />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
     <ClientRouter />
   </head>

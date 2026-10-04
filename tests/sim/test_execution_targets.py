@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.lang.examples.build_examples import ping_classifier
 from snnlab.sim.execution import (
     ExecutionSpec,
     TargetArrayBinding,
@@ -21,6 +20,7 @@ from snnlab.sim.execution import (
     resolve_target_array_bindings,
 )
 from snnlab.sim.tool import main
+from tests.sim._bundle_builders import ping_classifier
 from tests.sim._execution_builders import (
     direct_train_bundle as _direct_train_bundle,
 )

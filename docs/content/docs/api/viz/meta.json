@@ -1,15 +1,9 @@
 {
-  "title": "snnlab.viz",
+  "title": "Viz",
   "pages": [
-    "index",
-    "animation",
-    "contracts",
     "diagrams",
-    "figure_grid",
-    "layouts",
-    "loaders",
-    "scene",
-    "styles",
-    "transforms"
-  ]
+    "plotting"
+  ],
+  "collapsible": true,
+  "defaultOpen": false
 }

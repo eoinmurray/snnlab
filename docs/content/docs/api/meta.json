@@ -1,9 +1,10 @@
 {
-  "title": "API reference",
+  "title": "API Reference",
   "pages": [
-    "index",
     "lang",
     "sim",
     "viz"
-  ]
+  ],
+  "collapsible": true,
+  "defaultOpen": false
 }

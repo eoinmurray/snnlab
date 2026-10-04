@@ -1,0 +1,143 @@
+---
+title: Quickstart
+description: Define inputs, build an excitatory layer, simulate it and plot the results.
+---
+
+Run one layer of 16 excitatory neurons on CPU, driven by 4 independent Poisson input channels at 80 Hz. The walkthrough follows the script in order. Start by [installing snnlab](/installation).
+
+![Network diagram: four spike input channels connect to sixteen excitatory neurons, whose spikes form the official output.](/quickstart/network.png)
+
+Each input channel connects to every E neuron. The simulation shows how the incoming spikes drive the neurons to fire; the plots below show the inputs, E spikes and membrane voltage.
+
+## 1. Imports and network definition
+
+Import the authoring and execution APIs and choose the timing and seed:
+
+```python
+from snnlab import lang, viz
+from snnlab.sim.execution import ExecutionSpec, PoissonInputBinding, simulate
+
+DT_MS = 0.1
+DURATION_MS = 300
+INPUT_RATE_HZ = 80
+SEED = 17
+```
+
+Create the network container with a 0.1 ms timestep:
+
+```python
+{{SETUP}}
+```
+
+## 2. Define inputs and their binding
+
+Declare the input and choose its Poisson stimulus:
+
+```python
+{{INPUTS}}
+```
+
+`net.input` declares the input contract: spike values with `(time, batch, channels)` axes and 4 channels. It returns a signal you can connect to neurons. `PoissonInputBinding` describes how to generate the input for this run. Its `input_id="inputs"` matches the graph input's name.
+
+The binding supplies 3,000 time steps and one batch item. At a timestep of 0.1 ms, that is 300 ms. Each input channel is sampled independently at 80 Hz.
+
+Other input bindings are available for different input sources:
+
+1. [`DenseArrayBinding`](/api/sim/execution-spec#densearraybinding): custom input tensors, including NumPy arrays converted with `torch.as_tensor(array)`.
+2. [`EventStreamBinding`](/api/sim/execution-spec#eventstreambinding): sparse spike events specified by time-step, batch and channel coordinates.
+3. [`DatasetSnapshotBinding`](/api/sim/execution-spec#datasetsnapshotbinding): inputs from a saved NPZ dataset, with an encoder and optional training targets.
+
+All are supplied through `ExecutionSpec.input_bindings`. See the [input binding reference](/api/sim/execution-spec#input_bindings) for their fields and compatibility rules.
+
+## 3. Define the network
+
+Create the excitatory layer and connect the input to it:
+
+```python
+{{NETWORK}}
+```
+
+`COBA_LIF` describes conductance-based leaky integrate-and-fire neurons; `tau_mem` sets their 20 ms membrane time constant. The AMPA projection delivers excitatory conductance with a 2 ms decay time. Its weight initializer samples values uniformly between 0.1 and 0.5 in the projection's conductance units, microsiemens. `NonNegative` constrains weights to non-negative values.
+
+Each of the 4 input channels connects to every one of the 16 E cells. `net.connect` automatically sizes the weight matrix from the source channel count and target neuron count. This creates **64 weights**, arranged in a `(16, 4)` matrix in the compiled graph: one row per E cell and one column per input channel. Each cell receives its own weighted combination of the same four spike trains, so input channels and neurons do not need matching counts.
+
+`Uniform(0.1, 0.5)` initializes all 64 weights independently. The graph executor divides projection weights by the number of input channels (4 here); see the [weight reference](/api/lang/parameters#weights) for this normalization. Different weights give cells different responses.
+
+See [`Network.connect`](/api/lang/network#connect) for all connection arguments and available options:
+
+1. [Synapses](/api/lang/components#synapses): AMPA, GABA and leaky-integrator projections, plus the current backend support limits.
+2. [Weights](/api/lang/parameters#weights): constant, zero, uniform and normal initializers, or an existing parameter.
+3. [Constraints](/api/lang/parameters#constraints): no constraint or `NonNegative`.
+
+
+## 4. Choose outputs and expose diagnostics
+
+```python
+{{OUTPUTS}}
+```
+
+`net.output` declares the official network output. Here, excitatory spikes appear in `result.outputs["spikes"]`, even when diagnostics are disabled.
+
+`net.expose` exposes a diagnostic signal. Exposed signals are returned by default, so input spikes appear in `result.diagnostics["input_spikes"]` and membrane voltage appears in `result.diagnostics["e_voltage"]`. Set `diagnostics=False` in `ExecutionSpec` to disable them.
+
+## 5. Bundle the network
+
+Compile the network into an in-memory bundle:
+
+```python
+{{BUNDLE}}
+```
+
+Compilation validates the network. The script passes `bundle.graph` directly to execution.
+
+You can also save the bundle for later use:
+
+```python
+bundle_path = bundle.write("quickstart.bundle")
+```
+
+To run the saved bundle, pass `bundle=bundle_path` to `ExecutionSpec` in place of `graph=bundle.graph`. Choose either the in-memory graph or the saved bundle route.
+
+## 6. Configure execution and simulate
+
+```python
+{{EXECUTION}}
+```
+
+The graph executor is the default. `input_bindings` supplies the Poisson stimulus by name, `device="cpu"` selects CPU execution, and exposed diagnostics are returned by default. `simulate` executes the request and returns the result. See the [ExecutionSpec reference](/api/sim/execution-spec) for every setting.
+
+## 7. Retrieve outputs and prepare plots
+
+```python
+{{RETRIEVAL}}
+```
+
+`spikes` comes from the official network output; `input_spikes` and `voltages` come from the exposed diagnostics. `result.numpy(batch=0)` converts them to independent NumPy arrays and selects the first batch item using each signal's declared axes. `data.time_ms` supplies the time axis in milliseconds using the actual simulation timestep. The original result retains its tensors. See the [NumPy result reference](/api/sim/execution-result#numpy) for details.
+
+The plotting step uses `snnlab.viz.FigureGrid` and Matplotlib to save one figure with three rows: input spikes, E spikes and E cell 0's membrane voltage. All rows share the same time axis. Its implementation is included in the full script below.
+
+## 8. Full example
+
+Save the [complete script](/quickstart/quickstart.py) as `examples/quickstart/quickstart.py` in your project. In a repository checkout, it is already there.
+
+```sh
+uv run python examples/quickstart/quickstart.py
+```
+
+It writes `network.png` and `quickstart.png` beside the script, regardless of your working directory. Rerunning replaces those files. Rendering the network diagram requires Graphviz’s `dot` executable on your PATH; on macOS, install it with `brew install graphviz`. No dataset download is needed.
+
+```python
+{{SCRIPT}}
+```
+
+## 9. Plots
+
+The three rows share a time axis, making it easy to compare the stimulus with the excitatory layer's response:
+
+1. **Input spikes:** each mark is an incoming spike on one of the 4 Poisson input channels.
+2. **E spikes:** each mark is an emitted spike from one of the 16 excitatory cells.
+3. **Voltage:** E cell 0's membrane voltage in millivolts. Input raises it toward threshold; after a spike, the voltage resets.
+
+![Three rows sharing a time axis over 300 milliseconds: 4-channel input spike raster, 16-cell excitatory spike raster, and E cell 0 membrane voltage.](/quickstart/quickstart.png)
+
+Change `INPUT_RATE_HZ` from `80` to `40`, rerun, and compare the input and response while keeping the other settings fixed.

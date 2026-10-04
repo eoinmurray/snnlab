@@ -1,14 +1,14 @@
 {
-  "title": "snnlab.lang",
+  "title": "Lang",
   "pages": [
-    "index",
-    "compiler",
+    "network",
     "components",
-    "core",
-    "diagram",
-    "ops",
-    "readouts",
-    "simulation",
-    "training"
-  ]
+    "parameters",
+    "training",
+    "compilation",
+    "operations-readouts",
+    "extensions"
+  ],
+  "collapsible": true,
+  "defaultOpen": false
 }

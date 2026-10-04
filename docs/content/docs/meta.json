@@ -1,16 +1,14 @@
 {
   "title": "Documentation",
   "pages": [
-    "index",
     "installation",
     "quickstart",
-    "examples",
-    "authoring",
-    "simulation",
     "training",
-    "visualisation",
-    "contracts",
+    "inference",
+    "pytorch-integration",
+    "current-lif",
+    "customisation",
     "api",
-    "development"
+    "changelog"
   ]
 }

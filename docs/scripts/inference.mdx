@@ -1,0 +1,129 @@
+---
+title: Inference
+description: Load the training example's saved network and learned weights, classify fresh spike patterns, and inspect its responses.
+---
+
+Use the network from [Training](/training) to recognise new spike patterns. The task is the same: decide whether channels 0–1 or channels 2–3 are more active. This time, the network uses the weights it has already learned. It makes predictions without updating them.
+
+The script loads **`examples/training/network.bundle` and `examples/training/trained.checkpoint`**. It generates 64 fresh samples, chooses the class with the higher readout score, and compares those predictions with the known labels.
+
+![The saved training network: four input channels feed sixteen excitatory neurons, then two readout cells. Mean readout voltages produce the two class scores.](/inference/network.png)
+
+The diagram is generated from the saved bundle. This walkthrough loads that network rather than defining or compiling a new one. Run the Training example first; all inference outputs are saved separately in `examples/inference/`.
+
+## 1. Imports and saved artifact paths
+
+```python
+import json
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from snnlab import lang, viz
+from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, infer
+
+OUTPUT_DIR = Path(__file__).resolve().parent
+TRAINING_DIR = OUTPUT_DIR.parent / "training"
+DT_MS = 0.5
+DURATION_MS = 200
+HIGH_RATE_HZ = 100
+LOW_RATE_HZ = 10
+TEST_SAMPLES = 64
+DATA_SEED = 20
+MODEL_SEED = 17
+CLASS_NAMES = ("A", "B")
+```
+
+```python
+{{ARTIFACTS}}
+```
+
+`network.bundle` supplies the graph and its declarations. `trained.checkpoint` supplies the learned `w_in` and `w_out` weights. Paths are relative to the script, so running it from another working directory still finds the paired Training example. Missing artifacts produce an error explaining how to generate them.
+
+## 2. Load the saved network and diagram
+
+```python
+{{NETWORK}}
+```
+
+`lang.load_bundle` verifies and loads the saved bundle. Rendering its expanded diagram gives the overview shown above. Graphviz's `dot` executable must be on your PATH; on macOS, install it with `brew install graphviz`.
+
+This loads the network description. The `checkpoint` field in step 4 tells the executor to load its learned weights before running it.
+
+## 3. Generate fresh inputs
+
+The dataset helper uses the same rate patterns and ±15% variation as Training. `DATA_SEED=20` differs from both the training seed (`18`) and validation seed (`19`). Class A is label `0`, and class B is label `1`.
+
+```python
+{{DATASET}}
+```
+
+```python
+{{INPUTS}}
+```
+
+The [`DenseArrayBinding`](/api/sim/execution-spec#densearraybinding) matches the saved graph's input named `"inputs"`. Spikes have `(400, 64, 4)` axes: time, sample and input channel. Keep the timing and rate settings aligned with Training when modifying this paired example.
+
+Labels are used to assess predictions after inference. They are not passed to `infer`, which does not need the correct answer to run.
+
+## 4. Load learned weights and infer
+
+```python
+{{INFER}}
+```
+
+[`ExecutionSpec.checkpoint`](/api/sim/execution-spec#checkpoint) loads the Training checkpoint's named parameters. Inference checks the graph identity and parameter compatibility. It does not restore the optimizer or resume training.
+
+`torch.no_grad()` prevents gradient tracking. There is no optimizer step or training call. Diagnostics are enabled by default, so the signals exposed in Training are available for the plots: input spikes, E spikes and readout voltages.
+
+## 5. Retrieve scores and predictions
+
+```python
+{{RESULTS}}
+```
+
+[`result.numpy()`](/api/sim/execution-result#numpy) returns named NumPy arrays. `class_scores` has shape `(64, 2)`: one row per sample and one score per class. `argmax(axis=1)` selects the higher-scoring class. These scores are logits, not probabilities.
+
+Accuracy is the fraction of predictions matching the known labels. With the supplied training configuration and seeds, the saved model classifies all 64 samples correctly. This measures the synthetic task, not performance on real neural recordings.
+
+## 6. Save predictions and plot responses
+
+```python
+{{SAVE}}
+```
+
+`predictions.json` records labels, predictions, both scores, accuracy and checkpoint provenance. Provenance identifies the loaded checkpoint and its completed update count.
+
+The plotting code selects one fresh sample from each class. Each column shows its four input spike trains, the sixteen E neurons' spikes and both readout voltage traces. The three rows share a time axis within each column. The predicted class is determined by mean readout voltage over the whole presentation. Plotting code is included only in the full example.
+
+## 7. Full example
+
+In a repository checkout, run these commands in order:
+
+```sh
+uv run python examples/training/training.py
+uv run python examples/inference/inference.py
+```
+
+Download the [complete inference script](/inference/inference.py) and place it in `examples/inference/` alongside the paired `examples/training/` directory.
+
+It saves these files beside the inference script:
+
+1. `network.png`: diagram generated from Training's saved bundle.
+2. `predictions.json`: predictions, accuracy and loaded checkpoint provenance.
+3. `inference.png`: responses for one sample from each class.
+
+Rerunning inference replaces its own generated outputs and leaves the Training bundle and checkpoint untouched. It never starts training automatically.
+
+```python
+{{SCRIPT}}
+```
+
+## 8. Inference responses
+
+![Two columns for true classes A and B. Each shows input spikes, E spikes and class A and B readout voltages over 200 milliseconds, with its predicted class in the title.](/inference/inference.png)
+
+Class A samples drive channels 0–1 more strongly, while class B samples drive channels 2–3 more strongly. The learned network produces a higher mean readout voltage for the matching class.
+
+Change `DATA_SEED` and rerun inference to try new spike draws with the same saved weights. Changing the seed does not retrain the network.

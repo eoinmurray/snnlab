@@ -1,0 +1,109 @@
+---
+title: Operations and readouts
+description: Signal transformations, reductions and convenience readout layers.
+---
+
+Operations return graph `Signal` objects; they do not operate immediately on PyTorch tensors. Declare outputs with [Network.output](/api/lang/network#output). Use signals from the same authoring network.
+
+## Operations
+
+### linear
+
+```python
+def linear(
+    source: Signal, *, size: int, name: str, trainable: bool = True
+) -> Signal: ...
+```
+
+### reduce
+
+```python
+def reduce(
+    source: Signal,
+    *,
+    operation: str,
+    over: str,
+    name: str,
+    window: str = "full",
+    mask: Signal | None = None,
+) -> Signal: ...
+```
+
+### divide
+
+```python
+def divide(source: Signal, denominator: Signal, *, name: str, unit: str) -> Signal: ...
+```
+
+| Helper | Behaviour |
+| --- | --- |
+| `linear` | Creates a zero-initialized parameter named `<name>.weight`, graph shape `(size, source_channels)`, and a projected signal preserving leading axes. No bias. The operation's `trainable` flag is metadata; select parameters in the training recipe to optimize them. |
+| `reduce` | Reduces an explicit time axis and removes it from the output shape. The graph supports sum and mean; `over` must be `"time"`. An optional mask specifies valid samples. The current backend supports only `window="full"`. |
+| `divide` | Divides two signals and declares the resulting unit explicitly. Its output shape is the numerator's declared shape. |
+
+`Network.operation` is the lower-level declaration surface. An arbitrary operation name does not provide an executable implementation; compile and plan the graph to check support.
+
+## Readout wrapper
+
+`lang.readouts.Readout(signal, parameters=())` delegates signal attributes, exposes `.id`, and retains a tuple of parameter IDs for helpers that supply them. `net.output` and objective declarations accept its signal-like ID. Check the graph or parameter map when selecting all generated parameters: `.parameters` is not a universal inventory for every helper.
+
+## Readout constructors
+
+### MeanVoltage
+
+```python
+def MeanVoltage(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+    tau=2 * ms,
+    weight: Spec = Normal(1.0, 0.1),
+) -> Readout: ...
+```
+
+### FinalVoltage
+
+```python
+def FinalVoltage(*, source: Signal, classes: int, name: str) -> Readout: ...
+```
+
+### SpikeCount
+
+```python
+def SpikeCount(*, source: Signal, classes: int, name: str) -> Readout: ...
+```
+
+### SpikeRate
+
+```python
+def SpikeRate(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+    duration: float | None = None,
+    mask: Signal | None = None,
+    window: str = "full",
+) -> Readout: ...
+```
+
+### CumulativePotential
+
+```python
+def CumulativePotential(*, source: Signal, classes: int, name: str) -> Readout: ...
+```
+
+| Helper | Expanded graph |
+| --- | --- |
+| `MeanVoltage` | Adds a non-spiking leaky-integrator population, projection constrained non-negative and mean voltage over time. `tau` defaults to 2 ms and weights to lower-clamped `Normal(1.0, 0.1)`. Its generated integrator has a soft reset threshold of 1. |
+| `FinalVoltage` | Applies a linear projection and selects its final time sample. |
+| `SpikeCount` | Applies a linear projection and sums it over time. The generated weight is `<name>_projection.weight`. |
+| `SpikeRate` | Projects and sums over valid time, then normalizes to Hz. Requires `duration` in seconds or a valid-time mask. |
+| `CumulativePotential` | Applies a linear projection and a cumulative time sum, preserving the time axis. |
+
+`classes` is the output width and `name` identifies the generated group and operations. The helpers expand into normal graph declarations rather than opaque layers. FinalVoltage, SpikeCount, SpikeRate and CumulativePotential inherit the linear helper's zero initializer. Explicit populations, connections and reductions can be clearer when teaching how the readout weights are defined; see [Training](/training).
+
+## Custom operations
+
+`lang.ops.custom(definition, sources, *, name, shape, unit, parameters=(), signal_type="continuous", **config)` declares a registered differentiable operation. It can implement a custom readout without changing the executor. See [Extensions](/api/lang/extensions#operations-and-readouts).

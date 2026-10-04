@@ -3,9 +3,9 @@ name: Deploy documentation
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'src/snnlab/**', 'examples/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'examples/**', 'CHANGELOG.md', 'src/snnlab/**', '.github/workflows/docs.yml']
   pull_request:
-    paths: ['docs/**', 'src/snnlab/**', 'examples/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'examples/**', 'CHANGELOG.md', 'src/snnlab/**', '.github/workflows/docs.yml']
   workflow_dispatch:
 
 permissions:
@@ -23,21 +23,12 @@ jobs:
         working-directory: docs
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Check API reference coverage
-        run: python3 scripts/generate_api.py --check
-      - name: Check example pages and downloads
-        run: python3 scripts/generate_examples.py --check
-      - run: npm ci
-      - run: npm run types:check
-      - run: npm run build
+          bun-version: '1.4.2'
+      - run: bun install --frozen-lockfile
+      - run: bun run types:check
+      - run: bun run build
         env:
           SITE_BASE_PATH: /snnlab
           SITE_URL: https://eoinmurray.github.io/snnlab/

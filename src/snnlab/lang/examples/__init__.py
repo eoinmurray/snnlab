@@ -1,1 +1,0 @@
-"""Runnable snnlang examples."""

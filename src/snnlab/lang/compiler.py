@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from snnlab import extensions as E
+
 from ._version import __version__
 from .core import Network
 from .simulation import SimulationSpec, simulation_dict, validate_simulation
@@ -104,6 +106,11 @@ def _training_dict(
                 "prediction": o.prediction,
                 "target": o.target,
                 "weight": o.weight,
+                **(
+                    {"definition": o.definition, "config": o.config}
+                    if o.definition
+                    else {}
+                ),
             }
             for o in spec.objectives
         ],
@@ -134,11 +141,20 @@ def _training_dict(
                 "signals": sorted(r.signals),
                 "strength": r.strength,
                 "config": r.config,
+                **({"definition": r.definition} if r.definition else {}),
             }
             for r in spec.regularizers
         ],
         "stop_gradients": sorted(s.signal for s in spec.stop_gradients),
-        "optimizer": {"kind": spec.optimizer.kind, "config": spec.optimizer.config},
+        "optimizer": {
+            "kind": spec.optimizer.kind,
+            "config": spec.optimizer.config,
+            **(
+                {"definition": spec.optimizer.definition}
+                if spec.optimizer.definition
+                else {}
+            ),
+        },
         "epochs": spec.epochs,
         "gradient_clip": spec.gradient_clip,
         "surrogate": spec.surrogate.json() if spec.surrogate else None,
@@ -154,6 +170,48 @@ def _training_dict(
             },
         },
     }
+
+
+def _check_extension(out, category, spec, subject=None):
+    try:
+        E.resolve(category, spec)
+    except (ValueError, TypeError) as error:
+        out.diagnostics.append(Diagnostic("error", "E500", str(error), subject))
+
+
+def _validate_neuron(neuron):
+    if neuron.get("kind") != "cuba_lif":
+        return
+    tau = neuron.get("tau_mem", {})
+    if (
+        tau.get("unit") != "ms"
+        or not isinstance(tau.get("value"), (int, float))
+        or not math.isfinite(tau["value"])
+        or tau["value"] <= 0
+    ):
+        raise ValueError("CUBA_LIF tau_mem must be positive finite ms")
+    for key in ("capacitance_nf", "voltage_grad_dampen"):
+        value = neuron.get(key, 1.0)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise ValueError(f"CUBA_LIF {key} must be positive and finite")
+    for key in ("resting_mv", "threshold_mv", "reset_mv", "initial_voltage_mv"):
+        value = neuron.get(key)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ValueError(f"CUBA_LIF {key} must be finite")
+    count = neuron.get("refractory_steps", 0)
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise ValueError("CUBA_LIF refractory_steps must be a non-negative integer")
+    if neuron["reset_mv"] >= neuron["threshold_mv"]:
+        raise ValueError("CUBA_LIF reset_mv must be below threshold_mv")
 
 
 def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
@@ -194,6 +252,21 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
     for row in graph.get("inputs", []):
         signals[f"{row['id']}.value"] = row
     for row in graph.get("populations", []):
+        neuron = row.get("neuron", {})
+        if neuron.get("kind") == "custom_neuron":
+            _check_extension(out, "neuron", neuron, row["id"])
+            try:
+                for port, unit in E.resolve("neuron", neuron).state_units.items():
+                    signals[f"{row['id']}.{port}"] = {
+                        "shape": ["time", "batch", row["size"]],
+                        "unit": unit,
+                    }
+            except (ValueError, TypeError):
+                pass
+        try:
+            _validate_neuron(neuron)
+        except ValueError as error:
+            out.diagnostics.append(Diagnostic("error", "E501", str(error), row["id"]))
         dampening = row.get("neuron", {}).get("voltage_grad_dampen", 1.0)
         if (
             not isinstance(dampening, (int, float))
@@ -218,6 +291,30 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                 "shape": ["time", "batch", row["size"]],
                 "unit": "spike",
             }
+    population_sizes = {row["id"]: row["size"] for row in graph.get("populations", [])}
+    for row in graph.get("projections", []):
+        target = row["target"].partition(".")[0]
+        if target in population_sizes:
+            try:
+                synapse = row["synapse"]
+                unit = E.synapse_unit(synapse)
+                port = E.projection_port(synapse)
+                signals[f"{row['id']}.{port}"] = {
+                    "shape": ["time", "batch", population_sizes[target]],
+                    "unit": unit,
+                }
+                if synapse["kind"] == "custom_synapse":
+                    for state_port, state_unit in E.resolve(
+                        "synapse", synapse
+                    ).state_units.items():
+                        signals[f"{row['id']}.{state_port}"] = {
+                            "shape": ["time", "batch", population_sizes[target]],
+                            "unit": state_unit,
+                        }
+            except (ValueError, TypeError) as error:
+                out.diagnostics.append(
+                    Diagnostic("error", "E500", str(error), row["id"])
+                )
     for row in graph.get("operations", []):
         signals[f"{row['id']}.value"] = row
 
@@ -239,14 +336,16 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
             )
         initializer = row.get("initializer", {})
         kind = initializer.get("kind")
-        if kind not in initializer_fields:
+        if kind == "custom_initializer":
+            _check_extension(out, "initializer", initializer, row["id"])
+        elif kind not in initializer_fields:
             out.diagnostics.append(
                 Diagnostic(
                     "error", "E110", f"unsupported initializer {kind}", row["id"]
                 )
             )
             continue
-        missing = initializer_fields[kind] - set(initializer)
+        missing = initializer_fields.get(kind, set()) - set(initializer)
         if missing:
             out.diagnostics.append(
                 Diagnostic(
@@ -257,7 +356,9 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                 )
             )
         constraint = row.get("constraint")
-        if constraint is not None and constraint.get("kind") != "non_negative":
+        if constraint is not None and constraint.get("kind") == "custom_constraint":
+            _check_extension(out, "constraint", constraint, row["id"])
+        elif constraint is not None and constraint.get("kind") != "non_negative":
             out.diagnostics.append(
                 Diagnostic(
                     "error",
@@ -271,6 +372,40 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
     consumers: set[str] = set()
     adjacency: dict[str, set[str]] = {p: set() for p in population_ids}
     for row in graph.get("projections", []):
+        try:
+            synapse = row["synapse"]
+            unit = E.synapse_unit(synapse)
+            target_neuron = next(
+                (
+                    p["neuron"]
+                    for p in graph["populations"]
+                    if p["id"] == row["target"].partition(".")[0]
+                ),
+                None,
+            )
+            if target_neuron is not None and unit != E.neuron_unit(target_neuron):
+                out.diagnostics.append(
+                    Diagnostic(
+                        "error",
+                        "E502",
+                        f"synapse unit {unit} incompatible with neuron input unit {E.neuron_unit(target_neuron)}",
+                        row["id"],
+                    )
+                )
+            if synapse.get("kind") == "exponential_current":
+                tau = synapse.get("tau", {})
+                if (
+                    tau.get("unit") != "ms"
+                    or not isinstance(tau.get("value"), (int, float))
+                    or not math.isfinite(tau["value"])
+                    or tau["value"] <= 0
+                ):
+                    raise ValueError(
+                        "ExponentialCurrent tau must be positive finite ms"
+                    )
+        except (ValueError, TypeError) as error:
+            unit = "uS"
+            out.diagnostics.append(Diagnostic("error", "E500", str(error), row["id"]))
         if not isinstance(row.get("enabled", True), bool):
             out.diagnostics.append(
                 Diagnostic(
@@ -334,12 +469,12 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                         "error", "E106", f"unresolved parameter {pid}", row["id"]
                     )
                 )
-            elif parameter_rows[pid].get("unit") != "uS":
+            elif parameter_rows[pid].get("unit") != unit:
                 out.diagnostics.append(
                     Diagnostic(
                         "error",
                         "E113",
-                        f"projection parameter requires unit uS, got {parameter_rows[pid].get('unit')}",
+                        f"projection parameter requires unit {unit}, got {parameter_rows[pid].get('unit')}",
                         row["id"],
                     )
                 )
@@ -369,6 +504,12 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
             adjacency[source_owner].add(target_pop)
 
     for row in graph.get("operations", []):
+        if row.get("kind") == "custom_operation":
+            spec = {
+                "definition": row.get("config", {}).get("definition"),
+                "config": row.get("config", {}).get("settings", {}),
+            }
+            _check_extension(out, "operation", spec, row["id"])
         for source in row["sources"]:
             if source not in signals:
                 out.diagnostics.append(
@@ -704,10 +845,15 @@ def validate_training(
                 "error", "E414", "resolved parameter learning rates do not match groups"
             )
         )
+    optimizer = training.get("optimizer", {})
+    if optimizer.get("kind") == "custom_optimizer":
+        _check_extension(result, "optimizer", optimizer)
     surrogate = training.get("surrogate")
     if surrogate is not None:
         slope = surrogate.get("slope")
-        if surrogate.get("kind") != "fast_sigmoid":
+        if surrogate.get("kind") == "custom_surrogate":
+            _check_extension(result, "surrogate", surrogate)
+        elif surrogate.get("kind") != "fast_sigmoid":
             result.diagnostics.append(
                 Diagnostic(
                     "error", "E415", f"unsupported surrogate {surrogate.get('kind')}"
@@ -743,7 +889,9 @@ def validate_training(
             )
         )
     for objective in training.get("objectives", []):
-        if objective.get("kind") != "cross_entropy":
+        if objective.get("kind") == "custom_objective":
+            _check_extension(result, "objective", objective)
+        elif objective.get("kind") != "cross_entropy":
             result.diagnostics.append(
                 Diagnostic(
                     "error", "E424", f"unsupported objective {objective.get('kind')}"
@@ -788,7 +936,22 @@ def validate_training(
                         "error", "E405", f"regularizer signal is unresolved: {signal}"
                     )
                 )
-        if regularizer.get("kind") != "spike_budget":
+        if regularizer.get("kind") == "custom_regularizer":
+            _check_extension(result, "regularizer", regularizer)
+            strength = regularizer.get("strength")
+            if (
+                not isinstance(strength, (int, float))
+                or not math.isfinite(strength)
+                or strength < 0
+            ):
+                result.diagnostics.append(
+                    Diagnostic(
+                        "error",
+                        "E420",
+                        "regularizer strength must be finite and non-negative",
+                    )
+                )
+        elif regularizer.get("kind") != "spike_budget":
             result.diagnostics.append(
                 Diagnostic(
                     "error",
@@ -951,11 +1114,18 @@ def capability_report(graph: Mapping[str, Any], target: str | None) -> list[Diag
         "duration_normalise",
         "cumulative_sum",
         "divide",
+        "custom_operation",
     }
     diagnostics = []
     vocabulary = "snnlang.capabilities/v1"
-    neuron_support = {"coba_lif", "leaky_integrator"}
-    synapse_support = {"ampa", "gaba", "leaky_integrator"}
+    neuron_support = {"coba_lif", "cuba_lif", "leaky_integrator", "custom_neuron"}
+    synapse_support = {
+        "ampa",
+        "gaba",
+        "leaky_integrator",
+        "exponential_current",
+        "custom_synapse",
+    }
     connection_support = {"feedforward", "recurrent", "feedback"}
     for population in graph["populations"]:
         kind = population["neuron"]["kind"]
@@ -1229,6 +1399,9 @@ def compile(
         "files": files,
         "assets": manifest_assets,
     }
+    requirements = E.required(graph, training_data)
+    if requirements:
+        manifest["extensions"] = requirements
     return Bundle(
         graph,
         training_data,

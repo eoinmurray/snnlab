@@ -27,7 +27,8 @@ class Unit:
 
 
 class SignalLike(Protocol):
-    id: str
+    @property
+    def id(self) -> str: ...
 
 
 ms = Unit("ms")
@@ -35,6 +36,7 @@ mV = Unit("mV")
 nS = Unit("nS")
 uS = Unit("uS")
 Hz = Unit("Hz")
+nA = Unit("nA")
 
 
 def _value(value: Any) -> Any:
@@ -42,8 +44,10 @@ def _value(value: Any) -> Any:
         return value.json()
     if hasattr(value, "json"):
         return value.json()
-    if isinstance(value, tuple):
-        return list(value)
+    if isinstance(value, (tuple, list)):
+        return [_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _value(item) for key, item in value.items()}
     return value
 
 
@@ -64,7 +68,62 @@ def COBA_LIF(**values: Any) -> Spec:
 
 
 def LIF(**values: Any) -> Spec:
-    return Spec("lif", values)
+    return CUBA_LIF(**values)
+
+
+def CUBA_LIF(
+    *,
+    tau_mem=20 * ms,
+    capacitance_nf=1.0,
+    resting_mv=-65.0,
+    threshold_mv=-50.0,
+    reset_mv=-65.0,
+    refractory_steps=0,
+    initial_voltage_mv=None,
+    voltage_grad_dampen=1.0,
+) -> Spec:
+    return Spec(
+        "cuba_lif",
+        dict(
+            tau_mem=tau_mem,
+            capacitance_nf=capacitance_nf,
+            resting_mv=resting_mv,
+            threshold_mv=threshold_mv,
+            reset_mv=reset_mv,
+            refractory_steps=refractory_steps,
+            initial_voltage_mv=resting_mv
+            if initial_voltage_mv is None
+            else initial_voltage_mv,
+            voltage_grad_dampen=voltage_grad_dampen,
+        ),
+    )
+
+
+def ExponentialCurrent(*, tau=5 * ms) -> Spec:
+    return Spec("exponential_current", {"tau": tau})
+
+
+def _custom(category: str, definition: str, config: dict[str, Any]) -> Spec:
+    from snnlab.extensions import get
+
+    get(category, definition)
+    return Spec(f"custom_{category}", {"definition": definition, "config": config})
+
+
+def CustomNeuron(definition: str, **config: Any) -> Spec:
+    return _custom("neuron", definition, config)
+
+
+def CustomSynapse(definition: str, **config: Any) -> Spec:
+    return _custom("synapse", definition, config)
+
+
+def CustomInitializer(definition: str, **config: Any) -> Spec:
+    return _custom("initializer", definition, config)
+
+
+def CustomConstraint(definition: str, **config: Any) -> Spec:
+    return _custom("constraint", definition, config)
 
 
 def LeakyIntegrator(**values: Any) -> Spec:
@@ -177,6 +236,9 @@ class Population:
     def modulatory(self) -> str:
         return f"{self.id}.modulatory"
 
+    def state(self, name: str) -> Signal:
+        return self.network._signal(f"{self.id}.{name}")
+
 
 @dataclass
 class Projection:
@@ -190,6 +252,17 @@ class Projection:
     parameter_ids: tuple[str, ...]
     group: str | None
     enabled: bool
+
+    @property
+    def conductance(self) -> Signal:
+        return self.network._signal(f"{self.id}.conductance")
+
+    @property
+    def current(self) -> Signal:
+        return self.network._signal(f"{self.id}.current")
+
+    def state(self, name: str) -> Signal:
+        return self.network._signal(f"{self.id}.{name}")
 
     @property
     def weight(self) -> ParameterRef:
@@ -289,6 +362,19 @@ class Network:
             name,
             "voltage",
         )
+        if neuron.kind == "custom_neuron":
+            from snnlab.extensions import resolve
+
+            for port, unit in resolve("neuron", neuron.json()).state_units.items():
+                self._signals[f"{name}.{port}"] = Signal(
+                    self,
+                    f"{name}.{port}",
+                    ("time", "batch", size),
+                    unit,
+                    "continuous",
+                    name,
+                    port,
+                )
         return Population(self, name, size, neuron, spiking, group)
 
     def parameter(
@@ -349,12 +435,14 @@ class Network:
         if isinstance(weight, ParameterRef):
             parameter_id = weight.id
         else:
+            from snnlab.extensions import synapse_unit
+
             parameter_id = f"{name}.weight"
             self.parameters.append(
                 {
                     "id": parameter_id,
                     "shape": [populations[target_pop]["size"], source.shape[-1]],
-                    "unit": "uS",
+                    "unit": synapse_unit(synapse.json()),
                     "initializer": weight.json(),
                     "constraint": constraint.json() if constraint else None,
                     "group": self.current_group,
@@ -374,6 +462,31 @@ class Network:
         if not enabled:
             row["enabled"] = False
         self.projections.append(row)
+        from snnlab.extensions import projection_port, resolve, synapse_unit
+
+        port = projection_port(synapse.json())
+        self._signals[f"{name}.{port}"] = Signal(
+            self,
+            f"{name}.{port}",
+            ("time", "batch", populations[target_pop]["size"]),
+            synapse_unit(synapse.json()),
+            "continuous",
+            name,
+            port,
+        )
+        if synapse.kind == "custom_synapse":
+            for state_port, unit in resolve(
+                "synapse", synapse.json()
+            ).state_units.items():
+                self._signals[f"{name}.{state_port}"] = Signal(
+                    self,
+                    f"{name}.{state_port}",
+                    ("time", "batch", populations[target_pop]["size"]),
+                    unit,
+                    "continuous",
+                    name,
+                    state_port,
+                )
         return Projection(
             self,
             name,

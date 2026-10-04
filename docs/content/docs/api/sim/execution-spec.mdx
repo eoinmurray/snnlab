@@ -1,0 +1,417 @@
+---
+title: ExecutionSpec
+description: Complete reference for configuring graph construction, simulation, inference and training.
+---
+
+`ExecutionSpec` describes one execution request. It selects the graph, input data, device, diagnostics and optional training or inference settings. Creating the object does not run anything; pass it to `build`, `simulate`, `infer`, `train` or `execute_request`.
+
+Import it from `snnlab.sim.execution`. This reference describes the current implementation in [execution.py](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/execution.py). The [quickstart](/quickstart) demonstrates its simulation use.
+
+## Constructor
+
+```python
+from snnlab.sim.execution import ExecutionSpec
+
+ExecutionSpec(
+    kind: Literal["build", "simulate", "train", "infer"],
+    executor: Literal["legacy", "graph"] = "graph",
+    bundle: Path | None = None,
+    graph: Mapping[str, Any] | None = None,
+    input_bindings: Sequence[InputBinding] = (),
+    protocol: Mapping[str, Any] = {},
+    training: Mapping[str, Any] | None = None,
+    targets: Mapping[str, torch.Tensor] = {},
+    target_bindings: Sequence[TargetArrayBinding] = (),
+    validation: ValidationSpec | None = None,
+    epochs: int = 0,
+    batch_size: int | None = None,
+    shuffle: bool = False,
+    updates: int | None = None,
+    save_final_checkpoint: str | Path | None = None,
+    save_selected_checkpoint: str | Path | None = None,
+    seed: int = 0,
+    device: str = "auto",
+    diagnostics: bool = True,
+    checkpoint: Path | None = None,
+    runtime_state: GraphRuntimeState | None = None,
+    options: Mapping[str, Any] = {},
+)
+```
+
+This is a signature display, not executable construction code. `Path`, `Mapping`, `Sequence`, `Literal`, `Any` and `torch.Tensor` denote Python types. Empty mappings and sequences are created by dataclass factories for each instance; the displayed `{}` defaults are not shared mutable defaults.
+
+The class is a frozen dataclass. You cannot reassign its fields, but nested mappings, tensors and objects are not deeply frozen. Type annotations do not validate values at construction; execution handlers and input resolvers perform the checks described below.
+
+## Request and graph
+
+### kind
+
+**Type:** `Literal["build", "simulate", "train", "infer"]`. **Required.**
+
+Chooses the handler when using `execute_request(spec)`:
+
+| Value | Operation |
+| --- | --- |
+| `"build"` | Validate/lower the graph and initialize a `GraphExecutor`. No input execution. |
+| `"simulate"` | Build and execute the graph using resolved inputs. |
+| `"infer"` | Currently delegates to the graph simulation handler, including checkpoint loading. |
+| `"train"` | Build the graph and perform AdamW updates using a training recipe and targets. |
+
+Calling a handler directly selects that operation independently of `kind`: `simulate(spec)` does not dispatch on `spec.kind`. Keep `kind` consistent with the handler. In particular, `build` only automatically loads bundle training metadata when `kind="train"`. An unsupported `kind` reaches a `KeyError` in the graph dispatcher.
+
+### executor
+
+**Type:** `Literal["legacy", "graph"]`. **Default:** `"graph"`.
+
+Typed requests use the graph API by default, as shown in Quickstart. Set `executor="legacy"` explicitly for historical routing. The CLI independently retains its legacy default.
+
+`execute_request` requires a registered `legacy` callback for legacy execution; without one it raises `ValueError`. Calling `build`, `simulate`, `train` or `infer` directly with `executor="legacy"` returns a routing-only `ExecutionResult`; it does not invoke the legacy simulation/training body. Use the supported executor names; the dataclass does not reject arbitrary strings itself.
+
+### bundle
+
+**Type:** `Path | None`. **Default:** `None`.
+
+Path to a compiled bundle directory containing the graph and its authenticated manifest. Use `Path("network.bundle")`. Loading is data-only and verifies the bundle's digests.
+
+For graph execution, supply `bundle` or `graph`. When `graph` is provided, it takes precedence for construction. If both are supplied, training can still read its recipe from `bundle`; prefer one graph source to avoid ambiguity.
+
+With `kind="train"`, a bundle can supply its `training.json` recipe when the `training` field is absent.
+
+### graph
+
+**Type:** `Mapping[str, Any] | None`. **Default:** `None`.
+
+A compiled graph mapping, commonly `bundle.graph` returned by `lang.compile`. Pass graph data, not an authoring `Network` or a `Bundle` object.
+
+The planner validates topology and backend capabilities before stepping. Supported graph execution includes COBA-LIF, current-based LIF and leaky-integrator populations, AMPA/GABA/current/integrator projections, supported and registered custom readout operations, feedforward/recurrent/feedback paths and timestep-aligned delays. Unsupported structures raise capability or validation errors.
+
+If neither `graph` nor `bundle` supplies graph data, graph execution raises `ValueError`.
+
+## Inputs
+
+### input_bindings
+
+**Type:** `Sequence[InputBinding]`. **Default:** `()`.
+
+Supplies all input data for the request. Pass typed binding instances in one sequence, for example `input_bindings=(poisson_input,)`. Binding IDs must match inputs declared by `net.input`.
+
+Declare the accepted signal with [Network.input](/api/lang/network#input). The binding types and their compatibility rules are documented below. Import bindings and `InputBinding` from `snnlab.sim.execution`.
+
+### Binding rules
+
+All graph inputs must be covered exactly once by name. Names refer to IDs declared by `net.input`, not population names. Input tensors resolve the symbolic time and batch axes; the graph supplies the timestep and feature/channel dimensions.
+
+### InputBinding
+
+[`ExecutionSpec.input_bindings`](/api/sim/execution-spec#input_bindings) is the sole input field on the execution request. `InputBinding` is a public type alias from `snnlab.sim.execution`:
+
+```python
+InputBinding = (
+    DenseArrayBinding
+    | EventStreamBinding
+    | PoissonInputBinding
+    | DatasetSnapshotBinding
+)
+```
+
+Pass instances of these types in one sequence; the executor routes each by its type. A one-binding tuple is `(binding,)`. Each binding's `input_id` must identify a declared graph input. Unknown binding types raise `TypeError`; duplicate input IDs raise `ValueError`, including duplicates across binding types.
+
+Dense and event bindings may be combined for different graph inputs. Poisson bindings must be used without replay bindings. A dataset snapshot must be the only binding in the sequence; multiple snapshots are not currently supported. The public request has no separate `inputs`, `event_bindings`, `poisson_bindings` or `dataset_binding` arguments.
+
+### DenseArrayBinding
+
+Explicit dense tensors with source metadata. Each binding has `input_id: str`, `value: torch.Tensor` and `source: Mapping[str, Any]`, which defaults to an empty mapping.
+
+Use this route when retaining file or dataset provenance matters. The `source` mapping records supplied metadata; constructing an in-memory binding does not authenticate an arbitrary file by itself. File-loading helpers can supply file digests.
+
+Dense values normally use `(time, batch, *features)` axes. A missing batch axis can be inserted as a singleton. Feature dimensions must match the graph, and all inputs must share time/batch sizes. Spikes must be binary; masks must be boolean or zero/one; floating values must be finite. Non-mask values are converted to floating tensors on the selected device.
+
+Place each dense binding in `input_bindings`, for example `input_bindings=(DenseArrayBinding("inputs", spike_tensor),)`. Dense and event bindings may coexist for different inputs when resolved timestep, duration and batch dimensions agree.
+
+### EventStreamBinding
+
+Sparse binary spike events. Each binding declares `input_id`, integer coordinate tensors `steps`, `batches`, `channels`, positive `steps_count`, positive `batch_size`, and optional `source` metadata.
+
+Coordinates are zero-based simulation steps, batch indices and channel indices. Coordinates must satisfy the resolver's ordering and bounds checks; duplicates are rejected. The input must be a spike input with a time/batch/channel declaration. Resolution materializes binary dense spikes and retains event counts/provenance.
+
+Place each event binding in `input_bindings`. Event bindings can accompany dense bindings for other graph inputs; they cannot accompany Poisson bindings or a dataset snapshot.
+
+### PoissonInputBinding
+
+Generates seeded spike inputs. Pass it as `input_bindings=(poisson_input,)`.
+
+| Binding field | Type / default | Meaning |
+| --- | --- | --- |
+| `input_id` | `str`, required | Exact graph input ID. |
+| `steps_count` | `int`, required | Positive number of simulation steps. |
+| `batch_size` | `int = 1` | Positive number of presentations. |
+| `rates_hz` | `Sequence[float]`, required | Finite, non-negative rates in spikes per second. |
+| `seed` | `int`, required | Seed of this binding's CPU random generator. |
+| `categorical` | `bool = False` | If true, select one listed rate uniformly and independently per presentation. |
+
+The input declaration must have `(time, batch, channels)` axes and spike signal type. With `categorical=False`, exactly one rate is required and applies to all channels/presentations. With `categorical=True`, one selected rate applies to all channels of each presentation; spike samples are independent across channel/time positions.
+
+Generation uses a Bernoulli discretization of a homogeneous Poisson process. The per-step probability is the selected rate in Hz multiplied by the graph timestep in milliseconds and divided by 1,000. A probability above one is rejected. Configured and selected rates, seeds and resolved shapes are retained in the execution protocol.
+
+Multiple Poisson bindings must agree on time and batch sizes and cover all graph inputs. Poisson inputs cannot currently be mixed with dense/event replay or a dataset snapshot.
+
+### DatasetSnapshotBinding
+
+Resolves one immutable external NPZ dataset snapshot. Pass it as `input_bindings=(dataset_input,)`. Its fields are:
+
+| Field | Type / default |
+| --- | --- |
+| `path` | `Path`, required |
+| `input_id` | `str`, required |
+| `dataset_id` | `str`, required |
+| `split` | `str`, required |
+| `encoder` | `DatasetEncoder`, required |
+| `target_id` | `str | None = None` |
+| `feature_key` | `str = "features"` |
+| `label_key` | `str = "labels"` |
+| `sample_cap` | `int | None = None` |
+| `shuffle` | `bool = False` |
+| `order_seed` | `int = 0` |
+
+The resolver computes the source file digest, selects samples with the cap/order settings, and records file identity, split, selected indices, encoder and seeds. It performs no dataset download or registry lookup. `dataset_id` and `split` must be non-empty.
+
+`DatasetEncoder` has required `kind`, optional `duration_ms` and `max_rate_hz` (both default `None`), and `seed=0`. The `"custom"` kind uses a registered encoder with `definition` and `config`; see [Extensions](/api/lang/extensions#dataset-encoders-and-inputs). Built-in kinds are `"rate_poisson"` for normalized sample/channel features, `"prebinned_spikes"` for binary time/sample/channel tensors, and `"event_bin"` for timestamped sample/channel events. Encoding validates shapes, values and physical timing against graph `dt`.
+
+A dataset snapshot must be the only element of `input_bindings`. During training it is also exclusive with explicit targets/target bindings; use its `target_id` to bind integer labels to the recipe's target. Simulation resolves the input and does not use its labels as training targets.
+
+
+### protocol
+
+**Type:** `Mapping[str, Any]`. **Default:** empty mapping.
+
+Additional JSON-serializable execution provenance. For example, a `dataset` mapping can identify the source and split. It is metadata, not a way to change the graph or generate inputs.
+
+Resolvers own reserved fields such as `schema`, `binding_schema`, `representation`, `inputs`, `timing` and `seeds`; attempting to override them raises `ValueError`. Dense/event resolvers also reserve `masks`; the dataset resolver reserves its additional dataset/snapshot/resolution fields. Use descriptive custom keys instead of resolver-owned fields. The finalized protocol appears in `result.metrics["execution_protocol"]`.
+
+## Training
+
+Custom training callbacks are documented in [Extensions](/api/lang/extensions#objectives-and-regularizers). Classification targets are integer labels; custom regression targets can be finite real tensors with a leading sample axis.
+
+### training
+
+**Type:** `Mapping[str, Any] | None`. **Default:** `None`.
+
+A compiled training recipe, typically `bundle.training`, rather than an authoring `TrainSpec` instance. It describes objectives, parameter groups, optimizer, surrogate gradients and regularizers. When omitted, a training bundle can supply the recipe.
+
+Graph training requires a recipe with resolved trainable parameters and external targets. The trainer supports cross entropy, spike budgets and AdamW, plus registered custom objectives, regularizers, optimizers and surrogates. Unsupported recipes, missing trainable parameters or unsupported optimizers fail. Direct training fields control iteration as described below; the recipe's epoch count is not automatically used by direct `train(spec)`.
+
+`build` uses recipe trainable parameter IDs and surrogate slope when present. For a normal simulation request, training objectives and targets are not evaluated.
+
+### targets
+
+**Type:** `Mapping[str, torch.Tensor]`. **Default:** empty mapping.
+
+Named training target tensors. Keys must match the objective target IDs exactly, with one leading entry per input sample/batch-axis element. Classification objectives require one-dimensional labels using `int8`, `int16`, `int32`, `int64` or `uint8`; resolved labels become `torch.long`, and objective evaluation checks valid classes. Custom non-classification objectives accept finite real tensors, including multidimensional regression targets, and preserve their dtype.
+
+Supply `targets` or `target_bindings`, not both. Dataset snapshot labels use the snapshot's `target_id` instead. Simulation/inference do not consume these training targets.
+
+### target_bindings
+
+**Type:** `Sequence[TargetArrayBinding]`. **Default:** `()`.
+
+Explicit target vectors with provenance. Each binding has required `target_id: str` and `value: torch.Tensor`, plus `source: Mapping[str, Any] = {}` from a dataclass factory. IDs, shape and integer-value rules match `targets`. Duplicate/missing/unexpected target IDs are rejected.
+
+### validation
+
+**Type:** `ValidationSpec | None`. **Default:** `None`.
+
+Held-out data for epoch evaluation by `train`. Import `ValidationSpec` from `snnlab.sim.execution`:
+
+```python
+validation = ValidationSpec(
+    input_bindings=(validation_input,),
+    targets={"class": validation_labels},
+)
+execution = ExecutionSpec(
+    kind="train",
+    bundle=bundle_path,
+    input_bindings=(train_input,),
+    targets={"class": train_labels},
+    validation=validation,
+    epochs=20,
+    batch_size=32,
+    shuffle=True,
+)
+result = train(execution)
+history = result.metrics["epochs"]
+```
+
+`ValidationSpec` is a frozen dataclass with `input_bindings: Sequence[InputBinding] = ()`, `targets: Mapping[str, torch.Tensor] = {}`, `target_bindings: Sequence[TargetArrayBinding] = ()`, and `protocol: Mapping[str, Any] = {}`. Defaults use independent factories. It uses the same [input binding rules](/api/sim/execution-spec#input_bindings) and target validation as training, including dataset snapshots with a `target_id`. Supply `targets` or `target_bindings`, not both; snapshot labels must not be combined with either.
+
+Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can therefore be changed when resuming without changing the training trajectory.
+
+This field is used only by graph `train`, and requires positive `epochs`. Other handlers do not evaluate validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
+
+### Training controls
+
+These are direct `ExecutionSpec` constructor fields, used by graph `train`:
+
+| Field | Type and default | Behaviour |
+| --- | --- | --- |
+| `epochs` | `int = 0` | A positive integer enables dataset iteration across the input sample axis. `0` selects repeated full-batch updates. |
+| `batch_size` | `int \| None = None` | Positive minibatch size in dataset mode; `None` uses all supplied samples. No remainder batch is dropped. |
+| `shuffle` | `bool = False` | In dataset mode, permute sample order each epoch with `seed + epoch`. |
+| `updates` | `int \| None = None` | Optional positive update limit for this invocation. `None` runs the remaining epoch schedule, or one update in full-batch mode. |
+| `save_final_checkpoint` | `str \| Path \| None = None` | Write the final checkpoint to this directory when supplied. |
+| `save_selected_checkpoint` | `str \| Path \| None = None` | Write the checkpoint selected by lowest update loss to this directory when supplied. |
+
+`epochs` must be a non-negative integer; supplied `batch_size` and `updates` must be positive integers. Boolean or fractional values are rejected for these counts, and `shuffle` must be boolean. Without dataset mode, `batch_size` and `shuffle` do not split or shuffle the repeated full batch. A dataset checkpoint already at its requested end epoch raises an error.
+
+A resumed dataset schedule starts at the checkpoint's next coordinates and is truncated by `updates` when supplied. The training recipe's `epochs` does not override this execution field. These controls do not change graph simulation or inference.
+
+The previous training keys in `options` are no longer accepted by graph `train`; move them to the constructor fields. Inference-specific mappings remain under `options`.
+
+## Randomness and device
+
+### seed
+
+**Type:** `int`. **Default:** `0`.
+
+Execution seed used for graph parameter initialization and provenance. Training's shuffled epoch ordering uses `seed + epoch`. Interventions default to this seed when their own seed is absent.
+
+Poisson bindings have their own explicit seeds. Dataset bindings separately declare `order_seed`, and rate encoders have an encoder seed. Setting `ExecutionSpec.seed` does not replace these independently configured seeds. A fixed seed supports repeatable runs under the same execution conditions; cross-device numerical equality is a separate question.
+
+### device
+
+**Type:** `str`. **Default:** `"auto"`.
+
+Accepted values are `"auto"`, `"cpu"`, `"cuda"`, `"cuda:N"` and `"mps"` (normalized to lowercase by the resolver). Explicit unavailable CUDA/MPS requests raise `ValueError`; indexed CUDA availability/topology is additionally constrained by PyTorch.
+
+`"auto"` first honors the `PINGLAB_DEVICE` environment variable. Otherwise it selects CUDA when available, then CPU. It does not automatically select MPS. Use `"cpu"` for the portable Quickstart behaviour.
+
+## Diagnostics
+
+### diagnostics
+
+**Type:** `bool`. **Default:** `True`.
+
+Declared outputs from `net.output` are always returned in `result.outputs`. Signals declared with `net.expose` are returned by default in `result.diagnostics`, keyed by their exposed names. Set `diagnostics=False` to return no diagnostic tensors. This applies to simulation, inference and training; `build` does not execute the network.
+
+```python
+net.output("spikes", cells.spikes)
+net.expose(cells.voltage, name="e_voltage")
+bundle = lang.compile(net, target="tools/snnsim")
+
+execution = ExecutionSpec(
+    kind="simulate", graph=bundle.graph, input_bindings=(poisson_input,)
+)
+result = simulate(execution)
+spikes = result.outputs["spikes"]
+voltages = result.diagnostics["e_voltage"]
+```
+
+Compile the network after declaring its outputs and exposed diagnostics. To disable diagnostics for a run, pass `diagnostics=False` to `ExecutionSpec`; outputs, training objectives/regularizers and continuation state are unaffected. The runtime requires a boolean value.
+
+Expose exactly the signals you want to inspect. Population spikes and voltages typically have `(time, batch, cells)` axes. Projection conductance is also explicitly exposable using `net.expose(projection.conductance, name="input_conductance")`, where `projection` is returned by `net.connect`. Exposed diagnostics are detached tensors; declared outputs retain their computation graph for training.
+
+There is no automatic collection of unexposed signals. The previous `recording` and `recording_fields` constructor arguments have been removed, and `ExecutionResult.recordings` has been renamed to `diagnostics`. Training returns exposed diagnostics from its final update.
+
+## Checkpoints and continuation
+
+### checkpoint
+
+**Type:** `Path | None`. **Default:** `None`.
+
+Weights or training state to load before execution. Behaviour depends on the handler:
+
+| Handler | Behaviour |
+| --- | --- |
+| `simulate` / `infer` | A directory loads a digest-verified graph training checkpoint's parameters. A non-directory path loads a PyTorch state dictionary with `weights_only=True`; supported legacy state dictionaries use explicit parameter interchange. |
+| `train` | Loads a graph training-checkpoint directory and resumes parameters, AdamW state, RNG state and iteration coordinates. |
+| `build` | Does not load the checkpoint field. |
+
+Inference authenticates the graph identity and parameter names/shapes/dtypes. It does not restore the training optimizer or training iterator. Inference metrics retain checkpoint provenance.
+
+Training resume additionally checks recipe digest, resolved execution protocol, initializer metadata, parameter coverage, and compatible RNG backend/device topology before restoring state. In dataset iteration mode, next epoch/batch coordinates must be valid. Mismatches raise errors rather than silently starting a different trajectory.
+
+### runtime_state
+
+**Type:** `GraphRuntimeState | None`. **Default:** `None`.
+
+Dynamic state for continuing a simulation trajectory. Obtain it from `result.runtime_state`; it contains compatibility/signature information, completed steps, voltages, refractory counters, conductances, population delay histories and input delay histories. Static weights are excluded.
+
+This is distinct from `checkpoint`: a weight checkpoint supplies parameters; runtime state supplies ongoing neuron/synapse/delay state. Continuation validates graph/state compatibility, names, shapes, dtypes and device.
+
+`simulate(spec, runtime_state=state)` can also supply state as a keyword argument. A non-`None` keyword state takes precedence over `spec.runtime_state`. The timestep override cannot be combined with either form of runtime state. `build` and `train` do not consume this field.
+
+## options
+
+**Type:** `Mapping[str, Any]`. **Default:** empty mapping.
+
+Inference and compatibility options. Training controls are explicit fields described above. The top-level mapping is not a universally validated configuration schema: unknown top-level keys can be ignored. Only the keys consumed below affect direct graph handlers. CLI adapters may carry additional legacy/CLI fields here; that does not make them supported typed graph options.
+
+### inference_overrides
+
+`options["inference_overrides"]` is a mapping applied by simulation/inference. Supported keys are:
+
+| Key | Value | Effect |
+| --- | --- | --- |
+| `duration_ms` | Positive duration aligned to graph timestep | Resample generated Poisson inputs for that duration. |
+| `input_rate_hz` | Finite, non-negative rate | Replace each Poisson binding's rates with one fixed rate. The per-step probability must remain valid. |
+| `projection_scales` | Mapping of projection ID to finite, non-negative factor | Scale named projection parameters after checkpoint loading. |
+| `timestep_ms` | Finite, positive timestep | Recompile an immutable copy of the graph timebase and resample generated Poisson input while preserving physical duration unless overridden. |
+
+Unknown override keys or projection IDs raise `ValueError`. Duration/rate/timestep changes require resampleable Poisson inputs and reject dense/event replay. A dataset snapshot is not a substitute for these Poisson bindings. New timesteps must also satisfy graph delay/timing validation.
+
+Timestep recompilation rejects runtime continuation state. When using a checkpoint with a new timestep, checkpoint identity is checked against the source graph before parameters load into the effective graph. Projection scaling can be used with replay inputs. Source graph/checkpoint files are not rewritten by these request-local overrides. Metrics record requested and resolved values.
+
+### inference_interventions
+
+`options["inference_interventions"]` is an ordered sequence of mappings applied to emitted hidden-population spikes during simulation/inference.
+
+| Key | Meaning |
+| --- | --- |
+| `kind` | `"drop_spikes"` or `"add_poisson_spikes"`. |
+| `population_id` | Exact ID of a spiking graph population. |
+| `probability` | Required for `drop_spikes`; finite value between zero and one. |
+| `rate_hz` | Required for `add_poisson_spikes`; finite, non-negative rate with valid per-step probability. |
+| `seed` | Optional intervention seed; defaults to the execution seed. |
+
+Drop removes emitted spikes probabilistically. Add unions emitted spikes with a generated Poisson stream. Interventions are processed in sequence; modified spikes propagate through downstream projections, delay histories, diagnostics and readouts. They do not replace the graph's external input bindings. Random streams use absolute execution step, allowing runtime continuation under the same intervention settings. Unknown kinds, non-spiking/unknown targets and invalid probabilities/rates fail validation.
+
+## Calling the API
+
+The named objects below follow the same structure as Quickstart. Here, `compiled_graph` is an already compiled graph declaring a spike input named `"inputs"` with `(time, batch, 16)` axes; its graph timestep determines physical duration.
+
+```python
+from snnlab.sim.execution import ExecutionSpec, PoissonInputBinding, simulate
+
+poisson_input = PoissonInputBinding(
+    input_id="inputs",
+    steps_count=3000,
+    rates_hz=(80.0,),
+    seed=17,
+)
+
+execution = ExecutionSpec(
+    kind="simulate",
+    graph=compiled_graph,
+    input_bindings=(poisson_input,),
+    seed=17,
+    device="cpu",
+)
+
+result = simulate(execution)
+```
+
+`build(spec)`, `simulate(spec)`, `infer(spec)` and `train(spec)` return `ExecutionResult`. `execute_request(spec)` dispatches to them using `kind` for graph execution. None of the direct simulation handlers automatically writes CLI output directories or PNGs; save the returned tensors or render them explicitly.
+
+## Returned result
+
+Every execution handler returns [ExecutionResult](/api/sim/execution-result). That reference covers tensor outputs, diagnostics, parameters, checkpoint state, epoch metrics and [NumPy conversion](/api/sim/execution-result#numpy).
+
+## Validation summary
+
+1. Use the default graph executor (or set `executor="graph"` explicitly), a supported operation, and either compiled graph data or a bundle.
+2. Cover every graph input by its exact ID, with no duplicates or overlapping binding routes.
+3. Keep time/batch axes consistent; satisfy declared feature shapes, binary spike/mask rules and finite-value checks.
+4. Supply all input sources through `input_bindings`. Dense/event bindings may coexist for different inputs; Poisson and dataset snapshot bindings follow the [input compatibility rules](/api/sim/execution-spec#inputbinding).
+5. For training, supply a compiled recipe and exactly matching named targets, or a dataset snapshot carrying its target binding.
+6. Use valid devices, the diagnostics flag and handler-specific options. Respect checkpoint and runtime-state compatibility.
+
+Validation happens when a handler resolves the request. Frozen dataclass construction alone is not proof that a request is executable.

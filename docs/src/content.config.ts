@@ -9,6 +9,11 @@ export const collections = {
   }),
   meta: defineCollection({
     loader: glob({ pattern: '**/*.json', base: './content/docs' }),
-    schema: z.object({ title: z.string().optional(), pages: z.array(z.string()).optional() }),
+    schema: z.object({
+      title: z.string().optional(),
+      pages: z.array(z.string()).optional(),
+      collapsible: z.boolean().optional(),
+      defaultOpen: z.boolean().optional(),
+    }),
   }),
 };

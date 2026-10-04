@@ -1,7 +1,7 @@
 [project]
 name = "snnlab"
 dynamic = ["version"]
-description = "Author, simulate and visualise conductance-based spiking neural networks."
+description = "Author, simulate and visualise spiking neural networks with conductance-based and current-based dynamics."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -25,8 +25,8 @@ packages = ["src/snnlab"]
 path = "src/snnlab/__init__.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/examples", "/scripts", "/docs", "/README.md", "/CHANGELOG.md", "/VERSIONING.md", "/LICENSE", "/pyproject.toml", "/uv.lock"]
-exclude = ["/docs/node_modules", "/docs/.next", "/docs/.source", "/docs/.astro", "/docs/out", "/docs/.wrangler", "/docs/.env*", "/docs/next-env.d.ts", "/examples/generated", "**/__pycache__", "**/*.pyc", "**/*.tsbuildinfo", "**/.DS_Store"]
+include = ["/examples/current-lif", "/examples/quickstart", "/examples/training", "/examples/inference", "/examples/pytorch", "/examples/customisation", "/src", "/tests", "/scripts", "/docs", "/README.md", "/CHANGELOG.md", "/VERSIONING.md", "/LICENSE", "/pyproject.toml", "/uv.lock"]
+exclude = ["/examples/customisation/network.bundle", "/examples/pytorch/trained.pt", "/examples/pytorch/metrics.json", "/examples/inference/predictions.json", "/examples/training/network.bundle", "/examples/training/trained.checkpoint", "/examples/training/metrics.json", "/docs/node_modules", "/docs/.next", "/docs/.source", "/docs/.astro", "/docs/out", "/docs/.wrangler", "/docs/.env*", "/docs/next-env.d.ts", "**/__pycache__", "**/*.pyc", "**/*.tsbuildinfo", "**/.DS_Store"]
 
 [dependency-groups]
 dev = ["pytest>=9.0.1", "pytest-cov>=7.1.0", "ruff>=0.15.20", "brian2>=2.10; python_version >= '3.12'"]

@@ -307,10 +307,10 @@ def _build_parent_parser():
         help="Graph execution device: auto, cpu, cuda, cuda:N, or mps (default: auto).",
     )
     net_group.add_argument(
-        "--recording",
-        choices=("full", "observables", "none"),
-        default="full",
-        help="Graph recording profile: declared observables only, full dynamic traces, or none (default: full).",
+        "--diagnostics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Return exposed graph diagnostics (default: enabled; use --no-diagnostics to disable).",
     )
     net_group.add_argument(
         "--load-runtime-state",
@@ -2331,18 +2331,20 @@ def main(argv=None):
                     seed=request.seed if encoder_kind == "rate_poisson" else 0,
                 )
                 binding_update = {
-                    "dataset_binding": DatasetSnapshotBinding(
-                        path=Path(dataset_file),
-                        input_id=input_id,
-                        target_id=args.dataset_target_id,
-                        dataset_id=args.input_dataset_id,
-                        split=args.input_split,
-                        encoder=encoder,
-                        feature_key=args.dataset_feature_key,
-                        label_key=args.dataset_label_key,
-                        sample_cap=args.max_samples,
-                        shuffle=bool(args.input_shuffle),
-                        order_seed=request.seed,
+                    "input_bindings": (
+                        DatasetSnapshotBinding(
+                            path=Path(dataset_file),
+                            input_id=input_id,
+                            target_id=args.dataset_target_id,
+                            dataset_id=args.input_dataset_id,
+                            split=args.input_split,
+                            encoder=encoder,
+                            feature_key=args.dataset_feature_key,
+                            label_key=args.dataset_label_key,
+                            sample_cap=args.max_samples,
+                            shuffle=bool(args.input_shuffle),
+                            order_seed=request.seed,
+                        ),
                     )
                 }
             elif poisson_protocol:
@@ -2361,7 +2363,7 @@ def main(argv=None):
                 if poisson_protocol == "categorical-rate" and not rates:
                     raise ValueError("categorical-rate Poisson requires --input-rates")
                 binding_update = {
-                    "poisson_bindings": (
+                    "input_bindings": (
                         PoissonInputBinding(
                             input_id=input_ids[0],
                             steps_count=int(steps),
@@ -2374,7 +2376,7 @@ def main(argv=None):
                 }
             else:
                 binding_update = (
-                    {"event_bindings": load_event_stream_bindings(event_file, graph)}
+                    {"input_bindings": load_event_stream_bindings(event_file, graph)}
                     if event_file
                     else {
                         "input_bindings": load_dense_array_bindings(input_file, graph)
@@ -2427,7 +2429,6 @@ def main(argv=None):
             },
             options={
                 **request.options,
-                "shuffle": bool(getattr(args, "input_shuffle", False)),
                 **(
                     {"inference_overrides": inference_overrides}
                     if inference_overrides

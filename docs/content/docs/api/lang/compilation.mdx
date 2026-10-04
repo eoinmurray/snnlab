@@ -1,0 +1,87 @@
+---
+title: Compilation and bundles
+description: Compile, validate, save and load portable networks and recipes.
+---
+
+Import these functions and classes through `snnlab.lang`. Compilation validates and serializes the authoring graph. It does not train weights or run a simulation.
+
+## compile
+
+```python
+def compile(
+    network: Network,
+    *,
+    training: TrainSpec | None = None,
+    simulation: SimulationSpec | None = None,
+    target: str | None = None,
+    assets: Mapping[str, str | Path] | None = None,
+) -> Bundle: ...
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `network` | The authored `Network`. |
+| `training` | Optional [TrainSpec](/api/lang/training) recipe. |
+| `simulation` | Optional structured simulation declaration. |
+| `target` | Optional backend capability target, such as `"tools/snnsim"`. |
+| `assets` | Mapping of declared logical asset names to physical files. |
+
+Graph and training validation errors raise `ValueError`. Backend capability diagnostics are retained in the bundle; inspect them before execution. Every declared asset needs a physical path, and undeclared or missing files are rejected. The manifest records digests, target, required capabilities and any named extension dependencies. Import the registration module before compiling or loading custom definitions; bundle loading never imports implementation code.
+
+## Bundle
+
+```python
+class Bundle:
+    graph: dict[str, Any]
+    training: dict[str, Any] | None
+    manifest: dict[str, Any]
+    diagnostics: list[Diagnostic]
+    asset_sources: dict[str, Path] = field(default_factory=dict)
+    simulation: dict[str, Any] | None = None
+```
+
+`graph`, `training` and `simulation` are serialized data mappings; optional recipes are `None` when absent. `manifest` describes integrity and capabilities. `diagnostics` contains compiler reports. `asset_sources` tracks physical files for writing.
+
+```python
+bundle = lang.compile(net, training=recipe, target="tools/snnsim")
+path = bundle.write("network.bundle")
+loaded = lang.load_bundle(path)
+```
+
+`Bundle.write(path, *, visualise=False)` returns a `Path` to a directory containing `graph.json`, optional `training.json`/`simulation.json`, `manifest.json`, bundled assets and `reports/summary.md`. With `visualise=True`, it also renders structural diagrams; Graphviz is required. Use a fresh destination when changing which optional recipes exist: writing does not clear an existing directory.
+
+### Bundle.visualise
+
+```python
+bundle.visualise(path, *, view="circuit", scale=1, expand_groups=())
+```
+
+Renders one selected view to the given path and returns its `Path`. The suffix selects the output format; `expand_groups` applies to circuit/training views. This combines `lang.diagram` with `viz.render_diagram` without changing the bundle.
+
+## load_bundle
+
+```python
+def load_bundle(path: str | Path) -> Bundle: ...
+```
+
+Loads the directory, validates graph/recipe data and checks declared file digests. Missing or invalid files fail rather than silently recompiling the network. It returns a `Bundle` for inspection or reuse; supply its path to `ExecutionSpec.bundle` or its graph to `ExecutionSpec.graph`.
+
+A bundle stores architecture, initializers and recipes. A training checkpoint stores learned parameters, optimizer state and resume metadata. Loading a bundle alone initializes fresh weights when executed; [Inference](/inference) also supplies a checkpoint. An external PyTorch model uses its own `state_dict`, as shown in [PyTorch Integration](/pytorch-integration).
+
+## validate_graph
+
+```python
+def validate_graph(graph: Mapping[str, Any]) -> ValidationResult: ...
+```
+
+Returns `ValidationResult`, whose `.diagnostics` lists `Diagnostic(severity, code, message, subject=None)` records. `.errors` and `.warnings` filter diagnostics by severity; `.raise_for_errors()` raises on errors. This checks graph declarations; execution planning performs additional backend checks.
+
+## Structural diagrams
+
+```python
+def diagram(
+    bundle: Bundle, *, view: str = "circuit", expand_groups: Collection[str] = ()
+) -> Diagram: ...
+```
+
+`lang.diagram` returns a renderer-neutral `viz.Diagram`. `view` accepts `"circuit"`, `"training"` or `"expanded"`. Circuit/training views collapse groups; `expand_groups` selectively expands known groups in those views. Unknown groups and unsupported view combinations raise `ValueError`. Expanded static views reject graphs with more than 120 projections plus operations. See [diagram rendering](/api/viz/diagrams).

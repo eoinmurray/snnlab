@@ -6,6 +6,7 @@ import torch
 
 from snnlab import lang as snn
 from snnlab.sim.execution import (
+    DenseArrayBinding,
     ExecutionSpec,
     simulate,
 )
@@ -63,7 +64,7 @@ def test_graph_standard_readouts_match_hand_calculated_fixtures():
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("final"),
-            inputs={"events": events},
+            input_bindings=(DenseArrayBinding("events", events),),
         )
     )
     torch.testing.assert_close(
@@ -75,7 +76,7 @@ def test_graph_standard_readouts_match_hand_calculated_fixtures():
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("count"),
-            inputs={"events": events},
+            input_bindings=(DenseArrayBinding("events", events),),
         )
     )
     torch.testing.assert_close(
@@ -87,7 +88,7 @@ def test_graph_standard_readouts_match_hand_calculated_fixtures():
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("rate", duration=0.3),
-            inputs={"events": events},
+            input_bindings=(DenseArrayBinding("events", events),),
         )
     )
     torch.testing.assert_close(
@@ -99,7 +100,7 @@ def test_graph_standard_readouts_match_hand_calculated_fixtures():
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("cumulative"),
-            inputs={"events": events},
+            input_bindings=(DenseArrayBinding("events", events),),
         )
     )
     torch.testing.assert_close(
@@ -130,7 +131,10 @@ def test_graph_masked_spike_rate_uses_valid_duration_in_spikes_per_second():
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("rate", mask=True),
-            inputs={"events": events, "valid": valid},
+            input_bindings=(
+                DenseArrayBinding("events", events),
+                DenseArrayBinding("valid", valid),
+            ),
         )
     )
     torch.testing.assert_close(

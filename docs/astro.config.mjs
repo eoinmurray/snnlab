@@ -29,9 +29,10 @@ function baseLinks() {
 export default defineConfig({
   output: 'static',
   outDir: './out',
+  server: { port: 3001 },
   site: process.env.SITE_URL || 'https://ssnlab.eoinmurray.info',
   base,
-  trailingSlash: 'always',
+  trailingSlash: 'ignore',
   markdown: {
     processor: unified({
       syntaxHighlight: false,

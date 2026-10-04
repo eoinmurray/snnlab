@@ -10,6 +10,7 @@ import torch
 
 from snnlab import lang as snn
 from snnlab.sim.execution import (
+    DenseArrayBinding,
     ExecutionSpec,
     GraphRuntimeState,
     load_runtime_state,
@@ -64,7 +65,13 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
     graph, inputs = _continuation_case()
     whole = simulate(
         ExecutionSpec(
-            kind="simulate", executor="graph", graph=graph, inputs=inputs, seed=11
+            kind="simulate",
+            executor="graph",
+            graph=graph,
+            input_bindings=tuple(
+                DenseArrayBinding(name, value) for name, value in (inputs).items()
+            ),
+            seed=11,
         )
     )
     first = simulate(
@@ -72,7 +79,12 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs={name: value[:500] for name, value in inputs.items()},
+            input_bindings=tuple(
+                DenseArrayBinding(name, value)
+                for name, value in (
+                    {name: value[:500] for name, value in inputs.items()}
+                ).items()
+            ),
             seed=11,
         )
     )
@@ -94,13 +106,18 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs={name: value[500:] for name, value in inputs.items()},
+            input_bindings=tuple(
+                DenseArrayBinding(name, value)
+                for name, value in (
+                    {name: value[500:] for name, value in inputs.items()}
+                ).items()
+            ),
             seed=11,
         ),
         runtime_state=first.runtime_state,
     )
-    for name, expected in whole.recordings.items():
-        actual = torch.cat((first.recordings[name], second.recordings[name]))
+    for name, expected in whole.diagnostics.items():
+        actual = torch.cat((first.diagnostics[name], second.diagnostics[name]))
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     assert whole.runtime_state is not None and second.runtime_state is not None
     _assert_state_equal(second.runtime_state, whole.runtime_state)
@@ -117,7 +134,12 @@ def test_runtime_state_portable_round_trip_preserves_dtype_and_values(tmp_path):
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs={name: value[:13] for name, value in inputs.items()},
+            input_bindings=tuple(
+                DenseArrayBinding(name, value)
+                for name, value in (
+                    {name: value[:13] for name, value in inputs.items()}
+                ).items()
+            ),
             seed=2,
         )
     )
@@ -138,7 +160,12 @@ def test_runtime_state_allows_weight_branch_but_rejects_structural_changes():
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs={name: value[:12] for name, value in inputs.items()},
+            input_bindings=tuple(
+                DenseArrayBinding(name, value)
+                for name, value in (
+                    {name: value[:12] for name, value in inputs.items()}
+                ).items()
+            ),
             seed=5,
         )
     )
@@ -154,7 +181,12 @@ def test_runtime_state_allows_weight_branch_but_rejects_structural_changes():
             kind="simulate",
             executor="graph",
             graph=branch,
-            inputs={name: value[12:] for name, value in inputs.items()},
+            input_bindings=tuple(
+                DenseArrayBinding(name, value)
+                for name, value in (
+                    {name: value[12:] for name, value in inputs.items()}
+                ).items()
+            ),
             seed=5,
         ),
         runtime_state=first.runtime_state,
@@ -201,7 +233,12 @@ def test_runtime_state_allows_weight_branch_but_rejects_structural_changes():
                     kind="simulate",
                     executor="graph",
                     graph=incompatible,
-                    inputs={name: value[12:] for name, value in inputs.items()},
+                    input_bindings=tuple(
+                        DenseArrayBinding(name, value)
+                        for name, value in (
+                            {name: value[12:] for name, value in inputs.items()}
+                        ).items()
+                    ),
                     seed=5,
                 ),
                 runtime_state=first.runtime_state,
@@ -220,7 +257,12 @@ def test_runtime_state_validates_batch_shape_and_dtype():
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs={name: value[:10] for name, value in inputs.items()},
+            input_bindings=tuple(
+                DenseArrayBinding(name, value)
+                for name, value in (
+                    {name: value[:10] for name, value in inputs.items()}
+                ).items()
+            ),
             seed=8,
         )
     )
@@ -232,7 +274,10 @@ def test_runtime_state_validates_batch_shape_and_dtype():
                 kind="simulate",
                 executor="graph",
                 graph=graph,
-                inputs=wrong_batch,
+                input_bindings=tuple(
+                    DenseArrayBinding(name, value)
+                    for name, value in (wrong_batch).items()
+                ),
                 seed=8,
             ),
             runtime_state=first.runtime_state,
@@ -249,7 +294,12 @@ def test_runtime_state_validates_batch_shape_and_dtype():
                 kind="simulate",
                 executor="graph",
                 graph=graph,
-                inputs={name: value[10:] for name, value in inputs.items()},
+                input_bindings=tuple(
+                    DenseArrayBinding(name, value)
+                    for name, value in (
+                        {name: value[10:] for name, value in inputs.items()}
+                    ).items()
+                ),
                 seed=8,
             ),
             runtime_state=bad_state,
@@ -346,40 +396,35 @@ def test_graph_cli_runtime_state_round_trip_and_legacy_rejection(tmp_path):
         raise AssertionError("legacy executor must reject graph-runtime-state flags")
 
 
-@pytest.mark.parametrize("selection", ["mixed", "empty"])
-def test_recording_field_selection_preserves_outputs_and_branch_state(selection):
+def test_disabling_diagnostics_preserves_outputs_and_branch_state():
     graph = _coupled_graph()
     inputs = {"drive_a": torch.ones(12, 1, 3), "drive_b": torch.ones(12, 1, 2)}
     spec = dict(
         kind="simulate",
-        executor="graph",
         graph=graph,
-        inputs=inputs,
+        input_bindings=tuple(
+            DenseArrayBinding(name, value) for name, value in inputs.items()
+        ),
         device="cpu",
         seed=42,
     )
-    full = simulate(ExecutionSpec(**spec))
-    fields = (
-        []
-        if selection == "empty"
-        else [
-            graph["observables"][0]["id"],
-            next(k for k in full.recordings if k.endswith(".conductance")),
-            next(k for k in full.recordings if k.endswith(".voltage")),
-        ]
-    )
-    selected = simulate(ExecutionSpec(**spec, recording_fields=fields))
-    assert set(selected.recordings) == set(fields)
-    for key in fields:
-        assert torch.equal(selected.recordings[key], full.recordings[key])
-    assert selected.outputs.keys() == full.outputs.keys()
-    for key in full.outputs:
-        assert torch.equal(selected.outputs[key], full.outputs[key])
+    enabled = simulate(ExecutionSpec(**spec))
+    disabled = simulate(ExecutionSpec(**spec, diagnostics=False))
+    assert enabled.diagnostics and not disabled.diagnostics
+    assert disabled.outputs.keys() == enabled.outputs.keys()
+    for key in enabled.outputs:
+        assert torch.equal(disabled.outputs[key], enabled.outputs[key])
     for expected, actual in zip(
-        _state_tensors(full.runtime_state),
-        _state_tensors(selected.runtime_state),
+        _state_tensors(enabled.runtime_state),
+        _state_tensors(disabled.runtime_state),
         strict=True,
     ):
         assert torch.equal(expected, actual)
-    with pytest.raises(ValueError, match="unavailable recording fields"):
-        simulate(ExecutionSpec(**spec, recording_fields=["missing"]))
+
+
+@pytest.mark.parametrize(
+    "field,value", [("recording", "full"), ("recording_fields", ())]
+)
+def test_removed_recording_arguments_are_rejected(field, value):
+    with pytest.raises(TypeError, match=field):
+        ExecutionSpec(kind="simulate", **{field: value})

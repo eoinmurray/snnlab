@@ -8,8 +8,10 @@ import torch
 from snnlab import lang as snn
 from snnlab.lang import training
 from snnlab.sim.execution import (
+    DenseArrayBinding,
     ExecutionSpec,
     build,
+    execute_request,
     train,
 )
 
@@ -50,13 +52,18 @@ def _coupled_graph(*, direction="reciprocal", delay_ms=0.1):
     return snn.compile(net, target=None).graph
 
 
-def test_typed_request_defaults_to_legacy_and_graph_training_requires_recipe():
-    request = ExecutionSpec(kind="build")
-    assert request.executor == "legacy"
+def test_typed_request_defaults_to_graph_and_graph_training_requires_recipe():
+    request = ExecutionSpec(kind="build", graph=_coupled_graph(), device="cpu")
+    assert request.executor == "graph"
+    result = execute_request(request)
+    assert result.executor == "graph"
+    assert result.model is not None
+    assert result.parameters
+    request = ExecutionSpec(kind="build", executor="legacy")
     assert request.device == "auto"
     assert build(request).metrics["routing"] == "legacy"
     try:
-        train(ExecutionSpec(kind="train", executor="graph", graph=_coupled_graph()))
+        train(ExecutionSpec(kind="train", graph=_coupled_graph(), device="cpu"))
     except ValueError as exc:
         assert "training recipe" in str(exc)
     else:
@@ -101,10 +108,10 @@ def test_graph_training_updates_named_parameters_and_optimizer_state_determinist
         executor="graph",
         graph=bundle.graph,
         training=bundle.training,
-        inputs={"events": inputs},
+        input_bindings=(DenseArrayBinding("events", inputs),),
         targets={"label": torch.tensor([0, 1])},
         seed=17,
-        options={"updates": 5},
+        updates=5,
     )
     first = train(spec)
     second = train(spec)
@@ -135,7 +142,7 @@ def test_graph_one_step_matches_direct_pytorch_gradient_weight_and_adamw_state()
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": labels},
             seed=17,
         )
@@ -172,7 +179,7 @@ def test_graph_training_authenticates_recipe_from_bundle(tmp_path):
             kind="train",
             executor="graph",
             bundle=root,
-            inputs={"events": inputs},
+            input_bindings=(DenseArrayBinding("events", inputs),),
             targets={"label": torch.tensor([0, 1])},
             seed=17,
         )
@@ -193,6 +200,8 @@ def test_graph_training_backpropagates_through_recurrence_and_spike_budget():
     input_parameter["initializer"] = snn.Constant(100.0).json()
     scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
+    net.expose(cell.E.spikes, name="cell_E.spikes")
+    net.expose(cell.I.spikes, name="cell_I.spikes")
     parameter_ids = [row["id"] for row in net.parameters]
     recipe = snn.TrainSpec(
         objectives=[training.CrossEntropy(prediction=scores, target="label")],
@@ -215,16 +224,35 @@ def test_graph_training_backpropagates_through_recurrence_and_spike_budget():
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
-            inputs={"events": torch.ones(30, 2, 2)},
+            input_bindings=(DenseArrayBinding("events", torch.ones(30, 2, 2)),),
             targets={"label": torch.tensor([0, 1])},
             seed=3,
         )
     )
     assert "cell_E_to_I.weight" in result.gradients
     assert "cell_I_to_E.weight" in result.gradients
-    e_rates = result.recordings["cell_E.spikes"].sum(dim=0).mean(dim=1) / 0.003
-    i_rates = result.recordings["cell_I.spikes"].sum(dim=0).mean(dim=1) / 0.003
+    e_rates = result.diagnostics["cell_E.spikes"].sum(dim=0).mean(dim=1) / 0.003
+    i_rates = result.diagnostics["cell_I.spikes"].sum(dim=0).mean(dim=1) / 0.003
     expected = 0.01 * torch.stack((e_rates.square(), i_rates.square())).mean()
     assert result.metrics["updates"][0]["components"][
         "regularizer[0]"
     ] == pytest.approx(float(expected.detach()))
+
+    disabled = train(
+        ExecutionSpec(
+            kind="train",
+            graph=bundle.graph,
+            training=bundle.training,
+            input_bindings=(DenseArrayBinding("events", torch.ones(30, 2, 2)),),
+            targets={"label": torch.tensor([0, 1])},
+            seed=3,
+            diagnostics=False,
+        )
+    )
+    assert not disabled.diagnostics
+    assert disabled.metrics["diagnostics"] is False
+    assert disabled.metrics["updates"] == result.metrics["updates"]
+    for name, value in result.outputs.items():
+        torch.testing.assert_close(disabled.outputs[name], value, rtol=0, atol=0)
+    for name, value in result.gradients.items():
+        torch.testing.assert_close(disabled.gradients[name], value, rtol=0, atol=0)

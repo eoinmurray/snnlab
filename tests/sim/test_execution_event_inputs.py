@@ -43,7 +43,7 @@ def test_event_stream_binding_matches_hand_calculated_spike_count():
             kind="simulate",
             executor="graph",
             graph=graph,
-            event_bindings=(binding,),
+            input_bindings=(binding,),
             seed=31,
             protocol={
                 "dataset": {
@@ -156,8 +156,7 @@ def test_event_stream_spikes_can_share_a_request_with_dense_valid_time_mask():
             kind="simulate",
             executor="graph",
             graph=graph,
-            event_bindings=(events,),
-            input_bindings=(valid,),
+            input_bindings=(events, valid),
         )
     )
     torch.testing.assert_close(

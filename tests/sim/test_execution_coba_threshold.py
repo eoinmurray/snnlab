@@ -3,7 +3,7 @@
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import ExecutionSpec, simulate
+from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, simulate
 
 
 def test_coba_threshold_is_population_specific():
@@ -29,14 +29,14 @@ def test_coba_threshold_is_population_specific():
             synapse=snn.AMPA(tau=2 * snn.ms),
             weight=snn.Constant(2.85),
         )
+        net.expose(cell.spikes, name=f"{name}.spikes")
     result = simulate(
         ExecutionSpec(
             kind="simulate",
             executor="graph",
             graph=snn.compile(net).graph,
-            inputs={"drive": torch.ones(1, 1, 1)},
-            recording="full",
+            input_bindings=(DenseArrayBinding("drive", torch.ones(1, 1, 1)),),
         )
     )
-    assert result.recordings["low.spikes"].item() == 1.0
-    assert result.recordings["high.spikes"].item() == 0.0
+    assert result.diagnostics["low.spikes"].item() == 1.0
+    assert result.diagnostics["high.spikes"].item() == 0.0

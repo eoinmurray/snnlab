@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.lang.examples.build_examples import ping_classifier
 from snnlab.sim.execution import (
+    DenseArrayBinding,
     ExecutionSpec,
     derive_inference_products,
     simulate,
@@ -15,6 +15,7 @@ from snnlab.sim.execution import (
     validate_inference_artifacts,
     write_inference_artifacts,
 )
+from tests.sim._bundle_builders import ping_classifier
 from tests.sim._execution_builders import (
     standard_readout_graph as _standard_readout_graph,
 )
@@ -27,7 +28,7 @@ def test_inference_artifact_manifest_authenticates_cache_identity(tmp_path):
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs={"events": torch.ones(2, 1, 2)},
+            input_bindings=(DenseArrayBinding("events", torch.ones(2, 1, 2)),),
             seed=23,
         )
     )
@@ -57,7 +58,7 @@ def test_inference_artifact_validation_rejects_payload_corruption(tmp_path):
             kind="simulate",
             executor="graph",
             graph=graph,
-            inputs={"events": torch.zeros(1, 1, 2)},
+            input_bindings=(DenseArrayBinding("events", torch.zeros(1, 1, 2)),),
         )
     )
     root = tmp_path / "inference"
@@ -75,7 +76,7 @@ def test_derived_inference_products_use_named_public_tensors(tmp_path):
             kind="simulate",
             executor="graph",
             graph=bundle.graph,
-            inputs={"image": torch.zeros(2, 2, 784)},
+            input_bindings=(DenseArrayBinding("image", torch.zeros(2, 2, 784)),),
             seed=3,
         )
     )
@@ -89,7 +90,7 @@ def test_derived_inference_products_use_named_public_tensors(tmp_path):
         derived,
         logits_id="class_logits",
         labels=np.asarray([0, 1], dtype=np.int64),
-        spike_recordings=("sensory_ping_E.spikes",),
+        spike_recordings=("cell_0",),
     )
     assert summary["schema"] == "tools/snnsim.derived-inference/v1"
     assert summary["source_artifact_digest"] == source_manifest["artifact_digest"]
@@ -97,9 +98,9 @@ def test_derived_inference_products_use_named_public_tensors(tmp_path):
     rates = np.load(derived / "rates.npz", allow_pickle=False)
     rasters = np.load(derived / "rasters.npz", allow_pickle=False)
     try:
-        assert rates["sensory_ping_E.spikes"].shape == (2, 256)
-        assert rasters["sensory_ping_E.spikes.shape"].tolist() == [2, 2, 256]
-        assert rasters["sensory_ping_E.spikes.steps"].dtype == np.int64
+        assert rates["cell_0"].shape == (2, 256)
+        assert rasters["cell_0.shape"].tolist() == [2, 2, 256]
+        assert rasters["cell_0.steps"].dtype == np.int64
     finally:
         rates.close()
         rasters.close()
@@ -115,7 +116,7 @@ def test_derived_inference_products_fail_closed_on_names_and_corruption(tmp_path
             kind="simulate",
             executor="graph",
             graph=bundle.graph,
-            inputs={"image": torch.zeros(1, 1, 784)},
+            input_bindings=(DenseArrayBinding("image", torch.zeros(1, 1, 784)),),
         )
     )
     source = tmp_path / "source"

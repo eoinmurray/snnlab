@@ -78,7 +78,7 @@ def SpikeCount(*, source: Signal, classes: int, name: str) -> Readout:
         result = ops.reduce(
             projected, operation="sum", over="time", name=f"{name}_count"
         )
-    return Readout(result)
+    return Readout(result, (f"{name}_projection.weight",))
 
 
 def SpikeRate(
