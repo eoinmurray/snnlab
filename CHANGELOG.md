@@ -12,6 +12,7 @@ serialized-schema versions identify separate compatibility contracts.
 2. Complete source-derived API references for `lang`, `sim` and `viz`, with automated drift checks.
 3. Six runnable general examples for bundles, simulation, input replay, training, checkpoint resume and retained-signal plotting.
 4. A changelog, single-source package version and release preparation/check helper.
+5. Automatic PyPI publishing on version-source changes to `main`, using Trusted Publishing and release tags after package checks pass.
 
 ### Changed
 

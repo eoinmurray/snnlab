@@ -51,25 +51,36 @@ no version literal because its version is dynamic; version bumps do not
 change dependency pins. Use `--date YYYY-MM-DD` to supply the release
 date explicitly; otherwise it uses the local calendar date.
 
-Review the generated diff and confirm CI passes before tagging the reviewed
-commit. For example, after preparing version `0.1.1`:
+Review the generated diff before committing. For example, after preparing
+version `0.1.1`:
 
 ```sh
 git add src/snnlab/__init__.py CHANGELOG.md
 git commit -m "Release 0.1.1"
-uv run python scripts/version.py check --tag v0.1.1
-git tag -a v0.1.1 -m "snnlab 0.1.1"
 git push origin main
-git push origin v0.1.1
 ```
 
-Replace the example version with the actual prepared version. Do not move or
-reuse an existing release tag. Git tags support pinned installations without
-requiring a package registry:
+Replace the example version with the actual prepared version. A push to `main`
+that changes `src/snnlab/__init__.py` triggers `.github/workflows/publish.yml`,
+following Demolab's version-triggered release pattern. It runs package checks,
+builds the wheel and source archive, publishes to PyPI using Trusted Publishing,
+then creates `v<VERSION>`. Forks and manual runs on other branches cannot publish.
+The Actions **Run workflow** button can retry or backfill the current version;
+existing PyPI files and release tags are skipped on reruns. Never move or reuse
+a release tag for a different version. Git tags also support pinned installations:
 
 ```sh
 uv add git+https://github.com/eoinmurray/snnlab@v0.1.0
 ```
 
-Publishing to PyPI or creating a GitHub Release is a separate explicit release
-action; this setup does not publish automatically.
+## One-time publishing setup
+
+1. Create the GitHub environment `pypi` in `eoinmurray/snnlab`.
+2. In PyPI, register a Trusted Publisher for project `snnlab`: owner
+   `eoinmurray`, repository `snnlab`, workflow `publish.yml`, environment `pypi`.
+   If the project does not yet exist, use a pending publisher under account
+   **Publishing**. If it already exists and you maintain it, use the project's
+   **Publishing** settings. See the [PyPI Trusted Publishing documentation](https://docs.pypi.org/trusted-publishers/).
+3. Once registered, future version changes on `main` publish automatically.
+   No stored PyPI API token is required. This workflow creates a Git tag, but
+   does not create a GitHub Release.

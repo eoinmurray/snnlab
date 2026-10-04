@@ -1,0 +1,60 @@
+name: Publish snnlab to PyPI
+
+# Like demolab: a version-source change on main publishes the package, then
+# creates v<VERSION>. Manual dispatch can retry or backfill the current version.
+# Register eoinmurray/snnlab, publish.yml, environment pypi as a PyPI Trusted
+# Publisher for snnlab before the first release. No API token is required.
+on:
+  push:
+    branches: [main]
+    paths: ["src/snnlab/__init__.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-publish
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: github.repository == 'eoinmurray/snnlab' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/quality.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+
+      - name: Read and validate the package version
+        id: version
+        run: |
+          uv run --no-project --python 3.12 python scripts/version.py check
+          version=$(uv run --no-project --python 3.12 python -c 'from scripts.version import ROOT, package_version; print(package_version(ROOT))')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: uv build
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+      - name: Tag the release
+        env:
+          TAG: v${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists on origin — skipping tag."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi

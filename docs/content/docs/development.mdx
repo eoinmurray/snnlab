@@ -25,7 +25,7 @@ uv run python scripts/version.py check
 uv run python scripts/version.py bump patch --dry-run
 ```
 
-The dry run previews the next version. An actual bump updates package version and dated changelog notes; committing, tagging and publishing are separate actions. CI rejects inconsistent version configuration or changelog metadata.
+The dry run previews the next version. An actual bump updates package version and dated changelog notes. After review, committing and pushing the version change to `main` triggers package checks, PyPI Trusted Publishing and creation of the release tag. The PyPI publisher must be registered first; see `VERSIONING.md` for setup. CI rejects inconsistent version configuration or changelog metadata.
 
 ## Run the docs site
 
