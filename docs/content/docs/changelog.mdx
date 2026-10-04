@@ -4,10 +4,14 @@ description: Release history for the snnlab Python distribution.
 ---
 
 Changes to the combined snnlab Python distribution are recorded here. Package
-versions follow the policy in [VERSIONING.md](https://github.com/eoinmurray/snnlab/blob/main/VERSIONING.md). Component and
-serialized-schema versions identify separate compatibility contracts.
+versions use MAJOR.MINOR.PATCH. Component and serialized-schema versions identify
+separate compatibility contracts.
 
 ## [Unreleased]
+
+### Changed
+
+1. Removed the root release-helper scripts and separate migration/versioning documents. Release preparation is manual, with instructions in the README; CI and publishing read the package version directly.
 
 ## [0.2.0] - 2026-10-04
 

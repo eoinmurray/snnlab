@@ -37,7 +37,7 @@ class DiagramNode:
     kind: str = "neutral"
     accent_role: str = "ink"
     classes: tuple[str, ...] = ()
-    pen_width: float = 1.4
+    pen_width: float = 1.0
     margin: tuple[float, float] = (0.18, 0.14)
 ```
 
@@ -53,7 +53,7 @@ class DiagramEdge:
     id: str | None = None
     classes: tuple[str, ...] = ()
     constraint: bool = True
-    pen_width: float = 1.7
+    pen_width: float = 1.1
     frozen: bool = False
 ```
 
@@ -79,11 +79,12 @@ def diagram_to_dot(
     diagram: Diagram,
     *,
     theme: DiagramTheme = DiagramTheme(),
-    height_to_width_ratio: float | None = 0.58,
+    height_to_width_ratio: float | None = None,
+    canvas_size: tuple[int, int] | None = None,
 ) -> str: ...
 ```
 
-Returns Graphviz DOT text without invoking Graphviz or writing a file. `height_to_width_ratio` must be finite and positive, or `None` for unconstrained natural layout. The default ratio is 0.58.
+Returns Graphviz DOT text without invoking Graphviz or writing a file. `height_to_width_ratio` must be finite and positive, or `None` for unconstrained natural layout. The default uses natural layout without a fixed ratio. `canvas_size=(1920, 900)` requests a centred canvas at a constant node and type scale; dimensions are positive integers in pixels at the base 144 DPI.
 
 ## render_diagram
 
@@ -94,32 +95,34 @@ def render_diagram(
     *,
     scale: int = 1,
     theme: DiagramTheme = DiagramTheme(),
-    height_to_width_ratio: float | None = 0.58,
+    height_to_width_ratio: float | None = None,
+    canvas_size: tuple[int, int] | None = None,
 ) -> Path: ...
 ```
 
-Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT writes source directly; other formats invoke the external Graphviz `dot` executable. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
+Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT writes source directly; other formats invoke the external Graphviz `dot` executable. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. When `canvas_size` is supplied, SVG intrinsic dimensions match PNG dimensions; PNG `scale` multiplies the canvas dimensions. A canvas smaller than the natural layout raises `ValueError` before export, preventing clipping. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
 
 ## DiagramTheme
 
 ```python
 class DiagramTheme:
     background: str = "#FFFFFF"
-    ink: str = "#1A1A1A"
-    muted: str = "#5F5F5F"
-    line: str = "#E7E5DF"
-    neutral: str = "#FFFFFF"
-    output: str = "#FFFFFF"
-    modulatory: str = "#E89400"
-    training: str = "#FFFFFF"
-    inhibitory: str = "#C8102E"
-    signal: str = "#5F5F5F"
-    output_line: str = "#E89400"
-    training_line: str = "#00B4D8"
-    title_size: float = 26
-    label_size: float = 16
-    secondary_size: float = 13
-    wrap_columns: int = 14
+    ink: str = "#28323C"
+    muted: str = "#6B7680"
+    line: str = "#D8DEE3"
+    neutral: str = "#FAFBFC"
+    output: str = "#F4F7FA"
+    modulatory: str = "#92764B"
+    training: str = "#F4F8F7"
+    inhibitory: str = "#AA5B63"
+    signal: str = "#7A8690"
+    output_line: str = "#58768F"
+    training_line: str = "#56857D"
+    title_size: int = 18
+    label_size: int = 14
+    secondary_size: int = 11
+    wrap_columns: int = 26
+    font_name: str = "Helvetica"
 ```
 
-This immutable theme defines colours, font sizes and wrapping. It is separate from the Matplotlib [Theme](/api/viz/plotting#theme). Passing a custom diagram theme changes rendering without changing network or diagram semantics.
+This immutable theme defines colours, font sizes, the font family and wrapping. The default uses bold node names and quieter regular detail, with muted red for inhibition, slate blue for outputs and teal for trainable parameters. Frozen training links are grey and dashed. The main forward path receives alignment priority, feedback routes beneath it, and training annotations sit below the last component they describe. It is separate from the Matplotlib [Theme](/api/viz/plotting#theme). Passing a custom diagram theme changes rendering without changing network or diagram semantics.
