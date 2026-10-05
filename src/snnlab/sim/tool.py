@@ -1136,10 +1136,16 @@ def _build_subparsers(parser, parent):
         help="Write the final graph-training checkpoint directory.",
     )
     train_parser.add_argument(
+        "--checkpoint-selection",
+        type=str,
+        default=None,
+        help="Graph checkpoint selection policy as JSON (split, cadence, metric, tie_break, include_initial).",
+    )
+    train_parser.add_argument(
         "--save-selected-checkpoint",
         type=str,
         default=None,
-        help="Write the lowest-loss graph-training checkpoint directory.",
+        help="Write the selected graph-training checkpoint directory.",
     )
     train_parser.add_argument(
         "--lr",

@@ -235,6 +235,24 @@ for row in history:
 
 `result.metrics["epochs"]` contains loss and accuracy measured **after each epoch on the whole training and validation split**, plus epoch 0 before learning. These are evaluations of fixed weights, not the last minibatch's loss or an average collected while weights were changing. Accuracy is the fraction of samples whose highest-scoring class matches the label.
 
+To select completed-epoch weights by validation cross-entropy, breaking ties with accuracy, configure your execution request before calling `train`:
+
+```python
+from dataclasses import replace
+from snnlab.sim.execution import CheckpointSelection, SelectionMetric
+
+execution = replace(execution, checkpoint_selection=CheckpointSelection(
+    metric=SelectionMetric("cross_entropy", objective=0, direction="min"),
+    tie_break=(SelectionMetric("accuracy", objective=0, direction="max"),),
+))
+result = train(execution)
+selected = result.selected_checkpoint
+print(selected.selection_record)
+save_training_checkpoint(OUTPUT_DIR / "selected.checkpoint", selected)
+```
+
+`execution` is your request containing the graph, recipe, training bindings and `ValidationSpec`. This optional alternative can select an earlier epoch than the final state. Initial weights are excluded; exact ties retain the earliest winner. The final checkpoint retains the winner for resume. See [Checkpoint selection](/api/sim/execution-spec#checkpoint_selection) for policy and compatibility rules. The downloadable example below keeps its existing final-checkpoint workflow.
+
 Optional named epoch observations can be requested without enabling diagnostic traces:
 
 ```python

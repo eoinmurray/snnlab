@@ -28,6 +28,8 @@ from snnlab import extensions as E
 from snnlab.sim import extensions as X
 from snnlab.sim import models as M
 from snnlab.sim.bundle import load_graph_bundle, load_training_recipe
+from snnlab.sim.checkpoint_selection import CheckpointSelection
+from snnlab.sim.checkpoint_selection import SelectionMetric as SelectionMetric
 from snnlab.sim.epoch_observations import (
     ActivityMeasurements,
     EpochObservations,
@@ -215,6 +217,7 @@ class ExecutionSpec:
     runtime_state: GraphRuntimeState | None = None
     options: Mapping[str, Any] = field(default_factory=dict)
     observations: EpochObservations | None = None
+    checkpoint_selection: CheckpointSelection | None = None
 
 
 @dataclass(frozen=True)
@@ -319,6 +322,9 @@ class TrainingCheckpoint:
     data_state: Mapping[str, Any] = field(default_factory=dict)
     selected_loss: float | None = None
     observation_state: Mapping[str, Any] | None = None
+    selection_contract: Mapping[str, Any] | None = None
+    selection_record: Mapping[str, Any] | None = None
+    best_checkpoint: TrainingCheckpoint | None = None
 
 
 @dataclass(frozen=True)
@@ -2255,9 +2261,25 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
         os.replace(temporary_tensors, root / "tensors.npz")
     finally:
         temporary_tensors.unlink(missing_ok=True)
+    best_digest = None
+    if checkpoint.best_checkpoint is not None:
+        if checkpoint.best_checkpoint.best_checkpoint is not None:
+            raise ValueError(
+                "selected checkpoint must not contain another selected checkpoint"
+            )
+        save_training_checkpoint(root / "selected", checkpoint.best_checkpoint)
+        best_digest = _file_digest(root / "selected" / "manifest.json")
+    selection_metadata = {
+        "contract": checkpoint.selection_contract,
+        "record": checkpoint.selection_record,
+        "best_manifest_digest": best_digest,
+    }
     manifest = {
         "schema": TRAINING_CHECKPOINT_SCHEMA,
-        "schema_version": 3 if checkpoint.observation_state is not None else 2,
+        "schema_version": 4
+        if checkpoint.selection_contract is not None
+        and checkpoint.selection_contract["policy"]["mode"] == "epoch_metrics"
+        else (3 if checkpoint.observation_state is not None else 2),
         "backend": "tools/snnsim.graph-training/v1",
         "rng_backend": checkpoint.rng_backend,
         "accelerator_rng_devices": sorted(checkpoint.accelerator_rng_states),
@@ -2268,6 +2290,8 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
         "execution_protocol": checkpoint.execution_protocol,
         "initialization": checkpoint.initialization,
         "data_state": checkpoint.data_state,
+        "selection_metadata": selection_metadata,
+        "selection_metadata_digest": _json_digest(selection_metadata),
         "observation_state": checkpoint.observation_state,
         "observation_state_digest": _json_digest(checkpoint.observation_state),
         "optimizer_scalars": optimizer_scalars,
@@ -2295,7 +2319,7 @@ def load_training_checkpoint(
     manifest = json.loads((root / "manifest.json").read_text())
     if manifest.get("schema") != TRAINING_CHECKPOINT_SCHEMA or manifest.get(
         "schema_version"
-    ) not in {1, 2, 3}:
+    ) not in {1, 2, 3, 4}:
         raise ValueError(
             f"unsupported training-checkpoint schema: {manifest.get('schema')}"
         )
@@ -2352,7 +2376,7 @@ def load_training_checkpoint(
     schema_version = int(manifest["schema_version"])
     rng_backend = manifest.get("rng_backend", "cpu")
     declared_devices = set(manifest.get("accelerator_rng_devices", []))
-    if schema_version in {2, 3}:
+    if schema_version in {2, 3, 4}:
         if rng_backend not in {"cpu", "cuda", "mps"}:
             raise ValueError(
                 f"training checkpoint has unsupported RNG backend {rng_backend!r}"
@@ -2388,7 +2412,34 @@ def load_training_checkpoint(
         "observation_state_digest"
     ) != _json_digest(observation_state):
         raise ValueError("training checkpoint observation history digest mismatch")
+    selection_metadata = manifest.get("selection_metadata", {})
+    if "selection_metadata" in manifest and manifest.get(
+        "selection_metadata_digest"
+    ) != _json_digest(selection_metadata):
+        raise ValueError("training checkpoint selection metadata digest mismatch")
+    if schema_version == 4 and selection_metadata.get("contract") is None:
+        raise ValueError("training checkpoint is missing selection contract")
+    best_checkpoint = None
+    if selection_metadata.get("best_manifest_digest") is not None:
+        best_root = root / "selected"
+        if (
+            _file_digest(best_root / "manifest.json")
+            != selection_metadata["best_manifest_digest"]
+        ):
+            raise ValueError(
+                "training checkpoint selected candidate manifest digest mismatch"
+            )
+        best_manifest = json.loads((best_root / "manifest.json").read_text())
+        if (
+            best_manifest.get("selection_metadata", {}).get("best_manifest_digest")
+            is not None
+        ):
+            raise ValueError("nested selected checkpoint is invalid")
+        best_checkpoint = load_training_checkpoint(best_root, device=device)
     return TrainingCheckpoint(
+        selection_contract=selection_metadata.get("contract"),
+        selection_record=selection_metadata.get("record"),
+        best_checkpoint=best_checkpoint,
         graph_digest=manifest["graph_digest"],
         training_digest=manifest["training_digest"],
         completed_updates=int(manifest["completed_updates"]),
@@ -4149,6 +4200,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         "updates",
         "save_final_checkpoint",
         "save_selected_checkpoint",
+        "checkpoint_selection",
     }
     if moved_options:
         raise ValueError(
@@ -4240,6 +4292,15 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     validation_data = (
         resolve_data(spec.validation) if spec.validation is not None else None
     )
+    selection = (
+        spec.checkpoint_selection or CheckpointSelection.legacy_training_batch_loss()
+    )
+    if not isinstance(selection, CheckpointSelection):
+        raise TypeError("checkpoint_selection must be a CheckpointSelection")
+    selection.validate(
+        training, epochs=dataset_epochs, has_validation=validation_data is not None
+    )
+    epoch_selection = selection.mode == "epoch_metrics"
     batch_size = spec.batch_size if spec.batch_size is not None else dataset_size
     if batch_size <= 0:
         raise ValueError("graph training batch size must be positive")
@@ -4452,7 +4513,118 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     history = []
     last_gradients: dict[str, torch.Tensor] = {}
     final_forward: ExecutionResult | None = None
+
+    def evaluation_tensor_identity(tensors):
+        return {
+            name: {
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+                "sha256": hashlib.sha256(
+                    value.detach().cpu().contiguous().numpy().tobytes()
+                ).hexdigest(),
+            }
+            for name, value in sorted(tensors.items())
+        }
+
+    selection_contract = {
+        "policy": selection.to_dict(),
+        "evaluation": None
+        if not epoch_selection
+        else {
+            "seed": spec.seed,
+            "batch_size": batch_size,
+            "inputs": (
+                validation_data[0]
+                if selection.split == "validation"
+                else resolved_inputs
+            ).protocol,
+            "targets": list(
+                validation_data[2] if selection.split == "validation" else target_rows
+            ),
+            "input_tensors": evaluation_tensor_identity(
+                (
+                    validation_data[0]
+                    if selection.split == "validation"
+                    else resolved_inputs
+                ).tensors
+            ),
+            "target_tensors": evaluation_tensor_identity(
+                validation_data[1]
+                if selection.split == "validation"
+                else resolved_targets
+            ),
+            "aggregation": "sample_weighted_mean",
+        },
+    }
     selected_checkpoint: TrainingCheckpoint | None = None
+    if resumed is not None:
+        if resumed.selection_contract is None:
+            if epoch_selection:
+                raise ValueError(
+                    "checkpoint has no selection history; cannot reconstruct missing candidates"
+                )
+        elif resumed.selection_contract != selection_contract:
+            raise ValueError(
+                "checkpoint selection policy or evaluation identity does not match request"
+            )
+        else:
+            selected_checkpoint = resumed.best_checkpoint
+            if selected_checkpoint is None and resumed.selection_record is not None:
+                selected_checkpoint = replace(resumed, best_checkpoint=None)
+            if selected_checkpoint is not None:
+                record = selected_checkpoint.selection_record
+                if (
+                    not isinstance(record, Mapping)
+                    or record.get("update") != selected_checkpoint.completed_updates
+                ):
+                    raise ValueError(
+                        "checkpoint selection record coordinates do not match candidate"
+                    )
+                if record.get("policy") != selection.to_dict():
+                    raise ValueError(
+                        "checkpoint selection record policy does not match request"
+                    )
+                values = record.get("values", [])
+                expected_count = 1 + len(selection.tie_break) if epoch_selection else 1
+                if len(values) != expected_count or any(
+                    not isinstance(value, (int, float)) or not math.isfinite(value)
+                    for value in values
+                ):
+                    raise ValueError(
+                        "checkpoint selection record metrics are missing or non-finite"
+                    )
+                if (
+                    epoch_selection
+                    and record.get("evaluation") != selection_contract["evaluation"]
+                ):
+                    raise ValueError(
+                        "checkpoint selection record evaluation identity does not match request"
+                    )
+                if set(selected_checkpoint.parameters) != set(parameter_map) or any(
+                    value.shape != parameter_map[name].shape
+                    or value.dtype != parameter_map[name].dtype
+                    for name, value in selected_checkpoint.parameters.items()
+                    if name in parameter_map
+                ):
+                    raise ValueError(
+                        "checkpoint selected candidate parameters do not match graph"
+                    )
+                if epoch_selection and record.get(
+                    "epoch"
+                ) != selected_checkpoint.data_state.get("epoch"):
+                    raise ValueError(
+                        "checkpoint selection record epoch does not match candidate"
+                    )
+                if (
+                    selected_checkpoint.graph_digest != graph_digest
+                    or selected_checkpoint.training_digest != training_digest
+                    or selected_checkpoint.selection_contract != selection_contract
+                    or selected_checkpoint.selection_record != resumed.selection_record
+                    or selected_checkpoint.completed_updates > completed_updates
+                ):
+                    raise ValueError(
+                        "checkpoint selected candidate identity does not match training state"
+                    )
 
     def optimizer_state_by_name() -> dict[str, dict[str, Any]]:
         packed = {}
@@ -4470,7 +4642,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         return packed
 
     def checkpoint_at(
-        update_count: int, loss_value: float, next_data_state: Mapping[str, Any]
+        update_count: int, loss_value: float | None, next_data_state: Mapping[str, Any]
     ) -> TrainingCheckpoint:
         rng_backend, accelerator_rng_states = capture_training_rng_state(device)
         return TrainingCheckpoint(
@@ -4478,6 +4650,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             training_digest=training_digest,
             completed_updates=update_count,
             selected_loss=loss_value,
+            selection_contract=copy.deepcopy(selection_contract),
+            selection_record=copy.deepcopy(selected_checkpoint.selection_record)
+            if selected_checkpoint is not None
+            else None,
             execution_protocol=resolved_inputs.protocol,
             initialization=built.metrics["initialization"],
             parameters={
@@ -4600,6 +4776,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     def evaluate_split(inputs, targets, *, probe_name=None):
         sample_count = next(iter(inputs.tensors.values())).shape[1]
         total_loss = 0.0
+        cross_entropies = {}
         components_total: dict[str, float] = {}
         correct = {
             f"objective[{i}]": 0
@@ -4649,6 +4826,19 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                         forward, signals, evaluation_targets, inputs.protocol
                     )
                     count = end - start
+                    for i, objective in enumerate(training.get("objectives", [])):
+                        if objective["kind"] == "cross_entropy":
+                            prediction = forward.outputs[
+                                output_ids[objective["prediction"]]
+                            ]
+                            raw = torch.nn.functional.cross_entropy(
+                                prediction,
+                                evaluation_targets[objective["target"]].long(),
+                            )
+                            name = f"objective[{i}]"
+                            cross_entropies[name] = (
+                                cross_entropies.get(name, 0.0) + float(raw) * count
+                            )
                     total_loss += float(loss) * count
                     for name, value in components.items():
                         components_total[name] = (
@@ -4669,6 +4859,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             model.train(was_training)
         metrics = {
             "loss": total_loss / sample_count,
+            "cross_entropies": {
+                name: value / sample_count for name, value in cross_entropies.items()
+            },
             "components": {
                 name: value / sample_count for name, value in components_total.items()
             },
@@ -4685,18 +4878,21 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         return metrics
 
     def record_epoch(epoch):
-        nonlocal gradient_measurements
+        nonlocal gradient_measurements, selected_checkpoint
         if observation_spec is not None and any(
             row["epoch"] == epoch for row in epoch_history
         ):
             return
         row = {"epoch": epoch}
         observations = {}
+        selection_metrics = None
         splits = {"train": (resolved_inputs, resolved_targets)}
         if validation_data is not None:
             splits["validation"] = validation_data[:2]
         for split, (inputs, targets) in splits.items():
             metrics = evaluate_split(inputs, targets)
+            if split == selection.split:
+                selection_metrics = metrics
             if "observation" in metrics:
                 observations[split] = metrics.pop("observation")
                 observations[split]["split"] = split
@@ -4736,6 +4932,28 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 observation_spec.gradient_norms
             )
         epoch_history.append(row)
+        if epoch_selection and (epoch > 0 or selection.include_initial):
+            values = selection.scores(selection_metrics)
+            previous = (
+                selected_checkpoint.selection_record["values"]
+                if selected_checkpoint is not None
+                else None
+            )
+            if selection.better(values, previous):
+                candidate = checkpoint_at(
+                    completed_updates + len(history), None, {"epoch": epoch, "batch": 0}
+                )
+                selected_checkpoint = replace(
+                    candidate,
+                    selection_record={
+                        "policy": selection.to_dict(),
+                        "values": values,
+                        "epoch": epoch,
+                        "update": candidate.completed_updates,
+                        "evaluation": copy.deepcopy(selection_contract["evaluation"]),
+                        "phase": "initial" if epoch == 0 else "completed_epoch",
+                    },
+                )
 
     scheduled: list[tuple[int, int, torch.Tensor]] = []
     if dataset_mode:
@@ -4821,18 +5039,37 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             }
         )
         if (
-            observation_spec is not None
+            (observation_spec is not None or epoch_selection)
             and dataset_mode
             and next_data_state["batch"] == 0
         ):
             record_epoch(next_data_state["epoch"])
-        candidate = checkpoint_at(absolute_update, loss_value, next_data_state)
-        if selected_checkpoint is None or loss_value < float(
-            selected_checkpoint.selected_loss
-        ):
-            selected_checkpoint = candidate
+        if not epoch_selection:
+            candidate = checkpoint_at(absolute_update, loss_value, next_data_state)
+            if selected_checkpoint is None or loss_value < float(
+                selected_checkpoint.selected_loss
+            ):
+                selected_checkpoint = replace(
+                    candidate,
+                    selection_record={
+                        "policy": selection.to_dict(),
+                        "values": [loss_value],
+                        "epoch": epoch + 1 if dataset_mode else None,
+                        "update": absolute_update,
+                        "evaluation": {
+                            "phase": "pre_update_batch_loss",
+                            "weights": "post_update",
+                        },
+                        "phase": "legacy_training_batch_loss",
+                    },
+                )
         final_forward = forward
-        if observation_spec is None and dataset_mode and next_data_state["batch"] == 0:
+        if (
+            observation_spec is None
+            and not epoch_selection
+            and dataset_mode
+            and next_data_state["batch"] == 0
+        ):
             record_epoch(next_data_state["epoch"])
     assert final_forward is not None
     completed_this_call = len(scheduled)
@@ -4841,10 +5078,14 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         history[-1]["loss"],
         next_data_state,
     )
+    final_checkpoint = replace(final_checkpoint, best_checkpoint=selected_checkpoint)
     if save_final := spec.save_final_checkpoint:
         save_training_checkpoint(save_final, final_checkpoint)
     if save_selected := spec.save_selected_checkpoint:
-        assert selected_checkpoint is not None
+        if selected_checkpoint is None:
+            raise ValueError(
+                "no eligible checkpoint selection candidate; complete an epoch or include_initial"
+            )
         save_training_checkpoint(save_selected, selected_checkpoint)
 
     return ExecutionResult(
@@ -4881,6 +5122,8 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 "backend": final_checkpoint.rng_backend,
                 "devices": sorted(final_checkpoint.accelerator_rng_states),
             },
+            "checkpoint_selection": selection_contract,
+            "selection_record": final_checkpoint.selection_record,
             "resumed_from_update": completed_updates,
         },
     )
@@ -4919,6 +5162,11 @@ def execution_spec_from_args(
         updates=getattr(args, "updates", None),
         save_final_checkpoint=getattr(args, "save_final_checkpoint", None),
         save_selected_checkpoint=getattr(args, "save_selected_checkpoint", None),
+        checkpoint_selection=(
+            CheckpointSelection.from_dict(json.loads(args.checkpoint_selection))
+            if getattr(args, "checkpoint_selection", None)
+            else None
+        ),
         options={
             key: value
             for key, value in vars(args).items()
@@ -4932,6 +5180,7 @@ def execution_spec_from_args(
                 "updates",
                 "save_final_checkpoint",
                 "save_selected_checkpoint",
+                "checkpoint_selection",
             }
         },
     )

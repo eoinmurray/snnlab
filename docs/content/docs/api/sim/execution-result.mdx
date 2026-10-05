@@ -38,13 +38,24 @@ In dataset iteration mode (`epochs > 0`), `train` evaluates the complete trainin
 | `train_loss`, `validation_loss` | Sample-weighted mean total loss, including weighted objectives and regularizers. Validation fields appear only when validation data is supplied. |
 | `train_accuracy`, `validation_accuracy` | Fraction correctly classified, from 0 to 1. Present when the recipe has exactly one classification objective (cross entropy or a custom objective registered with `classification=True`). |
 | `train_components`, `validation_components` | Sample-weighted means by `objective[i]` and `regularizer[i]`. |
+| `train_cross_entropies`, `validation_cross_entropies` | Unweighted cross-entropy by built-in `objective[i]`, excluding regularizers. |
 | `train_accuracies`, `validation_accuracies` | Accuracy by `objective[i]`, including recipes with multiple objectives. |
 
 Each evaluation uses fixed weights and minibatches bounded by `batch_size`. The final smaller batch is weighted by its actual sample count. Training samples are not shuffled during evaluation. `result.metrics["updates"]` retains the separate per-update losses measured before each optimizer step.
 
 Resuming at an epoch boundary evaluates that starting boundary and subsequent completed epochs. Resuming partway through an epoch reports only subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. With observations disabled, the returned history covers this invocation and previous history is not stored in the checkpoint. With observations enabled, history is retained and resumed as described below. Full-batch update mode without positive epochs returns an empty epoch history.
 
-Epoch evaluations do not replace the final update's returned outputs or diagnostics, and do not affect checkpoint selection, which continues to use update loss. Validation does not perform early stopping or select checkpoints. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
+Epoch evaluations do not replace the final update's returned outputs or diagnostics. Explicit `checkpoint_selection` can select these evaluated states; otherwise selection retains historical update-loss behavior. Validation does not perform early stopping. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
+
+## Checkpoint selection
+
+`result.training_checkpoint` contains the final training state. `result.selected_checkpoint` contains the winner under [ExecutionSpec.checkpoint_selection](/api/sim/execution-spec#checkpoint_selection), or `None` when no eligible candidate was evaluated. Their parameters can differ; inference uses whichever checkpoint directory you supply.
+
+`selected_checkpoint.selection_record` and `result.metrics["selection_record"]` expose the winner's serialized `policy`, ordered metric `values`, absolute `update`, completed `epoch`, `phase` and `evaluation` identity. Epoch selection records unweighted cross-entropy and accuracy in policy order; exact ties retain the earliest winner. `phase` is `"initial"` or `"completed_epoch"`. The evaluation identity includes split protocol, seed, batch size, sample-weighted aggregation and content digests of resolved inputs and labels. `result.metrics["checkpoint_selection"]` contains the resolved contract.
+
+The final checkpoint's `best_checkpoint` retains a complete separate winning snapshot (parameters, optimizer/RNG state, coordinates and optional observations), with no recursive nesting. Saving the final state writes its candidate to `selected/` and authenticates that candidate's manifest and tensors. Resuming the final checkpoint preserves the earlier winner; returning history remains governed by the independent observation setting.
+
+`selected_loss` remains the historical training-batch-loss field. Epoch-selected candidates set it to `None`; read `selection_record` for their scores. The named legacy policy records `phase="legacy_training_batch_loss"` and explicitly labels pre-update loss versus post-update weights.
 
 ## Epoch observations
 
@@ -73,7 +84,7 @@ Gradient entries include the number of epoch `updates`, per-parameter `missing_u
 
 Epoch rows include absolute `update` and `phase="initial"` at epoch 0 or `"completed_epoch"` afterward. Completed history and partial-epoch gradient totals are stored in authenticated checkpoint observation metadata (schema version 3 for audited checkpoints). Resume returns the complete retained history without duplicate boundary rows, and adds a row only when another epoch completes. It rejects changed audit configuration or attempts to reconstruct history from an unaudited checkpoint. Ordinary histories remain invocation-local when observations are disabled.
 
-These compact measurements do not change final-update outputs, diagnostics or checkpoint selection. Pinglab's field aliases, plotting, audit thresholds and bank serialization remain outside snnlab.
+These compact observations do not change final-update outputs, diagnostics or the configured checkpoint-selection policy. Pinglab's field aliases, plotting, audit thresholds and bank serialization remain outside snnlab.
 
 ## numpy
 

@@ -357,4 +357,15 @@ These flags configure graph execution and have no supported legacy effect. Runti
 | `--save-runtime-state` | `sim`, `dump-weights`, `train` | Unset | Save complete graph-executor dynamic state to a runtime-state directory. |
 | `--target-file` | `train` | Unset | Integer NPY/NPZ graph-training targets, bound by recipe target id. |
 | `--save-final-checkpoint` | `train` | Unset | Write the final graph-training checkpoint directory. |
-| `--save-selected-checkpoint` | `train` | Unset | Write the lowest-loss graph-training checkpoint directory. |
+| `--checkpoint-selection` | `train` | Unset | JSON checkpoint-selection policy; see below. |
+| `--save-selected-checkpoint` | `train` | Unset | Write the selected graph-training checkpoint directory. |
+
+## Checkpoint selection
+
+Graph training accepts `--checkpoint-selection` as a JSON-serialized [CheckpointSelection](/api/sim/execution-spec#checkpoint_selection). For a graph request with training inputs and positive epochs, select the training split at completed epochs using:
+
+```sh
+--checkpoint-selection '{"split":"train","metric":{"kind":"cross_entropy","objective":0,"direction":"min"},"tie_break":[{"kind":"accuracy","objective":0,"direction":"max"}]}'
+```
+
+Supply this flag alongside the usual `train --executor graph --bundle ... --epochs ...` arguments. `--save-selected-checkpoint PATH` saves the winner; `--save-final-checkpoint PATH` saves the final state with its retained winner. Omitting the flag keeps the named legacy batch-loss policy. The current CLI has no held-out `ValidationSpec` binding interface; use the Python request API for validation-based selection. Malformed JSON or invalid policies fail rather than silently falling back.

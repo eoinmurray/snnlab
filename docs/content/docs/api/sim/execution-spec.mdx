@@ -36,6 +36,7 @@ ExecutionSpec(
     runtime_state: GraphRuntimeState | None = None,
     options: Mapping[str, Any] = {},
     observations: EpochObservations | None = None,
+    checkpoint_selection: CheckpointSelection | None = None,
 )
 ```
 
@@ -244,7 +245,7 @@ history = result.metrics["epochs"]
 
 `ValidationSpec` is a frozen dataclass with `input_bindings: Sequence[InputBinding] = ()`, `targets: Mapping[str, torch.Tensor] = {}`, `target_bindings: Sequence[TargetArrayBinding] = ()`, and `protocol: Mapping[str, Any] = {}`. Defaults use independent factories. It uses the same [input binding rules](/api/sim/execution-spec#input_bindings) and target validation as training, including dataset snapshots with a `target_id`. Supply `targets` or `target_bindings`, not both; snapshot labels must not be combined with either.
 
-Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can therefore be changed when resuming without changing the training trajectory when observations are disabled. An audited checkpoint requires the same validation identity to preserve a coherent observation history.
+Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can be changed on resume when observations and epoch checkpoint selection are disabled. Audits require the same validation identity; epoch selection also verifies the resolved evaluation inputs and labels by content digest.
 
 This field is used only by graph `train`, and requires positive `epochs`. Other handlers do not evaluate validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
 
@@ -300,7 +301,7 @@ These are direct `ExecutionSpec` constructor fields, used by graph `train`:
 | `shuffle` | `bool = False` | In dataset mode, permute sample order each epoch with `seed + epoch`. |
 | `updates` | `int \| None = None` | Optional positive update limit for this invocation. `None` runs the remaining epoch schedule, or one update in full-batch mode. |
 | `save_final_checkpoint` | `str \| Path \| None = None` | Write the final checkpoint to this directory when supplied. |
-| `save_selected_checkpoint` | `str \| Path \| None = None` | Write the checkpoint selected by lowest update loss to this directory when supplied. |
+| `save_selected_checkpoint` | `str \| Path \| None = None` | Write the winning checkpoint under `checkpoint_selection`. Fails if no eligible candidate exists. |
 
 `epochs` must be a non-negative integer; supplied `batch_size` and `updates` must be positive integers. Boolean or fractional values are rejected for these counts, and `shuffle` must be boolean. Without dataset mode, `batch_size` and `shuffle` do not split or shuffle the repeated full batch. A dataset checkpoint already at its requested end epoch raises an error.
 
@@ -356,6 +357,32 @@ Expose exactly the signals you want to inspect. Population spikes and voltages t
 There is no automatic collection of unexposed signals. The previous `recording` and `recording_fields` constructor arguments have been removed, and `ExecutionResult.recordings` has been renamed to `diagnostics`. Training returns exposed diagnostics from its final update.
 
 ## Checkpoints and continuation
+
+### checkpoint_selection
+
+Import `CheckpointSelection` and `SelectionMetric` from `snnlab.sim.execution`. Selection is an execution control, independent of `TrainSpec` and epoch observations:
+
+```python
+checkpoint_selection=CheckpointSelection(
+    split="validation",
+    cadence="completed_epoch",
+    metric=SelectionMetric("cross_entropy", objective=0, direction="min"),
+    tie_break=(SelectionMetric("accuracy", objective=0, direction="max"),),
+    include_initial=False,
+)
+```
+
+Pass this object as `ExecutionSpec.checkpoint_selection`. `split` is `"train"` or `"validation"`; validation selection requires `ValidationSpec`. Epoch selection requires positive `epochs`. `objective` is the zero-based training objective index and must identify a built-in cross-entropy objective. Both metrics are measured from that objective's predictions; cross-entropy is **unweighted**, excludes regularizers, and is reported in epoch `*_cross_entropies` mappings. Metrics are sample-weighted across the entire resolved split, with a fixed evaluation seed and minibatch size.
+
+`direction` supports `"min"` and `"max"`. Tie-break metrics are checked in declared order after an exact primary-score tie. An exact tie across all metrics retains the earliest candidate. Duplicate metrics, unknown indices, incompatible objectives, missing scores and non-finite scores fail explicitly. Only `cadence="completed_epoch"` is supported. The saved parameters, optimizer/RNG state and epoch coordinates belong to the weights actually evaluated.
+
+`include_initial=False` excludes epoch 0. Setting it to `True` admits the initial state, including a zero-update winner. An update limit that ends before any eligible boundary returns `selected_checkpoint=None`; requesting `save_selected_checkpoint` then fails. There is no partial-epoch selection or early stopping.
+
+Omitting the field preserves historical behavior, explicitly named `CheckpointSelection.legacy_training_batch_loss()`: lowest weighted pre-update training-batch loss selects post-update weights. This compatibility policy retains the historical metric/weight timing mismatch. Epoch selection corrects it for opt-in requests.
+
+`CheckpointSelection.to_dict()` / `.from_dict()` round-trip the policy as JSON-compatible data. The resolved policy and evaluation contract are stored in checkpoint metadata, alongside the winning record and a separate best-candidate snapshot. Final checkpoints retain that winner across resume, including invocations without improvement. Selected checkpoints can themselves resume. Resume rejects changes to policy, evaluation seed/batch size, protocol, or resolved input/label contents. A checkpoint from before selection metadata existed cannot start epoch selection retrospectively; legacy resume retains its historical invocation-local baseline.
+
+Epoch-selection checkpoints use schema version 4 and require this feature's reader. Default legacy checkpoints keep schema version 2 (3 with observations), with additional selection metadata readable by this implementation. See [Checkpoint selection results](/api/sim/execution-result#checkpoint-selection) and [CLI](/api/sim/cli#checkpoint-selection).
 
 ### checkpoint
 
