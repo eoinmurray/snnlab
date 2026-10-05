@@ -910,7 +910,7 @@ def _build_subparsers(parser, parent):
         action="append",
         default=[],
         metavar="KIND:POPULATION=VALUE",
-        help="[graph] Ordered spike intervention: drop:POPULATION=PROBABILITY or add:POPULATION=RATE_HZ; repeatable.",
+        help="[graph] Ordered spike intervention: drop:POPULATION=PROBABILITY, add:POPULATION=RATE_HZ or replay:POPULATION=PATH@sha256:FILE_DIGEST; repeatable.",
     )
     sim_parser.add_argument(
         "--inference-timestep-ms",
@@ -2214,7 +2214,10 @@ def main(argv=None):
         execution_spec_from_args,
     )
 
-    request = execution_spec_from_args(args)
+    try:
+        request = execution_spec_from_args(args)
+    except (ValueError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
 
     if request.executor == "legacy" and (
         getattr(args, "load_runtime_state", None)
@@ -2283,31 +2286,6 @@ def main(argv=None):
                 inference_overrides["projection_scales"] = projection_scales
             if getattr(args, "inference_timestep_ms", None) is not None:
                 inference_overrides["timestep_ms"] = args.inference_timestep_ms
-            interventions = []
-            for item in getattr(args, "intervention", []):
-                target, separator, raw_value = item.partition("=")
-                kind, kind_separator, population_id = target.partition(":")
-                if (
-                    not separator
-                    or not kind_separator
-                    or not population_id
-                    or not raw_value
-                    or kind not in {"drop", "add"}
-                ):
-                    raise ValueError(
-                        "--intervention expects drop:POPULATION=PROBABILITY or add:POPULATION=RATE_HZ"
-                    )
-                value = float(raw_value)
-                interventions.append(
-                    {
-                        "kind": (
-                            "drop_spikes" if kind == "drop" else "add_poisson_spikes"
-                        ),
-                        "population_id": population_id,
-                        "probability" if kind == "drop" else "rate_hz": value,
-                        "seed": args.seed,
-                    }
-                )
             if dataset_file:
                 if not args.dataset_encoder:
                     raise ValueError("--dataset-file requires --dataset-encoder")
@@ -2440,7 +2418,6 @@ def main(argv=None):
                     if inference_overrides
                     else {}
                 ),
-                **({"inference_interventions": interventions} if interventions else {}),
             },
             runtime_state=runtime_state,
         )

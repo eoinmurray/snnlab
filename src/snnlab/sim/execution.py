@@ -18,6 +18,7 @@ import tracemalloc
 from dataclasses import dataclass, field, replace
 from numbers import Integral
 from pathlib import Path
+from types import EllipsisType
 from typing import Any, Callable, Literal, Mapping, Sequence
 
 import numpy as np
@@ -38,6 +39,35 @@ from snnlab.sim.epoch_observations import (
     evaluation_rng,
     finite_norm,
     validate_observation_state,
+)
+from snnlab.sim.interventions import (
+    AddPoissonSpikes as AddPoissonSpikes,
+)
+from snnlab.sim.interventions import (
+    DenseSpikeReplay as DenseSpikeReplay,
+)
+from snnlab.sim.interventions import (
+    DropSpikes as DropSpikes,
+)
+from snnlab.sim.interventions import (
+    Intervention,
+    parse_intervention,
+    prepare_interventions,
+)
+from snnlab.sim.interventions import (
+    ReplaySpikes as ReplaySpikes,
+)
+from snnlab.sim.interventions import (
+    SparseSpikeReplay as SparseSpikeReplay,
+)
+from snnlab.sim.interventions import (
+    intervention_identity as intervention_identity,
+)
+from snnlab.sim.interventions import (
+    load_spike_replay as load_spike_replay,
+)
+from snnlab.sim.interventions import (
+    save_spike_replay as save_spike_replay,
 )
 
 ExecutorName = Literal["legacy", "graph"]
@@ -218,6 +248,7 @@ class ExecutionSpec:
     options: Mapping[str, Any] = field(default_factory=dict)
     observations: EpochObservations | None = None
     checkpoint_selection: CheckpointSelection | None = None
+    interventions: Sequence[Intervention] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -1930,6 +1961,7 @@ def validate_inference_artifacts(
     *,
     graph: Mapping[str, Any] | None = None,
     seed: int | None = None,
+    expected_interventions: Mapping[str, Any] | None | EllipsisType = ...,
 ) -> Mapping[str, Any]:
     """Authenticate a persisted graph inference artifact set before reuse."""
     root = Path(path)
@@ -1998,6 +2030,13 @@ def validate_inference_artifacts(
                     f"inference artifact {filename} array inventory does not match manifest"
                 )
     metrics = json.loads((root / "metrics.json").read_text())
+    if (
+        expected_interventions is not Ellipsis
+        and metrics.get("inference_interventions") != expected_interventions
+    ):
+        raise ValueError(
+            "inference artifact interventions do not match expected identity"
+        )
     request = {
         "seed": int(manifest["request_seed"]),
         "execution_protocol": metrics.get("execution_protocol"),
@@ -2798,6 +2837,7 @@ class GraphExecutor(nn.Module):
     ):
         super().__init__()
         self.plan = plan
+        self.seed = int(seed)
         self.surrogate = (
             surrogate if (surrogate or {}).get("kind") == "custom_surrogate" else None
         )
@@ -2985,7 +3025,7 @@ class GraphExecutor(nn.Module):
         *,
         diagnostics: bool = True,
         runtime_state: GraphRuntimeState | None = None,
-        interventions: Sequence[Mapping[str, Any]] = (),
+        interventions: Sequence[Intervention] = (),
     ) -> ExecutionResult:
         result, _ = self._forward(
             inputs,
@@ -3001,7 +3041,7 @@ class GraphExecutor(nn.Module):
         *,
         diagnostics: bool = True,
         runtime_state: GraphRuntimeState | None = None,
-        interventions: Sequence[Mapping[str, Any]] = (),
+        interventions: Sequence[Intervention] = (),
         required_signals: Sequence[str] = (),
         observation_populations: Sequence[str] = (),
     ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
@@ -3033,71 +3073,6 @@ class GraphExecutor(nn.Module):
                     f"input {name} dtype expected {parameter_dtype}, got {value.dtype}"
                 )
         populations = {p["id"]: p for p in self.plan.populations}
-        resolved_interventions: list[dict[str, Any]] = []
-        intervention_keys: set[tuple[str, str]] = set()
-        for index, raw in enumerate(interventions):
-            row = dict(raw)
-            kind = str(row.get("kind", ""))
-            population_id = str(row.get("population_id", ""))
-            if kind not in {"drop_spikes", "add_poisson_spikes"}:
-                raise ValueError(
-                    f"inference intervention {index} has unsupported kind {kind!r}"
-                )
-            if population_id not in populations:
-                raise ValueError(
-                    f"inference intervention {index} targets unknown population {population_id!r}"
-                )
-            if populations[population_id]["neuron"]["kind"] != "coba_lif":
-                raise ValueError(
-                    f"inference intervention {index} population {population_id!r} does not emit spikes"
-                )
-            key = (kind, population_id)
-            if key in intervention_keys:
-                raise ValueError(
-                    f"inference intervention repeats {kind} for population {population_id}"
-                )
-            intervention_keys.add(key)
-            allowed = (
-                {"kind", "population_id", "probability", "seed"}
-                if kind == "drop_spikes"
-                else {"kind", "population_id", "rate_hz", "seed"}
-            )
-            unknown = sorted(set(row) - allowed)
-            if unknown:
-                raise ValueError(
-                    f"inference intervention {index} has unsupported fields: {unknown}"
-                )
-            seed = int(row.get("seed", 0))
-            if kind == "drop_spikes":
-                value = float(row.get("probability", float("nan")))
-                if not math.isfinite(value) or not 0 <= value <= 1:
-                    raise ValueError(
-                        f"inference intervention {index} drop probability must be finite and between zero and one"
-                    )
-                resolved_interventions.append(
-                    {
-                        "kind": kind,
-                        "population_id": population_id,
-                        "probability": value,
-                        "seed": seed,
-                    }
-                )
-            else:
-                value = float(row.get("rate_hz", float("nan")))
-                probability = value * self.plan.dt_ms / 1000.0
-                if not math.isfinite(value) or value < 0 or probability > 1:
-                    raise ValueError(
-                        f"inference intervention {index} Poisson rate must be finite, non-negative, and satisfy rate times dt <= 1"
-                    )
-                resolved_interventions.append(
-                    {
-                        "kind": kind,
-                        "population_id": population_id,
-                        "rate_hz": value,
-                        "probability_per_step": probability,
-                        "seed": seed,
-                    }
-                )
         # Zero-delay edges use current-step spikes, but continuation still needs
         # the last spike tensor for every population.
         population_history_lengths = {
@@ -3278,6 +3253,22 @@ class GraphExecutor(nn.Module):
                         f"runtime state input_histories.{name} dtype expected {inputs[name].dtype}, got {value.dtype}"
                     )
             completed_steps = int(runtime_state.completed_steps)
+        prepared_interventions, intervention_request = prepare_interventions(
+            interventions,
+            graph=self.plan.graph,
+            seed=self.seed,
+            start_step=completed_steps,
+            steps_count=steps,
+            batch_size=batch,
+        )
+        resolved_interventions = [item.metadata for item in prepared_interventions]
+
+        def intervene(name, emitted, absolute_step):
+            for index, item in enumerate(prepared_interventions):
+                if item.metadata["population_id"] == name:
+                    emitted = item.apply(emitted, absolute_step, index)
+            return emitted
+
         neuron_states = {}
         synapse_states = {}
         custom_state = {}
@@ -3513,6 +3504,9 @@ class GraphExecutor(nn.Module):
                         if pop["spiking"]
                         else torch.zeros_like(spike_values)
                     )
+                    new_spikes[name] = intervene(
+                        name, new_spikes[name], completed_steps + t
+                    )
                     continue
                 if neuron["kind"] == "cuba_lif":
                     voltage[name], new_spikes[name], refractory[name] = X.current_lif(
@@ -3522,6 +3516,9 @@ class GraphExecutor(nn.Module):
                         dt_ms=self.plan.dt_ms,
                         config=neuron,
                         spike_function=spike_function,
+                    )
+                    new_spikes[name] = intervene(
+                        name, new_spikes[name], completed_steps + t
                     )
                     continue
                 if neuron["kind"] == "leaky_integrator":
@@ -3546,6 +3543,9 @@ class GraphExecutor(nn.Module):
                         if pop.get("spiking"):
                             new_spikes[name] = reset
                         voltage[name] = voltage[name] - reset * float(threshold)
+                    new_spikes[name] = intervene(
+                        name, new_spikes[name], completed_steps + t
+                    )
                     continue
                 tau_mem = float(neuron["tau_mem"]["value"])
                 c_m = float(neuron.get("capacitance_nf", 1.0 if tau_mem >= 15 else 0.5))
@@ -3578,34 +3578,9 @@ class GraphExecutor(nn.Module):
                     dt_override=self.plan.dt_ms,
                     v_grad_dampen=dampen,
                 )
-                for intervention_index, intervention in enumerate(
-                    resolved_interventions
-                ):
-                    if intervention["population_id"] != name:
-                        continue
-                    absolute_step = completed_steps + t
-                    seed_material = (
-                        f"{intervention['seed']}:{intervention_index}:"
-                        f"{intervention['kind']}:{name}:{absolute_step}"
-                    ).encode()
-                    step_seed = int.from_bytes(
-                        hashlib.sha256(seed_material).digest()[:8], "big"
-                    ) % (2**63 - 1)
-                    generator = torch.Generator(device=device).manual_seed(step_seed)
-                    sample = torch.rand(
-                        new_spikes[name].shape,
-                        device=device,
-                        generator=generator,
-                    )
-                    if intervention["kind"] == "drop_spikes":
-                        new_spikes[name] = new_spikes[name] * (
-                            sample >= intervention["probability"]
-                        )
-                    else:
-                        added = (sample < intervention["probability_per_step"]).to(
-                            new_spikes[name].dtype
-                        )
-                        new_spikes[name] = torch.maximum(new_spikes[name], added)
+                new_spikes[name] = intervene(
+                    name, new_spikes[name], completed_steps + t
+                )
             for category, states, rows in (
                 ("neuron", neuron_states, populations),
                 ("synapse", synapse_states, projection_rows),
@@ -3873,6 +3848,9 @@ class GraphExecutor(nn.Module):
             runtime_state=next_runtime_state,
             metrics={
                 "resolved_interventions": resolved_interventions,
+                "inference_interventions": intervention_request
+                if interventions
+                else None,
                 **(
                     {"population_observations": observation_counts}
                     if observation_counts
@@ -3936,17 +3914,19 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
 def simulate(
     spec: ExecutionSpec, *, runtime_state: GraphRuntimeState | None = None
 ) -> ExecutionResult:
+    if "inference_interventions" in spec.options:
+        raise ValueError(
+            "move options['inference_interventions'] to ExecutionSpec.interventions using typed intervention objects"
+        )
+    if spec.executor != "graph" and spec.interventions:
+        raise ValueError("interventions require the graph executor")
     if spec.executor != "graph":
         return ExecutionResult(
             executor="legacy", metrics={"request": "simulate", "routing": "legacy"}
         )
     sources = _split_input_bindings(spec.input_bindings)
     overrides = dict(spec.options.get("inference_overrides", {}))
-    requested_interventions = tuple(spec.options.get("inference_interventions", ()))
-    interventions = tuple(
-        {**dict(row), "seed": dict(row).get("seed", spec.seed)}
-        for row in requested_interventions
-    )
+    interventions = tuple(spec.interventions)
     allowed_overrides = {
         "duration_ms",
         "input_rate_hz",
@@ -4132,7 +4112,8 @@ def simulate(
     elapsed = time.perf_counter() - started
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-    resolved_interventions = result.metrics.pop("resolved_interventions", [])
+    result.metrics.pop("resolved_interventions", None)
+    intervention_request = result.metrics.get("inference_interventions")
     result.metrics.update(
         {
             "simulate_s": elapsed,
@@ -4157,13 +4138,7 @@ def simulate(
             }
             if overrides
             else None,
-            "inference_interventions": {
-                "schema": INFERENCE_INTERVENTION_SCHEMA,
-                "requested": [dict(row) for row in requested_interventions],
-                "resolved": resolved_interventions,
-            }
-            if interventions
-            else None,
+            "inference_interventions": intervention_request,
             "source_graph_digest": source_graph_digest,
             "effective_graph_digest": _json_digest(built.model.plan.graph),
             **built.metrics,
@@ -4181,6 +4156,10 @@ def simulate(
 
 
 def train(spec: ExecutionSpec) -> ExecutionResult:
+    if spec.interventions or "inference_interventions" in spec.options:
+        raise ValueError(
+            "interventions are supported only for graph simulation/inference"
+        )
     if spec.observations is not None and (spec.executor != "graph" or spec.epochs <= 0):
         raise ValueError(
             "epoch observations require graph training with positive epochs"
@@ -5162,6 +5141,9 @@ def execution_spec_from_args(
         updates=getattr(args, "updates", None),
         save_final_checkpoint=getattr(args, "save_final_checkpoint", None),
         save_selected_checkpoint=getattr(args, "save_selected_checkpoint", None),
+        interventions=tuple(
+            parse_intervention(value) for value in getattr(args, "intervention", ())
+        ),
         checkpoint_selection=(
             CheckpointSelection.from_dict(json.loads(args.checkpoint_selection))
             if getattr(args, "checkpoint_selection", None)
@@ -5181,6 +5163,7 @@ def execution_spec_from_args(
                 "save_final_checkpoint",
                 "save_selected_checkpoint",
                 "checkpoint_selection",
+                "intervention",
             }
         },
     )

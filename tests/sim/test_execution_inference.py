@@ -6,7 +6,9 @@ import pytest
 import torch
 
 from snnlab.sim.execution import (
+    AddPoissonSpikes,
     DenseArrayBinding,
+    DropSpikes,
     ExecutionSpec,
     GraphExecutor,
     PoissonInputBinding,
@@ -233,18 +235,8 @@ def test_graph_inference_interventions_are_ordered_and_recorded():
         "drive_a": torch.zeros(3, 1, 3),
         "drive_b": torch.zeros(3, 1, 2),
     }
-    add = {
-        "kind": "add_poisson_spikes",
-        "population_id": "a_E",
-        "rate_hz": 10000.0,
-        "seed": 11,
-    }
-    drop = {
-        "kind": "drop_spikes",
-        "population_id": "a_E",
-        "probability": 1.0,
-        "seed": 12,
-    }
+    add = AddPoissonSpikes(population_id="a_E", rate_hz=10000.0, seed=11)
+    drop = DropSpikes(population_id="a_E", probability=1.0, seed=12)
     dropped = simulate(
         ExecutionSpec(
             kind="simulate",
@@ -253,7 +245,10 @@ def test_graph_inference_interventions_are_ordered_and_recorded():
             input_bindings=tuple(
                 DenseArrayBinding(name, value) for name, value in (inputs).items()
             ),
-            options={"inference_interventions": [add, drop]},
+            interventions=(
+                add,
+                drop,
+            ),
         )
     )
     added = simulate(
@@ -264,25 +259,27 @@ def test_graph_inference_interventions_are_ordered_and_recorded():
             input_bindings=tuple(
                 DenseArrayBinding(name, value) for name, value in (inputs).items()
             ),
-            options={"inference_interventions": [drop, add]},
+            interventions=(
+                drop,
+                add,
+            ),
         )
     )
     assert torch.count_nonzero(dropped.diagnostics["a_E.spikes"]) == 0
     assert torch.all(added.diagnostics["a_E.spikes"] == 1)
     provenance = added.metrics["inference_interventions"]
     assert provenance["schema"] == "tools/snnsim.inference-interventions/v1"
-    assert provenance["requested"] == [drop, add]
+    assert [row["kind"] for row in provenance["requested"]] == [
+        "drop_spikes",
+        "add_poisson_spikes",
+    ]
+    assert provenance["requested"][0]["seed"] == drop.seed
     assert provenance["resolved"][1]["probability_per_step"] == 1.0
 
 
 def test_graph_inference_intervention_stream_resumes_exactly():
     graph = _coupled_graph(direction="uncoupled")
-    intervention = {
-        "kind": "add_poisson_spikes",
-        "population_id": "a_E",
-        "rate_hz": 5000.0,
-        "seed": 31,
-    }
+    intervention = AddPoissonSpikes(population_id="a_E", rate_hz=5000.0, seed=31)
     full_model = GraphExecutor(plan_graph(graph), seed=4)
     full = full_model(
         {
@@ -330,15 +327,7 @@ def test_graph_inference_interventions_reject_invalid_targets_and_values():
                 input_bindings=tuple(
                     DenseArrayBinding(name, value) for name, value in (inputs).items()
                 ),
-                options={
-                    "inference_interventions": [
-                        {
-                            "kind": "drop_spikes",
-                            "population_id": "missing",
-                            "probability": 0.5,
-                        }
-                    ]
-                },
+                interventions=(DropSpikes(population_id="missing", probability=0.5),),
             )
         )
     with pytest.raises(ValueError, match="rate times dt"):
@@ -350,14 +339,6 @@ def test_graph_inference_interventions_reject_invalid_targets_and_values():
                 input_bindings=tuple(
                     DenseArrayBinding(name, value) for name, value in (inputs).items()
                 ),
-                options={
-                    "inference_interventions": [
-                        {
-                            "kind": "add_poisson_spikes",
-                            "population_id": "a_E",
-                            "rate_hz": 10001.0,
-                        }
-                    ]
-                },
+                interventions=(AddPoissonSpikes(population_id="a_E", rate_hz=10001.0),),
             )
         )

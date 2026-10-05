@@ -142,3 +142,9 @@ class NumpyExecutionResult:
     diagnostics: dict[str, np.ndarray]
     time_ms: np.ndarray | None
 ```
+
+## Intervention provenance and replay cache checks
+
+Graph simulation/inference returns `result.metrics["inference_interventions"]`, or `None` without interventions. It contains ordered `requested` and `resolved` metadata plus a `window` with absolute `start_step`, `steps_count`, `batch_size` and `dt_ms`. Replay rows include the canonical payload digest, representation and complete coverage; full payload tensors are not embedded in JSON. Stochastic rows include resolved seeds and add probabilities.
+
+Generate an expected identity with [intervention_identity](/api/sim/execution-spec#replay-files-and-cache-checks) before reusing a cache, then pass it as `validate_inference_artifacts(..., expected_interventions=expected)`. This rejects a different replay or ordering and retains existing artifact-integrity checks. Explicit `None` requires an intervention-free cache. The keyword's omission preserves older integrity-only behavior; it does not authenticate the caller's entire inference request.

@@ -52,7 +52,7 @@ result = module(
 
 `inputs` maps declared input names to tensors with `(time, batch, channels)` leading layout. Inputs must share time length, batch size and device; use a compatible module device/dtype. This call returns [ExecutionResult](/api/sim/execution-result), whose official output tensors retain gradients. Diagnostics and continuation state are detached. Runtime state continues a trajectory when explicitly passed; otherwise each call starts with fresh dynamic state.
 
-`interventions` supplies supported runtime intervention mappings; it is a lower-level equivalent of the execution request's [inference interventions](/api/sim/execution-spec#inference_interventions).
+`interventions` accepts an ordered sequence of typed `DropSpikes`, `AddPoissonSpikes` and `ReplaySpikes` objects, matching [ExecutionSpec.interventions](/api/sim/execution-spec#interventions). Replay replaces emitted spikes after the ordinary neuron update; authenticated absolute coverage supports runtime continuation. Intervention mappings are no longer accepted.
 
 ## Parameter map
 

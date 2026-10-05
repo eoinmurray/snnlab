@@ -152,6 +152,7 @@ Graph simulation loads parameters without restoring the optimizer or training it
 | `--scale-projection ID=FACTOR` | Scale a named projection for this simulation; repeatable. |
 | `--intervention drop:POPULATION=PROBABILITY` | Drop emitted population spikes; probability must be between zero and one. |
 | `--intervention add:POPULATION=RATE_HZ` | Add Poisson population spikes; repeatable interventions run in order. |
+| `--intervention replay:POPULATION=PATH@sha256:FILE_DIGEST` | Replace emitted spikes with an authenticated dense/sparse replay payload. |
 | `--inference-timestep-ms VALUE` | Recompile a graph copy at a new timestep with generated Poisson inputs; incompatible with runtime continuation. |
 
 Projection scaling and interventions apply to `sim` and use exact graph IDs. The source bundle is not rewritten. See [inference options](/api/sim/execution-spec#inference_overrides) and [runtime continuation](/api/sim/execution-spec#runtime_state) for validation rules.
@@ -338,7 +339,7 @@ These flags configure graph execution and have no supported legacy effect. Runti
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
 | `--scale-projection` | `sim` | No entries | Multiply a named graph projection for this inference request; repeatable. |
-| `--intervention` | `sim` | No entries | Ordered spike intervention: drop:POPULATION=PROBABILITY or add:POPULATION=RATE_HZ; repeatable. |
+| `--intervention` | `sim` | No entries | Ordered spike intervention: drop:POPULATION=PROBABILITY, add:POPULATION=RATE_HZ or replay:POPULATION=PATH@sha256:FILE_DIGEST; repeatable. |
 | `--inference-timestep-ms` | `sim` | Unset | Recompile an immutable graph copy at this inference timestep. |
 | `--event-file` | `sim` | Unset | Sparse event-stream NPZ replay for graph execution. Coordinates are zero-based integer steps, batches, and channels. |
 | `--dataset-file` | `sim`, `train` | Unset | Immutable NPZ dataset snapshot for graph execution. |
@@ -369,3 +370,13 @@ Graph training accepts `--checkpoint-selection` as a JSON-serialized [Checkpoint
 ```
 
 Supply this flag alongside the usual `train --executor graph --bundle ... --epochs ...` arguments. `--save-selected-checkpoint PATH` saves the winner; `--save-final-checkpoint PATH` saves the final state with its retained winner. Omitting the flag keeps the named legacy batch-loss policy. The current CLI has no held-out `ValidationSpec` binding interface; use the Python request API for validation-based selection. Malformed JSON or invalid policies fail rather than silently falling back.
+
+## Population-spike replay
+
+Create a dense or sparse replay with [the Python replay API](/api/sim/execution-spec#interventions), then write it with `save_spike_replay`. Pin its returned file digest and provide it in the ordered CLI intervention list:
+
+```sh
+--intervention 'replay:I=baseline.npz@sha256:YOUR_64_HEX_FILE_DIGEST'
+```
+
+Use this alongside `sim --executor graph --bundle ...` and the normal input/output arguments. The CLI constructs `ReplaySpikes("I", load_spike_replay(...))` in `ExecutionSpec.interventions`, verifies file bytes before loading arrays, and verifies canonical payload identity before stepping. Unknown targets, mismatched timestep/dimensions, incomplete coverage, corrupt files and missing digest pins fail. Repeated `--intervention` flags preserve order with drop/add interventions. Use absolute replay coordinates with `--load-runtime-state`; chunk boundaries do not restart replay. Relocating the same immutable file preserves its identity. Jitter and other stream transformations remain caller responsibilities.

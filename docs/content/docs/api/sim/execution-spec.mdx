@@ -37,6 +37,7 @@ ExecutionSpec(
     options: Mapping[str, Any] = {},
     observations: EpochObservations | None = None,
     checkpoint_selection: CheckpointSelection | None = None,
+    interventions: Sequence[Intervention] = (),
 )
 ```
 
@@ -410,6 +411,97 @@ This is distinct from `checkpoint`: a weight checkpoint supplies parameters; run
 
 `simulate(spec, runtime_state=state)` can also supply state as a keyword argument. A non-`None` keyword state takes precedence over `spec.runtime_state`. The timestep override cannot be combined with either form of runtime state. `build` and `train` do not consume this field.
 
+## interventions
+
+`ExecutionSpec.interventions` is an ordered sequence of typed objects, defaulting to `()`. It is supported by graph `simulate` / `infer` and directly by `GraphExecutor.forward`. Graph training rejects interventions. Import the types from `snnlab.sim.execution`:
+
+```python
+DropSpikes(population_id="E", probability=0.25, seed=None)
+AddPoissonSpikes(population_id="E", rate_hz=5.0, seed=None)
+ReplaySpikes(population_id="I", replay=payload)
+```
+
+`population_id` must be an exact spiking population ID. COBA LIF, current-based LIF, spiking leaky integrators and registered spiking neurons use the same intervention point. A repeated intervention kind on the same population is rejected. Drop probability must be finite in `[0, 1]`; add rate must be finite and non-negative with `rate_hz * dt_ms / 1000 <= 1`. Stochastic `seed=None` uses the execution seed (or module construction seed for direct `forward`); supplied seeds must be non-negative integers. Random streams use the intervention's ordered index, target and absolute timestep.
+
+Interventions run immediately after each targeted population's ordinary neuron update and before any zero-delay downstream consumer. They alter **emitted spikes**, preserving the neuron update's voltage, reset and refractory state. Replacement spikes enter recurrent/delayed histories, diagnostics and readouts. Changes can affect the target's later state through recurrent feedback. Replay consumes no random draws. List order is literal: replay then drop modifies replayed spikes; drop then replay replaces the dropped stream; replay then add unions replay with generated spikes.
+
+The previous `options["inference_interventions"]` mapping is rejected with a migration error. Move the ordered sequence to `interventions=(DropSpikes(...), AddPoissonSpikes(...), ReplaySpikes(...))`. Direct `GraphExecutor.forward` likewise requires typed objects instead of mappings. `options["inference_overrides"]` remains separate.
+
+### DenseSpikeReplay
+
+```python
+class DenseSpikeReplay:
+    value: torch.Tensor       # Binary [time, batch, cells]
+    start_step: int           # Inclusive absolute timestep
+    dt_ms: float
+    sha256: str               # Expected canonical payload digest
+```
+
+For a caller-owned stream, create an independent, authenticated snapshot:
+
+```python
+from snnlab.sim.execution import DenseSpikeReplay, ReplaySpikes
+
+payload = DenseSpikeReplay.from_tensor(
+    baseline_spikes, start_step=0, dt_ms=0.1,
+)
+request = ExecutionSpec(
+    kind="infer", graph=bundle.graph,
+    input_bindings=input_bindings,
+    interventions=(ReplaySpikes("I", payload),),
+)
+```
+
+`.from_tensor` validates and copies values, then computes `sha256`. To verify an externally pinned payload, construct `DenseSpikeReplay(value, start_step, dt_ms, sha256=expected_digest)` instead. Every execution takes a private snapshot, verifies the digest before neuron stepping, and rejects later mutation of the supplied payload. Values must be real binary values; NaN, infinity and fractional spikes fail. Batch/cell dimensions must match the execution and target exactly. No broadcasting or repetition is inferred.
+
+### SparseSpikeReplay
+
+```python
+class SparseSpikeReplay:
+    steps: torch.Tensor      # Absolute integer timesteps
+    batches: torch.Tensor
+    cells: torch.Tensor
+    start_step: int
+    steps_count: int
+    batch_size: int
+    cells_count: int
+    dt_ms: float
+    sha256: str
+```
+
+Use `SparseSpikeReplay.from_events(...)` with these coordinates and coverage fields, omitting `sha256`, to create a validated independent snapshot. All three coordinate vectors must be one-dimensional integer tensors of equal length, lexicographically ordered by `(step, batch, cell)`, without duplicates. Explicit dimensions define complete coverage; absent coordinates mean zero spikes. Empty event vectors represent an all-zero covered stream. Sparse replay remains sparse until the current batch/cell spike tensor is emitted.
+
+Dense and sparse payloads use `snnlab.spike-replay/v1`. Their digest is SHA-256 of the canonical header (sorted-key compact JSON plus a newline), followed by dense uint8 C-order bytes, or sparse `steps`, `batches`, `cells` in order as little-endian int64 bytes. The header binds representation, start step, step count, batch/cell dimensions and timestep. Digests use `sha256:HEX`; different representations have different payload identities even when their emitted spikes agree.
+
+### Replay coverage and continuation
+
+Coverage is the half-open interval `[start_step, start_step + steps_count)`. Dense `steps_count` comes from its time axis. Coverage dimensions and counts must be positive integers; `start_step` must be a non-negative integer. `dt_ms` must match the effective execution timestep. Replay must cover the entire current execution window; there is no padding or fallback outside coverage.
+
+On continuation, the execution starts at `runtime_state.completed_steps`. Supply the original full replay or a separately authenticated absolute-coordinate slice covering that chunk. Unrelated call boundaries do not restart replay. The target's ordinary state and transmitted delayed histories are carried by runtime state, so chunked execution agrees with uninterrupted execution, including delayed-edge boundaries. Changing replay intentionally creates a new intervention identity.
+
+### Replay files and cache checks
+
+```python
+from snnlab.sim.execution import (
+    save_spike_replay, load_spike_replay,
+    intervention_identity, validate_inference_artifacts,
+)
+
+file_digest = save_spike_replay("baseline.npz", payload)
+loaded = load_spike_replay("baseline.npz", sha256=file_digest)
+expected = intervention_identity(
+    request.interventions, graph=bundle.graph, seed=request.seed,
+    start_step=0, steps_count=100, batch_size=1,
+)
+validate_inference_artifacts(cache_path, expected_interventions=expected)
+```
+
+`save_spike_replay` writes the schema/header and dense value or sparse coordinate arrays, returning a SHA-256 **file-byte** digest. The loader verifies those bytes before decoding an immutable in-memory copy, disables pickle, and also verifies canonical payload identity. Pin the returned digest in caller provenance; no source registry is created.
+
+`intervention_identity` validates/authenticates the supplied interventions before cache reuse and returns the exact metadata shape stored in `result.metrics["inference_interventions"]`: requested/resolved ordering, replay digest/coverage, stochastic seeds, and the current absolute execution window. Use the effective graph after any timestep override and the actual runtime start coordinate. Passing `expected_interventions=None` explicitly requires a cache without interventions; omitting the keyword retains internal-integrity-only validation. A mismatched replay, target, order or window fails even when graph and execution seed are unchanged. Existing artifact corruption checks remain active. This check covers interventions; complete expected-request authentication is a separate contract.
+
+File location is not part of intervention identity: relocating identical bytes preserves file authentication; independently saved identical payloads preserve canonical payload identity. Transformations, jitter generation and experiment-specific source-run pins belong to the caller. The [CLI replay route](/api/sim/cli#population-spike-replay) uses the same typed objects and authenticated loader.
+
 ## options
 
 **Type:** `Mapping[str, Any]`. **Default:** empty mapping.
@@ -430,20 +522,6 @@ Inference and compatibility options. Training controls are explicit fields descr
 Unknown override keys or projection IDs raise `ValueError`. Duration/rate/timestep changes require resampleable Poisson inputs and reject dense/event replay. A dataset snapshot is not a substitute for these Poisson bindings. New timesteps must also satisfy graph delay/timing validation.
 
 Timestep recompilation rejects runtime continuation state. When using a checkpoint with a new timestep, checkpoint identity is checked against the source graph before parameters load into the effective graph. Projection scaling can be used with replay inputs. Source graph/checkpoint files are not rewritten by these request-local overrides. Metrics record requested and resolved values.
-
-### inference_interventions
-
-`options["inference_interventions"]` is an ordered sequence of mappings applied to emitted hidden-population spikes during simulation/inference.
-
-| Key | Meaning |
-| --- | --- |
-| `kind` | `"drop_spikes"` or `"add_poisson_spikes"`. |
-| `population_id` | Exact ID of a spiking graph population. |
-| `probability` | Required for `drop_spikes`; finite value between zero and one. |
-| `rate_hz` | Required for `add_poisson_spikes`; finite, non-negative rate with valid per-step probability. |
-| `seed` | Optional intervention seed; defaults to the execution seed. |
-
-Drop removes emitted spikes probabilistically. Add unions emitted spikes with a generated Poisson stream. Interventions are processed in sequence; modified spikes propagate through downstream projections, delay histories, diagnostics and readouts. They do not replace the graph's external input bindings. Random streams use absolute execution step, allowing runtime continuation under the same intervention settings. Unknown kinds, non-spiking/unknown targets and invalid probabilities/rates fail validation.
 
 ## Calling the API
 
