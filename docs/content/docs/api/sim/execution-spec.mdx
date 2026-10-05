@@ -35,6 +35,7 @@ ExecutionSpec(
     checkpoint: Path | None = None,
     runtime_state: GraphRuntimeState | None = None,
     options: Mapping[str, Any] = {},
+    observations: EpochObservations | None = None,
 )
 ```
 
@@ -243,9 +244,50 @@ history = result.metrics["epochs"]
 
 `ValidationSpec` is a frozen dataclass with `input_bindings: Sequence[InputBinding] = ()`, `targets: Mapping[str, torch.Tensor] = {}`, `target_bindings: Sequence[TargetArrayBinding] = ()`, and `protocol: Mapping[str, Any] = {}`. Defaults use independent factories. It uses the same [input binding rules](/api/sim/execution-spec#input_bindings) and target validation as training, including dataset snapshots with a `target_id`. Supply `targets` or `target_bindings`, not both; snapshot labels must not be combined with either.
 
-Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can therefore be changed when resuming without changing the training trajectory.
+Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can therefore be changed when resuming without changing the training trajectory when observations are disabled. An audited checkpoint requires the same validation identity to preserve a coherent observation history.
 
 This field is used only by graph `train`, and requires positive `epochs`. Other handlers do not evaluate validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
+
+### observations
+
+**Type:** `EpochObservations | None`. **Default:** `None`. Requires graph `train` with positive `epochs`.
+
+Import `EpochObservations` and `ObservationProbe` from `snnlab.sim.execution`. Select exact graph IDs; all selections default to empty tuples and `probes` to an independent empty mapping. Unknown IDs, duplicate IDs, non-spiking population selections and non-trainable gradient selections are rejected.
+
+```python
+observations = EpochObservations(
+    population_rates=("cell_E", "cell_I"),
+    parameter_norms=("cell_E_to_I.weight", "w_out"),
+    output_activity=("output_neurons",),
+    gradient_norms=("w_out",),
+    probes={
+        "reference": ObservationProbe(input_bindings=reference_inputs, seed=17),
+        "validation_draw_1": ObservationProbe(
+            input_bindings=draw_inputs, seed=23, split="validation",
+        ),
+    },
+)
+execution = ExecutionSpec(
+    kind="train", graph=bundle.graph, training=bundle.training,
+    input_bindings=train_inputs, targets=train_targets,
+    validation=validation, observations=observations,
+    epochs=20, batch_size=32, diagnostics=False,
+)
+```
+
+| Selection | Meaning |
+| --- | --- |
+| `population_rates` | Population IDs for mean firing rates in Hz. |
+| `parameter_norms` | Parameter IDs for the L2 norm of each flattened stored tensor. |
+| `output_activity` | Spiking population IDs for per-cell spike totals, silence and shares. A non-spiking MeanVoltage integrator is not a spike-output population. |
+| `gradient_norms` | Trainable parameter IDs for epoch-average gradient norms before/after clipping. |
+| `probes` | Named `ObservationProbe` draws, measured independently from training and ordinary validation. |
+
+`ObservationProbe(input_bindings=(), seed=0, split="reference", protocol={})` accepts the standard input binding types, a nonnegative integer evaluation seed, and split `"reference"` or `"validation"`. Probes measure activity only; they have no targets, loss or accuracy and never participate in optimization. Dataset snapshot labels are ignored for activity-only probes. Each resolved draw and its protocol are retained under its own name; multiple validation draws remain separate rather than being silently pooled. Poisson/dataset encoders retain their binding-specific seeds; the probe seed controls the fallback resolution/evaluation stream. Input draws are resolved once and reused for fixed-weight epoch evaluation; fresh batchwise training encoding is a separate contract.
+
+Observations run at initialization and completed epoch boundaries. Evaluation uses fresh dynamic state, fixed current weights and `batch_size`, with compact per-batch spike counts rather than additional dense spike histories. Declared graph outputs and loss regularizers may still require histories. The feature does not claim constant-memory training or redesign input encoding. Python, NumPy, PyTorch CPU and available accelerator RNG states are restored around evaluations, including on errors; extra probes do not change training randomness or optimizer updates.
+
+Audited checkpoints use checkpoint schema version 3, which requires this feature's reader; ordinary checkpoints continue to use version 2. Audited checkpoints retain completed history and partial-epoch gradient totals. Resume requires the same observation configuration, validation identity, draw identities, evaluation seed and batch size. A checkpoint without observation history cannot retroactively start an audit: missing measurements are not reconstructed. Ordinary checkpoints without observations retain their existing resume behavior. See [Epoch observations](/api/sim/execution-result#epoch-observations) for result fields and aggregation.
 
 ### Training controls
 

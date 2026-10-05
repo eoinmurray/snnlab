@@ -126,6 +126,22 @@ Compilation validates both the graph and training recipe. `network.bundle` conta
 
 `result.metrics["epochs"]` contains loss and accuracy measured **after each epoch on the whole training and validation split**, plus epoch 0 before learning. These are evaluations of fixed weights, not the last minibatch's loss or an average collected while weights were changing. Accuracy is the fraction of samples whose highest-scoring class matches the label.
 
+Optional named epoch observations can be requested without enabling diagnostic traces:
+
+```python
+from dataclasses import replace
+from snnlab.sim.execution import EpochObservations
+
+# `execution` is your ExecutionSpec for the graph and training inputs.
+execution = replace(execution, observations=EpochObservations(
+    population_rates=("E",),
+    parameter_norms=("w_out",),
+    gradient_norms=("w_out",),
+))
+```
+
+Use your graph's exact IDs (this example declares `E` and `w_out`). See [Epoch observations](/api/sim/execution-result#epoch-observations) for units, output-neuron activity, reference probes and resumable histories, and [ExecutionSpec](/api/sim/execution-spec#observations) for configuration. Observations measure fixed epoch states and preserve evaluation RNG streams; they do not supply new checkpoint-selection rules.
+
 The final checkpoint is saved once for later inference. There is no external epoch loop or intermediate checkpoint management.
 
 ## 8. Save metrics and plot curves

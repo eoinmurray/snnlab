@@ -42,9 +42,38 @@ In dataset iteration mode (`epochs > 0`), `train` evaluates the complete trainin
 
 Each evaluation uses fixed weights and minibatches bounded by `batch_size`. The final smaller batch is weighted by its actual sample count. Training samples are not shuffled during evaluation. `result.metrics["updates"]` retains the separate per-update losses measured before each optimizer step.
 
-Resuming at an epoch boundary evaluates that starting boundary and subsequent completed epochs. Resuming partway through an epoch reports only subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. The returned history covers this invocation; previous history is not stored in the checkpoint. Full-batch update mode without positive epochs returns an empty epoch history.
+Resuming at an epoch boundary evaluates that starting boundary and subsequent completed epochs. Resuming partway through an epoch reports only subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. With observations disabled, the returned history covers this invocation and previous history is not stored in the checkpoint. With observations enabled, history is retained and resumed as described below. Full-batch update mode without positive epochs returns an empty epoch history.
 
 Epoch evaluations do not replace the final update's returned outputs or diagnostics, and do not affect checkpoint selection, which continues to use update loss. Validation does not perform early stopping or select checkpoints. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
+
+## Epoch observations
+
+Supplying `ExecutionSpec.observations` adds an `observations` mapping to each epoch row while retaining the existing loss/accuracy fields:
+
+```python
+row = result.metrics["epochs"][-1]
+rates = row["observations"]["validation"]["population_rates_hz"]
+weight_norms = row["observations"]["parameters"]["l2_norm"]
+gradients_before_clip = row["observations"]["gradients"]["pre_clip_l2_norm"]
+reference = row["observations"]["probes"]["reference"]
+```
+
+| Entry | Semantics |
+| --- | --- |
+| `train`, `validation` | Requested population activity on the corresponding full evaluation split. Validation appears only when supplied. |
+| `probes` | Separately named reference/validation draws, each recording `split`, `draw_id`, input protocol and evaluation seed. |
+| `parameters.l2_norm` | Flattened stored parameter L2 norms at that fixed epoch state; `state` distinguishes initialization from a completed epoch. The `units` mapping records graph units; norms retain stored scaling. Non-finite requested norms raise an error. |
+| `gradients.pre_clip_l2_norm`, `post_clip_l2_norm` | Arithmetic means of per-update flattened gradient L2 norms over that epoch, before and after the declared clipping step. They are not gradients recomputed on evaluation data. |
+
+Each activity entry includes `duration_s` (per presentation), `sample_count`, `population_sizes`, `window="full_presentation"`, input protocol, split, evaluation seed and aggregation. Population rates divide total emitted spikes by samples × population size × physical presentation duration; the smaller final batch receives its actual sample weight. Mask inputs do not implicitly redefine this measurement window.
+
+`output_activity[population]` records per-cell `spike_totals`, `silent_sample_fraction` (presentations with no spikes in that population), and `class_spike_shares` (each cell's fraction of total spikes). Cell index defines the class axis; class labels and scientific interpretation remain caller-owned. If no spikes occur, shares are `None` and `status="no_spikes"`, rather than fabricated zero probabilities. Counts come from the emitted output-neuron spikes, not weighted hidden-spike counts.
+
+Gradient entries include the number of epoch `updates`, per-parameter `missing_updates` and `aggregation="mean_over_epoch_updates_with_gradient"`. Missing gradients are excluded from the mean. A parameter with no observed gradient returns `None`; initial measurements have `status="no_updates"`. Without clipping, before/after norms agree.
+
+Epoch rows include absolute `update` and `phase="initial"` at epoch 0 or `"completed_epoch"` afterward. Completed history and partial-epoch gradient totals are stored in authenticated checkpoint observation metadata (schema version 3 for audited checkpoints). Resume returns the complete retained history without duplicate boundary rows, and adds a row only when another epoch completes. It rejects changed audit configuration or attempts to reconstruct history from an unaudited checkpoint. Ordinary histories remain invocation-local when observations are disabled.
+
+These compact measurements do not change final-update outputs, diagnostics or checkpoint selection. Pinglab's field aliases, plotting, audit thresholds and bank serialization remain outside snnlab.
 
 ## numpy
 

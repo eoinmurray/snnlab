@@ -28,6 +28,15 @@ from snnlab import extensions as E
 from snnlab.sim import extensions as X
 from snnlab.sim import models as M
 from snnlab.sim.bundle import load_graph_bundle, load_training_recipe
+from snnlab.sim.epoch_observations import (
+    ActivityMeasurements,
+    EpochObservations,
+    GradientMeasurements,
+    ObservationProbe,
+    evaluation_rng,
+    finite_norm,
+    validate_observation_state,
+)
 
 ExecutorName = Literal["legacy", "graph"]
 RequestKind = Literal["build", "simulate", "train", "infer"]
@@ -205,6 +214,7 @@ class ExecutionSpec:
     checkpoint: Path | None = None
     runtime_state: GraphRuntimeState | None = None
     options: Mapping[str, Any] = field(default_factory=dict)
+    observations: EpochObservations | None = None
 
 
 @dataclass(frozen=True)
@@ -308,6 +318,7 @@ class TrainingCheckpoint:
     accelerator_rng_states: dict[str, torch.Tensor] = field(default_factory=dict)
     data_state: Mapping[str, Any] = field(default_factory=dict)
     selected_loss: float | None = None
+    observation_state: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -2246,7 +2257,7 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
         temporary_tensors.unlink(missing_ok=True)
     manifest = {
         "schema": TRAINING_CHECKPOINT_SCHEMA,
-        "schema_version": 2,
+        "schema_version": 3 if checkpoint.observation_state is not None else 2,
         "backend": "tools/snnsim.graph-training/v1",
         "rng_backend": checkpoint.rng_backend,
         "accelerator_rng_devices": sorted(checkpoint.accelerator_rng_states),
@@ -2257,6 +2268,8 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
         "execution_protocol": checkpoint.execution_protocol,
         "initialization": checkpoint.initialization,
         "data_state": checkpoint.data_state,
+        "observation_state": checkpoint.observation_state,
+        "observation_state_digest": _json_digest(checkpoint.observation_state),
         "optimizer_scalars": optimizer_scalars,
         "tensors_file": "tensors.npz",
         "tensors_digest": tensors_digest,
@@ -2282,7 +2295,7 @@ def load_training_checkpoint(
     manifest = json.loads((root / "manifest.json").read_text())
     if manifest.get("schema") != TRAINING_CHECKPOINT_SCHEMA or manifest.get(
         "schema_version"
-    ) not in {1, 2}:
+    ) not in {1, 2, 3}:
         raise ValueError(
             f"unsupported training-checkpoint schema: {manifest.get('schema')}"
         )
@@ -2339,7 +2352,7 @@ def load_training_checkpoint(
     schema_version = int(manifest["schema_version"])
     rng_backend = manifest.get("rng_backend", "cpu")
     declared_devices = set(manifest.get("accelerator_rng_devices", []))
-    if schema_version == 2:
+    if schema_version in {2, 3}:
         if rng_backend not in {"cpu", "cuda", "mps"}:
             raise ValueError(
                 f"training checkpoint has unsupported RNG backend {rng_backend!r}"
@@ -2368,6 +2381,13 @@ def load_training_checkpoint(
             raise ValueError(
                 "MPS training checkpoint requires exactly the mps RNG state"
             )
+    observation_state = manifest.get("observation_state")
+    if schema_version == 3 and observation_state is None:
+        raise ValueError("audited training checkpoint is missing observation history")
+    if "observation_state" in manifest and manifest.get(
+        "observation_state_digest"
+    ) != _json_digest(observation_state):
+        raise ValueError("training checkpoint observation history digest mismatch")
     return TrainingCheckpoint(
         graph_digest=manifest["graph_digest"],
         training_digest=manifest["training_digest"],
@@ -2381,6 +2401,7 @@ def load_training_checkpoint(
         rng_backend=rng_backend,
         accelerator_rng_states=accelerator_rng_states,
         data_state=manifest.get("data_state", {}),
+        observation_state=observation_state,
     )
 
 
@@ -2931,6 +2952,7 @@ class GraphExecutor(nn.Module):
         runtime_state: GraphRuntimeState | None = None,
         interventions: Sequence[Mapping[str, Any]] = (),
         required_signals: Sequence[str] = (),
+        observation_populations: Sequence[str] = (),
     ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
         if not isinstance(diagnostics, bool):
             raise TypeError("diagnostics must be boolean")
@@ -3326,6 +3348,10 @@ class GraphExecutor(nn.Module):
             needed_signals.update(row["signal"] for row in self.plan.observables)
         for operation in self.plan.graph.get("operations", []):
             needed_signals.update(operation["sources"])
+        observation_counts = {
+            name: torch.zeros_like(voltage[name], dtype=torch.int64)
+            for name in observation_populations
+        }
         integrator_sum: dict[str, torch.Tensor] = {}
         spike_traces: dict[str, list[torch.Tensor]] = {
             name: [] for name in populations if f"{name}.spikes" in needed_signals
@@ -3542,6 +3568,8 @@ class GraphExecutor(nn.Module):
                         if signal in needed_signals:
                             state_traces.setdefault(signal, []).append(state[port])
             spikes = new_spikes
+            for name in observation_counts:
+                observation_counts[name] += spikes[name].detach().to(torch.int64)
             for name in spike_traces:
                 spike_traces[name].append(spikes[name])
             for name in voltage_traces:
@@ -3792,7 +3820,14 @@ class GraphExecutor(nn.Module):
                 f"{k}.voltage": v.detach().clone() for k, v in voltage.items()
             },
             runtime_state=next_runtime_state,
-            metrics={"resolved_interventions": resolved_interventions},
+            metrics={
+                "resolved_interventions": resolved_interventions,
+                **(
+                    {"population_observations": observation_counts}
+                    if observation_counts
+                    else {}
+                ),
+            },
             _output_axes={
                 row["id"]: signal_axes[row["signal"]] for row in self.plan.outputs
             },
@@ -4095,6 +4130,14 @@ def simulate(
 
 
 def train(spec: ExecutionSpec) -> ExecutionResult:
+    if spec.observations is not None and (spec.executor != "graph" or spec.epochs <= 0):
+        raise ValueError(
+            "epoch observations require graph training with positive epochs"
+        )
+    if spec.observations is not None and not isinstance(
+        spec.observations, EpochObservations
+    ):
+        raise TypeError("observations must be an EpochObservations specification")
     if spec.executor != "graph":
         return ExecutionResult(
             executor="legacy", metrics={"request": "train", "routing": "legacy"}
@@ -4149,11 +4192,15 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         if not dataset_mode:
             raise ValueError("validation requires training with positive epochs")
 
-    def resolve_data(data: ExecutionSpec | ValidationSpec):
+    def resolve_data(
+        data: ExecutionSpec | ValidationSpec | ObservationProbe,
+        *,
+        observation_only=False,
+    ):
         bindings = _split_input_bindings(data.input_bindings)
         dataset_targets: tuple[TargetArrayBinding, ...] = ()
         if bindings.dataset is not None:
-            if data.target_bindings or data.targets:
+            if not observation_only and (data.target_bindings or data.targets):
                 raise ValueError(
                     "dataset snapshot binding cannot be combined with other input or target bindings"
                 )
@@ -4161,7 +4208,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 graph,
                 bindings.dataset,
                 device=device,
-                execution_seed=spec.seed,
+                execution_seed=data.seed if observation_only else spec.seed,
                 protocol=data.protocol,
             )
         else:
@@ -4171,12 +4218,14 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 event_bindings=bindings.events,
                 poisson_bindings=bindings.poisson,
                 device=device,
-                seed=spec.seed,
+                seed=data.seed if observation_only else spec.seed,
                 protocol=data.protocol,
             )
         sample_count = next(iter(inputs.tensors.values())).shape[1]
         if any(value.shape[1] != sample_count for value in inputs.tensors.values()):
             raise ValueError("graph training inputs must share one dataset sample axis")
+        if observation_only:
+            return inputs, {}, ()
         targets, rows = resolve_target_array_bindings(
             training,
             bindings=dataset_targets or data.target_bindings,
@@ -4194,6 +4243,40 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     batch_size = spec.batch_size if spec.batch_size is not None else dataset_size
     if batch_size <= 0:
         raise ValueError("graph training batch size must be positive")
+    observation_spec = spec.observations
+    resolved_probes = {}
+    if observation_spec is not None:
+        observation_spec.validate(graph, model.parameter_map())
+        for name, probe in sorted(observation_spec.probes.items()):
+            with evaluation_rng(probe.seed):
+                resolved_probes[name] = resolve_data(probe, observation_only=True)[0]
+    observation_contract = (
+        None
+        if observation_spec is None
+        else {
+            "schema": "snnlab.epoch-observations/v1",
+            "population_rates": list(observation_spec.population_rates),
+            "parameter_norms": list(observation_spec.parameter_norms),
+            "output_activity": list(observation_spec.output_activity),
+            "gradient_norms": list(observation_spec.gradient_norms),
+            "evaluation_seed": spec.seed,
+            "batch_size": batch_size,
+            "validation": None
+            if validation_data is None
+            else {
+                "inputs": validation_data[0].protocol,
+                "targets": validation_data[2],
+            },
+            "probes": {
+                name: {
+                    "seed": observation_spec.probes[name].seed,
+                    "split": observation_spec.probes[name].split,
+                    "inputs": data.protocol,
+                }
+                for name, data in resolved_probes.items()
+            },
+        }
+    )
     batches_per_epoch = math.ceil(dataset_size / batch_size)
     shuffle = spec.shuffle
     protocol = {**resolved_inputs.protocol, "targets": target_rows}
@@ -4338,6 +4421,34 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     )
     if updates <= 0:
         raise ValueError("graph training updates must be positive")
+    observation_saved = resumed.observation_state if resumed is not None else None
+    if (
+        resumed is not None
+        and observation_contract is not None
+        and observation_saved is None
+    ):
+        raise ValueError(
+            "checkpoint has no epoch observation history; cannot reconstruct missing observations"
+        )
+    if observation_saved is not None:
+        if observation_contract is None:
+            raise ValueError(
+                "checkpoint epoch observation configuration does not match request"
+            )
+        validate_observation_state(
+            observation_saved, observation_contract, data_state, completed_updates
+        )
+    epoch_history = (
+        copy.deepcopy(observation_saved["history"])
+        if observation_saved is not None
+        else []
+    )
+    gradient_measurements = GradientMeasurements(
+        observation_spec.gradient_norms if observation_spec is not None else (),
+        copy.deepcopy(observation_saved["gradients"])
+        if observation_saved is not None
+        else None,
+    )
     history = []
     last_gradients: dict[str, torch.Tensor] = {}
     final_forward: ExecutionResult | None = None
@@ -4347,10 +4458,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         packed = {}
         for name, parameter in parameter_map.items():
             if parameter not in optimizer.state:
-                if (
-                    optimizer_spec.get("kind") == "custom_optimizer"
-                    and parameter.requires_grad
-                ):
+                if parameter.requires_grad:
                     packed[name] = {}
                 continue
             packed[name] = {
@@ -4380,6 +4488,15 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             rng_backend=rng_backend,
             accelerator_rng_states=accelerator_rng_states,
             data_state=dict(next_data_state),
+            observation_state=copy.deepcopy(
+                {
+                    "contract": observation_contract,
+                    "history": epoch_history,
+                    "gradients": gradient_measurements.state,
+                }
+            )
+            if observation_contract is not None
+            else None,
         )
 
     def compute_loss(forward, signal_values, batch_targets, input_protocol):
@@ -4469,9 +4586,18 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         for regularizer in training.get("regularizers", [])
         for signal in regularizer["signals"]
     )
-    epoch_history: list[dict[str, Any]] = []
+    observation_populations = (
+        ()
+        if observation_spec is None
+        else tuple(
+            sorted(
+                set(observation_spec.population_rates)
+                | set(observation_spec.output_activity)
+            )
+        )
+    )
 
-    def evaluate_split(inputs, targets):
+    def evaluate_split(inputs, targets, *, probe_name=None):
         sample_count = next(iter(inputs.tensors.values())).shape[1]
         total_loss = 0.0
         components_total: dict[str, float] = {}
@@ -4480,10 +4606,25 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             for i, row in enumerate(training.get("objectives", []))
             if X.classification(row)
         }
+        measurements = (
+            ActivityMeasurements(
+                observation_spec,
+                {p["id"]: p for p in graph["populations"]},
+                next(iter(inputs.tensors.values())).shape[0] * model.plan.dt_ms / 1000,
+                sample_count,
+            )
+            if observation_spec is not None
+            else None
+        )
         was_training = model.training
         model.eval()
         try:
-            with torch.no_grad():
+            seed = (
+                spec.seed
+                if probe_name is None
+                else observation_spec.probes[probe_name].seed
+            )
+            with evaluation_rng(seed), torch.no_grad():
                 for start in range(0, sample_count, batch_size):
                     end = min(start + batch_size, sample_count)
                     evaluation_targets = {
@@ -4495,8 +4636,15 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                             for name, value in inputs.tensors.items()
                         },
                         diagnostics=False,
-                        required_signals=required_signals,
+                        required_signals=required_signals if probe_name is None else (),
+                        observation_populations=observation_populations,
                     )
+                    if measurements is not None:
+                        measurements.add(
+                            forward.metrics.get("population_observations", {})
+                        )
+                    if probe_name is not None:
+                        continue
                     loss, components = compute_loss(
                         forward, signals, evaluation_targets, inputs.protocol
                     )
@@ -4530,19 +4678,62 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         }
         if len(correct) == 1:
             metrics["accuracy"] = next(iter(correct.values())) / sample_count
+        if measurements is not None:
+            metrics["observation"] = measurements.finish()
+            metrics["observation"]["input_protocol"] = inputs.protocol
+            metrics["observation"]["evaluation_seed"] = seed
         return metrics
 
     def record_epoch(epoch):
+        nonlocal gradient_measurements
+        if observation_spec is not None and any(
+            row["epoch"] == epoch for row in epoch_history
+        ):
+            return
         row = {"epoch": epoch}
+        observations = {}
         splits = {"train": (resolved_inputs, resolved_targets)}
         if validation_data is not None:
             splits["validation"] = validation_data[:2]
         for split, (inputs, targets) in splits.items():
+            metrics = evaluate_split(inputs, targets)
+            if "observation" in metrics:
+                observations[split] = metrics.pop("observation")
+                observations[split]["split"] = split
+            row.update({f"{split}_{key}": value for key, value in metrics.items()})
+        if observation_spec is not None:
+            observations["probes"] = {}
+            for name, inputs in resolved_probes.items():
+                measurement = evaluate_split(inputs, {}, probe_name=name)["observation"]
+                observations["probes"][name] = {
+                    **measurement,
+                    "split": observation_spec.probes[name].split,
+                    "draw_id": name,
+                }
+            observations["parameters"] = {
+                "l2_norm": {
+                    name: finite_norm(parameter_map[name])
+                    for name in observation_spec.parameter_norms
+                },
+                "state": "initial" if epoch == 0 else "completed_epoch",
+                "aggregation": "flattened_l2",
+                "units": {
+                    name: next(
+                        p["unit"] for p in graph["parameters"] if p["id"] == name
+                    )
+                    for name in observation_spec.parameter_norms
+                },
+            }
+            observations["gradients"] = gradient_measurements.finish()
             row.update(
                 {
-                    f"{split}_{key}": value
-                    for key, value in evaluate_split(inputs, targets).items()
+                    "observations": observations,
+                    "update": completed_updates + len(history),
+                    "phase": "initial" if epoch == 0 else "completed_epoch",
                 }
+            )
+            gradient_measurements = GradientMeasurements(
+                observation_spec.gradient_norms
             )
         epoch_history.append(row)
 
@@ -4603,6 +4794,8 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 [parameter for group in groups for parameter in group["params"]],
                 float(clip),
             )
+        if observation_spec is not None:
+            gradient_measurements.add(last_gradients, parameter_map)
         optimizer.step()
         rows = {row["id"]: row for row in graph.get("parameters", [])}
         with torch.no_grad():
@@ -4627,13 +4820,19 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 },
             }
         )
+        if (
+            observation_spec is not None
+            and dataset_mode
+            and next_data_state["batch"] == 0
+        ):
+            record_epoch(next_data_state["epoch"])
         candidate = checkpoint_at(absolute_update, loss_value, next_data_state)
         if selected_checkpoint is None or loss_value < float(
             selected_checkpoint.selected_loss
         ):
             selected_checkpoint = candidate
         final_forward = forward
-        if dataset_mode and next_data_state["batch"] == 0:
+        if observation_spec is None and dataset_mode and next_data_state["batch"] == 0:
             record_epoch(next_data_state["epoch"])
     assert final_forward is not None
     completed_this_call = len(scheduled)
