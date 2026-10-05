@@ -385,7 +385,13 @@ class Network:
         initializer: Spec,
         unit: str = "1",
         constraint: Spec | None = None,
+        initialization_scaling: str | None = None,
     ) -> ParameterRef:
+        if initialization_scaling is not None and initialization_scaling not in (
+            "direct",
+            "fan_in_normalized",
+        ):
+            raise ValueError("invalid initialization_scaling")
         self._claim(name)
         self.parameters.append(
             {
@@ -397,6 +403,8 @@ class Network:
                 "group": self.current_group,
             }
         )
+        if initialization_scaling is not None:
+            self.parameters[-1]["initialization_scaling"] = initialization_scaling
         return ParameterRef(self, name)
 
     def constant(self, name: str, value: Any, *, unit: str = "1") -> str:
@@ -416,7 +424,13 @@ class Network:
         connection: str = "feedforward",
         delay: Quantity | None = None,
         enabled: bool = True,
+        initialization_scaling: str | None = None,
     ) -> Projection:
+        if initialization_scaling is not None and initialization_scaling not in (
+            "direct",
+            "fan_in_normalized",
+        ):
+            raise ValueError("invalid initialization_scaling")
         self._claim(name)
         target_pop, _, target_port = target.partition(".")
         populations = {p["id"]: p for p in self.populations}
@@ -433,7 +447,18 @@ class Network:
         if not isinstance(enabled, bool):
             raise TypeError("projection enabled must be boolean")
         if isinstance(weight, ParameterRef):
+            if weight.network is not self:
+                raise ValueError("weight belongs to another network")
             parameter_id = weight.id
+            parameter = next(p for p in self.parameters if p["id"] == parameter_id)
+            existing = parameter.get("initialization_scaling")
+            if existing is not None and initialization_scaling not in (None, existing):
+                raise ValueError(
+                    "conflicting initialization_scaling for shared parameter"
+                )
+            parameter["initialization_scaling"] = (
+                existing or initialization_scaling or "fan_in_normalized"
+            )
         else:
             from snnlab.extensions import synapse_unit
 
@@ -444,6 +469,8 @@ class Network:
                     "shape": [populations[target_pop]["size"], source.shape[-1]],
                     "unit": synapse_unit(synapse.json()),
                     "initializer": weight.json(),
+                    "initialization_scaling": initialization_scaling
+                    or "fan_in_normalized",
                     "constraint": constraint.json() if constraint else None,
                     "group": self.current_group,
                 }

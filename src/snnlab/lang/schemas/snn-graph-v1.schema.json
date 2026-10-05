@@ -12,10 +12,16 @@
     "populations": {"type": "array", "items": {"$ref": "#/$defs/named"}},
     "projections": {"type": "array", "items": {"$ref": "#/$defs/named"}},
     "operations": {"type": "array", "items": {"$ref": "#/$defs/named"}},
-    "parameters": {"type": "array", "items": {"$ref": "#/$defs/named"}},
+    "parameters": {"type": "array", "items": {"$ref": "#/$defs/parameter"}},
     "outputs": {"type": "array", "items": {"$ref": "#/$defs/named"}}
   },
   "$defs": {
+    "parameter": {
+      "allOf": [{"$ref": "#/$defs/named"}],
+      "properties": {
+        "initialization_scaling": {"enum": ["direct", "fan_in_normalized"]}
+      }
+    },
     "named": {
       "type": "object",
       "required": ["id"],

@@ -28,6 +28,7 @@ def MeanVoltage(
     name: str,
     tau=2 * ms,
     weight: Spec = Normal(1.0, 0.1),
+    initialization_scaling: str | None = None,
 ) -> Readout:
     net = source.network
     with net.group(name):
@@ -48,6 +49,7 @@ def MeanVoltage(
             name=f"{name}_projection",
             synapse=LeakyIntegrator(tau=tau),
             weight=weight,
+            initialization_scaling=initialization_scaling,
             constraint=NonNegative(),
             connection="feedforward",
         )

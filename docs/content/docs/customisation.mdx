@@ -71,7 +71,7 @@ def clipped_normal(shape, config, *, device, dtype):
 extensions.register_initializer("example.clipped_normal/v1", clipped_normal)
 ```
 
-The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. Projection initialization subsequently divides by fan-in, and then applies the declared constraint. The name and configuration are stored in the bundle; the Python function remains in the registration module.
+The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. The name and configuration are stored in the bundle; the Python function remains in the registration module.
 
 See [Parameters](/api/lang/parameters#custom-initializers-and-constraints).
 

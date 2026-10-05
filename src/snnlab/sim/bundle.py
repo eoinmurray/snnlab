@@ -220,6 +220,12 @@ def _normal_details(
         raise BundleCompatibilityError(
             f"projection {projection.get('id')} must own exactly one weight parameter"
         )
+    scaling = parameters[ids[0]].get("initialization_scaling", "fan_in_normalized")
+    if scaling != "fan_in_normalized":
+        raise BundleCompatibilityError(
+            f"projection {projection.get('id')} initialization_scaling={scaling!r} "
+            "requires the graph executor; legacy bundle translation supports fan_in_normalized"
+        )
     initializer = parameters[ids[0]].get("initializer", {})
     if initializer.get("kind") not in {"normal", "lower_clamped_normal"}:
         raise BundleCompatibilityError(

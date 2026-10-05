@@ -59,6 +59,7 @@ def MeanVoltage(
     name: str,
     tau=2 * ms,
     weight: Spec = Normal(1.0, 0.1),
+    initialization_scaling: str | None = None,
 ) -> Readout: ...
 ```
 
@@ -96,7 +97,7 @@ def CumulativePotential(*, source: Signal, classes: int, name: str) -> Readout: 
 
 | Helper | Expanded graph |
 | --- | --- |
-| `MeanVoltage` | Adds a non-spiking leaky-integrator population, projection constrained non-negative and mean voltage over time. `tau` defaults to 2 ms and weights to lower-clamped `Normal(1.0, 0.1)`. Its generated integrator has a soft reset threshold of 1. |
+| `MeanVoltage` | Adds a non-spiking leaky-integrator population, projection constrained non-negative and mean voltage over time. `tau` defaults to 2 ms and weights to lower-clamped `Normal(1.0, 0.1)`. Its generated integrator has a soft reset threshold of 1. `initialization_scaling=None` retains fan-in normalization; select `"direct"` for directly stored readout initialization. See [Initialization scaling](/api/lang/parameters#initialization-scaling). |
 | `FinalVoltage` | Applies a linear projection and selects its final time sample. |
 | `SpikeCount` | Applies a linear projection and sums it over time. The generated weight is `<name>_projection.weight`. |
 | `SpikeRate` | Projects and sums over valid time, then normalizes to Hz. Requires `duration` in seconds or a valid-time mask. |

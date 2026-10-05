@@ -2726,6 +2726,15 @@ class GraphExecutor(nn.Module):
             runtime_shape: tuple[int, ...],
             scale_by_fanin: bool,
         ) -> torch.Tensor:
+            scaling = row.get(
+                "initialization_scaling",
+                "fan_in_normalized" if scale_by_fanin else "direct",
+            )
+            if scaling not in ("direct", "fan_in_normalized"):
+                raise ValueError(
+                    f"{row['id']}: invalid initialization_scaling {scaling!r}"
+                )
+            scale_by_fanin = scaling == "fan_in_normalized"
             init = row["initializer"]
             kind = init["kind"]
             if kind == "custom_initializer":
@@ -2836,6 +2845,9 @@ class GraphExecutor(nn.Module):
         realised: dict[str, torch.Tensor] = {}
         for projection in sorted(plan.projections, key=init_priority):
             row = rows[projection.parameter]
+            # Old shared projections retain their historical repeated draws.
+            if projection.parameter in realised and "initialization_scaling" in row:
+                continue
             shape = tuple(reversed(row["shape"]))  # runtime is [source, target]
             realised[projection.parameter] = initialise(
                 row, runtime_shape=shape, scale_by_fanin=True

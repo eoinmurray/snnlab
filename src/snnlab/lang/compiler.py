@@ -328,6 +328,13 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
         "zeros": set(),
     }
     for row in parameter_rows.values():
+        if "initialization_scaling" in row and row["initialization_scaling"] not in (
+            "direct",
+            "fan_in_normalized",
+        ):
+            out.diagnostics.append(
+                Diagnostic("error", "E114", "invalid initialization_scaling", row["id"])
+            )
         if not row.get("unit"):
             out.diagnostics.append(
                 Diagnostic(

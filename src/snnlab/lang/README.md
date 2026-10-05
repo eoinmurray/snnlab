@@ -216,7 +216,15 @@ Initializer specifications distinguish lower-clamped and signed normals,
 uniform, constant, and zero distributions. Lower-clamped normals can apply
 seeded Bernoulli or exact-fan-in initial zeroing. Build metrics expose stable
 per-parameter realized statistics together with the constraint, unit, runtime
-shape, and fan-in scaling convention.
+shape, and effective scaling convention. `Network.connect`, `Network.parameter`,
+and `readouts.MeanVoltage` accept `initialization_scaling="direct"` or
+`"fan_in_normalized"`. Projection defaults remain normalized; direct scaling
+skips only fan-in division after drawing, clamping and compensated initial
+zeroing. The policy is serialized on the parameter, shared connections inherit
+it and conflicting requests fail. Older graphs without this field preserve
+normalized projections and direct operation parameters. Checkpoint loading
+copies stored values without rescaling. See the documentation Parameters
+reference for examples and compatibility rules.
 
 The typed graph API supports deterministic single-batch AdamW updates for the
 validated cross-entropy and spike-budget vocabulary. `ExecutionSpec` supplies

@@ -18,9 +18,36 @@ When `weight` is an initializer, `connect` automatically sizes and creates a par
 | `lang.Normal(mean, std)` | Compatibility alias for `LowerClampedNormal(mean, std)`. Negative draws are clamped to zero. |
 | `lang.SignedNormal(mean, std)` | Normal random samples retaining both signs, unless a constraint clamps them. |
 
-The execution seed controls random initialization. The graph executor divides initialized projection weights by the source channel count (fan-in), so initializer values describe the distribution before this normalization. Runtime weights use `(source_channels, target_cells)` ordering.
+The execution seed controls random initialization. By default, the graph executor divides initialized projection weights by the source channel count (fan-in). Select `initialization_scaling="direct"` to store the initialized values without this division; see [Initialization scaling](#initialization-scaling). Runtime weights use `(source_channels, target_cells)` ordering.
 
 For `LowerClampedNormal`, `initial_zero_fraction` must satisfy `0 <= fraction < 1`. `zeroing="bernoulli"` independently removes entries; `zeroing="exact_k"` keeps a fixed number of incoming entries per target cell. Both rescale retained values to compensate for initial zeroing. This specifies initial sparsity rather than a persistent connectivity constraint.
+
+### Initialization scaling
+
+`Network.connect`, `Network.parameter` and `readouts.MeanVoltage` accept `initialization_scaling="fan_in_normalized"` or `"direct"`. Scaling is separate from the parameter's physical unit and initializer distribution.
+
+| Policy | Stored initial weights |
+| --- | --- |
+| `"fan_in_normalized"` | Divide initialized values by the source channel count. For four channels, `Constant(2.0)` stores 0.5 per edge. |
+| `"direct"` | Store initialized values without fan-in division. `Constant(2.0)` stores 2.0 per edge. |
+
+For lower-clamped normals, execution draws and lower-clamps first, then applies optional initial zeroing and its existing compensation, then applies the selected scaling, then the declared constraint. Direct scaling skips only the fan-in division; it does not disable zeroing compensation. Initially zero entries remain trainable unless a separate constraint forbids them.
+
+For example, a directly initialized mean-voltage readout preserves the legacy readout initializer's scale:
+
+```python
+scores = lang.readouts.MeanVoltage(
+    source=cells.spikes,
+    classes=10,
+    name="scores",
+    weight=lang.LowerClampedNormal(0.05, 0.04),
+    initialization_scaling="direct",
+)
+```
+
+The serialized parameter stores `initialization_scaling`. Omitted (`None`) settings on automatically created projection parameters and MeanVoltage select fan-in normalization. For an explicit parameter, omission leaves the policy unspecified until its first connection, which selects fan-in normalization unless explicitly overridden. Subsequent connections inherit its policy; an explicit conflicting request is rejected. Set a shared parameter's policy on `net.parameter` to make its intent independent of connection order. A shared projection parameter with a declared policy is initialized once.
+
+Older graphs and bundles without the field retain normalized projection initialization and direct operation-parameter initialization, including historical repeated draws for shared projection parameters. Explicit policies also apply to operation parameters. Build metrics and `model.initialization_metadata` report the effective policy as `scaling`, alongside the initializer, units and realized statistics. Loaded checkpoint tensors are copied as stored, without applying initialization scaling again. The legacy COBANet bundle adapter accepts only normalized projection initialization and rejects direct policies; execute direct-initialization bundles with the graph executor. Changing the serialized policy changes graph identity and requires a compatible checkpoint; it does not reinterpret an old checkpoint.
 
 ### Existing parameters
 
@@ -114,4 +141,4 @@ Built-in graph training enforces supported constraints after optimizer steps. Or
 
 ## Custom initializers and constraints
 
-Use `CustomInitializer(definition, **config)` and `CustomConstraint(definition, **config)` after registering Python callbacks. Custom initializers receive the runtime tensor shape/device/dtype. Constraints apply after fan-in normalization and after optimizer updates. Call `GraphExecutor.enforce_constraints()` in an external PyTorch loop. See [Extensions](/api/lang/extensions#initializers-and-constraints) for callback contracts and persistent masking.
+Use `CustomInitializer(definition, **config)` and `CustomConstraint(definition, **config)` after registering Python callbacks. Custom initializers receive the runtime tensor shape/device/dtype. Constraints apply after the selected initialization scaling and after optimizer updates. Call `GraphExecutor.enforce_constraints()` in an external PyTorch loop. See [Extensions](/api/lang/extensions#initializers-and-constraints) for callback contracts and persistent masking.

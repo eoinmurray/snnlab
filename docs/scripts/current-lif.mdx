@@ -47,7 +47,7 @@ The network input declares four spike channels. The binding supplies 500 ms of P
 
 [CUBA_LIF](/api/lang/components#current-based-lif) uses a membrane time constant of 20 ms and capacitance of 1 nF. Its default resting and reset voltages are −65 mV, with threshold at −50 mV. [ExponentialCurrent](/api/lang/components#synapses) uses a 5 ms decay time constant. Unlike a conductance synapse, this input current does not depend on membrane voltage or a reversal potential.
 
-The all-to-all connection automatically creates a `(16, 4)` weight matrix: 64 weights, one row per cell and one column per input channel. `Uniform(4.0, 6.0)` draws initialization values; the executor divides these by the four-channel fan-in, giving initial weights between 1 and 1.5 nA. Each spike adds its weight to the synaptic current. [NonNegative](/api/lang/parameters#nonnegative) keeps these excitatory weights nonnegative.
+The all-to-all connection automatically creates a `(16, 4)` weight matrix: 64 weights, one row per cell and one column per input channel. `Uniform(4.0, 6.0)` draws initialization values; the executor, using default fan-in normalization, divides these by the four-channel fan-in, giving initial weights between 1 and 1.5 nA. Each spike adds its weight to the synaptic current. [NonNegative](/api/lang/parameters#nonnegative) keeps these excitatory weights nonnegative.
 
 Current synapses use `nA`; conductance synapses use `uS`. The compiler checks compatibility. A projection into `cells.inhibitory` would subtract its current from the membrane drive.
 

@@ -105,6 +105,7 @@ net.connect(
     connection="feedforward",
     delay=None,
     enabled=True,
+    initialization_scaling=None,
 )
 ```
 
@@ -121,6 +122,7 @@ net.connect(
 | `connection` | `str = "feedforward"` | One of `"feedforward"`, `"recurrent"`, `"feedback"`, `"modulatory"`. |
 | `delay` | `Quantity` or `None`, default `None` | Additional transmission delay, expressed using `lang.ms`. |
 | `enabled` | `bool = True` | Whether this projection participates in execution. |
+| `initialization_scaling` | `str` or `None`, default `None` | `"direct"` or `"fan_in_normalized"`. Omission normalizes new weights or inherits an existing parameter policy; conflicting shared-parameter settings fail. See [Initialization scaling](/api/lang/parameters#initialization-scaling). |
 
 The connection kind describes graph routing; the target port determines excitatory, inhibitory or modulatory polarity. Feedback requires an explicit positive delay. Graph execution requires delays to be integer multiples of the network timestep. Recurrent and feedback connections from populations use at least one timestep of causal delay.
 
@@ -156,12 +158,12 @@ See [Quickstart](/quickstart) for a complete simulation and [ExecutionSpec](/api
 ## parameter
 
 ```python
-net.parameter(name, *, shape, initializer, unit="1", constraint=None)
+net.parameter(name, *, shape, initializer, unit="1", constraint=None, initialization_scaling=None)
 ```
 
 Declares a parameter and returns a `ParameterRef`. `shape` explicitly defines its axes, `initializer` specifies initial values, and `constraint` optionally constrains the parameter. See [weights](#weights) and [constraints](#constraints) for available constructors.
 
-Projection parameters require unit `"uS"` for conductance synapses or `"nA"` for current synapses and graph shape `(target_cells, source_channels)`. Use a returned reference as `connect(..., weight=weights)` to reuse that parameter. Set its initializer and constraint here; the projection's `constraint` argument does not modify an existing parameter.
+Projection parameters require unit `"uS"` for conductance synapses or `"nA"` for current synapses and graph shape `(target_cells, source_channels)`. Use a returned reference as `connect(..., weight=weights)` to reuse that parameter. Set its initializer, constraint and optional `initialization_scaling` (`"direct"` or `"fan_in_normalized"`) here; the projection's `constraint` argument does not modify an existing parameter.
 
 ## constant
 

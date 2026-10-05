@@ -85,7 +85,7 @@ def register_constraint(name, function, *, validate=None):
 
 Initializer callback: `function(shape, config, *, device, dtype) -> Tensor`. Return finite values with the exact requested shape/device/dtype. Use PyTorch's seeded generator for reproducible draws, rather than hidden random state. Projection runtime shape is `(source, target)`; ordinary custom-operation parameters retain their declared shape.
 
-Constraint callback: `function(parameter, config) -> Tensor`. Return the constrained tensor with unchanged shape/device/dtype. Constraints apply after initialization and fan-in normalization, and after built-in training optimizer steps. An external PyTorch loop should call `module.enforce_constraints()` after its optimizer step. A masking constraint can enforce persistent zero connections; execution still uses dense matrices.
+Constraint callback: `function(parameter, config) -> Tensor`. Return the constrained tensor with unchanged shape/device/dtype. Constraints apply after initialization and the selected scaling policy, and after built-in training optimizer steps. An external PyTorch loop should call `module.enforce_constraints()` after its optimizer step. A masking constraint can enforce persistent zero connections; execution still uses dense matrices.
 
 ```python
 initializer = lang.CustomInitializer("my_lab.distribution/v1", scale=1.0)

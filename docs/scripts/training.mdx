@@ -74,11 +74,11 @@ Input tensors have `(400, samples, 4)` axes: time, sample/batch and input channe
 {{NETWORK}}
 ```
 
-[`net.connect`](/api/lang/network#connect) automatically creates 64 input-to-E weights, with compiled shape `(16, 4)`. `w_in = input_projection.weight` names the reference to these automatically created weights. They start with a uniform initialization and learn during training, while remaining non-negative. Their initialization is divided by the four input channels at execution, as described in the [weight reference](/api/lang/parameters#weights).
+[`net.connect`](/api/lang/network#connect) automatically creates 64 input-to-E weights, with compiled shape `(16, 4)`. `w_in = input_projection.weight` names the reference to these automatically created weights. They start with a uniform initialization and learn during training, while remaining non-negative. With the default initialization scaling, their initialization is divided by the four input channels at execution, as described in the [weight reference](/api/lang/parameters#weights).
 
 The readout is an explicit population of **two non-spiking leaky-integrator cells**, one per class. `E_to_readout` connects all 16 E cells to both readout cells.
 
-`w_out` is explicitly declared with shape `(2, 16)`: 32 output weights, one row per readout cell and one column per E cell. It starts with small normally distributed values and is passed to `net.connect` as `weight=w_out`. The executor divides projection weights by the source count (16 here). These classifier weights have no non-negative constraint, so learning can make them positive or negative; the input-to-E conductance weights remain non-negative.
+`w_out` is explicitly declared with shape `(2, 16)`: 32 output weights, one row per readout cell and one column per E cell. It starts with small normally distributed values and is passed to `net.connect` as `weight=w_out`. By default, the executor divides projection weights by the source count (16 here). These classifier weights have no non-negative constraint, so learning can make them positive or negative; the input-to-E conductance weights remain non-negative.
 
 Each readout cell integrates its weighted E spikes without emitting spikes. `lang.ops.reduce` averages the readout voltage over time to produce two class scores per sample, with shape `(batch, 2)`. Cross-entropy treats these scores as logits, rather than probabilities.
 

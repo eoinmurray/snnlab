@@ -61,7 +61,7 @@ Create the excitatory layer and connect the input to it:
 
 Each of the 4 input channels connects to every one of the 16 E cells. `net.connect` automatically sizes the weight matrix from the source channel count and target neuron count. This creates **64 weights**, arranged in a `(16, 4)` matrix in the compiled graph: one row per E cell and one column per input channel. Each cell receives its own weighted combination of the same four spike trains, so input channels and neurons do not need matching counts.
 
-`Uniform(0.1, 0.5)` initializes all 64 weights independently. The graph executor divides projection weights by the number of input channels (4 here); see the [weight reference](/api/lang/parameters#weights) for this normalization. Different weights give cells different responses.
+`Uniform(0.1, 0.5)` initializes all 64 weights independently. By default, the graph executor divides projection weights by the number of input channels (4 here); see the [weight reference](/api/lang/parameters#weights) for this normalization. Different weights give cells different responses.
 
 See [`Network.connect`](/api/lang/network#connect) for all connection arguments and available options:
 

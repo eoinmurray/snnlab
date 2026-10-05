@@ -35,7 +35,7 @@ Registration assigns a stable, versioned name. `state_units` makes adaptation av
 {{INITIALIZER}}
 ```
 
-The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. Projection initialization subsequently divides by fan-in, and then applies the declared constraint. The name and configuration are stored in the bundle; the Python function remains in the registration module.
+The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. The name and configuration are stored in the bundle; the Python function remains in the registration module.
 
 See [Parameters](/api/lang/parameters#custom-initializers-and-constraints).
 

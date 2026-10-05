@@ -56,7 +56,7 @@ result = module(
 
 ## Parameter map
 
-`module.parameter_map()` returns a mapping from graph names to live parameter tensors. It preserves familiar IDs such as `w_out` or `input_to_E.weight`, whereas PyTorch registration names use `__` in place of periods. Do not assume runtime projection orientation equals graph orientation: graph matrices use `(target, source)`, runtime projection tensors use `(source, target)` and are fan-in normalized at initialization.
+`module.parameter_map()` returns a mapping from graph names to live parameter tensors. It preserves familiar IDs such as `w_out` or `input_to_E.weight`, whereas PyTorch registration names use `__` in place of periods. Do not assume runtime projection orientation equals graph orientation: graph matrices use `(target, source)`, runtime projection tensors use `(source, target)` and are fan-in normalized at initialization by default; explicit `initialization_scaling="direct"` retains the drawn scale. See [Initialization scaling](/api/lang/parameters#initialization-scaling).
 
 ## Ordinary PyTorch layers
 

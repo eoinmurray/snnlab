@@ -9,6 +9,10 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+### Added
+
+1. Added serialized `initialization_scaling="direct"` / `"fan_in_normalized"` controls to `Network.connect`, `Network.parameter` and `readouts.MeanVoltage`. Direct initialization preserves legacy readout weight scale without compensating initializer values or mutating tensors. Shared projection weights initialize once and reject conflicting policies. Older graphs retain normalized projection and direct operation defaults; checkpoint weights are loaded without rescaling. Updated API references and tutorial explanations.
+
 ### Changed
 
 1. Removed the root release-helper scripts and separate migration/versioning documents. Release preparation is manual, with instructions in the README; CI and publishing read the package version directly.
