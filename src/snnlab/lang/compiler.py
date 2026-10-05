@@ -67,6 +67,7 @@ class ValidationResult:
 def graph_dict(net: Network) -> dict[str, Any]:
     return {
         "schema": SCHEMA,
+        "voltage_sampling": "explicit",
         "name": net.name,
         "timebase": {"dt": net.dt.json()},
         "inputs": sorted(net.inputs, key=lambda x: x["id"]),
@@ -216,6 +217,10 @@ def _validate_neuron(neuron):
 
 def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
     out = ValidationResult()
+    if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
+        out.diagnostics.append(
+            Diagnostic("error", "E115", "unsupported voltage_sampling contract")
+        )
     collections = (
         "inputs",
         "populations",
@@ -286,6 +291,11 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
             "shape": ["time", "batch", row["size"]],
             "unit": "mV",
         }
+        if neuron.get("kind") == "leaky_integrator":
+            signals[f"{row['id']}.pre_reset_voltage"] = {
+                "shape": ["time", "batch", row["size"]],
+                "unit": "mV",
+            }
         if row["spiking"]:
             signals[f"{row['id']}.spikes"] = {
                 "shape": ["time", "batch", row["size"]],

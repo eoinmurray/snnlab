@@ -13,6 +13,10 @@ separate compatibility contracts.
 
 1. Added serialized `initialization_scaling="direct"` / `"fan_in_normalized"` controls to `Network.connect`, `Network.parameter` and `readouts.MeanVoltage`. Direct initialization preserves legacy readout weight scale without compensating initializer values or mutating tensors. Shared projection weights initialize once and reject conflicting policies. Older graphs retain normalized projection and direct operation defaults; checkpoint weights are loaded without rescaling. Updated API references and tutorial explanations.
 
+### Fixed
+
+1. Newly authored graphs now use explicit leaky-integrator voltage sampling: `.voltage` remains post-reset membrane state and `.pre_reset_voltage` exposes the pre-reset integration sample. Masked and unmasked sum/mean/final operations consistently use the declared signal; `MeanVoltage` explicitly selects pre-reset voltage to preserve classifier behavior. Serialized `voltage_sampling="explicit"` distinguishes the corrected contract; older graphs without it retain historical reductions without rewriting checkpoints or artifacts. Added threshold-crossing, masks, gradients, continuation, diagnostics and legacy-compatibility tests, and documented phase and measurement-window semantics.
+
 ### Changed
 
 1. Removed the root release-helper scripts and separate migration/versioning documents. Release preparation is manual, with instructions in the README; CI and publishing read the package version directly.

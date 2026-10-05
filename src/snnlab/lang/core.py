@@ -225,6 +225,14 @@ class Population:
         return self.network._signal(f"{self.id}.voltage")
 
     @property
+    def pre_reset_voltage(self) -> Signal:
+        if self.neuron.kind != "leaky_integrator":
+            raise AttributeError(
+                "pre_reset_voltage is supported only for leaky integrators"
+            )
+        return self.network._signal(f"{self.id}.pre_reset_voltage")
+
+    @property
     def excitatory(self) -> str:
         return f"{self.id}.excitatory"
 
@@ -362,6 +370,16 @@ class Network:
             name,
             "voltage",
         )
+        if neuron.kind == "leaky_integrator":
+            self._signals[f"{name}.pre_reset_voltage"] = Signal(
+                self,
+                f"{name}.pre_reset_voltage",
+                ("time", "batch", size),
+                "mV",
+                "voltage",
+                name,
+                "pre_reset_voltage",
+            )
         if neuron.kind == "custom_neuron":
             from snnlab.extensions import resolve
 

@@ -1577,6 +1577,8 @@ def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
     for name, population in populations.items():
         shape = ("time", "batch", population["size"])
         axes[f"{name}.voltage"] = shape
+        if population["neuron"]["kind"] == "leaky_integrator":
+            axes[f"{name}.pre_reset_voltage"] = shape
         if population["spiking"]:
             axes[f"{name}.spikes"] = shape
     for row in graph.get("projections", []):
@@ -2597,6 +2599,23 @@ class DelayBuffer:
 
 
 def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
+    if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
+        raise ValueError("unsupported voltage_sampling contract")
+    populations = {p["id"]: p for p in graph.get("populations", [])}
+    signal_references = [
+        r["signal"] for r in (*graph.get("outputs", []), *graph.get("observables", []))
+    ]
+    signal_references.extend(
+        source for op in graph.get("operations", []) for source in op["sources"]
+    )
+    for signal in signal_references:
+        owner, _, port = signal.partition(".")
+        if (
+            port == "pre_reset_voltage"
+            and populations.get(owner, {}).get("neuron", {}).get("kind")
+            != "leaky_integrator"
+        ):
+            raise ValueError(f"{signal}: pre_reset_voltage requires a leaky integrator")
     issues = graph_capability_issues(graph)
     if issues:
         detail = "; ".join(
@@ -3314,6 +3333,12 @@ class GraphExecutor(nn.Module):
         voltage_traces: dict[str, list[torch.Tensor]] = {
             name: [] for name in populations if f"{name}.voltage" in needed_signals
         }
+        pre_reset_voltage_traces: dict[str, list[torch.Tensor]] = {
+            name: []
+            for name, pop in populations.items()
+            if pop["neuron"]["kind"] == "leaky_integrator"
+            and f"{name}.pre_reset_voltage" in needed_signals
+        }
         conductance_traces: dict[str, list[torch.Tensor]] = {
             p.id: []
             for p in self.plan.projections
@@ -3429,6 +3454,8 @@ class GraphExecutor(nn.Module):
                         + (1.0 - beta) / self.plan.dt_ms * incoming["excitatory"]
                     )
                     new_spikes[name] = torch.zeros_like(spikes[name])
+                    if name in pre_reset_voltage_traces:
+                        pre_reset_voltage_traces[name].append(voltage[name])
                     integrator_sum[name] = (
                         integrator_sum.get(name, torch.zeros_like(voltage[name]))
                         + voltage[name]
@@ -3538,6 +3565,9 @@ class GraphExecutor(nn.Module):
         for name, values in voltage_traces.items():
             signal_values[f"{name}.voltage"] = torch.stack(values)
 
+        for name, values in pre_reset_voltage_traces.items():
+            signal_values[f"{name}.pre_reset_voltage"] = torch.stack(values)
+
         for name, values in conductance_traces.items():
             signal_values[f"{name}.{projection_ports[name]}"] = torch.stack(values)
         for signal, values in state_traces.items():
@@ -3560,8 +3590,32 @@ class GraphExecutor(nn.Module):
             )
 
         def reduce_time(
-            source: torch.Tensor, *, kind: str, mask: torch.Tensor | None, op_id: str
+            source: torch.Tensor,
+            *,
+            kind: str,
+            mask: torch.Tensor | None,
+            op_id: str,
+            sequential: bool = False,
         ) -> torch.Tensor:
+            if sequential:
+                # Match legacy pre-reset accumulation order, including all-true masks.
+                weights = (
+                    time_mask(mask, target=source, op_id=op_id)
+                    if mask is not None
+                    else None
+                )
+                samples = source if weights is None else source * weights
+                numerator = torch.zeros_like(source[0])
+                for sample in samples:
+                    numerator = numerator + sample
+                if kind == "reduce_sum":
+                    return numerator
+                counts = source.shape[0] if weights is None else weights.sum(dim=0)
+                if weights is not None and torch.any(counts <= 0):
+                    raise ValueError(
+                        f"{op_id}: valid-time mask contains an empty reduction window"
+                    )
+                return numerator / counts
             if mask is None:
                 return source.sum(dim=0) if kind == "reduce_sum" else source.mean(dim=0)
             weights = time_mask(mask, target=source, op_id=op_id)
@@ -3609,7 +3663,8 @@ class GraphExecutor(nn.Module):
                 source_id = op["sources"][0]
                 owner, _, port = source_id.partition(".")
                 if (
-                    kind == "reduce_mean"
+                    "voltage_sampling" not in self.plan.graph
+                    and kind == "reduce_mean"
                     and mask is None
                     and port == "voltage"
                     and owner in integrator_sum
@@ -3617,7 +3672,11 @@ class GraphExecutor(nn.Module):
                     signal_values[f"{op['id']}.value"] = integrator_sum[owner] / steps
                 else:
                     signal_values[f"{op['id']}.value"] = reduce_time(
-                        sources[0], kind=kind, mask=mask, op_id=op["id"]
+                        sources[0],
+                        kind=kind,
+                        mask=mask,
+                        op_id=op["id"],
+                        sequential=port == "pre_reset_voltage",
                     )
             elif kind == "select_final":
                 signal_values[f"{op['id']}.value"] = sources[0][-1]

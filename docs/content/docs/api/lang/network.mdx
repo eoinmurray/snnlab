@@ -79,7 +79,7 @@ net.population(name, *, size, neuron, spiking=True)
 | `neuron` | `Spec`, required | Neuron dynamics; see [neuron models](#neuron-models). |
 | `spiking` | `bool = True` | Whether to declare a spikes port. |
 
-Returns a `Population`. `cells.voltage` is a `Signal` with `(time, batch, size)` axes and unit `mV`. `cells.spikes` has the same axes and unit `spike`; accessing it on a non-spiking population raises `AttributeError`.
+Returns a `Population`. `cells.voltage` is a `Signal` with `(time, batch, size)` axes and unit `mV`. For a leaky integrator it records voltage after any subtractive reset. `cells.pre_reset_voltage` exposes its voltage after integration but before reset, with the same axes and units. The pre-reset property is supported only for leaky-integrator populations; other neuron types raise `AttributeError`. See [Voltage sampling](/api/lang/operations-readouts#voltage-sampling). `cells.spikes` has the same axes and unit `spike`; accessing it on a non-spiking population raises `AttributeError`.
 
 The `cells.excitatory`, `cells.inhibitory` and `cells.modulatory` properties return target port strings for `connect`. Population metadata includes `id`, `size`, `neuron`, `spiking` and `group`.
 

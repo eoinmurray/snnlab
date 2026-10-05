@@ -307,6 +307,8 @@ voltages = result.diagnostics["e_voltage"]
 
 Compile the network after declaring its outputs and exposed diagnostics. To disable diagnostics for a run, pass `diagnostics=False` to `ExecutionSpec`; outputs, training objectives/regularizers and continuation state are unaffected. The runtime requires a boolean value.
 
+For leaky integrators, expose `.voltage` for post-reset membrane diagnostics or `.pre_reset_voltage` for pre-reset integration samples. See [Voltage sampling](/api/lang/operations-readouts#voltage-sampling) for reductions and older-graph compatibility.
+
 Expose exactly the signals you want to inspect. Population spikes and voltages typically have `(time, batch, cells)` axes. Projection conductance is also explicitly exposable using `net.expose(projection.conductance, name="input_conductance")`, where `projection` is returned by `net.connect`. Exposed diagnostics are detached tensors; declared outputs retain their computation graph for training.
 
 There is no automatic collection of unexposed signals. The previous `recording` and `recording_fields` constructor arguments have been removed, and `ExecutionResult.recordings` has been renamed to `diagnostics`. Training returns exposed diagnostics from its final update.

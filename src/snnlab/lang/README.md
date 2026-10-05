@@ -384,3 +384,17 @@ acceptance thresholds remain campaign decisions rather than executor defaults.
 `net.output` declares results returned in `result.outputs`. `net.expose` declares diagnostics returned by default in `result.diagnostics`; pass `diagnostics=False` to `ExecutionSpec` to disable those tensors without affecting outputs or training regularizers. There are no `recording` or `recording_fields` request arguments. Population signals and `projection.conductance` must be explicitly exposed to collect their diagnostic histories.
 
 Custom specifications (`CustomNeuron`, `CustomSynapse`, `CustomInitializer`, `CustomConstraint` and custom operations/training helpers) refer to versioned definitions registered through `snnlab.extensions`. Bundles store names/configuration and required dependency names, not Python code.
+
+
+### Explicit voltage sampling
+
+Newly compiled graphs declare `voltage_sampling="explicit"`. Leaky integrators
+expose `.pre_reset_voltage` after integration and before subtractive reset;
+`.voltage` retains post-reset membrane diagnostics and continuation state.
+`MeanVoltage` now explicitly reduces the pre-reset signal. Masks select time
+samples, never phases, and sum/mean/final operations use their declared signal.
+Graphs without the marker retain historical implicit unmasked pre-reset means
+of integrator `.voltage`; loading never rewrites retained artifacts. Adopting
+explicit sampling changes graph identity and requires compatible checkpoints.
+Each call reduces its own measurement window; continuing dynamic state does
+not implicitly carry cross-call reduction accumulators.

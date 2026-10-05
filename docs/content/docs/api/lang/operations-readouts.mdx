@@ -47,6 +47,37 @@ def divide(source: Signal, denominator: Signal, *, name: str, unit: str) -> Sign
 
 `lang.readouts.Readout(signal, parameters=())` delegates signal attributes, exposes `.id`, and retains a tuple of parameter IDs for helpers that supply them. `net.output` and objective declarations accept its signal-like ID. Check the graph or parameter map when selecting all generated parameters: `.parameters` is not a universal inventory for every helper.
 
+## Voltage sampling
+
+A leaky integrator has two explicit voltage signals. Choose the signal before applying an operation:
+
+| Signal | Measurement point |
+| --- | --- |
+| `integrator.voltage` | After integration and any threshold-triggered subtractive reset; also the voltage carried into the next timestep. |
+| `integrator.pre_reset_voltage` | After integration, immediately before subtractive reset. |
+
+Both have `(time, batch, cells)` axes and unit `mV`. The pre-reset signal is currently supported only by leaky-integrator populations. If no reset occurs, the two samples agree. Threshold crossings can make them differ even for a non-spiking integrator, because its soft reset still applies.
+
+```python
+scores = lang.ops.reduce(
+    integrator.pre_reset_voltage,
+    operation="mean",
+    over="time",
+    name="scores",
+    mask=valid,
+)
+```
+
+A valid-time mask selects samples from the declared signal; it never selects a different voltage phase. All-true masked and unmasked reductions agree within normal floating-point reduction tolerances. Direct pre-reset reductions retain legacy step-by-step accumulation order, including when masked, to preserve classifier numerical parity. Sum, mean, final selection and composed operations use the same signal values. MeanVoltage explicitly reduces pre-reset voltage, preserving the legacy classifier readout convention. Ordinary `.voltage` diagnostics retain their post-reset meaning.
+
+Each execution call reduces its own returned time window. Continuation carries post-reset dynamic voltage into the next call, so concatenated pre/post traces match uninterrupted execution. Combine chunk sums, or duration-weighted chunk means, to recover whole-window measurements. Automatic cross-call or decision-segment accumulators belong to the separate streaming-reduction contract. Returned continuation state is detached; gradients do not span calls automatically.
+
+### Older serialized graphs
+
+Newly compiled graphs declare `voltage_sampling="explicit"` and serialize MeanVoltage's source as `<integrator>.pre_reset_voltage`. Graphs and bundles without the marker keep their historical interpretation: an unmasked direct mean of leaky-integrator `.voltage` reads the pre-reset accumulator; masked means, sums, final selection and diagnostics read post-reset values. This compatibility path intentionally preserves existing artifacts, including their historical inconsistency. Loading does not rewrite them or their identity.
+
+Reauthor and compile a graph to adopt the explicit contract, choosing the intended signal for each reduction. This changes graph identity; retained checkpoints and continuation state remain bound to their original graph. Do not add the marker to an old artifact without reviewing its reductions. Unknown sampling-contract values are rejected. The legacy COBANet bundle adapter accepts explicit pre-reset MeanVoltage readouts and historical implicit ones, but rejects explicit post-reset readouts because it cannot preserve their meaning.
+
 ## Readout constructors
 
 ### MeanVoltage
@@ -97,7 +128,7 @@ def CumulativePotential(*, source: Signal, classes: int, name: str) -> Readout: 
 
 | Helper | Expanded graph |
 | --- | --- |
-| `MeanVoltage` | Adds a non-spiking leaky-integrator population, projection constrained non-negative and mean voltage over time. `tau` defaults to 2 ms and weights to lower-clamped `Normal(1.0, 0.1)`. Its generated integrator has a soft reset threshold of 1. `initialization_scaling=None` retains fan-in normalization; select `"direct"` for directly stored readout initialization. See [Initialization scaling](/api/lang/parameters#initialization-scaling). |
+| `MeanVoltage` | Adds a non-spiking leaky-integrator population, projection constrained non-negative and mean pre-reset voltage over time. `tau` defaults to 2 ms and weights to lower-clamped `Normal(1.0, 0.1)`. Its generated integrator has a soft reset threshold of 1. `initialization_scaling=None` retains fan-in normalization; select `"direct"` for directly stored readout initialization. See [Initialization scaling](/api/lang/parameters#initialization-scaling). |
 | `FinalVoltage` | Applies a linear projection and selects its final time sample. |
 | `SpikeCount` | Applies a linear projection and sums it over time. The generated weight is `<name>_projection.weight`. |
 | `SpikeRate` | Projects and sums over valid time, then normalizes to Hz. Requires `duration` in seconds or a valid-time mask. |

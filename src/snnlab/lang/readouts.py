@@ -54,7 +54,7 @@ def MeanVoltage(
             connection="feedforward",
         )
         mean = ops.reduce(
-            layer.voltage, operation="mean", over="time", name=f"{name}_mean"
+            layer.pre_reset_voltage, operation="mean", over="time", name=f"{name}_mean"
         )
     return Readout(mean, projection.parameter_ids)
 

@@ -252,6 +252,8 @@ def _normal(
 
 def translate_cobanet_v1(graph: dict[str, Any]) -> LegacySettings:
     """Recognise the exact one-layer PING + mean-voltage COBANet subset."""
+    if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
+        raise BundleCompatibilityError("unsupported voltage_sampling contract")
     populations = {row["id"]: row for row in graph.get("populations", [])}
     parameters = {row["id"]: row for row in graph.get("parameters", [])}
     projections = graph.get("projections", [])
@@ -393,12 +395,18 @@ def translate_cobanet_v1(graph: dict[str, Any]) -> LegacySettings:
             f"unsupported projections for COBANet v1: {', '.join(sorted(extras))}"
         )
 
+    # Explicit graphs read pre-reset voltage; older graphs used the implicit mean path.
+    readout_signal = (
+        f"{readout_id}.pre_reset_voltage"
+        if graph.get("voltage_sampling") == "explicit"
+        else f"{readout_id}.voltage"
+    )
     output_signal = outputs[0]["signal"]
     output_op = operations.get(output_signal.partition(".")[0])
     if (
         not output_op
         or output_op.get("kind") != "reduce_mean"
-        or output_op.get("sources") != [f"{readout_id}.voltage"]
+        or output_op.get("sources") != [readout_signal]
     ):
         raise BundleCompatibilityError(
             "COBANet v1 currently supports only MeanVoltage named outputs"

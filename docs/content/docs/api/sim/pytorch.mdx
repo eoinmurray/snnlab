@@ -69,3 +69,9 @@ See [PyTorch Integration](/pytorch-integration) for a complete hybrid training l
 ## Registered extensions and constraints
 
 Pass a serialized custom surrogate through `surrogate=...` when constructing an executor directly. Import registered implementations before planning the graph. `module.enforce_constraints()` applies built-in and custom constraints after an external optimizer step. Extra state and current-based neurons/synapses participate in the same module and state-dictionary workflow. See [Extensions](/api/lang/extensions).
+
+## Voltage sampling
+
+For newly compiled graphs, leaky-integrator `.voltage` is sampled after reset and `.pre_reset_voltage` before reset. Both signals can be outputs or explicitly exposed diagnostics. Reductions use the selected signal consistently with and without a mask; `MeanVoltage` selects the pre-reset signal. No sampling phase is inferred from diagnostic retention.
+
+Continuation carries post-reset membrane state. Each call reduces only its own time window; full and continued traces agree, while cross-call aggregates require combining chunk results. Older graphs without `voltage_sampling="explicit"` retain their historical implicit unmasked-mean behavior. See [Voltage sampling](/api/lang/operations-readouts#voltage-sampling) for authoring, compatibility and measurement-window rules.
