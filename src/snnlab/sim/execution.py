@@ -31,6 +31,17 @@ from snnlab.sim import models as M
 from snnlab.sim.bundle import load_graph_bundle, load_training_recipe
 from snnlab.sim.checkpoint_selection import CheckpointSelection
 from snnlab.sim.checkpoint_selection import SelectionMetric as SelectionMetric
+from snnlab.sim.dataset_provider import (
+    DatasetProvider,
+    batch_tensors,
+    simulate_dataset,
+)
+from snnlab.sim.dataset_provider import (
+    sample_count as dataset_sample_count,
+)
+from snnlab.sim.dataset_provider import (
+    steps_count as dataset_steps_count,
+)
 from snnlab.sim.epoch_observations import (
     ActivityMeasurements,
     EpochObservations,
@@ -141,6 +152,7 @@ class DatasetEncoder:
     seed: int = 0
     definition: str | None = None
     config: Mapping[str, Any] = field(default_factory=dict)
+    rates_hz: Sequence[float] | None = None
 
 
 @dataclass(frozen=True)
@@ -220,6 +232,7 @@ class ValidationSpec:
     targets: Mapping[str, torch.Tensor] = field(default_factory=dict)
     target_bindings: Sequence[TargetArrayBinding] = field(default_factory=tuple)
     protocol: Mapping[str, Any] = field(default_factory=dict)
+    encoding_seeds: Sequence[int] = ()
 
 
 @dataclass(frozen=True)
@@ -1206,6 +1219,11 @@ def resolve_dataset_snapshot_binding(
     device: str | torch.device = "cpu",
     execution_seed: int = 0,
     protocol: Mapping[str, Any] | None = None,
+    _snapshot=None,
+    _indices=None,
+    _spike_seed=None,
+    _rate_seed=None,
+    _validated=False,
 ) -> tuple[ResolvedDenseInputs, tuple[TargetArrayBinding, ...]]:
     """Load, select, and encode one immutable MNIST/SHD-style NPZ snapshot."""
     specs = {row["id"]: row for row in graph.get("inputs", [])}
@@ -1224,12 +1242,12 @@ def resolve_dataset_snapshot_binding(
     source_path = Path(binding.path)
     if source_path.suffix.lower() != ".npz":
         raise ValueError("dataset snapshot binding requires an NPZ file")
-    source_digest = _file_digest(source_path)
-    loaded = np.load(source_path, allow_pickle=False)
-    try:
-        arrays = {key: loaded[key] for key in loaded.files}
-    finally:
-        loaded.close()
+    if _snapshot is None:
+        source_digest = _file_digest(source_path)
+        with np.load(source_path, allow_pickle=False) as loaded:
+            arrays = {key: loaded[key] for key in loaded.files}
+    else:
+        arrays, source_digest = _snapshot
     if not binding.dataset_id or not binding.split:
         raise ValueError("dataset snapshot identity and split must be non-empty")
     if binding.label_key not in arrays:
@@ -1247,22 +1265,31 @@ def resolve_dataset_snapshot_binding(
     cap = sample_count if binding.sample_cap is None else int(binding.sample_cap)
     if cap <= 0 or cap > sample_count:
         raise ValueError(f"dataset snapshot sample cap must be in [1, {sample_count}]")
-    order = torch.arange(sample_count)
-    if binding.shuffle:
-        generator = torch.Generator(device="cpu").manual_seed(int(binding.order_seed))
-        order = torch.randperm(sample_count, generator=generator)
-    selected = order[:cap].numpy()
+    if _indices is None:
+        order = torch.arange(sample_count)
+        if binding.shuffle:
+            generator = torch.Generator(device="cpu").manual_seed(
+                int(binding.order_seed)
+            )
+            order = torch.randperm(sample_count, generator=generator)
+        selected = order[:cap].numpy()
+    else:
+        selected = np.asarray(_indices, dtype=np.int64)
+        cap = len(selected)
     selected_labels = labels[selected].astype(np.int64, copy=False)
     encoder = binding.encoder
     dt_ms = float(graph["timebase"]["dt"]["value"])
     channels = int(declared[2])
     encoder_row: dict[str, Any]
     if encoder.kind == "rate_poisson" and (
-        encoder.duration_ms is None or encoder.max_rate_hz is None
+        encoder.duration_ms is None
+        or (encoder.max_rate_hz is None and encoder.rates_hz is None)
     ):
         raise ValueError(
             "rate-Poisson encoder requires explicit duration_ms and max_rate_hz"
         )
+    if encoder.kind != "rate_poisson" and encoder.rates_hz is not None:
+        raise ValueError("rates_hz is supported only by rate_poisson")
     if encoder.kind == "prebinned_spikes" and (
         encoder.duration_ms is not None
         or encoder.max_rate_hz is not None
@@ -1292,14 +1319,25 @@ def resolve_dataset_snapshot_binding(
             )
         if not np.issubdtype(features.dtype, np.floating):
             raise ValueError("rate-Poisson dataset features must use a floating dtype")
-        if (
+        if not _validated and (
             not np.isfinite(features).all()
             or np.any(features < 0)
             or np.any(features > 1)
         ):
             raise ValueError("rate-Poisson dataset features must be finite in [0, 1]")
         duration_ms = float(encoder.duration_ms or 0)
-        max_rate_hz = float(encoder.max_rate_hz or 0)
+        if encoder.rates_hz is not None:
+            if encoder.max_rate_hz is not None or not encoder.rates_hz:
+                raise ValueError(
+                    "rate-Poisson requires either max_rate_hz or a non-empty rates_hz sequence"
+                )
+            choices = tuple(float(rate) for rate in encoder.rates_hz)
+            if any(not math.isfinite(rate) or rate < 0 for rate in choices):
+                raise ValueError("categorical rates_hz must be finite and non-negative")
+            max_rate_hz = max(choices)
+        else:
+            choices = None
+            max_rate_hz = float(encoder.max_rate_hz or 0)
         raw_steps = duration_ms / dt_ms
         if (
             duration_ms <= 0
@@ -1312,10 +1350,30 @@ def resolve_dataset_snapshot_binding(
                 "rate-Poisson encoder requires timestep-aligned positive duration and a supported finite non-negative max rate"
             )
         rates = torch.as_tensor(features[selected], dtype=torch.float32)
-        generator = torch.Generator(device="cpu").manual_seed(int(encoder.seed))
-        probability = rates.unsqueeze(0) * max_rate_hz * dt_ms / 1000.0
+        generator = torch.Generator(device="cpu").manual_seed(
+            int(encoder.seed if _spike_seed is None else _spike_seed)
+        )
+        if choices is not None:
+            rate_generator = torch.Generator(device="cpu").manual_seed(
+                int(encoder.seed if _rate_seed is None else _rate_seed)
+            )
+            selected_rates = torch.tensor(choices, dtype=torch.float32)[
+                torch.randint(len(choices), (cap,), generator=rate_generator)
+            ]
+            probability = (
+                rates.unsqueeze(0) * selected_rates.reshape(1, cap, 1) * dt_ms / 1000.0
+            )
+        else:
+            selected_rates = None
+            probability = rates.unsqueeze(0) * max_rate_hz * dt_ms / 1000.0
         spikes = (
-            torch.rand(int(round(raw_steps)), cap, channels, generator=generator)
+            torch.rand(
+                int(round(raw_steps)),
+                cap,
+                channels,
+                generator=generator,
+                dtype=torch.float32,
+            )
             < probability
         ).float()
         encoder_row = {
@@ -1324,13 +1382,21 @@ def resolve_dataset_snapshot_binding(
             "max_rate_hz": max_rate_hz,
             "seed": int(encoder.seed),
             "distribution": "Bernoulli discretization of feature-scaled homogeneous Poisson",
+            **(
+                {
+                    "rates_hz": list(choices),
+                    "selected_rates_hz": selected_rates.tolist(),
+                }
+                if choices is not None
+                else {}
+            ),
         }
     elif encoder.kind == "prebinned_spikes":
         if features.ndim != 3 or features.shape[1:] != (sample_count, channels):
             raise ValueError(
                 f"prebinned dataset features expected [time, {sample_count}, {channels}]"
             )
-        if not np.all((features == 0) | (features == 1)):
+        if not _validated and not np.all((features == 0) | (features == 1)):
             raise ValueError("prebinned dataset spikes must be binary")
         spikes = torch.as_tensor(features[:, selected, :], dtype=torch.float32)
         encoder_row = {
@@ -1410,7 +1476,7 @@ def resolve_dataset_snapshot_binding(
             dt_ms=dt_ms,
             channels=channels,
             config=encoder.config,
-            seed=encoder.seed,
+            seed=encoder.seed if _spike_seed is None else _spike_seed,
         )
         if (
             not isinstance(spikes, torch.Tensor)
@@ -4084,13 +4150,14 @@ def simulate(
     tracemalloc.start()
     started = time.perf_counter()
     if sources.dataset is not None:
-        resolved_inputs, _ = resolve_dataset_snapshot_binding(
-            built.model.plan.graph,
-            sources.dataset,
-            device=device,
-            execution_seed=spec.seed,
-            protocol=spec.protocol,
-        )
+        with evaluation_rng(spec.seed):
+            resolved_inputs = DatasetProvider(
+                built.model.plan.graph,
+                sources.dataset,
+                device=device,
+                execution_seed=spec.seed,
+                protocol=spec.protocol,
+            )
     else:
         resolved_inputs = resolve_input_bindings(
             built.model.plan.graph,
@@ -4101,14 +4168,28 @@ def simulate(
             seed=spec.seed,
             protocol=spec.protocol,
         )
-    result = built.model(
-        resolved_inputs.tensors,
-        diagnostics=spec.diagnostics,
-        runtime_state=runtime_state
-        if runtime_state is not None
-        else spec.runtime_state,
-        interventions=interventions,
-    )
+    if isinstance(resolved_inputs, DatasetProvider):
+        result = simulate_dataset(
+            built.model,
+            resolved_inputs,
+            batch_size=spec.batch_size
+            if spec.batch_size is not None
+            else min(32, resolved_inputs.sample_count),
+            diagnostics=spec.diagnostics,
+            interventions=interventions,
+            runtime_state=runtime_state
+            if runtime_state is not None
+            else spec.runtime_state,
+        )
+    else:
+        result = built.model(
+            resolved_inputs.tensors,
+            diagnostics=spec.diagnostics,
+            runtime_state=runtime_state
+            if runtime_state is not None
+            else spec.runtime_state,
+            interventions=interventions,
+        )
     elapsed = time.perf_counter() - started
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
@@ -4156,6 +4237,17 @@ def simulate(
 
 
 def train(spec: ExecutionSpec) -> ExecutionResult:
+    if (
+        spec.executor == "graph"
+        and isinstance(spec.epochs, Integral)
+        and not isinstance(spec.epochs, bool)
+        and spec.epochs == 0
+        and any(
+            isinstance(binding, DatasetSnapshotBinding)
+            for binding in spec.input_bindings
+        )
+    ):
+        spec = replace(spec, epochs=1)
     if spec.interventions or "inference_interventions" in spec.options:
         raise ValueError(
             "interventions are supported only for graph simulation/inference"
@@ -4235,14 +4327,19 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 raise ValueError(
                     "dataset snapshot binding cannot be combined with other input or target bindings"
                 )
-            inputs, dataset_targets = resolve_dataset_snapshot_binding(
-                graph,
-                bindings.dataset,
-                device=device,
-                execution_seed=data.seed if observation_only else spec.seed,
-                protocol=data.protocol,
-            )
+            with evaluation_rng(data.seed if observation_only else spec.seed):
+                inputs = DatasetProvider(
+                    graph,
+                    bindings.dataset,
+                    device=device,
+                    execution_seed=data.seed if observation_only else spec.seed,
+                    protocol=data.protocol,
+                    encoding_seeds=getattr(data, "encoding_seeds", ()),
+                )
+            dataset_targets = inputs.targets
         else:
+            if getattr(data, "encoding_seeds", ()):
+                raise ValueError("encoding_seeds requires a dataset binding")
             inputs = resolve_input_bindings(
                 graph,
                 dense_bindings=bindings.dense,
@@ -4252,8 +4349,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 seed=data.seed if observation_only else spec.seed,
                 protocol=data.protocol,
             )
-        sample_count = next(iter(inputs.tensors.values())).shape[1]
-        if any(value.shape[1] != sample_count for value in inputs.tensors.values()):
+        sample_count = dataset_sample_count(inputs)
+        if not isinstance(inputs, DatasetProvider) and any(
+            value.shape[1] != sample_count for value in inputs.tensors.values()
+        ):
             raise ValueError("graph training inputs must share one dataset sample axis")
         if observation_only:
             return inputs, {}, ()
@@ -4267,7 +4366,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         return inputs, targets, rows
 
     resolved_inputs, resolved_targets, target_rows = resolve_data(spec)
-    dataset_size = next(iter(resolved_inputs.tensors.values())).shape[1]
+    dataset_size = dataset_sample_count(resolved_inputs)
     validation_data = (
         resolve_data(spec.validation) if spec.validation is not None else None
     )
@@ -4280,7 +4379,15 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         training, epochs=dataset_epochs, has_validation=validation_data is not None
     )
     epoch_selection = selection.mode == "epoch_metrics"
-    batch_size = spec.batch_size if spec.batch_size is not None else dataset_size
+    batch_size = (
+        spec.batch_size
+        if spec.batch_size is not None
+        else (
+            min(32, dataset_size)
+            if isinstance(resolved_inputs, DatasetProvider)
+            else dataset_size
+        )
+    )
     if batch_size <= 0:
         raise ValueError("graph training batch size must be positive")
     observation_spec = spec.observations
@@ -4290,6 +4397,13 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         for name, probe in sorted(observation_spec.probes.items()):
             with evaluation_rng(probe.seed):
                 resolved_probes[name] = resolve_data(probe, observation_only=True)[0]
+    for data in (
+        resolved_inputs,
+        *((validation_data[0],) if validation_data is not None else ()),
+        *resolved_probes.values(),
+    ):
+        if isinstance(data, DatasetProvider):
+            data.protocol["dataset"]["batch_size"] = batch_size
     observation_contract = (
         None
         if observation_spec is None
@@ -4336,7 +4450,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 "order_seed": int(spec.seed),
             },
         }
-    resolved_inputs = ResolvedDenseInputs(resolved_inputs.tensors, protocol)
+    resolved_inputs = (
+        resolved_inputs.with_protocol(protocol)
+        if isinstance(resolved_inputs, DatasetProvider)
+        else ResolvedDenseInputs(resolved_inputs.tensors, protocol)
+    )
     parameter_map = model.parameter_map()
     graph_digest = training["graph_digest"]
     training_digest = _json_digest(training)
@@ -4494,6 +4612,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     final_forward: ExecutionResult | None = None
 
     def evaluation_tensor_identity(tensors):
+        if isinstance(tensors, DatasetProvider):
+            return {"provider": tensors.protocol}
+        if isinstance(tensors, ResolvedDenseInputs):
+            tensors = tensors.tensors
         return {
             name: {
                 "shape": list(value.shape),
@@ -4525,7 +4647,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                     validation_data[0]
                     if selection.split == "validation"
                     else resolved_inputs
-                ).tensors
+                )
             ),
             "target_tensors": evaluation_tensor_identity(
                 validation_data[1]
@@ -4753,7 +4875,14 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     )
 
     def evaluate_split(inputs, targets, *, probe_name=None):
-        sample_count = next(iter(inputs.tensors.values())).shape[1]
+        sample_count = dataset_sample_count(inputs)
+        draws = inputs.draw_seeds if isinstance(inputs, DatasetProvider) else (None,)
+        presentation_count = sample_count * len(draws)
+        phase = (
+            "train_evaluation"
+            if inputs is resolved_inputs
+            else ("validation" if probe_name is None else f"probe:{probe_name}")
+        )
         total_loss = 0.0
         cross_entropies = {}
         components_total: dict[str, float] = {}
@@ -4766,8 +4895,8 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             ActivityMeasurements(
                 observation_spec,
                 {p["id"]: p for p in graph["populations"]},
-                next(iter(inputs.tensors.values())).shape[0] * model.plan.dt_ms / 1000,
-                sample_count,
+                dataset_steps_count(inputs) * model.plan.dt_ms / 1000,
+                presentation_count,
             )
             if observation_spec is not None
             else None
@@ -4781,79 +4910,89 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 else observation_spec.probes[probe_name].seed
             )
             with evaluation_rng(seed), torch.no_grad():
-                for start in range(0, sample_count, batch_size):
-                    end = min(start + batch_size, sample_count)
-                    evaluation_targets = {
-                        name: value[start:end] for name, value in targets.items()
-                    }
-                    forward, signals = model._forward(
-                        {
-                            name: value[:, start:end]
-                            for name, value in inputs.tensors.items()
-                        },
-                        diagnostics=False,
-                        required_signals=required_signals if probe_name is None else (),
-                        observation_populations=observation_populations,
-                    )
-                    if measurements is not None:
-                        measurements.add(
-                            forward.metrics.get("population_observations", {})
+                for draw_seed in draws:
+                    for start in range(0, sample_count, batch_size):
+                        end = min(start + batch_size, sample_count)
+                        evaluation_targets = {
+                            name: value[start:end] for name, value in targets.items()
+                        }
+                        forward, signals = model._forward(
+                            batch_tensors(
+                                inputs,
+                                torch.arange(start, end),
+                                phase=phase,
+                                draw_seed=draw_seed,
+                            ),
+                            diagnostics=False,
+                            required_signals=required_signals
+                            if probe_name is None
+                            else (),
+                            observation_populations=observation_populations,
                         )
-                    if probe_name is not None:
-                        continue
-                    loss, components = compute_loss(
-                        forward, signals, evaluation_targets, inputs.protocol
-                    )
-                    count = end - start
-                    for i, objective in enumerate(training.get("objectives", [])):
-                        if objective["kind"] == "cross_entropy":
+                        if measurements is not None:
+                            measurements.add(
+                                forward.metrics.get("population_observations", {})
+                            )
+                        if probe_name is not None:
+                            continue
+                        loss, components = compute_loss(
+                            forward, signals, evaluation_targets, inputs.protocol
+                        )
+                        count = end - start
+                        for i, objective in enumerate(training.get("objectives", [])):
+                            if objective["kind"] == "cross_entropy":
+                                prediction = forward.outputs[
+                                    output_ids[objective["prediction"]]
+                                ]
+                                raw = torch.nn.functional.cross_entropy(
+                                    prediction,
+                                    evaluation_targets[objective["target"]].long(),
+                                )
+                                name = f"objective[{i}]"
+                                cross_entropies[name] = (
+                                    cross_entropies.get(name, 0.0) + float(raw) * count
+                                )
+                        total_loss += float(loss) * count
+                        for name, value in components.items():
+                            components_total[name] = (
+                                components_total.get(name, 0.0) + float(value) * count
+                            )
+                        for i, objective in enumerate(training.get("objectives", [])):
+                            if not X.classification(objective):
+                                continue
                             prediction = forward.outputs[
                                 output_ids[objective["prediction"]]
-                            ]
-                            raw = torch.nn.functional.cross_entropy(
-                                prediction,
-                                evaluation_targets[objective["target"]].long(),
+                            ].argmax(dim=-1)
+                            correct[f"objective[{i}]"] += int(
+                                (
+                                    prediction
+                                    == evaluation_targets[objective["target"]]
+                                ).sum()
                             )
-                            name = f"objective[{i}]"
-                            cross_entropies[name] = (
-                                cross_entropies.get(name, 0.0) + float(raw) * count
-                            )
-                    total_loss += float(loss) * count
-                    for name, value in components.items():
-                        components_total[name] = (
-                            components_total.get(name, 0.0) + float(value) * count
-                        )
-                    for i, objective in enumerate(training.get("objectives", [])):
-                        if not X.classification(objective):
-                            continue
-                        prediction = forward.outputs[
-                            output_ids[objective["prediction"]]
-                        ].argmax(dim=-1)
-                        correct[f"objective[{i}]"] += int(
-                            (
-                                prediction == evaluation_targets[objective["target"]]
-                            ).sum()
-                        )
         finally:
             model.train(was_training)
         metrics = {
-            "loss": total_loss / sample_count,
+            "loss": total_loss / presentation_count,
             "cross_entropies": {
-                name: value / sample_count for name, value in cross_entropies.items()
+                name: value / presentation_count
+                for name, value in cross_entropies.items()
             },
             "components": {
-                name: value / sample_count for name, value in components_total.items()
+                name: value / presentation_count
+                for name, value in components_total.items()
             },
             "accuracies": {
-                name: value / sample_count for name, value in correct.items()
+                name: value / presentation_count for name, value in correct.items()
             },
         }
         if len(correct) == 1:
-            metrics["accuracy"] = next(iter(correct.values())) / sample_count
+            metrics["accuracy"] = next(iter(correct.values())) / presentation_count
         if measurements is not None:
             metrics["observation"] = measurements.finish()
             metrics["observation"]["input_protocol"] = inputs.protocol
             metrics["observation"]["evaluation_seed"] = seed
+        if isinstance(inputs, DatasetProvider):
+            metrics["encoding_draws"] = list(draws)
         return metrics
 
     def record_epoch(epoch):
@@ -4963,10 +5102,12 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
 
     for update, (epoch, batch, sample_indices) in enumerate(scheduled):
         optimizer.zero_grad(set_to_none=True)
-        batch_inputs = {
-            name: value.index_select(1, sample_indices.to(value.device))
-            for name, value in resolved_inputs.tensors.items()
-        }
+        batch_inputs = batch_tensors(
+            resolved_inputs,
+            sample_indices,
+            phase="train",
+            epoch=epoch if dataset_mode else completed_updates + update,
+        )
         batch_targets = {
             name: value.index_select(0, sample_indices.to(value.device))
             for name, value in resolved_targets.items()
@@ -5010,6 +5151,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         history.append(
             {
                 "update": absolute_update,
+                **(
+                    {"encoding": copy.deepcopy(resolved_inputs.last_batch)}
+                    if isinstance(resolved_inputs, DatasetProvider)
+                    else {}
+                ),
                 **({"epoch": epoch + 1, "batch": batch + 1} if dataset_mode else {}),
                 "loss": loss_value,
                 "components": {

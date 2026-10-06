@@ -160,7 +160,7 @@ Multiple Poisson bindings must agree on time and batch sizes and cover all graph
 
 ### DatasetSnapshotBinding
 
-Resolves one immutable external NPZ dataset snapshot. Pass it as `input_bindings=(dataset_input,)`. Its fields are:
+Binds one immutable external NPZ dataset snapshot. Graph execution automatically uses a batch provider; no lazy/batchwise flag is required. Pass it as `input_bindings=(dataset_input,)`. Its fields are:
 
 | Field | Type / default |
 | --- | --- |
@@ -178,9 +178,37 @@ Resolves one immutable external NPZ dataset snapshot. Pass it as `input_bindings
 
 The resolver computes the source file digest, selects samples with the cap/order settings, and records file identity, split, selected indices, encoder and seeds. It performs no dataset download or registry lookup. `dataset_id` and `split` must be non-empty.
 
-`DatasetEncoder` has required `kind`, optional `duration_ms` and `max_rate_hz` (both default `None`), and `seed=0`. The `"custom"` kind uses a registered encoder with `definition` and `config`; see [Extensions](/api/lang/extensions#dataset-encoders-and-inputs). Built-in kinds are `"rate_poisson"` for normalized sample/channel features, `"prebinned_spikes"` for binary time/sample/channel tensors, and `"event_bin"` for timestamped sample/channel events. Encoding validates shapes, values and physical timing against graph `dt`.
+`DatasetEncoder` has required `kind`, optional `duration_ms`, `max_rate_hz` and `rates_hz` (all default `None`), and `seed=0`. The `"custom"` kind uses a registered encoder with `definition` and `config`; see [Extensions](/api/lang/extensions#dataset-encoders-and-inputs). Built-in kinds are `"rate_poisson"` for normalized sample/channel features, `"prebinned_spikes"` for binary time/sample/channel tensors, and `"event_bin"` for timestamped sample/channel events. Encoding validates shapes, values and physical timing against graph `dt`.
 
 A dataset snapshot must be the only element of `input_bindings`. During training it is also exclusive with explicit targets/target bindings; use its `target_id` to bind integer labels to the recipe's target. Simulation resolves the input and does not use its labels as training targets.
+
+
+### Automatic batch encoding
+
+Dataset bindings resolve content identity, sample selection, labels and ordering without constructing the whole time-by-sample spike tensor. The provider verifies source-file stability while extracting arrays once into private temporary NPY files, then uses read-only memory mappings. Built-in encoders produce only the current batch on CPU and transfer it to the execution device; custom encoders retain their registered backend/configuration. Temporary mappings live with the provider; they are not a dataset registry. Dataset download and split construction remain caller responsibilities.
+
+`ExecutionSpec.batch_size` controls the encoded batch size. When omitted for a dataset binding, the default is 32, bounded by sample count. Snapshot training with `epochs=0` automatically runs one epoch; positive epochs and `updates` retain the normal schedule/truncation semantics, including a smaller tail batch. Dense/event/Poisson input bindings retain their existing direct replay/full-batch interfaces.
+
+For `rate_poisson`, features must have `(samples, channels)` shape and floating values in `[0, 1]`. Specify a positive timestep-aligned `duration_ms` and **either** `max_rate_hz` for a fixed feature-scaled rate **or** `rates_hz` for categorical rates:
+
+```python
+encoder = DatasetEncoder(
+    "rate_poisson", duration_ms=200,
+    rates_hz=(40, 80, 120), seed=17,
+)
+```
+
+Categorical selection is uniform and independent per presentation: one maximum-pixel rate is selected for each sample and scales its feature values throughout that presentation. Rates must be finite, non-negative and satisfy `rate_hz * dt_ms / 1000 <= 1`. Rate-selection and Bernoulli spike-generation streams are separate, so selecting rates does not consume the spike stream. Training re-encodes each batch with fresh draws at each epoch. Training-split evaluation, validation and named observation probes use fixed separate phase streams; evaluating or adding probes cannot change subsequent training draws.
+
+`prebinned_spikes` and `event_bin` preserve exact supplied spikes with no stochastic re-encoding. Sparse events are binned only for selected samples; unlisted bins are zero. Custom registered encoders receive the same read-only arrays and callback signature as before, but `selected` identifies only the current batch and `seed` is a derived batch/draw seed. Custom callbacks must preserve presentation duration and must not mutate the snapshot or retain full-dataset encoded tensors. Their global Python/NumPy/Torch randomness is scoped to that seed without perturbing model RNG streams.
+
+`result.metrics["execution_protocol"]["batch_encoding"]` uses `snnlab.batch-encoding/v1` and records the encoder backend (CPU for built-ins), fresh-training/fixed-evaluation policy, selected draw seeds and separate ordering/rate/spike stream roots. Derived rate/spike seeds bind phase, epoch, ordered absolute sample indices and draw seed. Epoch order remains `execution_seed + epoch`. Per-update `encoding` metadata records coordinates, stream seeds and selected categorical rates. Input memory scales with presentation steps, batch size and channels; retained outputs and requested diagnostics can still grow with dataset size.
+
+Checkpoints retain this versioned encoding protocol with epoch/next-batch coordinates and model/optimizer/RNG state. Coordinate-derived streams regenerate the next batch exactly on resume. Changed source contents, encoder settings, seeds, sample selection or batch schedule are rejected. Earlier checkpoints with eagerly encoded/reused dataset spikes cannot silently resume under the new protocol. Exact dense/event input bindings remain available for explicitly retained replay.
+
+Dataset simulation/inference also encodes successive batches using one model/checkpoint load and fixed inference draws, concatenating outputs along the sample axis. `encoding_batches` records each encoded batch. Separate batches start with fresh dynamic neuron state. Multiple-batch results have `runtime_state=None`; dataset runtime continuation requires a single complete batch. Full-batch dense/sparse replay interventions are authenticated before execution and sliced along the selected sample axis for each batch.
+
+The low-level `resolve_dataset_snapshot_binding` helper remains an explicit eager materializer for callers needing a complete dense replay. Normal request/CLI execution automatically chooses the provider.
 
 
 ### protocol
@@ -244,11 +272,13 @@ result = train(execution)
 history = result.metrics["epochs"]
 ```
 
-`ValidationSpec` is a frozen dataclass with `input_bindings: Sequence[InputBinding] = ()`, `targets: Mapping[str, torch.Tensor] = {}`, `target_bindings: Sequence[TargetArrayBinding] = ()`, and `protocol: Mapping[str, Any] = {}`. Defaults use independent factories. It uses the same [input binding rules](/api/sim/execution-spec#input_bindings) and target validation as training, including dataset snapshots with a `target_id`. Supply `targets` or `target_bindings`, not both; snapshot labels must not be combined with either.
+`ValidationSpec` is a frozen dataclass with `input_bindings: Sequence[InputBinding] = ()`, `targets: Mapping[str, torch.Tensor] = {}`, `target_bindings: Sequence[TargetArrayBinding] = ()`, `protocol: Mapping[str, Any] = {}`, and `encoding_seeds: Sequence[int] = ()`. Defaults use independent factories. It uses the same [input binding rules](/api/sim/execution-spec#input_bindings) and target validation as training, including dataset snapshots with a `target_id`. Supply `targets` or `target_bindings`, not both; snapshot labels must not be combined with either.
 
 Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can be changed on resume when observations and epoch checkpoint selection are disabled. Audits require the same validation identity; epoch selection also verifies the resolved evaluation inputs and labels by content digest.
 
-This field is used only by graph `train`, and requires positive `epochs`. Other handlers do not evaluate validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
+For stochastic dataset validation, `encoding_seeds=(101, 103)` requests explicit repeatable draw sets; omission uses the encoder seed for one fixed draw. Each draw evaluates all selected samples in bounded batches, and loss/components/accuracies are sample-weighted across all draws. Epoch rows report `validation_encoding_draws`; observations count each draw's presentations. Encoding seeds require a stochastic dataset encoder, must be distinct non-negative integers, and are bound into validation/selection/audit identity.
+
+This field is used only by graph `train`, and requires positive effective `epochs`. Other handlers do not evaluate validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
 
 ### observations
 
@@ -285,7 +315,7 @@ execution = ExecutionSpec(
 | `gradient_norms` | Trainable parameter IDs for epoch-average gradient norms before/after clipping. |
 | `probes` | Named `ObservationProbe` draws, measured independently from training and ordinary validation. |
 
-`ObservationProbe(input_bindings=(), seed=0, split="reference", protocol={})` accepts the standard input binding types, a nonnegative integer evaluation seed, and split `"reference"` or `"validation"`. Probes measure activity only; they have no targets, loss or accuracy and never participate in optimization. Dataset snapshot labels are ignored for activity-only probes. Each resolved draw and its protocol are retained under its own name; multiple validation draws remain separate rather than being silently pooled. Poisson/dataset encoders retain their binding-specific seeds; the probe seed controls the fallback resolution/evaluation stream. Input draws are resolved once and reused for fixed-weight epoch evaluation; fresh batchwise training encoding is a separate contract.
+`ObservationProbe(input_bindings=(), seed=0, split="reference", protocol={})` accepts the standard input binding types, a nonnegative integer evaluation seed, and split `"reference"` or `"validation"`. Probes measure activity only; they have no targets, loss or accuracy and never participate in optimization. Dataset snapshot labels are ignored for activity-only probes. Each resolved draw and its protocol are retained under its own name; multiple validation draws remain separate rather than being silently pooled. Poisson/dataset encoders retain their binding-specific seeds; the probe seed controls the fallback resolution/evaluation stream. Dense/event/ordinary Poisson draws are resolved once and reused for fixed-weight evaluation. Dataset probes regenerate their same deterministic draw in bounded batches; training draws use a separate fresh stream.
 
 Observations run at initialization and completed epoch boundaries. Evaluation uses fresh dynamic state, fixed current weights and `batch_size`, with compact per-batch spike counts rather than additional dense spike histories. Declared graph outputs and loss regularizers may still require histories. The feature does not claim constant-memory training or redesign input encoding. Python, NumPy, PyTorch CPU and available accelerator RNG states are restored around evaluations, including on errors; extra probes do not change training randomness or optimizer updates.
 
@@ -307,6 +337,8 @@ These are direct `ExecutionSpec` constructor fields, used by graph `train`:
 `epochs` must be a non-negative integer; supplied `batch_size` and `updates` must be positive integers. Boolean or fractional values are rejected for these counts, and `shuffle` must be boolean. Without dataset mode, `batch_size` and `shuffle` do not split or shuffle the repeated full batch. A dataset checkpoint already at its requested end epoch raises an error.
 
 A resumed dataset schedule starts at the checkpoint's next coordinates and is truncated by `updates` when supplied. The training recipe's `epochs` does not override this execution field. These controls do not change graph simulation or inference.
+
+Dataset bindings automatically use one epoch when `epochs=0` and a maximum default batch size of 32 when `batch_size=None`.
 
 The previous training keys in `options` are no longer accepted by graph `train`; move them to the constructor fields. Inference-specific mappings remain under `options`.
 

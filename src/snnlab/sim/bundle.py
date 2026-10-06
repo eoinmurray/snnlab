@@ -698,14 +698,15 @@ def apply_bundle_to_args(args, argv: list[str]):
         manifest, graph = load_graph_bundle(args.bundle)
         if args.mode == "train":
             explicit = {item.split("=", 1)[0] for item in argv if item.startswith("--")}
-            conflicts = sorted(explicit & _TRAINING_RECIPE_FLAGS)
+            conflicts = sorted(explicit & (_TRAINING_RECIPE_FLAGS - {"--epochs"}))
             if conflicts:
                 raise BundleCompatibilityError(
                     "bundle owns training settings; remove conflicting flags: "
                     + ", ".join(conflicts)
                 )
             recipe = load_training_recipe(args.bundle, manifest, graph)
-            args.epochs = int(recipe["epochs"])
+            if "--epochs" not in explicit:
+                args.epochs = int(recipe["epochs"])
         return args
     if args.mode not in {"sim", "train"}:
         raise BundleCompatibilityError("--bundle currently supports sim and train only")

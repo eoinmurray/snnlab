@@ -2310,9 +2310,16 @@ def main(argv=None):
                         else None
                     ),
                     max_rate_hz=(
-                        args.spike_rate if encoder_kind == "rate_poisson" else None
+                        args.spike_rate
+                        if encoder_kind == "rate_poisson" and not args.input_rates
+                        else None
                     ),
                     seed=request.seed if encoder_kind == "rate_poisson" else 0,
+                    rates_hz=(
+                        tuple(args.input_rates)
+                        if encoder_kind == "rate_poisson" and args.input_rates
+                        else None
+                    ),
                 )
                 binding_update = {
                     "input_bindings": (

@@ -144,6 +144,8 @@ save_training_checkpoint(OUTPUT_DIR / "selected.checkpoint", selected)
 
 `execution` is your request containing the graph, recipe, training bindings and `ValidationSpec`. This optional alternative can select an earlier epoch than the final state. Initial weights are excluded; exact ties retain the earliest winner. The final checkpoint retains the winner for resume. See [Checkpoint selection](/api/sim/execution-spec#checkpoint_selection) for policy and compatibility rules. The downloadable example below keeps its existing final-checkpoint workflow.
 
+For an external NPZ dataset, use `DatasetSnapshotBinding` in `input_bindings` and its `target_id` for labels. Encoding is automatically batchwise; no additional switch is needed. With `DatasetEncoder("rate_poisson", duration_ms=200, max_rate_hz=100, seed=17)`, training receives fresh spikes per epoch while validation reuses deterministic draws. `rates_hz=(40, 80, 120)` can replace `max_rate_hz` for one categorical rate per presentation. Set `ValidationSpec.encoding_seeds=(101, 103)` when multiple explicit validation draws are required. See [automatic batch encoding](/api/sim/execution-spec#automatic-batch-encoding) for source format, memory, streams and resume compatibility. This downloadable example continues to replay its explicitly constructed dense spike arrays.
+
 Optional named epoch observations can be requested without enabling diagnostic traces:
 
 ```python
