@@ -25,7 +25,7 @@ separate compatibility contracts.
 
 ### Validation
 
-1. Preserved authenticated pre-removal numerical fixtures covering ten forward cases and a four-update optimizer trajectory; graph continuation/resume and independent Brian2 checks remain in the suite. Retired tests specific to removed execution features and corrected obsolete import paths in shared neuron-kernel tests.
+1. Preserved authenticated pre-removal numerical fixtures covering ten forward cases and a four-update optimizer trajectory; graph continuation/resume and independent Brian2 checks remain in the suite. Continuous voltages/logits use explicit `1e-6` absolute/relative tolerances across CPU architectures; forward spikes, conductances, parameters and same-platform continuation still require exact equality. Retired tests specific to removed execution features and corrected obsolete import paths in shared neuron-kernel tests.
 2. Local validation passed 556 tests with one accelerator test skipped, lint, documentation type checking, root and GitHub Pages static builds, package builds and installed-wheel graph execution. Confirmed that all 12 retired modules are absent from the wheel.
 
 ## [0.4.0] - 2026-10-06

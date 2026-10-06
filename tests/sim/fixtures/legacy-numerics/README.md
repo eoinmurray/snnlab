@@ -12,6 +12,13 @@ conductance trajectories and mean pre-reset-voltage logits. The backward
 fixture retains four cross-entropy losses, final gradients, constrained
 parameters and AdamW state. Keys use the current semantic graph parameter IDs.
 
+Forward spikes, conductances and parameters require exact equality. Voltages
+and logits use absolute and relative tolerances of `1e-6`: float32 voltage
+rounding can differ between the ARM CPU that captured the fixtures and x86
+CPUs. The backward fixture uses the same numeric tolerances; continuation on
+the current platform still requires exact equality. Shapes and dtypes always
+match exactly. Failed forward reports include measured absolute/relative errors.
+
 To reconstruct the reference, inspect the pinned source with Git and capture
 the reference argument passed to `compare_conformance_layers` by the two
 legacy/graph tests. Do not regenerate expected arrays from the current graph

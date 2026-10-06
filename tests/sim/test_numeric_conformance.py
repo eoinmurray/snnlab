@@ -197,16 +197,20 @@ def test_ping_forward_matches_preserved_pre_removal_reference(
             "logits": graph.outputs["class_logits"].detach(),
         },
     }
-    compare_conformance_layers(
+    report = compare_conformance_layers(
         "preserved-ping-forward",
         expected,
         candidate,
         policies={
             "forward": {
-                "logits": ComparisonPolicy(mode="numeric", atol=1e-6, rtol=1e-6)
+                # Saved ARM CPU voltages can differ by float32 rounding on x86.
+                # Spikes, conductances and parameters still require exact equality.
+                name: ComparisonPolicy(mode="numeric", atol=1e-6, rtol=1e-6)
+                for name in ("e_voltage", "i_voltage", "logits")
             }
         },
-    ).require_passed()
+    )
+    assert report.passed, json.dumps(report.to_dict(), indent=2)
 
 
 def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
