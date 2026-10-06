@@ -11,6 +11,8 @@ The development server defaults to `http://localhost:3001`. Static preview also 
 
 The site contains Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section and Changelog. `/` redirects to `/installation`; both trailing-slash forms work. Cloudflare redirects previous `/docs/` links to the new paths.
 
+The Output and diagnostic data guide lives in `content/docs/data-formats.mdx` and documents graph arrays, saved artifacts and analysis code.
+
 Edit Installation in `content/docs/` and keep navigation in `content/docs/meta.json`. Changelog is generated from the root `CHANGELOG.md` before development, type checks and builds; edit that source file.
 
 During development, navigation and page rendering use Vite's current content

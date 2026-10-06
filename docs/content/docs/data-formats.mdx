@@ -1,0 +1,267 @@
+---
+title: Output and diagnostic data
+description: Array names, shapes, units, time axes and saved formats for writing your own analysis code.
+---
+
+This guide describes data returned by the **graph executor**, used by the current Python examples. Start here when writing NumPy, pandas or plotting code. [ExecutionResult](/api/sim/execution-result) lists every result field; [ExecutionSpec](/api/sim/execution-spec) configures retention and execution.
+
+## Three mappings, three naming rules
+
+| Mapping | How it is requested | Key | Typical value |
+| --- | --- | --- | --- |
+| `result.outputs` | `net.output("spikes", cells.spikes)` | Your output name: `"spikes"` | PyTorch tensor, often `(time, batch, cells)` |
+| `result.diagnostics` | `net.expose(cells.voltage, name="e_voltage")` | Your exposure name: `"e_voltage"` | Detached PyTorch tensor with the exposed signal's shape |
+| `result.recorded_signals` | `SignalRecording("E.spikes", kind="spike_events")` | Compiled signal ID: `"E.spikes"` | Selected dense history or sparse event rows |
+
+Names such as `e_voltage` and `class_scores` are examples, not reserved fields. No voltage or spike diagnostic appears unless the network exposes it. `diagnostics=False` disables exposed diagnostics independently of outputs and selected recordings. `retain_outputs=False` omits returned outputs. A recording sink consumes selected recordings and leaves `recorded_signals` empty.
+
+Direct forward outputs retain autograd; use them directly for a PyTorch loss. `result.numpy()` detaches, transfers to CPU and copies **outputs and diagnostics only**. It returns `outputs`, `diagnostics` and `time_ms`; selected recordings, parameters and metrics require separate handling.
+
+## Array axes and units
+
+| Data | Usual shape | Interpretation |
+| --- | --- | --- |
+| Population spikes, voltage, synaptic signal | `(T, B, N)` | Time steps, batch presentations, cells/channels |
+| Time-reduced class scores | `(B, C)` | Batch presentations, classes |
+| One selected presentation's population signal | `(T, N)` | After `result.numpy(batch=0)` |
+| One selected presentation's class scores | `(C,)` | After `result.numpy(batch=0)` |
+| Selected dense recording | `(R, B, K)` | Recorded steps, presentations, selected cells in selection order |
+| Sparse spike recording | `(E, 3)` | Events; columns are absolute step, batch index, original cell index |
+
+Here `T` is the executed step count, `B` the batch size, `N` the signal width, `C` the class count, `R` the retained step count, `K` the selected cell count, and `E` the event count. Shapes follow the graph declaration: reduced signals and custom operations need not have a time axis. A batch of size one still has a batch axis until explicitly selected; avoid `squeeze()` in reusable analysis code.
+
+Arrays store numbers without attached units. Built-in voltage signals use mV, conductance signals use µS, current signals use nA and spike signals use binary events per step. A spike value is not a firing rate. Readout scores use their declared operation's units; they are not automatically probabilities. See [operations and readouts](/api/lang/operations-readouts). Custom signals follow their declared units.
+
+Inspect `array.dtype` rather than assuming every signal is floating point. Sparse selected events use `int64`; ordinary built-in trajectories commonly use `float32`, including binary spike arrays. The artifact manifest records each saved array's actual dtype and shape. Graph inputs, operations and parameters declare units; `metrics["recording_units"]` gives units for explicitly selected recordings.
+
+Voltage sampling matters: `.voltage` records the population's voltage after reset. Leaky integrators also expose `.pre_reset_voltage`, sampled before subtractive reset. These are different signals; see [voltage sampling](/api/lang/operations-readouts#voltage-sampling), including compatibility behaviour for older bundles.
+
+## Complete example: simulate, analyse, save and reload
+
+Save this as `analyse_outputs.py` and run `python analyse_outputs.py` after [installing snnlab](/installation). It creates `analysis-run/` in the working directory. The run has 100 steps at 0.5 ms, two independent presentations, four cells and two class scores. It needs no dataset, checkpoint or plotting backend.
+
+```python
+import json
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from snnlab import lang
+from snnlab.sim.execution import (
+    DenseArrayBinding,
+    ExecutionSpec,
+    RecordingSpec,
+    SignalRecording,
+    derive_inference_products,
+    simulate,
+    validate_inference_artifacts,
+    write_inference_artifacts,
+)
+
+net = lang.Network("analysis", dt=0.5 * lang.ms)
+inputs = net.input(
+    "inputs", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+)
+cells = net.population("E", size=4, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
+net.connect(
+    inputs,
+    cells.excitatory,
+    name="input_to_E",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=lang.Constant(0.5),
+)
+net.output("spikes", cells.spikes)
+scores = lang.readouts.SpikeCount(source=cells.spikes, classes=2, name="scores")
+net.output("class_scores", scores)
+net.expose(cells.spikes, name="e_spikes")
+net.expose(cells.voltage, name="e_voltage")
+bundle = lang.compile(net, target="tools/snnsim")
+
+rng = np.random.default_rng(7)
+stimulus = (rng.random((100, 2, 2)) < 0.1).astype(np.float32)
+with torch.no_grad():
+    result = simulate(ExecutionSpec(
+        kind="simulate",
+        graph=bundle.graph,
+        input_bindings=(DenseArrayBinding("inputs", torch.from_numpy(stimulus)),),
+        seed=7,
+        device="cpu",
+        recording=RecordingSpec(signals=(
+            SignalRecording("E.spikes", kind="spike_events"),
+            SignalRecording("E.voltage", cells=(3, 1)),
+        )),
+    ))
+
+data = result.numpy()
+for group, arrays in (("outputs", data.outputs), ("diagnostics", data.diagnostics)):
+    for name, array in arrays.items():
+        print(group, name, array.shape, array.dtype)
+
+spikes = data.outputs["spikes"]                  # (100, 2, 4)
+timing = result.metrics["execution_protocol"]["timing"]
+duration_s = timing["duration_ms"] / 1000       # 0.05 seconds, not 0.0495
+per_cell_hz = spikes.sum(axis=0) / duration_s   # (2, 4)
+population_hz = per_cell_hz.mean(axis=1)        # (2,)
+predictions = data.outputs["class_scores"].argmax(axis=1)  # (2,)
+print("Per-cell rates (Hz):", per_cell_hz)
+print("Population rates (Hz):", population_hz)
+print("Predicted class indices:", predictions)
+
+sample = result.numpy(batch=0)
+step_ids, cell_ids = np.nonzero(sample.outputs["spikes"])
+raster_time_ms = sample.time_ms[step_ids]
+voltage_of_cell_0 = sample.diagnostics["e_voltage"][:, 0]
+assert voltage_of_cell_0.shape == (100,)
+assert raster_time_ms.shape == cell_ids.shape
+
+# Selected recordings are not converted by result.numpy().
+events = result.recorded_signals["E.spikes"].detach().cpu().numpy().copy()
+selected_voltage = result.recorded_signals["E.voltage"].detach().cpu().numpy().copy()
+assert events.shape[1] == 3
+assert selected_voltage.shape == (100, 2, 2)    # columns: original cells 3, then 1
+
+root = Path("analysis-run")
+write_inference_artifacts(root, result, graph=bundle.graph, seed=7)
+manifest = validate_inference_artifacts(root, graph=bundle.graph, seed=7)
+for file in manifest["files"]:
+    for array in file.get("arrays", []):
+        print(file["path"], array["name"], array["shape"], array["dtype"])
+
+with np.load(root / "outputs.npz", allow_pickle=False) as saved:
+    saved_spikes = saved["spikes"]
+    np.testing.assert_array_equal(saved_spikes, spikes)
+metrics = json.loads((root / "metrics.json").read_text())
+assert metrics["execution_protocol"]["timing"]["steps"] == 100
+
+# Demonstration labels; class meaning and real labels belong to your dataset.
+# Use a fresh destination: derivation refuses to overwrite an existing directory.
+summary = derive_inference_products(
+    root,
+    root / "derived",
+    logits_id="class_scores",
+    labels=np.array([0, 1], dtype=np.int64),
+    spike_recordings=("e_spikes",),
+)
+print("Demonstration accuracy:", summary["accuracy"])
+```
+
+The output inspection shows `spikes (100, 2, 4)`, `class_scores (2, 2)`, `e_spikes (100, 2, 4)` and `e_voltage (100, 2, 4)`, all `float32` in this example. `E.spikes` contains a variable number of `int64` event rows. Demonstration accuracy is not a trained model benchmark. Delete or rename `analysis-run/derived/` before rerunning the derivation.
+
+## Time axes and rate calculations
+
+`data.time_ms` is one-dimensional and uses the effective timestep, including overrides. A fresh run's labels are `0, dt_ms, ..., (T - 1) * dt_ms`. A continued run starts at its absolute continuation step. Time-reduced outputs have no time axis even though `time_ms` describes the executed presentation.
+
+A 100-step run at 0.5 ms spans 50 ms. Its final time label is 49.5 ms: **do not use `time_ms[-1] - time_ms[0]` as the rate denominator**. Use the actual measurement duration. For a full presentation, `metrics["execution_protocol"]["timing"]` contains `dt_ms`, `steps` and `duration_ms`. For a selected contiguous window of `R` steps use `R * dt_ms / 1000` seconds. Masks or deliberately excluded periods require your corresponding valid duration; an input mask does not implicitly change every analysis window.
+
+For dense `(time, batch, cells)` spikes, summing axis 0 gives per-cell spike counts `(batch, cells)`. Dividing by duration in seconds gives per-cell Hz. Averaging those rates over cells gives mean Hz per cell in the population. Summing them gives total population spikes per second, a different quantity. Preserve the batch axis when comparing presentations.
+
+For sparse selected events, multiply column 0 by `dt_ms` for absolute times in ms; **do not index a local `time_ms` array with absolute step IDs** during continuation. Columns 1 and 2 identify the presentation and original cell. An empty `(0, 3)` array means no events were retained, not a missing file. Event rows follow execution/batch-block order; sort explicitly if your analysis needs global time order.
+
+Dataset inference concatenates retained outputs/diagnostics along their declared batch axes. Presentations follow the selected dataset order, which can differ from source indices; consult `metrics["encoding_batches"]` and the execution protocol. Multiple independent batches do not form one continued trajectory. Training outputs/diagnostics describe the final update's presentation, not the whole training set. Use `metrics["epochs"]` and `metrics["updates"]` for learning curves; the [result reference](/api/sim/execution-result#epoch-metrics) explains aggregation and optional observations.
+
+## Saved graph artifacts
+
+The Python writer is explicit: call `write_inference_artifacts` to persist a graph result. The graph inference CLI writes these artifacts to its output directory. A bare Python `simulate` or `infer` call does not save them automatically.
+
+| File | Contents |
+| --- | --- |
+| `outputs.npz` | Output-name keys, original tensor axes preserved |
+| `recording.npz` | Diagnostic exposure-name keys, original tensor axes preserved |
+| `parameters.npz` | Compiled parameter-ID keys, stored parameter layout/scaling |
+| `recordings.npz` | Selected signal-ID keys; present when `recorded_signals` is nonempty |
+| `metrics.json` | Execution timing/protocol, checkpoint provenance, retention and operation-specific metrics; includes completed decisions when requested |
+| `inference-manifest.json` | Schema/version, file digests, request identity and per-array names/shapes/dtypes |
+
+The singular **`recording.npz` holds diagnostics**; plural **`recordings.npz` holds explicit selections**. Empty outputs or diagnostics produce empty NPZ archives. NPZ is a mapping, not one array: use `np.load(..., allow_pickle=False)`, inspect `.files`, then retrieve by key. Use a context manager to close archives. Keys containing dots work with `archive["E.spikes"]`.
+
+For example, one file entry in the runnable example's manifest is:
+
+```json
+{
+  "path": "outputs.npz",
+  "digest": "<file SHA-256>",
+  "arrays": [
+    {"name": "class_scores", "shape": [2, 2], "dtype": "float32"},
+    {"name": "spikes", "shape": [100, 2, 4], "dtype": "float32"}
+  ]
+}
+```
+
+`parameters.npz` uses parameter IDs such as `input_to_E.weight`. In this example its shape is `(2, 4)`: input channels by destination cells. Parameter dimensions follow the compiled parameter declaration, so inspect the bundle before transposing matrices. Saving parameters does not save a resumable training checkpoint or optimizer state; use the [checkpoint APIs](/api/sim/execution-spec) for that.
+
+The current manifest schema string is `tools/snnsim.inference-artifacts/v1` (a retained historical identifier). `schema_version` is 1 for ordinary artifacts and 2 when selected recordings are saved. Both versions list array `name`, `shape` and `dtype`. NPZ files do not contain an automatic `time_ms` array or embed graph signal units. Preserve the source bundle and the execution/recording policy alongside the artifacts for scientific interpretation; the manifest's shape does not describe axis meanings or dense cell selection order.
+
+`validate_inference_artifacts` checks file integrity and manifest consistency. Passing a graph and seed also checks those identities. It does **not** by itself establish that a cache matches your entire current checkpoint/input request. Optional expected intervention, segment and retention identities support narrower compatibility checks; see [cache checks](/api/sim/execution-result#intervention-provenance-and-replay-cache-checks).
+
+## Derived analysis products
+
+`derive_inference_products` reads saved class scores and **exposed dense spike diagnostics from `recording.npz`**, not `recordings.npz`. Its `logits_id` must identify a floating `(batch, classes)` output, and each `spike_recordings` entry a binary `(time, batch, cells)` diagnostic. Supply integer labels in the same presentation order. The helper uses the full execution duration for rates, so use your own calculation for a restricted measurement window.
+
+| Derived file | Keys / shape |
+| --- | --- |
+| `labels.npy`, `predictions.npy` | One `int64` class index per presentation, `(B,)` |
+| `rates.npz` | Each requested diagnostic ID maps to per-cell Hz, `(B, N)` |
+| `rasters.npz` | For each diagnostic ID: `<id>.steps`, `<id>.batches`, `<id>.cells` are parallel `int64` event vectors; `<id>.shape` is the original `[T, B, N]` |
+| `summary.json` | Accuracy, duration, source digest, shapes and spike counts |
+| `derived-manifest.json` | Derived schema/version, source artifact digest and file digests |
+
+Derived raster steps are local indices into the saved dense trajectory, unlike the absolute steps in selected sparse recordings. Convert them using the source run's time offset and timestep. The derived helper creates a new destination and rejects an existing directory. `validate_derived_inference_products` is available from `snnlab.sim.execution` to verify the products and optionally their source.
+
+## Decision counts and training metrics
+
+When [decision segments](/api/sim/execution-spec#decisions) are enabled, `result.decisions` is a list of completed records, also stored as `metrics["decisions"]`. An illustrative record looks like:
+
+```json
+{
+  "batch": 0,
+  "start_step": 0,
+  "end_step": 100,
+  "duration_ms": 50.0,
+  "population_totals": {"E": 12},
+  "output_spike_counts": {"readout": [7, 2]}
+}
+```
+
+Bounds are absolute and half-open. Population totals are integer counts across all cells; output spike counts are integer vectors in cell order. Keys are the requested population IDs. Partial segments stay in runtime state until completed. Counts do not prescribe a classification rule: choosing a class, handling ties and assigning class labels are analysis decisions.
+
+`metrics` is a JSON-compatible mapping, not an array archive. Training epoch rows contain `epoch`, loss fields and optional accuracy/observation fields; update rows describe individual optimizer updates. Accuracy is a fraction from 0 to 1. Only access validation fields when validation was supplied. Epoch 0 measures initialization. See [epoch metrics](/api/sim/execution-result#epoch-metrics) and [observations](/api/sim/execution-result#epoch-observations) for complete field semantics and resumed histories.
+
+## Recording blocks on disk
+
+Use an [NPZRecordingSink](/api/sim/execution-spec#recording) when you want selected data delivered in blocks. Its directory must initially be empty. It writes `block-00000000.npz`, subsequent numbered files, and `manifest.jsonl`. Each NPZ contains one array named `values`; each JSON line describes that file:
+
+| Metadata | Meaning |
+| --- | --- |
+| `signal`, `kind` | Signal ID (or named output); `dense`, `spike_events` or `output` |
+| `start_step`, `end_step`, `dt_ms` | Absolute half-open step bounds and timestep in ms |
+| `batch_offset` | First presentation index for a dense batch block |
+| `cells` | Original selected cell IDs, or `null` when not supplied |
+| `unit`, `shape`, `dtype` | Signal units and stored array information |
+| `measurement_window` | Requested measurement bounds for output blocks, when applicable |
+| `file`, `sha256` | Relative filename and file digest |
+
+```python
+import json
+from pathlib import Path
+import numpy as np
+
+blocks = Path("recording-blocks")
+with (blocks / "manifest.jsonl").open() as handle:
+    for line in handle:
+        row = json.loads(line)
+        with np.load(blocks / row["file"], allow_pickle=False) as archive:
+            values = archive["values"]
+        print(row["signal"], row["kind"], values.shape, row["unit"])
+        # Analyse or aggregate this block here before reading the next.
+```
+
+Selected dense blocks currently contain one timestep, `(1, batch, selected_cells)`; their batch axis is local, so add `batch_offset` when identifying presentations. Sparse rows already contain global presentation indices and absolute steps: do not add the offset again. Output blocks can be a time slice or a reduced `(batch, classes)` array; inspect the graph and metadata before concatenating. Blocks from different signals or batches are not one array in file order.
+
+Sink output is separate from the inference artifact set; its JSONL records per-block digests. A sink leaves selected recordings out of the result. To bound trajectory retention, also disable exposed diagnostics and use `retain_outputs=False` where appropriate. See [retention controls](/api/sim/execution-spec#retain_outputs) for supported output chains and remaining metadata costs.
+
+## Older specialised CLI formats
+
+Specialised accelerator snapshot/inference paths use different layouts, even when the filename is also `recording.npz`. A snapshot can contain `spk_e`, `spk_i`, scalar `dt` (ms), `n_e`, `n_i`, plus voltage/conductance/input arrays; single-presentation spikes usually have `(time, cells)` axes. Optional field selection can omit arrays. Other specialised products include `per_cell_rates.npz`, `pop_traces.npz`, `rasters.npz`, `spike_summary.npz` and `weights_dump.npz`, with mode-specific keys.
+
+Do not apply the graph tables to those archives. Identify the producing command/executor, inspect `.files`, shapes and available metadata first. Graph artifacts have `inference-manifest.json`; use that schema to distinguish their contract from a legacy snapshot. Current graph examples use declared output/exposure names rather than fixed `spk_e`/`spk_i` aliases.
