@@ -388,3 +388,17 @@ Use this alongside `sim --executor graph --bundle ...` and the normal input/outp
 For `--dataset-encoder rate-poisson`, use `--input-rate HZ` for fixed feature-scaled rates or `--input-rates 40 80 120` for a categorical maximum-pixel rate independently selected per presentation. `--t-ms` supplies presentation duration; normal sample cap/split/shuffle/tail behavior is retained. Both fixed and categorical rates use separate rate-selection and spike streams. Exact `prebinned-spikes` / `event-bin` replay remains supported.
 
 Multiple explicitly seeded validation draws use `ValidationSpec.encoding_seeds` in the Python API; the CLI still has no held-out validation binding interface. Inference automatically uses batches of at most 32 through the CLI, loads its model/checkpoint once and concatenates requested outputs/diagnostics. Older eagerly encoded dataset checkpoints cannot resume under the new encoding protocol. See [request API](/api/sim/execution-spec#automatic-batch-encoding).
+
+
+## Selective resets and decisions
+
+Graph simulation/inference accepts repeatable `--reset-voltage JSON` and one `--decisions JSON`. They map directly to `ExecutionSpec.resets` and `ExecutionSpec.decisions`; see [boundary ownership and continuation rules](/api/sim/execution-spec#decisions).
+
+```bash
+python -m snnlab.sim sim --executor graph --bundle network.bundle \
+  --input-file inputs.npy --out-dir decisions \
+  --reset-voltage '{"population_id":"out","boundaries":{"steps":[0,200,400]},"value_mv":0.0}' \
+  --decisions '{"boundaries":{"steps":[0,200,400]},"end_step":600,"population_totals":["E","I"],"output_spike_counts":["out"]}'
+```
+
+Use the usual direct dense/event/Poisson input flags for the stream. Boundary JSON also accepts `{"events":[{"step":0},{"step":200,"batches":[0]}]}` instead of `steps`. Inference `metrics.json` includes completed decisions and the resolved reset/segment policy. Use the existing runtime-state load/save flags for partial segments; provide the same full policy on each continued invocation. Legacy execution and independent dataset batches reject these fields.

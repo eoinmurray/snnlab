@@ -80,6 +80,24 @@ from snnlab.sim.interventions import (
 from snnlab.sim.interventions import (
     save_spike_replay as save_spike_replay,
 )
+from snnlab.sim.segments import (
+    Boundary as Boundary,
+)
+from snnlab.sim.segments import (
+    BoundarySchedule as BoundarySchedule,
+)
+from snnlab.sim.segments import (
+    DecisionSegments as DecisionSegments,
+)
+from snnlab.sim.segments import (
+    ResetVoltage as ResetVoltage,
+)
+from snnlab.sim.segments import (
+    SegmentAccumulator,
+)
+from snnlab.sim.segments import (
+    segment_identity as segment_identity,
+)
 
 ExecutorName = Literal["legacy", "graph"]
 RequestKind = Literal["build", "simulate", "train", "infer"]
@@ -262,6 +280,8 @@ class ExecutionSpec:
     observations: EpochObservations | None = None
     checkpoint_selection: CheckpointSelection | None = None
     interventions: Sequence[Intervention] = field(default_factory=tuple)
+    resets: Sequence[ResetVoltage] = field(default_factory=tuple)
+    decisions: DecisionSegments | None = None
 
 
 @dataclass(frozen=True)
@@ -287,6 +307,7 @@ class ExecutionResult:
     runtime_state: GraphRuntimeState | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     model: nn.Module | None = None
+    decisions: list[dict[str, Any]] = field(default_factory=list)
 
     _output_axes: dict[str, tuple[int | str, ...]] = field(
         default_factory=dict, repr=False
@@ -1736,6 +1757,8 @@ class GraphRuntimeState:
     input_histories: dict[str, torch.Tensor]
     custom_state: dict[str, torch.Tensor] = field(default_factory=dict)
     currents: dict[str, torch.Tensor] = field(default_factory=dict)
+    segment_state: dict[str, Any] = field(default_factory=dict)
+    segment_counts: dict[str, torch.Tensor] = field(default_factory=dict)
 
     def detached(self, *, device: str | torch.device = "cpu") -> GraphRuntimeState:
         def moved(values: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
@@ -1755,6 +1778,8 @@ class GraphRuntimeState:
             input_histories=moved(self.input_histories),
             custom_state=moved(self.custom_state),
             currents=moved(self.currents),
+            segment_state=copy.deepcopy(self.segment_state),
+            segment_counts=moved(self.segment_counts),
         )
 
 
@@ -1845,6 +1870,7 @@ def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path:
         "input_histories": state.input_histories,
         "custom_state": state.custom_state,
         "currents": state.currents,
+        "segment_counts": state.segment_counts,
     }
     arrays: dict[str, np.ndarray] = {}
     tensors: list[dict[str, Any]] = []
@@ -1873,7 +1899,9 @@ def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path:
         temporary_tensors.unlink(missing_ok=True)
     manifest = {
         "schema": RUNTIME_STATE_SCHEMA,
-        "schema_version": 2 if state.custom_state or state.currents else 1,
+        "schema_version": 3
+        if state.segment_state
+        else (2 if state.custom_state or state.currents else 1),
         "signature": state.signature,
         "compatibility": state.compatibility,
         "completed_steps": state.completed_steps,
@@ -1881,6 +1909,9 @@ def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path:
         "tensors_digest": tensors_digest,
         "tensors": tensors,
     }
+    if state.segment_state:
+        manifest["segment_state"] = state.segment_state
+        manifest["segment_state_digest"] = _json_digest(state.segment_state)
     fd, temporary_name = tempfile.mkstemp(prefix=".manifest-", suffix=".json", dir=root)
     temporary_manifest = Path(temporary_name)
     try:
@@ -1903,8 +1934,12 @@ def load_runtime_state(
     manifest = json.loads((root / "manifest.json").read_text())
     if manifest.get("schema") != RUNTIME_STATE_SCHEMA or manifest.get(
         "schema_version"
-    ) not in {1, 2}:
+    ) not in {1, 2, 3}:
         raise ValueError(f"unsupported runtime-state schema: {manifest.get('schema')}")
+    if manifest.get("schema_version") == 3 and _json_digest(
+        manifest.get("segment_state", {})
+    ) != manifest.get("segment_state_digest"):
+        raise ValueError("runtime decision metadata digest mismatch")
     tensors_path = root / manifest.get("tensors_file", "tensors.npz")
     actual_digest = _file_digest(tensors_path)
     if actual_digest != manifest.get("tensors_digest"):
@@ -1919,6 +1954,7 @@ def load_runtime_state(
         "input_histories": {},
         "custom_state": {},
         "currents": {},
+        "segment_counts": {},
     }
     with np.load(tensors_path, allow_pickle=False) as archive:
         expected_keys = {row["key"] for row in manifest["tensors"]}
@@ -1946,6 +1982,8 @@ def load_runtime_state(
         input_histories=groups["input_histories"],
         custom_state=groups["custom_state"],
         currents=groups["currents"],
+        segment_state=manifest.get("segment_state", {}),
+        segment_counts=groups["segment_counts"],
     )
 
 
@@ -2007,6 +2045,9 @@ def write_inference_artifacts(
         "source_graph_digest": result.metrics.get("source_graph_digest"),
         "effective_graph_digest": result.metrics.get("effective_graph_digest"),
     }
+    if result.metrics.get("segment_policy") is not None:
+        request["segment_policy"] = result.metrics["segment_policy"]
+        request["segment_window"] = result.metrics["segment_window"]
     manifest = {
         "schema": INFERENCE_ARTIFACT_SCHEMA,
         "schema_version": 1,
@@ -2028,6 +2069,7 @@ def validate_inference_artifacts(
     graph: Mapping[str, Any] | None = None,
     seed: int | None = None,
     expected_interventions: Mapping[str, Any] | None | EllipsisType = ...,
+    expected_segments: Mapping[str, Any] | None | EllipsisType = ...,
 ) -> Mapping[str, Any]:
     """Authenticate a persisted graph inference artifact set before reuse."""
     root = Path(path)
@@ -2114,6 +2156,16 @@ def validate_inference_artifacts(
         "source_graph_digest": metrics.get("source_graph_digest"),
         "effective_graph_digest": metrics.get("effective_graph_digest"),
     }
+    if metrics.get("segment_policy") is not None:
+        request["segment_policy"] = metrics["segment_policy"]
+        request["segment_window"] = metrics["segment_window"]
+    if (
+        expected_segments is not Ellipsis
+        and metrics.get("segment_policy") != expected_segments
+    ):
+        raise ValueError(
+            "inference artifact reset/decision policy does not match expected identity"
+        )
     actual_request_digest = _json_digest(request)
     if actual_request_digest != manifest.get("request_digest"):
         raise ValueError(
@@ -3092,12 +3144,16 @@ class GraphExecutor(nn.Module):
         diagnostics: bool = True,
         runtime_state: GraphRuntimeState | None = None,
         interventions: Sequence[Intervention] = (),
+        resets: Sequence[ResetVoltage] = (),
+        decisions: DecisionSegments | None = None,
     ) -> ExecutionResult:
         result, _ = self._forward(
             inputs,
             diagnostics=diagnostics,
             runtime_state=runtime_state,
             interventions=interventions,
+            resets=resets,
+            decisions=decisions,
         )
         return result
 
@@ -3108,6 +3164,8 @@ class GraphExecutor(nn.Module):
         diagnostics: bool = True,
         runtime_state: GraphRuntimeState | None = None,
         interventions: Sequence[Intervention] = (),
+        resets: Sequence[ResetVoltage] = (),
+        decisions: DecisionSegments | None = None,
         required_signals: Sequence[str] = (),
         observation_populations: Sequence[str] = (),
     ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
@@ -3319,6 +3377,17 @@ class GraphExecutor(nn.Module):
                         f"runtime state input_histories.{name} dtype expected {inputs[name].dtype}, got {value.dtype}"
                     )
             completed_steps = int(runtime_state.completed_steps)
+        segments = SegmentAccumulator(
+            segment_identity(
+                resets, decisions, graph=self.plan.graph, batch_size=batch
+            ),
+            populations,
+            batch,
+            device,
+            runtime_state.segment_state if runtime_state is not None else {},
+            runtime_state.segment_counts if runtime_state is not None else {},
+            completed_steps,
+        )
         prepared_interventions, intervention_request = prepare_interventions(
             interventions,
             graph=self.plan.graph,
@@ -3480,6 +3549,8 @@ class GraphExecutor(nn.Module):
         }
 
         for t in range(steps):
+            segments.boundary(completed_steps + t, self.plan.dt_ms)
+            segments.reset(completed_steps + t, voltage)
             new_spikes: dict[str, torch.Tensor] = {}
             for pop in self.plan.populations:
                 name = pop["id"]
@@ -3660,6 +3731,7 @@ class GraphExecutor(nn.Module):
                         if signal in needed_signals:
                             state_traces.setdefault(signal, []).append(state[port])
             spikes = new_spikes
+            segments.observe(spikes)
             for name in observation_counts:
                 observation_counts[name] += spikes[name].detach().to(torch.int64)
             for name in spike_traces:
@@ -3876,6 +3948,7 @@ class GraphExecutor(nn.Module):
             .clone()
             for name, history in input_histories.items()
         }
+        segments.boundary(completed_steps + steps, self.plan.dt_ms)
         next_runtime_state = GraphRuntimeState(
             signature=expected_signature,
             compatibility=expected_compatibility,
@@ -3901,6 +3974,8 @@ class GraphExecutor(nn.Module):
             custom_state={
                 key: value.detach().clone() for key, value in custom_state.items()
             },
+            segment_state=segments.state(),
+            segment_counts=segments.counts,
         )
         signal_axes = _signal_axes(self.plan.graph)
         result = ExecutionResult(
@@ -3913,6 +3988,11 @@ class GraphExecutor(nn.Module):
             },
             runtime_state=next_runtime_state,
             metrics={
+                "segment_policy": segments.identity,
+                "segment_window": {"start_step": completed_steps, "steps_count": steps}
+                if segments.identity
+                else None,
+                "decisions": segments.records,
                 "resolved_interventions": resolved_interventions,
                 "inference_interventions": intervention_request
                 if interventions
@@ -3923,6 +4003,7 @@ class GraphExecutor(nn.Module):
                     else {}
                 ),
             },
+            decisions=segments.records,
             _output_axes={
                 row["id"]: signal_axes[row["signal"]] for row in self.plan.outputs
             },
@@ -3984,6 +4065,8 @@ def simulate(
         raise ValueError(
             "move options['inference_interventions'] to ExecutionSpec.interventions using typed intervention objects"
         )
+    if spec.executor != "graph" and (spec.resets or spec.decisions is not None):
+        raise ValueError("resets and decisions require the graph executor")
     if spec.executor != "graph" and spec.interventions:
         raise ValueError("interventions require the graph executor")
     if spec.executor != "graph":
@@ -4169,6 +4252,10 @@ def simulate(
             protocol=spec.protocol,
         )
     if isinstance(resolved_inputs, DatasetProvider):
+        if spec.resets or spec.decisions is not None:
+            raise ValueError(
+                "reset/decision streams require direct dense, event or Poisson bindings; dataset batches are independent trajectories"
+            )
         result = simulate_dataset(
             built.model,
             resolved_inputs,
@@ -4189,6 +4276,8 @@ def simulate(
             if runtime_state is not None
             else spec.runtime_state,
             interventions=interventions,
+            resets=spec.resets,
+            decisions=spec.decisions,
         )
     elapsed = time.perf_counter() - started
     _, peak = tracemalloc.get_traced_memory()
@@ -4248,6 +4337,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         )
     ):
         spec = replace(spec, epochs=1)
+    if spec.resets or spec.decisions is not None:
+        raise ValueError(
+            "resets and decisions are supported only for graph simulation/inference"
+        )
     if spec.interventions or "inference_interventions" in spec.options:
         raise ValueError(
             "interventions are supported only for graph simulation/inference"
@@ -5290,6 +5383,13 @@ def execution_spec_from_args(
         interventions=tuple(
             parse_intervention(value) for value in getattr(args, "intervention", ())
         ),
+        resets=tuple(
+            ResetVoltage.from_dict(json.loads(value))
+            for value in getattr(args, "reset_voltage", ())
+        ),
+        decisions=DecisionSegments.from_dict(json.loads(args.decisions))
+        if getattr(args, "decisions", None)
+        else None,
         checkpoint_selection=(
             CheckpointSelection.from_dict(json.loads(args.checkpoint_selection))
             if getattr(args, "checkpoint_selection", None)
@@ -5310,6 +5410,8 @@ def execution_spec_from_args(
                 "save_selected_checkpoint",
                 "checkpoint_selection",
                 "intervention",
+                "reset_voltage",
+                "decisions",
             }
         },
     )
@@ -5355,6 +5457,8 @@ def execute_request(
 ) -> ExecutionResult:
     """Dispatch one typed request; the CLI supplies its unchanged legacy body."""
     if spec.executor == "legacy":
+        if spec.resets or spec.decisions is not None:
+            raise ValueError("resets and decisions require the graph executor")
         if legacy is None:
             raise ValueError(
                 "legacy execution requires the registered legacy request body"

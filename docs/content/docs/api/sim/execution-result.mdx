@@ -22,6 +22,7 @@ from snnlab.sim.execution import ExecutionResult, NumpyExecutionResult
 | `training_checkpoint` | Final in-memory training checkpoint. |
 | `selected_checkpoint` | In-memory selected training checkpoint. |
 | `final_state` | Named final dynamic tensors from graph forward execution. |
+| `decisions` | Completed per-batch decision segments, with step bounds, duration and integer population/per-neuron spike counts. |
 | `runtime_state` | Structured continuation state from graph forward execution. |
 | `metrics` | Build/run timing, initialization/protocol and operation-specific evidence. |
 | `model` | Built model where the handler supplies it. |
@@ -132,6 +133,7 @@ class ExecutionResult:
     training_checkpoint: TrainingCheckpoint | None = None
     selected_checkpoint: TrainingCheckpoint | None = None
     final_state: dict[str, torch.Tensor] = field(default_factory=dict)
+    decisions: list[dict[str, Any]] = []
     runtime_state: GraphRuntimeState | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     model: nn.Module | None = None
@@ -154,3 +156,8 @@ Generate an expected identity with [intervention_identity](/api/sim/execution-sp
 Dataset requests retain `execution_protocol.batch_encoding` (`snnlab.batch-encoding/v1`) and selected source indices instead of retaining complete encoded inputs. Training `metrics["updates"]` rows include `encoding` with phase/epoch, original sample indices, draw seed, separate rate/spike seeds and encoder details. Categorical encoders also record the selected per-presentation rates. Epoch evaluation adds `train_encoding_draws` / `validation_encoding_draws` for provider inputs; totals and accuracies average across the declared draw set, and observation sample counts include all draw presentations.
 
 Dataset inference returns full concatenated sample outputs and `metrics["encoding_batches"]`, using one initialized/checkpoint-loaded model. Explicit diagnostics are likewise concatenated; input batching does not imply bounded output retention. `runtime_state` is absent for multiple batches because each batch represents independent presentations; continuation is supported when the dataset fits in one batch. See [automatic batch encoding](/api/sim/execution-spec#automatic-batch-encoding) for defaults, exact replay and checkpoint compatibility.
+
+
+## decisions
+
+`result.decisions` contains completed records from an explicit [DecisionSegments policy](/api/sim/execution-spec#decisions). Partial segments remain in `runtime_state.segment_counts` with their cursor and full policy in `runtime_state.segment_state`; they are not prematurely reported at a call boundary. The result defaults to an empty list when no segments complete. Inference artifacts retain completed records in `metrics.json` and bind the policy and absolute execution window into the request digest. Ordinary output and diagnostic retention is unchanged.

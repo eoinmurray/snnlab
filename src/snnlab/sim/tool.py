@@ -906,6 +906,19 @@ def _build_subparsers(parser, parent):
         help="[graph] Multiply a named graph projection for this inference request; repeatable.",
     )
     sim_parser.add_argument(
+        "--reset-voltage",
+        action="append",
+        default=[],
+        metavar="JSON",
+        help="[graph] Selective leaky-integrator voltage reset as JSON; repeatable.",
+    )
+    sim_parser.add_argument(
+        "--decisions",
+        default=None,
+        metavar="JSON",
+        help="[graph] Decision segment boundaries and spike counts as JSON.",
+    )
+    sim_parser.add_argument(
         "--intervention",
         action="append",
         default=[],
@@ -2234,6 +2247,10 @@ def main(argv=None):
         raise SystemExit("--poisson-protocol requires --executor graph")
     if request.executor == "legacy" and getattr(args, "scale_projection", None):
         raise SystemExit("--scale-projection requires --executor graph")
+    if request.executor == "legacy" and (
+        getattr(args, "reset_voltage", None) or getattr(args, "decisions", None)
+    ):
+        raise SystemExit("--reset-voltage/--decisions require --executor graph")
     if request.executor == "legacy" and getattr(args, "intervention", None):
         raise SystemExit("--intervention requires --executor graph")
     if request.executor == "legacy" and getattr(args, "inference_timestep_ms", None):

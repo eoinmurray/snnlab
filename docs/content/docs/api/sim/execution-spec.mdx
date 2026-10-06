@@ -38,6 +38,8 @@ ExecutionSpec(
     observations: EpochObservations | None = None,
     checkpoint_selection: CheckpointSelection | None = None,
     interventions: Sequence[Intervention] = (),
+    resets: Sequence[ResetVoltage] = (),
+    decisions: DecisionSegments | None = None,
 )
 ```
 
@@ -596,3 +598,46 @@ Every execution handler returns [ExecutionResult](/api/sim/execution-result). Th
 6. Use valid devices, the diagnostics flag and handler-specific options. Respect checkpoint and runtime-state compatibility.
 
 Validation happens when a handler resolves the request. Frozen dataclass construction alone is not proof that a request is executable.
+
+
+## resets
+
+`ExecutionSpec.resets` accepts a sequence of `ResetVoltage(population_id, boundaries, value_mv=0.0)` objects. Only leaky-integrator populations are supported. Resets replace voltage before that population's update at the specified absolute timestep. Other populations, refractory counters, synaptic state and delayed spike histories continue normally. Overlapping resets for the same population, batch member and timestep are rejected.
+
+```python
+from pathlib import Path
+
+from snnlab.sim.execution import (
+    Boundary, BoundarySchedule, DecisionSegments, ExecutionSpec, ResetVoltage,
+)
+
+boundaries = BoundarySchedule(steps=(0, 200, 400))
+request = ExecutionSpec(
+    kind="infer",
+    bundle=Path("network.bundle"),
+    input_bindings=input_bindings,
+    resets=(ResetVoltage("out", boundaries, value_mv=0.0),),
+    decisions=DecisionSegments(
+        boundaries=boundaries,
+        end_step=600,
+        population_totals=("E", "I"),
+        output_spike_counts=("out",),
+    ),
+)
+```
+
+`BoundarySchedule(steps=(...), batches=None)` shares one strictly increasing schedule across all batch members. Pass a non-empty tuple of unique batch indices to select members. Alternatively, use `BoundarySchedule(events=(Boundary(0), Boundary(200, batches=(0,)), Boundary(250, batches=(1,))))`. Events must be increasing separately for each affected batch member. The `steps`/`batches` and `events` forms are mutually exclusive; steps and batch indices are non-negative integers. Boundary schedules may extend beyond the current execution chunk.
+
+## decisions
+
+`DecisionSegments(boundaries, end_step, population_totals=(), output_spike_counts=())` defines explicit, potentially nonuniform segments for each batch member. Each member must have an initial boundary before the common terminal `end_step`; activity before its first boundary and after `end_step` is excluded. At least one count population is required, and every counted population must emit spikes.
+
+A boundary at step 200 closes `[0, 200)` before any voltage reset and before the step-200 update. Step 200 belongs to the next segment. `end_step` closes the last segment even when it equals the current chunk's end. Reset events at a chunk's end are applied only when execution resumes and updates that timestep. An unrelated call boundary never closes a segment.
+
+Completed segments appear in `result.decisions`, ordered by closing timestep then batch index. Each record contains `batch`, `start_step`, `end_step`, `duration_ms`, integer `population_totals` and per-neuron integer `output_spike_counts`. Counts use emitted spikes after any replay/drop/add interventions. Output counts are neuron/class counts, not weighted hidden-population readout values. The same records are stored in inference `metrics.json`.
+
+Partial accumulators use one `int64` tensor of shape `(batch, population_size)` per counted population, with no additional dense spike history. `result.runtime_state` retains these counts and the boundary cursor. Reuse the original full reset/decision policy with every continuation call. Changing or removing the policy, or attaching one to an existing unaudited runtime trajectory, fails explicitly. `save_runtime_state`/`load_runtime_state` preserve the accumulators and digest-bound metadata through schema version 3; ordinary older runtime artifacts remain supported. Returned records grow with completed segments; this does not change retention of ordinary graph outputs or diagnostics.
+
+These fields are supported by graph simulation/inference and by `GraphExecutor.forward(..., resets=..., decisions=...)`. Training rejects them. Supply continuous streams through dense, event or Poisson bindings. Dataset snapshots encode independent sample batches and reject continuous reset/decision policies.
+
+For cache reuse, compute the resolved policy with `segment_identity(resets, decisions, graph=effective_graph, batch_size=batch_size)` and pass it as `validate_inference_artifacts(path, expected_segments=identity)`. Passing `expected_segments=None` requires a cache without this policy; omission checks internal integrity only. Reset targets, values, absolute schedules, timing and count selections are bound into the inference request digest. This is a policy check; complete expected-request verification remains separate.
