@@ -7,6 +7,12 @@ on:
   pull_request:
     paths: ['docs/**', 'examples/**', 'CHANGELOG.md', 'src/snnlab/**', '.github/workflows/docs.yml']
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Deploy without rerunning tests (explicit release request only).
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -27,7 +33,9 @@ jobs:
         with:
           bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
-      - run: bun test scripts/hydration-preloads.test.mjs
+      - name: Run documentation tests
+        if: ${{ !inputs.skip_tests }}
+        run: bun test scripts/hydration-preloads.test.mjs
       - run: bun run types:check
       - run: bun run build
         env:

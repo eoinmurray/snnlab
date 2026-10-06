@@ -2,6 +2,10 @@
 
 import json
 import math
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,6 +26,7 @@ from snnlab.sim.execution import (
     simulate,
     train,
 )
+from tests.sim import _extension_callbacks as callbacks
 
 
 @pytest.fixture(autouse=True)
@@ -153,46 +158,17 @@ def test_invalid_current_neuron_parameters(values):
 
 
 def register_dynamics():
-    def neuron_init(ctx):
-        return {
-            "voltage": torch.zeros(ctx.shape, dtype=ctx.dtype, device=ctx.device),
-            "adaptation": torch.zeros(ctx.shape, dtype=ctx.dtype, device=ctx.device),
-        }
-
-    def neuron_step(ctx):
-        voltage = (
-            ctx.state["voltage"]
-            + ctx.excitatory
-            - ctx.inhibitory
-            - ctx.state["adaptation"]
-        )
-        spikes = ctx.spike(voltage - ctx.config["threshold"])
-        return {
-            **ctx.state,
-            "voltage": voltage - spikes,
-            "adaptation": 0.5 * ctx.state["adaptation"] + 0.1 * spikes,
-        }, spikes
-
-    def synapse_init(ctx):
-        return {
-            "value": torch.zeros(ctx.shape, dtype=ctx.dtype, device=ctx.device),
-            "trace": torch.zeros(ctx.shape, dtype=ctx.dtype, device=ctx.device),
-        }
-
-    def synapse_step(ctx):
-        trace = ctx.state["trace"] * 0.5 + ctx.drive
-        return {"value": trace, "trace": trace}
-
     ext.register_neuron(
         "test.adaptive/v1",
-        neuron_step,
-        initialize=neuron_init,
+        "tests.sim._extension_callbacks:neuron_step",
+        initialize="tests.sim._extension_callbacks:neuron_init",
+        validate="tests.sim._extension_callbacks:validate_neuron",
         state_units={"adaptation": "nA"},
     )
     ext.register_synapse(
         "test.trace/v1",
-        synapse_step,
-        initialize=synapse_init,
+        callbacks.synapse_step,
+        initialize=callbacks.synapse_init,
         state_units={"trace": "nA"},
     )
 
@@ -263,29 +239,23 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
 ):
     ext.register_initializer(
         "test.normal/v1",
-        lambda shape, config, **kw: torch.full(shape, config["value"], **kw),
+        callbacks.normal,
     )
     ext.register_constraint(
         "test.bounds/v1",
-        lambda value, config: value.clamp(-config["limit"], config["limit"]),
+        callbacks.bounds,
     )
     ext.register_operation(
         "test.affine/v1",
-        lambda sources, parameters, config: sources[0].mean(0) * parameters["gain"],
+        callbacks.affine,
     )
     ext.register_objective(
         "test.mse/v1",
-        lambda prediction, target, config: (prediction - target).square().mean(),
+        callbacks.mse,
     )
-    ext.register_regularizer(
-        "test.energy/v1", lambda signals, duration, config: signals[0].square().mean()
-    )
-    ext.register_optimizer(
-        "test.sgd/v1", lambda groups, config: torch.optim.SGD(groups, **config)
-    )
-    ext.register_surrogate(
-        "test.triangle/v1", lambda value, config: (1 - value.abs()).clamp(min=0)
-    )
+    ext.register_regularizer("test.energy/v1", callbacks.energy)
+    ext.register_optimizer("test.sgd/v1", callbacks.sgd)
+    ext.register_surrogate("test.triangle/v1", callbacks.triangle)
     net = lang.Network("regression", dt=1 * lang.ms)
     inputs = net.input(
         "inputs", shape=("time", "batch", 1), signal_type="continuous", unit="1"
@@ -320,6 +290,7 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
     )
     bundle = lang.compile(net, training=training)
     path = bundle.write(tmp_path / "bundle")
+    ext._REGISTRY.clear()
     args = dict(
         kind="train",
         bundle=path,
@@ -344,6 +315,30 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
         full.metrics["epochs"][-1]["train_loss"]
         < full.metrics["epochs"][0]["train_loss"]
     )
+    script = """
+import sys
+import torch
+from snnlab import extensions
+from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, train
+assert not extensions.definitions()
+result = train(ExecutionSpec(kind="train", bundle=sys.argv[1],
+    input_bindings=(DenseArrayBinding("inputs", torch.ones(3, 4, 1)),),
+    targets={"value": torch.ones(4, 1)}, device="cpu", epochs=2, batch_size=2))
+print(result.parameters["gain"].item())
+"""
+    root = Path(__file__).resolve().parents[2]
+    environment = dict(
+        os.environ, PYTHONPATH=os.pathsep.join((str(root), str(root / "src")))
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(path)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert float(completed.stdout.strip()) == full.parameters["gain"].item()
 
 
 def test_custom_surrogate_derivative_reaches_current_weights():
@@ -451,18 +446,178 @@ def test_custom_constraint_applied_after_fanin_normalization():
     assert torch.all(model.parameter_map()[projection.weight.id] == 1.0)
 
 
-def test_registered_definitions_required_in_new_process(tmp_path):
+@pytest.mark.parametrize("loader", ["lang", "sim", "cli"])
+def test_saved_extensions_load_and_simulate_in_fresh_process(tmp_path, loader):
     net, *_ = custom_network()
-    path = lang.compile(net).write(tmp_path / "bundle")
+    bundle = lang.compile(net)
+    path = bundle.write(tmp_path / "bundle")
+    expected = run(bundle, torch.ones(14, 2, 1))
+    assert not any(
+        file.suffix in {".py", ".pkl", ".pickle"} for file in path.rglob("*")
+    )
+    assert bundle.graph["extensions"] == bundle.manifest["extensions"]
+    environment = dict(os.environ)
+    root = Path(__file__).resolve().parents[2]
+    environment["PYTHONPATH"] = os.pathsep.join((str(root), str(root / "src")))
+    script = """
+import sys
+import numpy as np
+import torch
+from snnlab import extensions, lang
+from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, simulate
+assert not extensions.definitions()
+if sys.argv[3] == "lang":
+    bundle = lang.load_bundle(sys.argv[1])
+result = simulate(ExecutionSpec(kind="simulate", bundle=sys.argv[1],
+    input_bindings=(DenseArrayBinding("inputs", torch.ones(14, 2, 1)),), device="cpu"))
+np.savez(sys.argv[2], **result.numpy().outputs)
+"""
+    output = tmp_path / "result.npz"
+    command = [sys.executable, "-c", script, str(path), str(output), loader]
+    if loader == "cli":
+        values_path = tmp_path / "inputs.npy"
+        np.save(values_path, np.ones((14, 2, 1), dtype=np.float32))
+        output = tmp_path / "run" / "outputs.npz"
+        command = [
+            sys.executable,
+            "-m",
+            "snnlab.sim",
+            "sim",
+            "--bundle",
+            str(path),
+            "--input-file",
+            str(values_path),
+            "--out-dir",
+            str(output.parent),
+            "--device",
+            "cpu",
+        ]
+    completed = subprocess.run(
+        command,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    with np.load(output) as actual:
+        for name, value in expected.numpy().outputs.items():
+            np.testing.assert_array_equal(actual[name], value)
+    ext._REGISTRY.clear()
+    # Standalone graph JSON also resolves its dependencies without manual imports.
+    model = GraphExecutor(plan_graph(json.loads((path / "graph.json").read_text())))
+    actual = model({"inputs": torch.ones(14, 2, 1)})
+    torch.testing.assert_close(
+        actual.outputs["spikes"], expected.outputs["spikes"], rtol=0, atol=0
+    )
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "missing_snnlab_test_module:step",
+        "tests.sim._extension_callbacks:missing_step",
+        "tests.sim._extension_callbacks:not_callable",
+    ],
+)
+def test_missing_or_invalid_saved_callback_fails_before_simulation(reference):
+    net, *_ = custom_network()
+    graph = lang.compile(net).graph
+    graph["extensions"][0]["implementation"]["function"] = reference
+    ext._REGISTRY.clear()
+    with pytest.raises((ValueError, TypeError), match="callback"):
+        simulate(
+            ExecutionSpec(
+                kind="simulate",
+                graph=graph,
+                input_bindings=(DenseArrayBinding("inputs", torch.ones(2, 1, 1)),),
+                device="cpu",
+            )
+        )
+
+
+def test_saved_package_version_checked_even_with_cached_definition(monkeypatch):
+    monkeypatch.setattr(ext.metadata, "version", lambda package: "1.2.3")
+    ext.register_initializer(
+        "test.package/v1", callbacks.normal, package="example-neurons"
+    )
+    net, *_ = current_network()
+    net.parameters[0]["initializer"] = lang.CustomInitializer(
+        "test.package/v1", value=1.0
+    ).json()
+    graph = lang.compile(net).graph
+    assert graph["extensions"][0]["package_version"] == "1.2.3"
+    monkeypatch.setattr(ext.metadata, "version", lambda package: "2.0.0")
+    with pytest.raises(ValueError, match="requires version 1.2.3, installed 2.0.0"):
+        plan_graph(graph)
+
+
+def test_missing_extension_package_has_clear_error():
+    with pytest.raises(ValueError, match="package.*not installed"):
+        ext.register_initializer(
+            "test.package/v1", callbacks.normal, package="snnlab-missing-test-package"
+        )
+
+
+def test_nonimportable_callbacks_cannot_be_saved(tmp_path):
+    ext.register_initializer(
+        "test.local/v1", lambda shape, config, **kw: torch.ones(shape, **kw)
+    )
+    net, *_ = current_network()
+    net.parameters[0]["initializer"] = lang.CustomInitializer("test.local/v1").json()
+    bundle = lang.compile(net)
+    run(bundle, torch.ones(2, 1, 1))  # Ephemeral callbacks remain usable in memory.
+    with pytest.raises(ValueError, match="cannot save.*importable module functions"):
+        bundle.write(tmp_path / "bundle")
+    assert not (tmp_path / "bundle").exists()
+
+
+def test_existing_definition_cannot_override_saved_implementation():
+    net, *_ = custom_network()
+    graph = lang.compile(net).graph
+    ext._REGISTRY.clear()
+    ext.register_neuron(
+        "test.adaptive/v1", callbacks.synapse_step, initialize=callbacks.neuron_init
+    )
+    with pytest.raises(ValueError, match="conflicts with saved definition"):
+        plan_graph(graph)
+
+
+def test_import_references_are_verified_before_loading(tmp_path):
+    net, *_ = custom_network()
+    bundle = lang.compile(net)
+    path = bundle.write(tmp_path / "bundle")
+    graph = json.loads((path / "graph.json").read_text())
+    graph["extensions"][0]["implementation"]["function"] = (
+        "missing_snnlab_test_module:step"
+    )
+    (path / "graph.json").write_text(json.dumps(graph))
+    ext._REGISTRY.clear()
+    from snnlab.sim.bundle import load_graph_bundle
+
+    for loader in (lang.load_bundle, load_graph_bundle):
+        with pytest.raises(ValueError, match="digest"):
+            loader(path)
+    assert not ext.definitions()
+
+
+def test_older_name_only_bundle_requires_registration(tmp_path):
+    net, *_ = custom_network()
+    bundle = lang.compile(net)
+    bundle.graph.pop("extensions")
+    from snnlab.lang.compiler import canonical_json, digest
+
+    path = bundle.write(tmp_path / "bundle")
+    bundle.manifest["graph_digest"] = digest(bundle.graph)
+    bundle.manifest["files"][0]["digest"] = digest(bundle.graph)
+    (path / "manifest.json").write_bytes(canonical_json(bundle.manifest))
     ext._REGISTRY.clear()
     with pytest.raises(ValueError, match="registration module"):
         lang.load_bundle(path)
 
 
 def test_stateless_optimizer_resume(tmp_path):
-    ext.register_optimizer(
-        "test.stateless/v1", lambda groups, config: torch.optim.SGD(groups, **config)
-    )
+    ext.register_optimizer("test.stateless/v1", callbacks.sgd)
     net = lang.Network("stateless")
     inputs = net.input(
         "inputs", shape=("time", "batch", 2), signal_type="continuous", unit="1"

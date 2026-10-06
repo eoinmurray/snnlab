@@ -24,7 +24,7 @@ def compile(
 | `target` | Optional backend capability target, such as `"tools/snnsim"`. |
 | `assets` | Mapping of declared logical asset names to physical files. |
 
-Graph and training validation errors raise `ValueError`. Backend capability diagnostics are retained in the bundle; inspect them before execution. Every declared asset needs a physical path, and undeclared or missing files are rejected. The manifest records digests, target, required capabilities and any named extension dependencies. Import the registration module before compiling or loading custom definitions; bundle loading never imports implementation code.
+Graph and training validation errors raise `ValueError`. Backend capability diagnostics are retained in the bundle; inspect them before execution. Every declared asset needs a physical path, and undeclared or missing files are rejected. The manifest records digests, target, required capabilities and extension dependencies. Register importable callbacks or `module:function` references when authoring custom definitions. Their locations, units and optional exact package versions are recorded in the graph or recipe and covered by its digest. Bundle loading automatically imports the referenced external modules; no Python source or pickled callbacks are included in the bundle. See [Extensions](/api/lang/extensions).
 
 ## Bundle
 
@@ -47,6 +47,8 @@ loaded = lang.load_bundle(path)
 
 `Bundle.write(path, *, visualise=False)` returns a `Path` to a directory containing `graph.json`, optional `training.json`, `manifest.json`, bundled assets and `reports/summary.md`. With `visualise=True`, it also renders structural diagrams; Graphviz is required. Use a fresh destination when changing which optional recipes exist: writing does not clear an existing directory.
 
+Saving a custom callback that cannot be resolved through an importable module raises `ValueError` before creating files. Move closures, lambdas and functions defined in `__main__` into a module first.
+
 ### Bundle.visualise
 
 ```python
@@ -56,6 +58,8 @@ bundle.visualise(path, *, view="circuit", scale=1, expand_groups=())
 Renders one selected view to the given path and returns its `Path`. The suffix selects the output format; `expand_groups` applies to circuit/training views. This combines `lang.diagram` with `viz.render_diagram` without changing the bundle.
 
 ## load_bundle
+
+Loading verifies saved file digests before resolving external extension modules. Missing bundle paths raise `FileNotFoundError("bundle not found: ...")`; incomplete bundle directories raise `ValueError`. Referenced callbacks and declared exact package versions must be available in the current environment.
 
 ```python
 def load_bundle(path: str | Path) -> Bundle: ...

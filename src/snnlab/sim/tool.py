@@ -361,7 +361,10 @@ def main(argv=None):
             "graph execution requires exactly one of --input-file, --event-file, --poisson-protocol, or --dataset-file"
         )
 
-    manifest, graph = load_graph_bundle(args.bundle)
+    try:
+        manifest, graph = load_graph_bundle(args.bundle)
+    except (ValueError, TypeError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
     try:
         inference_overrides = {}
         projection_scales = {}

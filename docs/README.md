@@ -64,4 +64,4 @@ Input declarations live in Network; binding types and compatibility rules live i
 
 Current-based LIF follows PyTorch Integration and demonstrates built-in current neurons and synapses. `scripts/sync-current-lif.ts` publishes its script and figures from `../examples/current-lif/`.
 
-Customisation follows Current-based LIF and demonstrates current-based LIF neurons, registered adaptive dynamics and a custom initializer. `scripts/sync-customisation.ts` publishes the script and figures; run `../examples/customisation/customisation.py` to regenerate outputs.
+Customisation follows Current-based LIF and demonstrates current-based LIF neurons, adaptive dynamics and a custom initializer supplied by an external importable `custom_neurons.py` module. `scripts/sync-customisation.ts` publishes both Python files and figures; run `../examples/customisation/customisation.py` to regenerate outputs, then add `--simulate` to load the saved bundle in a fresh process without registration or rebuilding.

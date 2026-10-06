@@ -8,6 +8,7 @@
     "schema": {"const": "snnlang.graph/v1"},
     "name": {"type": "string", "minLength": 1},
     "voltage_sampling": {"const": "explicit"},
+    "extensions": {"type": "array", "items": {"$ref": "#/$defs/extension"}},
     "timebase": {"type": "object"},
     "inputs": {"type": "array", "items": {"$ref": "#/$defs/named"}},
     "populations": {"type": "array", "items": {"$ref": "#/$defs/named"}},
@@ -17,6 +18,84 @@
     "outputs": {"type": "array", "items": {"$ref": "#/$defs/named"}}
   },
   "$defs": {
+    "extension": {
+      "type": "object",
+      "required": [
+        "category",
+        "definition"
+      ],
+      "properties": {
+        "category": {
+          "enum": [
+            "neuron",
+            "synapse",
+            "initializer",
+            "constraint",
+            "operation",
+            "objective",
+            "regularizer",
+            "optimizer",
+            "surrogate",
+            "encoder"
+          ]
+        },
+        "definition": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*/v[1-9][0-9]*$"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state_units": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "classification": {
+          "type": "boolean"
+        },
+        "implementation": {
+          "type": "object",
+          "required": [
+            "function"
+          ],
+          "properties": {
+            "function": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_.]*$"
+            },
+            "initialize": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_.]*$"
+            },
+            "validate": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_.]*$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "package": {
+          "type": "string",
+          "minLength": 1
+        },
+        "package_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "dependentRequired": {
+        "package": [
+          "package_version"
+        ],
+        "package_version": [
+          "package"
+        ]
+      }
+    },
     "parameter": {
       "allOf": [{"$ref": "#/$defs/named"}],
       "properties": {

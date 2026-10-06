@@ -216,6 +216,11 @@ def _validate_neuron(neuron):
 
 def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
     out = ValidationResult()
+    try:
+        E.restore(graph)
+    except (ValueError, TypeError) as error:
+        out.diagnostics.append(Diagnostic("error", "E500", str(error)))
+        return out
     if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
         out.diagnostics.append(
             Diagnostic("error", "E115", "unsupported voltage_sampling contract")
@@ -740,6 +745,11 @@ def validate_training(
     graph: Mapping[str, Any], training: Mapping[str, Any]
 ) -> ValidationResult:
     result = ValidationResult()
+    try:
+        E.restore(training)
+    except (ValueError, TypeError) as error:
+        result.diagnostics.append(Diagnostic("error", "E500", str(error)))
+        return result
     parameters = {p["id"] for p in graph["parameters"]}
     output_signals = {o["signal"] for o in graph["outputs"]}
     signals = {f"{x['id']}.value" for x in graph["operations"]} | output_signals
@@ -1304,6 +1314,7 @@ class Bundle:
     asset_sources: dict[str, Path] = field(default_factory=dict)
 
     def write(self, path: str | Path, *, visualise: bool = False) -> Path:
+        E.require_portable(self.graph, self.training)
         root = Path(path)
         root.mkdir(parents=True, exist_ok=True)
         (root / "graph.json").write_bytes(canonical_json(self.graph))
@@ -1356,11 +1367,15 @@ def compile(
     target: str | None = None,
     assets: Mapping[str, str | Path] | None = None,
 ) -> Bundle:
-    graph = graph_dict(network)
+    graph = E.with_requirements(graph_dict(network))
     graph_validation = validate_graph(graph)
     graph_validation.raise_for_errors()
     graph_digest = digest(graph)
-    training_data = _training_dict(training, graph_digest, graph) if training else None
+    training_data = (
+        E.with_requirements(_training_dict(training, graph_digest, graph))
+        if training
+        else None
+    )
     training_validation = (
         validate_training(graph, training_data) if training_data else ValidationResult()
     )
@@ -1420,6 +1435,14 @@ def compile(
 
 def load_bundle(path: str | Path) -> Bundle:
     root = Path(path)
+    if not root.exists():
+        raise FileNotFoundError(f"bundle not found: {root}")
+    if root.is_file() and root.name == "manifest.json":
+        root = root.parent
+    if not (root / "manifest.json").is_file() or not (root / "graph.json").is_file():
+        raise ValueError(
+            f"{root} is not a bundle: manifest.json and graph.json are required"
+        )
     graph = json.loads((root / "graph.json").read_text())
     manifest = json.loads((root / "manifest.json").read_text())
     training_path = root / "training.json"

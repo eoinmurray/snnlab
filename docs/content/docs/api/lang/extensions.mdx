@@ -3,15 +3,31 @@ title: Extensions
 description: Versioned Python registrations for custom dynamics, weights, operations, training and dataset encoders.
 ---
 
-`snnlab.extensions` connects user-defined Python implementations to portable graph specifications. Register a stable name such as `my_lab.adaptive/v1`, then use it in a `lang.CustomNeuron` or another custom declaration. Import the registering module before compiling, loading or executing a bundle that requires it.
+`snnlab.extensions` connects user-defined Python implementations to portable graph specifications. Register a stable name such as `my_lab.adaptive/v1` when authoring, then use it in a `lang.CustomNeuron` or another custom declaration. Callbacks can be importable functions or explicit `module:function` strings. Loading a saved bundle and graph simulation automatically resolve those references; the execution process needs no registration calls.
 
-Bundles contain names and JSON configuration, not Python code or pickled functions. `manifest["extensions"]` lists required definitions. Loading a bundle never automatically imports modules or downloads implementations. Changing an implementation's semantics requires a new versioned name; the library cannot authenticate the source code behind a name.
+Bundles contain names, import references, units, dependency metadata and JSON configuration. Python source and pickled functions are never included. `graph["extensions"]` and `training["extensions"]` record each document's dependencies, covered by its digest; `manifest["extensions"]` lists the combined requirements. Referenced modules must be on Python's import path or installed in the execution environment. Loading imports these external modules and never downloads implementations. Changing an implementation's semantics requires a new versioned name; import references do not authenticate source contents.
+
+```python
+extensions.register_neuron(
+    "my_lab.adaptive/v1",
+    "my_lab.neurons:adaptive_step",
+    initialize="my_lab.neurons:adaptive_initial_state",
+    input_unit="nA",
+    state_units={"adaptation": "nA"},
+)
+```
+
+Keep the implementations as module functions, outside the bundle. Passing those imported functions directly records the same references automatically. Lambdas, closures, callable instances and functions defined in a script's `__main__` can be used in memory, but saving a bundle that uses them raises `ValueError` before writing files. Move them into an importable module first.
+
+Missing modules, missing/non-callable attributes and conflicting cached definitions fail explicitly. A missing bundle path raises `FileNotFoundError("bundle not found: ...")`; the CLI exits with that message. Older bundles containing only names still require their original registrations because they provide no implementation locations. Recompile and save them to adopt automatic loading.
 
 ## Registration
 
 Use the specialized registration functions below. Names must match a qualified identifier ending in `/v` and a positive version number. Duplicate category/name pairs raise `ValueError`; built-ins remain separate. `extensions.definitions(category=None)` returns registered immutable definition records for inspection.
 
 All registrations accept optional `validate(config)`. It should raise `ValueError` for invalid configuration. Configuration must serialize as JSON; use numeric values or explicit unit/value mappings. Implement differentiable runtime functions using PyTorch operations, and use the supplied device/dtype when initializing tensors.
+
+All registrations also accept `package=None, package_version=None`. `package` is the installed distribution name, which may differ from the import-module name. Supplying it records the installed version, or checks an explicitly supplied `package_version`. Every subsequent load checks the exact version, including when a definition is already cached. Missing packages and mismatches raise `ValueError`. Local project modules can omit this metadata; their compatibility is managed through the versioned definition name and the execution environment.
 
 ## Neurons
 
@@ -131,7 +147,7 @@ def register_optimizer(name, factory, *, validate=None):
 
 Factory: `factory(parameter_groups, config) -> torch.optim.Optimizer`. Use `training.CustomOptimizer(definition, **config)`. The executor supplies selected parameter groups and their learning rates, then calls standard `zero_grad`, `step` and constraint enforcement.
 
-Checkpointing supports per-parameter tensor state and JSON scalar state, including stateless optimizers. Reconstruct the same recipe and registration before resuming. Scheduler state, arbitrary Python objects and custom global optimizer state are not automatically captured. External training loops can manage these separately.
+Checkpointing supports per-parameter tensor state and JSON scalar state, including stateless optimizers. Load the same recipe and make its referenced implementation modules available before resuming; registration is restored automatically. Scheduler state, arbitrary Python objects and custom global optimizer state are not automatically captured. External training loops can manage these separately.
 
 ## Surrogate gradients
 
@@ -152,6 +168,8 @@ def register_encoder(name, function, *, validate=None):
 ```
 
 Callback: `function(arrays, selected, *, dt_ms, channels, config, seed) -> Tensor`. Return binary `(time, selected_samples, channels)` spikes. Use `DatasetEncoder(kind="custom", definition="my_lab.encoder/v1", config={...}, seed=...)` inside `DatasetSnapshotBinding`. The resolved protocol retains the definition, configuration, seed and snapshot identity. Dataset snapshot labels remain integer labels.
+
+Dataset encoders belong to external execution bindings, so the network bundle does not carry their definitions. Register the encoder's import reference when constructing that binding in each process.
 
 For arbitrary generators, temporal patterns or preprocessing, a normal Python function can instead produce a tensor supplied through [DenseArrayBinding](/api/sim/execution-spec#densearraybinding). This also supports non-spike continuous inputs. No new generator interface is necessary.
 

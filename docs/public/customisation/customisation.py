@@ -4,7 +4,7 @@ Run from the repository root: uv run python examples/customisation/customisation
 Outputs are saved beside this script. Diagram rendering requires Graphviz.
 """
 
-import math
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -19,56 +19,30 @@ DURATION_MS = 500
 SEED = 17
 
 
-# 1. Define a neuron using tensor state and a normal Python step function.
-def adaptive_initial_state(context):
-    shape, device, dtype = context.shape, context.device, context.dtype
-    return {
-        "voltage": torch.full(shape, -65.0, device=device, dtype=dtype),
-        "adaptation": torch.zeros(shape, device=device, dtype=dtype),
-    }
-
-
-def adaptive_step(context):
-    voltage = context.state["voltage"]
-    adaptation = context.state["adaptation"]
-    beta = math.exp(-context.dt_ms / context.config["tau_mem_ms"])
-    current = context.excitatory - context.inhibitory - adaptation
-    voltage = (
-        -65
-        + (voltage + 65) * beta
-        + current * context.config["tau_mem_ms"] * (1 - beta)
+# Register references to functions in the sibling importable module.
+def register_definitions():
+    extensions.register_neuron(
+        "example.adaptive_lif/v1",
+        "custom_neurons:adaptive_step",
+        initialize="custom_neurons:adaptive_initial_state",
+        input_unit="nA",
+        state_units={"adaptation": "nA"},
     )
-    spikes = context.spike(voltage + 50)
-    voltage = torch.where(spikes.bool(), torch.full_like(voltage, -65), voltage)
-    adaptation = adaptation * math.exp(-context.dt_ms / context.config["tau_adapt_ms"])
-    adaptation = adaptation + spikes * context.config["adaptation_na"]
-    return {**context.state, "voltage": voltage, "adaptation": adaptation}, spikes
-
-
-extensions.register_neuron(
-    "example.adaptive_lif/v1",
-    adaptive_step,
-    initialize=adaptive_initial_state,
-    input_unit="nA",
-    state_units={"adaptation": "nA"},
-)
-
-
-# 2. Define an initialization distribution with ordinary PyTorch.
-def clipped_normal(shape, config, *, device, dtype):
-    values = torch.randn(shape, device=device, dtype=dtype)
-    return (values * config["std"] + config["mean"]).clamp(min=config["minimum"])
-
-
-extensions.register_initializer("example.clipped_normal/v1", clipped_normal)
+    extensions.register_initializer(
+        "example.clipped_normal/v1", "custom_neurons:clipped_normal"
+    )
 
 
 def main():
-    # 3. Define a stimulus with custom tensors: quiet, then sustained activity.
-    net = lang.Network("customisation", dt=DT_MS * lang.ms)
-    inputs = net.input(
-        "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--simulate",
+        action="store_true",
+        help="Load the saved bundle in a fresh process; do not build or register definitions.",
     )
+    args = parser.parse_args()
+    bundle_path = OUTPUT_DIR / "network.bundle"
+    # 3. Define a stimulus with custom tensors: quiet, then sustained activity.
     steps = round(DURATION_MS / DT_MS)
     rates = torch.full((steps, 1, 4), 20.0)
     rates[round(100 / DT_MS) : round(400 / DT_MS)] = 120.0
@@ -79,45 +53,53 @@ def main():
     binding = DenseArrayBinding("inputs", input_spikes)
 
     # 4. Compare built-in and custom neuron dynamics with matched input weights.
-    standard = net.population(
-        "standard", size=8, neuron=lang.CUBA_LIF(tau_mem=20 * lang.ms)
-    )
-    adaptive = net.population(
-        "adaptive",
-        size=8,
-        neuron=lang.CustomNeuron(
-            "example.adaptive_lif/v1",
-            tau_mem_ms=20,
-            tau_adapt_ms=100,
-            adaptation_na=0.35,
-        ),
-    )
-    weights = net.parameter(
-        "weights",
-        shape=(8, 4),
-        unit="nA",
-        initializer=lang.CustomInitializer(
-            "example.clipped_normal/v1", mean=5.0, std=1.0, minimum=0.0
-        ),
-        constraint=lang.NonNegative(),
-    )
-    for cells in (standard, adaptive):
-        projection = net.connect(
-            inputs,
-            cells.excitatory,
-            name=f"input_to_{cells.id}",
-            synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
-            weight=weights,
+    if not args.simulate:
+        register_definitions()
+        net = lang.Network("customisation", dt=DT_MS * lang.ms)
+        inputs = net.input(
+            "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
         )
-        net.output(f"{cells.id}_spikes", cells.spikes)
-        net.expose(cells.voltage, name=f"{cells.id}_voltage")
-        net.expose(projection.current, name=f"{cells.id}_current")
-    net.expose(inputs, name="input_spikes")
-    net.expose(adaptive.state("adaptation"), name="adaptation")
+        standard = net.population(
+            "standard", size=8, neuron=lang.CUBA_LIF(tau_mem=20 * lang.ms)
+        )
+        adaptive = net.population(
+            "adaptive",
+            size=8,
+            neuron=lang.CustomNeuron(
+                "example.adaptive_lif/v1",
+                tau_mem_ms=20,
+                tau_adapt_ms=100,
+                adaptation_na=0.35,
+            ),
+        )
+        weights = net.parameter(
+            "weights",
+            shape=(8, 4),
+            unit="nA",
+            initializer=lang.CustomInitializer(
+                "example.clipped_normal/v1", mean=5.0, std=1.0, minimum=0.0
+            ),
+            constraint=lang.NonNegative(),
+        )
+        for cells in (standard, adaptive):
+            projection = net.connect(
+                inputs,
+                cells.excitatory,
+                name=f"input_to_{cells.id}",
+                synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
+                weight=weights,
+            )
+            net.output(f"{cells.id}_spikes", cells.spikes)
+            net.expose(cells.voltage, name=f"{cells.id}_voltage")
+            net.expose(projection.current, name=f"{cells.id}_current")
+        net.expose(inputs, name="input_spikes")
+        net.expose(adaptive.state("adaptation"), name="adaptation")
+
+        bundle = lang.compile(net, target="tools/snnsim")
+        bundle.write(bundle_path)
 
     # 5. Compile and execute: the bundle stores names/config, not Python code.
-    bundle = lang.compile(net, target="tools/snnsim")
-    bundle.write(OUTPUT_DIR / "network.bundle")
+    bundle = lang.load_bundle(bundle_path)
     viz.render_diagram(
         lang.diagram(bundle, view="expanded"),
         OUTPUT_DIR / "network.png",
@@ -127,7 +109,7 @@ def main():
     )
     execution = ExecutionSpec(
         kind="simulate",
-        graph=bundle.graph,
+        bundle=bundle_path,
         input_bindings=(binding,),
         seed=SEED,
         device="cpu",

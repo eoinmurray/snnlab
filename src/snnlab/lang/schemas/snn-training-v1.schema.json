@@ -10,6 +10,7 @@
     "objectives": {"type": "array"},
     "parameter_groups": {"type": "array"},
     "optimizer": {"type": "object"},
+    "extensions": {"type": "array", "items": {"$ref": "snn-graph-v1.schema.json#/$defs/extension"}},
     "epochs": {"type": "integer", "minimum": 1}
   }
 }

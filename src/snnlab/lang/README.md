@@ -340,7 +340,7 @@ acceptance thresholds remain campaign decisions rather than executor defaults.
 
 `net.output` declares results returned in `result.outputs`. `net.expose` declares diagnostics returned by default in `result.diagnostics`; pass `diagnostics=False` to `ExecutionSpec` to disable those tensors without affecting outputs or training regularizers. There are no `recording` or `recording_fields` request arguments. Population signals and `projection.conductance` must be explicitly exposed to collect their diagnostic histories.
 
-Custom specifications (`CustomNeuron`, `CustomSynapse`, `CustomInitializer`, `CustomConstraint` and custom operations/training helpers) refer to versioned definitions registered through `snnlab.extensions`. Bundles store names/configuration and required dependency names, not Python code.
+Custom specifications (`CustomNeuron`, `CustomSynapse`, `CustomInitializer`, `CustomConstraint` and custom operations/training helpers) refer to versioned definitions registered through `snnlab.extensions` when authoring. Supply importable module functions or `module:function` callback strings. Compiled graphs and training recipes retain those references, units and optional exact distribution versions under `extensions`; their digests cover this metadata. Saved bundles automatically resolve the callbacks in a fresh process from modules available in its environment. They contain no Python source or pickled functions. Saving closures, lambdas or functions defined in `__main__` fails; move them into a module. Missing bundle paths raise `FileNotFoundError`, and unavailable callbacks or incompatible declared package versions fail explicitly. Older name-only bundles retain their manual-registration requirement.
 
 
 ### Explicit voltage sampling

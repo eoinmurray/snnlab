@@ -9,6 +9,12 @@ on:
     branches: [main]
     paths: ["src/snnlab/__init__.py"]
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Publish without rerunning tests (explicit release request only).
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -21,6 +27,8 @@ jobs:
   checks:
     if: github.repository == 'eoinmurray/snnlab' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/quality.yml
+    with:
+      skip_tests: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests }}
 
   publish:
     needs: checks

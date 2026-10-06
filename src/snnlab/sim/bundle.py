@@ -1,4 +1,4 @@
-"""Authenticated data-only graph and training bundle loading."""
+"""Authenticated bundle metadata with external extension resolution."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from snnlab import extensions as E
 
 
 class BundleCompatibilityError(ValueError):
@@ -86,6 +88,8 @@ def _digest(data: Any) -> str:
 def load_graph_bundle(path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load and authenticate manifest.json + graph.json from a bundle directory."""
     root = Path(path)
+    if not root.exists():
+        raise FileNotFoundError(f"bundle not found: {root}")
     if root.is_file():
         if root.name != "manifest.json":
             raise BundleCompatibilityError(
@@ -111,6 +115,7 @@ def load_graph_bundle(path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]
     actual = _digest(graph)
     if actual != manifest.get("graph_digest"):
         raise BundleCompatibilityError("graph.json digest does not match manifest.json")
+    E.restore(graph)
     return manifest, graph
 
 
@@ -142,4 +147,5 @@ def load_training_recipe(
         raise BundleCompatibilityError(
             "training.json graph digest does not authenticate this graph"
         )
+    E.restore(training)
     return training

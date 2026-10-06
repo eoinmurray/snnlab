@@ -9,6 +9,20 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-06
+
+### Added
+
+1. Custom extension callbacks accept persistent `module:function` references and imported functions. Compiled graphs and training recipes save callback locations, units, state ports and optional exact distribution versions as authenticated JSON metadata. Bundle loading, graph simulation and training restore definitions automatically in fresh processes; Python source and pickled functions remain outside bundles. Updated Customisation with an external callback module and a load-only `--simulate` command, API documentation and downloadable examples.
+
+### Fixed
+
+1. Missing bundle paths now raise an explicit `FileNotFoundError` and produce a clear CLI error. Missing extension modules/callbacks, incompatible declared package versions and conflicting registrations fail before execution. Saving non-importable callbacks fails before creating bundle files; older name-only bundles retain their manual-registration requirement.
+
+### Changed
+
+1. Manual publishing and documentation workflows accept an explicit `skip_tests` option for releases requested without rerunning tests. Automatic workflows and manual runs retain tests by default.
+
 ## [0.5.0] - 2026-10-06
 
 ### Upgrade notes

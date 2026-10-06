@@ -3,6 +3,12 @@ on:
   push:
   pull_request:
   workflow_call:
+    inputs:
+      skip_tests:
+        description: Skip tests only when explicitly requested by the caller.
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: read
 jobs:
@@ -29,7 +35,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
       - run: uv run ruff check .
-      - run: uv run pytest -q -m "not slow"
+      - name: Run tests
+        if: ${{ !inputs.skip_tests }}
+        run: uv run pytest -q -m "not slow"
         env:
           OMP_NUM_THREADS: "1"
           MPLBACKEND: Agg

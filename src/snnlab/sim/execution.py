@@ -2830,6 +2830,7 @@ class DelayBuffer:
 
 
 def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
+    E.restore(graph)
     if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
         raise ValueError("unsupported voltage_sampling contract")
     populations = {p["id"]: p for p in graph.get("populations", [])}
@@ -4194,6 +4195,8 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
             training = load_training_recipe(spec.bundle, manifest, graph)
     if graph is None:
         raise ValueError("graph execution requires graph data or a bundle")
+    if training is not None:
+        E.restore(training)
     device = resolve_device(spec.device)
     started = time.perf_counter()
     trainable = (

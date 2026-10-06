@@ -65,6 +65,8 @@ python -m snnlab.sim sim \
 
 The bundle supplies the timestep, topology and input dimensions. `--t-ms` sets duration in milliseconds; it must align with the bundle timestep. `--input-rate` is in Hz. For a categorical rate protocol, replace the protocol/rate flags with `--poisson-protocol categorical-rate --input-rates 5 25 80`; one listed rate is selected independently for each presentation. CLI Poisson generation requires exactly one declared spike input.
 
+A missing bundle exits with `bundle not found: ...`. Saved custom definitions load automatically from their external import references; make those modules available in the CLI environment. Missing callbacks and mismatched declared package versions stop execution with a descriptive error. The CLI never creates a substitute bundle or downloads implementations.
+
 Graph runs write the following files, including after training:
 
 | File | Contents |

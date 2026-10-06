@@ -13,13 +13,14 @@ Run from the repository root:
 
 ```bash
 uv run python examples/customisation/customisation.py
+uv run python examples/customisation/customisation.py --simulate
 ```
 
-The script saves `network.bundle`, `network.png` and `customisation.png` beside itself. Graphviz's `dot` executable is needed for the diagram. In a headless environment you can set `MPLBACKEND=Agg` when running the script.
+The first command builds and saves `network.bundle`, `network.png` and `customisation.png` beside itself. The second starts a fresh process, loads the saved bundle and regenerates the same seeded stimulus without registering definitions or rebuilding the network. Keep `custom_neurons.py` beside the script so its callbacks are importable. A missing bundle raises `FileNotFoundError`; a missing callback module raises a descriptive error. Graphviz's `dot` executable is needed for the diagram. In a headless environment you can set `MPLBACKEND=Agg` when running the script.
 
 ## 1. Define the custom neuron
 
-A custom neuron has an initial tensor state and a step function. The step receives previous state, excitatory and inhibitory input, timestep, configuration and a spike function compatible with the run's surrogate gradient.
+A custom neuron has an initial tensor state and a step function. Put these functions in `custom_neurons.py`, an importable module outside the bundle. The step receives previous state, excitatory and inhibitory input, timestep, configuration and a spike function compatible with the run's surrogate gradient.
 
 ```python
 {{NEURON}}
@@ -27,7 +28,7 @@ A custom neuron has an initial tensor state and a step function. The step receiv
 
 The initial state provides voltage and adaptation. The executor adds a zero-valued integer refractory tensor when absent. The step returns the updated state and binary spikes. Here adaptation subtracts from the net current and increases by `adaptation_na` after each spike; its exponential decay is controlled by `tau_adapt_ms`.
 
-Registration assigns a stable, versioned name. `state_units` makes adaptation available through `population.state("adaptation")`. For callback contracts and additional extension categories, see [Extensions](/api/lang/extensions).
+`state_units` makes adaptation available through `population.state("adaptation")`. For callback contracts and additional extension categories, see [Extensions](/api/lang/extensions).
 
 ## 2. Define a custom weight distribution
 
@@ -35,7 +36,15 @@ Registration assigns a stable, versioned name. `state_units` makes adaptation av
 {{INITIALIZER}}
 ```
 
-The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. The name and configuration are stored in the bundle; the Python function remains in the registration module.
+The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. Keep this function in `custom_neurons.py` too.
+
+Register the callbacks by their `module:function` references when building the network:
+
+```python
+{{REGISTRATION}}
+```
+
+Registration assigns stable, versioned names. The bundle stores those names, import references, units and configuration. Each process loads the referenced module automatically; the module does not need to register itself. For installed extensions, declare `package="distribution-name"` to record and check its exact installed version. Change the versioned definition name when its semantics change.
 
 See [Parameters](/api/lang/parameters#custom-initializers-and-constraints).
 
@@ -61,11 +70,15 @@ Custom state ports participate in normal outputs, diagnostics and operations. Th
 {{EXECUTION}}
 ```
 
-The bundle manifest lists required extension names. Import the registration module before loading or executing this bundle in another process. Loading never imports Python code from a bundle. Additional custom state is included in runtime continuation artifacts, so splitting an execution does not reset adaptation or synaptic history.
+The graph and manifest list required extension names and callback references. `lang.load_bundle` and the simulator resolve these references automatically from modules available in the current environment. The graph digest covers the implementation references; Python source and pickled functions are never saved in the bundle. Additional custom state is included in runtime continuation artifacts, so splitting an execution does not reset adaptation or synaptic history.
 
 ## 6. Full example
 
-[Download customisation.py](/customisation/customisation.py).
+Download [customisation.py](/customisation/customisation.py) and [custom_neurons.py](/customisation/custom_neurons.py) into the same directory.
+
+```python title="examples/customisation/custom_neurons.py"
+{{CALLBACKS}}
+```
 
 ```python title="examples/customisation/customisation.py"
 {{SCRIPT}}
@@ -75,4 +88,4 @@ The bundle manifest lists required extension names. Import the registration modu
 
 ![Input spike raster, standard and adaptive population spike rasters, their first cells' voltages, and the adaptive cell's adaptation current, all sharing time.](/customisation/customisation.png)
 
-With the supplied seed, the standard population produces 469 spikes and the adaptive population 177. The shaded region marks the increased input rate. Set `adaptation_na=0` and rerun: with these matched weights and zero refractory periods, both populations should produce the same response. Then vary the adaptation decay to examine recovery after the stimulus.
+The verified example run with the supplied seed produced 465 spikes in the standard population and 178 in the adaptive population. The shaded region marks the increased input rate. Set `adaptation_na=0` and rebuild: with these matched weights and zero refractory periods, both populations should produce the same response. Then vary the adaptation decay to examine recovery after the stimulus.

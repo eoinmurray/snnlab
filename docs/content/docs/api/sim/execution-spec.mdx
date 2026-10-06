@@ -77,7 +77,7 @@ The Python API and CLI execute graphs. `ExecutionSpec` rejects every executor va
 
 **Type:** `Path | None`. **Default:** `None`.
 
-Path to a compiled bundle directory containing the graph and its authenticated manifest. Use `Path("network.bundle")`. Loading is data-only and verifies the bundle's digests.
+Path to a compiled bundle directory containing the graph and its authenticated manifest. Use `Path("network.bundle")`. Loading verifies the bundle's digests, then automatically imports any referenced external extension modules. The bundle contains JSON implementation references and no Python source. Missing paths raise `FileNotFoundError("bundle not found: ...")`; unavailable callbacks and mismatched declared package versions fail explicitly.
 
 For graph execution, supply `bundle` or `graph`. When `graph` is provided, it takes precedence for construction. If both are supplied, training can still read its recipe from `bundle`; prefer one graph source to avoid ambiguity.
 

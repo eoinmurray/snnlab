@@ -54,6 +54,14 @@ model = built.model
 The bundle path must point to an existing compiled graph bundle. Building
 initializes the model without running inputs.
 
+Missing bundle paths raise `FileNotFoundError` with `bundle not found: ...`;
+the CLI reports the same error. Saved custom definitions are automatically
+loaded from their external `module:function` references. Make those modules
+available in each execution environment. Graphs and recipes contain callback
+locations and optional exact package versions, with no Python source or pickled
+functions. Missing implementations and incompatible declared versions fail
+before execution. See the [Extensions reference](../../../docs/content/docs/api/lang/extensions.mdx).
+
 1. `ExecutionSpec` configures a build, simulation, inference, or training request.
 2. `build(spec)` constructs the model and returns it in `ExecutionResult.model`.
 3. `simulate(spec)` resolves input bindings and runs the graph.
