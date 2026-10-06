@@ -38,6 +38,16 @@ uv sync --dev
 uv run pytest -m "not slow"
 ```
 
+The full Python test suite runs nightly on `main` at 03:17 Europe/London time.
+Pushes and pull requests do not trigger package tests; release checks run lint
+and build the package without running the tests.
+
+For failure emails, enable Email and Only notify for failed workflows under
+System → Actions in [GitHub notification settings](https://github.com/settings/notifications).
+GitHub sends scheduled workflow notifications to the account that created or
+last changed the schedule. Public-repository schedules are disabled after
+60 days without repository activity.
+
 For development in Pinglab, use `uv add --editable ../snnlab`. For reproducible runs, use a Git tag or commit and commit the consumer lockfile.
 
 ## Documentation
@@ -67,11 +77,12 @@ Publishing requires the repository's `pypi` environment and a PyPI Trusted Publi
 configured for `.github/workflows/publish.yml`. The workflow can also be run
 manually to retry a release.
 
-For an explicitly requested release without rerunning tests, use a `[skip ci]`
-commit to suppress automatic push workflows, then dispatch `publish.yml` and
-`docs.yml` on `main` with `skip_tests=true`. Their default remains `false`, so
-ordinary releases and automatic workflows continue to run tests. Manual
-no-test releases still run lint, package builds and documentation compilation.
+For an explicitly requested release without running documentation tests, use a
+`[skip ci]` commit to suppress automatic push workflows, then dispatch
+`publish.yml` on `main` and `docs.yml` on `main` with `skip_tests=true`.
+Documentation tests run by default; Python package tests run only nightly.
+Manual no-test releases still run lint, package builds and documentation
+compilation.
 
 This initial extraction retains the existing bundle schemas, backend target `tools/snnsim`, component format versions and numerical defaults. Those strings identify persisted scientific contracts; they are not Python import paths. Package version 0.1.0 identifies the combined distribution.
 
