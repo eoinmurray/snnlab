@@ -1,6 +1,6 @@
 # Documentation site
 
-This site uses Astro static output with Fumadocs React islands. Keep `output: static`, preserve the root documentation routes, and verify both root and GitHub Pages base-path builds. The documentation includes Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section with Lang, Sim and Viz subgroups and Changelog, with content and metadata in `content/docs`. Installation covers only PyPI. The root redirects to Installation. Run `bun run types:check` and `bun run build` after site changes.
+This site uses Astro static output with Fumadocs React islands. Keep `output: static`, preserve the root documentation routes, and verify both root and GitHub Pages base-path builds. The documentation includes Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section with Lang, Sim and Viz subgroups and Changelog, with content and metadata in `content/docs`. Installation covers only PyPI. The root is a landing page with basic library copy and links to documentation and GitHub; documentation begins at `/installation`. Run `bun run types:check` and `bun run build` after site changes.
 
 Changelog is generated from the root `CHANGELOG.md` by `scripts/sync-changelog.ts` before development, type checks and builds. Edit the root source instead of the generated page.
 Keep Changelog last in the documentation navigation when adding pages.

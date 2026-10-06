@@ -1,3 +1,58 @@
 ---
-return Astro.redirect(`${import.meta.env.BASE_URL.replace(/\/$/, '')}/installation`, 301);
+import '../styles/global.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const description = 'A Python library for authoring, simulating and visualising spiking neural networks.';
 ---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>snnlab | Spiking neural networks in Python</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={new URL(`${base}/`, Astro.site)} />
+  </head>
+  <body class="flex min-h-svh flex-col bg-fd-background text-fd-foreground">
+    <header class="mx-auto flex w-full max-w-5xl items-center justify-between gap-6 px-6 py-4">
+      <a href={`${base}/`} class="text-xl font-semibold tracking-tight">snnlab</a>
+      <nav aria-label="Main navigation" class="flex gap-6 text-sm">
+        <a href={`${base}/installation`} class="hover:underline">Documentation</a>
+        <a href="https://github.com/eoinmurray/snnlab" class="hover:underline">GitHub</a>
+      </nav>
+    </header>
+    <main class="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center gap-8 px-6 py-6">
+      <section aria-labelledby="intro" class="max-w-3xl">
+        <p class="mb-3 text-sm font-medium text-fd-muted-foreground">Spiking neural networks in Python</p>
+        <h1 id="intro" class="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">Build, simulate and explore spiking networks.</h1>
+        <p class="mt-5 text-lg leading-relaxed text-fd-muted-foreground">
+          snnlab brings network authoring, simulation, training and visualisation into one Python library.
+          It uses PyTorch internally for simulation and training, with conductance-based and current-based
+          dynamics and support for your own PyTorch layers, optimizers and training loops.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center gap-3">
+          <a href={`${base}/installation`} class="rounded-lg bg-fd-primary px-5 py-2.5 font-medium text-fd-primary-foreground hover:opacity-90">Read the docs</a>
+          <a href="https://github.com/eoinmurray/snnlab" class="rounded-lg border border-fd-border px-5 py-2.5 font-medium hover:bg-fd-muted">View on GitHub</a>
+        </div>
+      </section>
+      <section aria-label="Explore snnlab" class="grid gap-6 border-t border-fd-border pt-6 sm:grid-cols-3">
+        <div class="flex flex-col">
+          <h2 class="text-lg font-semibold">Define your network</h2>
+          <p class="mt-2 flex-1 text-sm leading-relaxed text-fd-muted-foreground">Describe populations, synapses and connections in Python. Compile a validated graph bundle.</p>
+          <a href={`${base}/quickstart`} class="mt-3 self-start text-sm font-medium underline underline-offset-4">Start with Quickstart</a>
+        </div>
+        <div class="flex flex-col">
+          <h2 class="text-lg font-semibold">Simulate and train</h2>
+          <p class="mt-2 flex-1 text-sm leading-relaxed text-fd-muted-foreground">Run recurrent networks, train with surrogate gradients, and use your own PyTorch loop.</p>
+          <a href={`${base}/training`} class="mt-3 self-start text-sm font-medium underline underline-offset-4">Follow the training guide</a>
+        </div>
+        <div class="flex flex-col">
+          <h2 class="text-lg font-semibold">Inspect the results</h2>
+          <p class="mt-2 flex-1 text-sm leading-relaxed text-fd-muted-foreground">Visualise diagrams and recordings. Measure population activity, rhythmicity and conductance.</p>
+          <a href={`${base}/analysis`} class="mt-3 self-start text-sm font-medium underline underline-offset-4">Explore the analysis tools</a>
+        </div>
+      </section>
+    </main>
+    <footer class="mx-auto w-full max-w-5xl border-t border-fd-border px-6 py-3 text-sm text-fd-muted-foreground">Open source · MIT licensed</footer>
+  </body>
+</html>

@@ -9,7 +9,7 @@ bun run dev
 
 The development server defaults to `http://localhost:3001`. Static preview also uses port 3001.
 
-The site contains Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section and Changelog. `/` redirects to `/installation`; both trailing-slash forms work. Cloudflare redirects previous `/docs/` links to the new paths.
+The site contains Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section and Changelog. `/` is a landing page with an introduction and links to the documentation and GitHub; documentation begins at `/installation`, and both trailing-slash forms work. Cloudflare redirects previous `/docs/` links to the new paths.
 
 The Output and diagnostic data guide lives in `content/docs/data-formats.mdx` and documents graph arrays, saved artifacts and analysis code.
 
