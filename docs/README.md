@@ -13,6 +13,11 @@ The site contains Installation, Quickstart, Training, Inference, PyTorch Integra
 
 Edit Installation in `content/docs/` and keep navigation in `content/docs/meta.json`. Changelog is generated from the root `CHANGELOG.md` before development, type checks and builds; edit that source file.
 
+During development, navigation and page rendering use Vite's current content
+files rather than a cached collection snapshot. Edits to the root Changelog, example templates, Python
+scripts, or generated PNGs rerun the corresponding sync script automatically.
+Python simulations still need to be run explicitly to regenerate their figures.
+
 ```sh
 bun run types:check
 bun run build

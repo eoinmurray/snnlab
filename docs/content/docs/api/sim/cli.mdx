@@ -128,7 +128,7 @@ python -m snnlab.sim train \
 
 These filenames stand for prepared training data: input NPZ keys match graph input IDs, target NPZ keys match recipe target IDs, and each target has one integer label per sample. A target NPY is accepted when the recipe has one target. Alternatively, use a dataset snapshot with `--dataset-target-id` instead of separate input/target files.
 
-The bundle recipe controls the graph optimizer, learning rate and trainable parameters; legacy flags such as `--lr` do not replace that recipe. Positive `--epochs` enables minibatch iteration. With graph execution, `--epochs 0` performs one full-batch update; the legacy executor uses zero epochs as a probe without training. The selected checkpoint uses the lowest update loss.
+The bundle recipe controls the graph optimizer, learning rate and trainable parameters; deprecated legacy flags such as `--lr` do not replace that recipe. Positive `--epochs` enables minibatch iteration. With graph execution, `--epochs 0` performs one full-batch update; the legacy executor uses zero epochs as a probe without training. The selected checkpoint uses the lowest update loss.
 
 Resume graph training by adding `--load-weights runs/train/final.checkpoint` and increasing the requested total epoch count. Keep the bundle, training data, seed and iteration settings compatible with the checkpoint. Load trained parameters for simulation with:
 
@@ -195,52 +195,76 @@ The tables below cover every argument accepted by the three subcommand parsers, 
 
 Graph-only flags are listed separately at the end so their presence in legacy command help does not imply legacy support.
 
+Retained legacy arguments are marked **Deprecated legacy** below and `[deprecated legacy]` in command help. Explicit use produces one `LegacyCLIWarning` on stderr listing all deprecated arguments supplied in that invocation. Shared and graph arguments, implicit defaults and `--help` do not warn. The CLI still defaults to legacy execution so older experiment commands retain their behaviour. For new work, author a network with `snnlab.lang` and use `--executor graph --bundle`.
+
+The following unused legacy switches have been removed; passing them is an error:
+
+1. `--adapt-strength-init-mv`
+2. `--adapt-strength-max-mv`
+3. `--adapt-tau-bounds-ms`
+4. `--adaptive-threshold`
+5. `--exact-k-initialization`
+6. `--independent-drive`
+7. `--independent-drive-i`
+8. `--lyapunov-eps`
+9. `--no-adaptive-threshold`
+10. `--no-dales-law`
+11. `--no-readout-bias`
+12. `--no-signed-readout`
+13. `--no-train-leak`
+14. `--quenched-drive`
+15. `--quenched-drive-i`
+16. `--readout-bias`
+17. `--readout-w-out-scale`
+18. `--recurrent-initial-zero-fraction`
+19. `--scale-w-ei`
+20. `--scale-w-ie`
+21. `--signed-readout`
+22. `--state-clamp`
+23. `--tau-m-e-bounds-ms`
+24. `--tau-m-i-bounds-ms`
+25. `--train-leak`
+26. `--trainable-w-ee`
+27. `--trainable-w-ii`
+28. `--transition-bundle`
+29. `--transition-end-ms`
+30. `--transition-start-ms`
+31. `--w-ee`
+32. `--w-ei`
+33. `--w-ie`
+34. `--w-ii`
+
+Removal affects CLI switches. Existing Python APIs, bundle translation, legacy defaults and historical `--load-config` fields remain available for checkpoint replay; do not rewrite retained run configurations.
+
 #### Network and timing
 
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
 | `--bundle` | `sim`, `dump-weights`, `train` | Unset | Load a compiled bundle through the legacy compatibility adapter, which supports a restricted PING topology/readout. Legacy train additionally requires an authenticated training recipe. |
-| `--model` | `sim`, `dump-weights`, `train` | ping | Model to simulate (default: ping) Choices: `ping`. |
-| `--n-hidden` | `sim`, `dump-weights`, `train` | Unset | One or more hidden sizes, e.g. 128 256 for stacked layers. Unset uses dataset-aware sizes (MNIST: 1024). Takes one or more values. |
-| `--dales-law` | `sim`, `dump-weights`, `train` | true | Enforce Dale's law: clamp weights to non-negative (default: True) |
-| `--no-dales-law` | `sim`, `dump-weights`, `train` | true | Allow signed (positive + negative) weights. |
-| `--ei-strength` | `sim`, `dump-weights`, `train` | 0.5 | E-I coupling: sets W_EI=s, W_IE=s*ratio (default: 0.5) |
-| `--ei-ratio` | `sim`, `dump-weights`, `train` | 2.0 | W_IE/W_EI ratio (default: 2.0) |
-| `--lyapunov-eps` | `sim`, `dump-weights`, `train` | 0.0 | For a synthetic snapshot, repeat the forward pass with initial membrane voltages perturbed by this amount and save the voltage-divergence curve. Zero disables it; exponential growth can be used to estimate sensitivity. |
-| `--dt` | `sim`, `dump-weights`, `train` | 0.25 | Integration timestep in ms (default: 0.25) |
-| `--refractory-e-ms` | `sim`, `dump-weights`, `train` | 3.0 | Excitatory absolute refractory duration in ms (default: 3). |
-| `--refractory-i-ms` | `sim`, `dump-weights`, `train` | 1.5 | Inhibitory absolute refractory duration in ms (default: 1.5). |
-| `--refractory-policy` | `sim`, `dump-weights`, `train` | nearest | Counter conversion: nearest integer step, or require exact representation (default: nearest). Choices: `nearest`, `exact`. |
+| **Deprecated legacy:** `--model` | `sim`, `dump-weights`, `train` | ping | Model to simulate (default: ping) Choices: `ping`. |
+| **Deprecated legacy:** `--n-hidden` | `sim`, `dump-weights`, `train` | Unset | One or more hidden sizes, e.g. 128 256 for stacked layers. Unset uses dataset-aware sizes (MNIST: 1024). Takes one or more values. |
+| **Deprecated legacy:** `--dales-law` | `sim`, `dump-weights`, `train` | true | Enforce Dale's law: clamp weights to non-negative (default: True) |
+| **Deprecated legacy:** `--ei-strength` | `sim`, `dump-weights`, `train` | 0.5 | E-I coupling: sets W_EI=s, W_IE=s*ratio (default: 0.5) |
+| **Deprecated legacy:** `--ei-ratio` | `sim`, `dump-weights`, `train` | 2.0 | W_IE/W_EI ratio (default: 2.0) |
+| **Deprecated legacy:** `--dt` | `sim`, `dump-weights`, `train` | 0.25 | Integration timestep in ms (default: 0.25) |
+| **Deprecated legacy:** `--refractory-e-ms` | `sim`, `dump-weights`, `train` | 3.0 | Excitatory absolute refractory duration in ms (default: 3). |
+| **Deprecated legacy:** `--refractory-i-ms` | `sim`, `dump-weights`, `train` | 1.5 | Inhibitory absolute refractory duration in ms (default: 1.5). |
+| **Deprecated legacy:** `--refractory-policy` | `sim`, `dump-weights`, `train` | nearest | Counter conversion: nearest integer step, or require exact representation (default: nearest). Choices: `nearest`, `exact`. |
 | `--t-ms` | `sim`, `dump-weights`, `train` | 200.0 | Total simulation duration in ms (default: 200). Metrics are measured over the full trace; notebooks strip any startup transient in post. |
 
 #### Readout
 
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
-| `--readout` | `sim`, `dump-weights`, `train` | rate | Output layer: 'rate' sums last-hidden spikes and projects linearly at the final timestep (default); 'mem-mean' averages a per-class output-LIF membrane over time; 'spike-count' sums each output-LIF neuron's spikes over the presentation; 'spike-rate' divides those counts by presentation duration in seconds; 'cumulative-potential' sums the per-step softmax of a non-spiking leaky decoder membrane. Choices: `rate`, `mem-mean`, `spike-count`, `spike-rate`, `cumulative-potential`. |
-| `--signed-readout` | `sim`, `dump-weights`, `train` | false | Allow signed weights only in the abstract final classifier; the simulated input, feed-forward, and recurrent synapses remain Dale-constrained. |
-| `--no-signed-readout` | `sim`, `dump-weights`, `train` | false | Keep the final classifier weights non-negative (default). |
-| `--readout-bias` | `sim`, `dump-weights`, `train` | false | Enable a trainable signed bias in the final classifier. |
-| `--no-readout-bias` | `sim`, `dump-weights`, `train` | false | Disable the final classifier bias (default). |
-| `--readout-w-out-scale` | `sim`, `dump-weights`, `train` | 1.0 | Deprecated train-only scaling of the final readout weights and bias after construction. Cannot be combined with readout initialization mean/std. |
-| `--readout-w-init-mean` | `sim`, `dump-weights`, `train` | Unset | Parent mean of the lower-clamped Gaussian used to initialize stored W_ff[-1] directly. Zero-valued draws remain trainable. Must be used with --readout-w-init-std. Train-mode only. |
-| `--readout-w-init-std` | `sim`, `dump-weights`, `train` | Unset | Parent standard deviation of the lower-clamped Gaussian used to initialize stored W_ff[-1] directly. Must be used with --readout-w-init-mean. Train-mode only. |
+| **Deprecated legacy:** `--readout` | `sim`, `dump-weights`, `train` | rate | Output layer: 'rate' sums last-hidden spikes and projects linearly at the final timestep (default); 'mem-mean' averages a per-class output-LIF membrane over time; 'spike-count' sums each output-LIF neuron's spikes over the presentation; 'spike-rate' divides those counts by presentation duration in seconds; 'cumulative-potential' sums the per-step softmax of a non-spiking leaky decoder membrane. Choices: `rate`, `mem-mean`, `spike-count`, `spike-rate`, `cumulative-potential`. |
+| **Deprecated legacy:** `--readout-w-init-mean` | `sim`, `dump-weights`, `train` | Unset | Parent mean of the lower-clamped Gaussian used to initialize stored W_ff[-1] directly. Zero-valued draws remain trainable. Must be used with --readout-w-init-std. Train-mode only. |
+| **Deprecated legacy:** `--readout-w-init-std` | `sim`, `dump-weights`, `train` | Unset | Parent standard deviation of the lower-clamped Gaussian used to initialize stored W_ff[-1] directly. Must be used with --readout-w-init-mean. Train-mode only. |
 
 #### Neuron dynamics
 
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
-| `--tau-gaba` | `sim`, `train` | Unset | Override inhibitory synaptic decay in milliseconds for sim or train. Unset uses loaded configuration or the model default (9 ms). |
-| `--state-clamp` | `sim`, `dump-weights`, `train` | false | Floor conductances at zero and cap their magnitude each timestep while retaining signed weights. |
-| `--train-leak` | `sim`, `dump-weights`, `train` | false | Make each hidden COBA cell's leak membrane time constant trainable under bounded positive τ_m ranges. Adjusts leak conductance through the membrane time constant without changing AMPA/GABA synaptic decay. Default off. |
-| `--no-train-leak` | `sim`, `dump-weights`, `train` | false | Disable trainable leak conductance / τ_m heterogeneity (default). |
-| `--tau-m-e-bounds-ms` | `sim`, `dump-weights`, `train` | Unset | Bounds for trainable excitatory membrane τ_m in ms when --train-leak is enabled. Unset uses 5–50 ms. Takes 2 values. |
-| `--tau-m-i-bounds-ms` | `sim`, `dump-weights`, `train` | Unset | Bounds for trainable inhibitory membrane τ_m in ms when --train-leak is enabled. Unset uses 2–20 ms. Takes 2 values. |
-| `--adaptive-threshold` | `sim`, `dump-weights`, `train` | false | Enable trainable E-cell adaptive thresholds: recent spikes raise the effective threshold and decay with a bounded τ_adapt. Default off. |
-| `--no-adaptive-threshold` | `sim`, `dump-weights`, `train` | false | Disable adaptive thresholds (default). |
-| `--adapt-tau-bounds-ms` | `sim`, `dump-weights`, `train` | Unset | Bounds for trainable E-cell adaptive-threshold τ in ms. Unset uses 50–500 ms. Takes 2 values. |
-| `--adapt-strength-init-mv` | `sim`, `dump-weights`, `train` | 1.0 | Initial per-spike adaptive-threshold increment in mV. The value is trainable and bounded by --adapt-strength-max-mv. Default: 1.0. |
-| `--adapt-strength-max-mv` | `sim`, `dump-weights`, `train` | Unset | Upper bound for trainable adaptive-threshold strength in mV. Unset uses 20 mV. |
+| **Deprecated legacy:** `--tau-gaba` | `sim`, `train` | Unset | Override inhibitory synaptic decay in milliseconds for sim or train. Unset uses loaded configuration or the model default (9 ms). |
 
 #### Input and drive
 
@@ -248,88 +272,71 @@ Synthetic-drive controls apply to synthetic simulation paths. Dataset selectors 
 
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
-| `--n-in` | `sim` | 784 | Number of input channels (default: 784). |
-| `--n-inh` | `sim` | Unset | Inhibitory pool size (n_inh_per_layer, layer 1). |
+| **Deprecated legacy:** `--n-in` | `sim` | 784 | Number of input channels (default: 784). |
+| **Deprecated legacy:** `--n-inh` | `sim` | Unset | Inhibitory pool size (n_inh_per_layer, layer 1). |
 | `--n-batch` | `sim` | 64 | Number of Poisson-input trials averaged (default: 64). |
 | `--input-file` | `sim`, `train` | Unset | For legacy sim, replay dense input spikes from NPY or NPZ (input_spikes key). Accepted by train, but legacy training does not consume it. |
-| `--w-ei-mean` | `sim` | Unset | Explicit W_ei mean (overrides ei-strength/ratio). std = 0.1·mean. |
-| `--w-ie-mean` | `sim` | Unset | Explicit W_ie mean (independent of --w-ei-mean). |
-| `--private-w-in` | `sim` | false | Identity W_in: one input channel per E cell. |
-| `--independent-drive` | `sim`, `dump-weights`, `train` | Unset | Synthetic input: per-E-cell independent Poisson drive, taking RATE_HZ and G_PER_SPIKE in µS; bypasses input weights. Takes 2 values. |
-| `--independent-drive-i` | `sim`, `dump-weights`, `train` | Unset | Per-I-cell independent Poisson excitation; takes RATE_HZ and G_PER_SPIKE in µS. Takes 2 values. |
-| `--quenched-drive` | `sim`, `dump-weights`, `train` | Unset | Synthetic input: draw one constant excitatory conductance per E cell from a Gaussian with MEAN and STD in µS, clamp at zero and retain throughout the trial. Takes 2 values. |
-| `--quenched-drive-i` | `sim`, `dump-weights`, `train` | Unset | Same frozen Gaussian excitatory conductance as --quenched-drive, applied to I cells. Takes 2 values. |
-| `--input` | `sim`, `dump-weights`, `train` | synthetic-spikes | Input mode (default: synthetic-spikes) Choices: `synthetic-spikes`, `dataset`. |
+| **Deprecated legacy:** `--w-ei-mean` | `sim` | Unset | Explicit W_ei mean (overrides ei-strength/ratio). std = 0.1·mean. |
+| **Deprecated legacy:** `--w-ie-mean` | `sim` | Unset | Explicit W_ie mean (independent of --w-ei-mean). |
+| **Deprecated legacy:** `--private-w-in` | `sim` | false | Identity W_in: one input channel per E cell. |
+| **Deprecated legacy:** `--input` | `sim`, `dump-weights`, `train` | synthetic-spikes | Input mode (default: synthetic-spikes) Choices: `synthetic-spikes`, `dataset`. |
 | `--input-rate` | `sim`, `dump-weights`, `train` | 25.0 | Baseline input rate in Hz (default: 25) |
 | `--input-rates` | `sim`, `dump-weights`, `train` | Unset | Training-only categorical maximum-pixel rates in Hz. One rate is sampled uniformly and independently per image presentation. Takes one or more values. |
-| `--digit` | `sim`, `dump-weights`, `train` | 0 | Digit class for dataset input (0-9) |
-| `--sample` | `sim`, `dump-weights`, `train` | 0 | Sample index for dataset input |
-| `--sample-index` | `sim`, `dump-weights`, `train` | Unset | Raw test-set index for a snapshot, overriding --digit/--sample selection (grabs 'test trial N' regardless of class). |
-| `--dataset` | `sim`, `dump-weights`, `train` | mnist | Dataset: mnist (static images) or shd (Spiking Heidelberg Digits, event-based audio; 700 channels, 20 classes). Default: mnist. Choices: `mnist`, `shd`. |
+| **Deprecated legacy:** `--digit` | `sim`, `dump-weights`, `train` | 0 | Digit class for dataset input (0-9) |
+| **Deprecated legacy:** `--sample` | `sim`, `dump-weights`, `train` | 0 | Sample index for dataset input |
+| **Deprecated legacy:** `--sample-index` | `sim`, `dump-weights`, `train` | Unset | Raw test-set index for a snapshot, overriding --digit/--sample selection (grabs 'test trial N' regardless of class). |
+| **Deprecated legacy:** `--dataset` | `sim`, `dump-weights`, `train` | mnist | Dataset: mnist (static images) or shd (Spiking Heidelberg Digits, event-based audio; 700 channels, 20 classes). Default: mnist. Choices: `mnist`, `shd`. |
 
 #### Weight initialization and learning
 
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
-| `--w-in-initial-zero-fraction` | `sim`, `dump-weights`, `train` | Unset | Fraction of input weights zeroed at initialization; surviving entries are rescaled and zeroed trainable entries may regrow. Unset uses 0.95 in the snapshot configuration, but 0 in train, inference and probe adapters. |
-| `--recurrent-initial-zero-fraction` | `sim`, `dump-weights`, `train` | 0.0 | Fraction of recurrent W_EE/W_EI/W_IE/W_II parameters set to zero only at initialization. Trainable entries may regrow. Survivors are divided by the surviving fraction. Default: 0. |
-| `--exact-k-initialization` | `sim`, `dump-weights`, `train` | false | Choose an exact number of initially nonzero recurrent entries per postsynaptic cell: round the presynaptic population size multiplied by the surviving fraction. This does not impose a persistent mask. No effect unless the recurrent initial-zero fraction is greater than zero. |
-| `--surrogate-slope` | `sim`, `dump-weights`, `train` | Unset | Fast-sigmoid surrogate-gradient slope; larger values narrow its active window around threshold. Unset retains the model setting (currently 5). |
-| `--w-in` | `sim`, `dump-weights`, `train` | Unset | Supply parent Gaussian mean/std on the fan-in-normalized summed-coupling scale. Two values set E input weights; four values additionally set I input mean/std. These are not per-edge moments. Takes one or more values. |
-| `--w-ei` | `sim`, `dump-weights`, `train` | Unset | W_EI parent Gaussian parameters on the summed-coupling scale. Takes 2 values. |
-| `--w-ie` | `sim`, `dump-weights`, `train` | Unset | W_IE parent Gaussian parameters on the summed-coupling scale. Takes 2 values. |
-| `--w-ii` | `sim`, `dump-weights`, `train` | Unset | W_II parent Gaussian parameters on the summed-coupling scale. Default: 0 0 (no I→I, canonical PING). Enable for Brunel/Vreeswijk balanced-network experiments. Takes 2 values. |
-| `--w-ee` | `sim`, `dump-weights`, `train` | Unset | W_EE parent Gaussian parameters on the summed-coupling scale. Default: 0 0 (no E→E, canonical PING). Enable for the full four-coupling Brunel/Vreeswijk balanced network (including recurrent excitation). Takes 2 values. |
-| `--trainable-w-ee` | `sim`, `dump-weights`, `train` | false | Make E→E recurrent weights trainable; otherwise frozen. |
-| `--trainable-w-ei` | `sim`, `dump-weights`, `train` | false | Make E→I recurrent weights trainable; otherwise frozen. |
-| `--trainable-w-ie` | `sim`, `dump-weights`, `train` | false | Make I→E recurrent weights trainable; otherwise frozen. |
-| `--trainable-w-ii` | `sim`, `dump-weights`, `train` | false | Make I→I recurrent weights trainable; otherwise frozen. |
+| **Deprecated legacy:** `--w-in-initial-zero-fraction` | `sim`, `dump-weights`, `train` | Unset | Fraction of input weights zeroed at initialization; surviving entries are rescaled and zeroed trainable entries may regrow. Unset uses 0.95 in the snapshot configuration, but 0 in train, inference and probe adapters. |
+| **Deprecated legacy:** `--surrogate-slope` | `sim`, `dump-weights`, `train` | Unset | Fast-sigmoid surrogate-gradient slope; larger values narrow its active window around threshold. Unset retains the model setting (currently 5). |
+| **Deprecated legacy:** `--w-in` | `sim`, `dump-weights`, `train` | Unset | Supply parent Gaussian mean/std on the fan-in-normalized summed-coupling scale. Two values set E input weights; four values additionally set I input mean/std. These are not per-edge moments. Takes one or more values. |
+| **Deprecated legacy:** `--trainable-w-ei` | `sim`, `dump-weights`, `train` | false | Make E→I recurrent weights trainable; otherwise frozen. |
+| **Deprecated legacy:** `--trainable-w-ie` | `sim`, `dump-weights`, `train` | false | Make I→E recurrent weights trainable; otherwise frozen. |
 
 #### Simulation and inference
 
-Skip-load, perturbation, inhibitory replay and weight-scaling flags configure loaded-weight inference. Recording mode selects snapshot channels; recording-start-step trims retained probe rasters without shortening the simulation. Transition flags require a compatible legacy bundle simulation.
+Skip-load, perturbation, inhibitory replay and input-weight-scaling flags configure loaded-weight inference. Recording mode selects snapshot channels; recording-start-step trims retained probe rasters without shortening the simulation.
 
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
-| `--infer` | `sim` | false | Load trained weights and evaluate the legacy test set; saves metrics.json. Explicit digit/sample selectors request a snapshot instead. |
-| `--load-config` | `sim`, `dump-weights` | Unset | Load config from a JSON file (e.g., from a training run). CLI flags override loaded values. |
+| **Deprecated legacy:** `--infer` | `sim` | false | Load trained weights and evaluate the legacy test set; saves metrics.json. Explicit digit/sample selectors request a snapshot instead. |
+| **Deprecated legacy:** `--load-config` | `sim`, `dump-weights` | Unset | Load config from a JSON file (e.g., from a training run). CLI flags override loaded values. |
 | `--load-weights` | `sim`, `dump-weights`, `train` | Unset | Load a legacy PyTorch state dictionary for sim or dump-weights. Accepted by train, but legacy training does not consume it; graph training uses it for resume. |
-| `--outputs` | `sim` | Unset | Extra artifacts to emit from the one test-set forward pass (metrics.json is always written): per_cell_rates (per-cell E/I Hz → per_cell_rates.npz), pop_traces (per-trial population activity → pop_traces.npz, base signal for PSD/f_gamma), rasters (sparse per-trial spike indices → rasters.npz, for cycle-level analysis), spike_summary (--input-file only; compact per-presentation E/I/output spike counts). Choices: `per_cell_rates`, `pop_traces`, `rasters`, `spike_summary`. Takes one or more values. |
-| `--recording-start-step` | `sim` | 0 | First retained timestep; simulation and metrics still use the full window. |
-| `--recording-mode` | `sim` | full | Recording channels: full traces (default), E/I spikes only, or inhibitory spikes only. Metrics-only inference never records trajectories. Choices: `full`, `spikes`, `inhibitory`. |
-| `--skip-load` | `sim` | Unset | Drop state_dict keys with these prefixes before loading (e.g. W_ei. W_ie.) so a fresh sub-block survives — transfer-load probes. Takes one or more values. |
-| `--perturb-mode` | `sim` | Unset | Hidden-spike perturbation applied inside the forward loop: drop (Bernoulli mask), add (Poisson noise Hz). Choices: `drop`, `add`. |
-| `--perturb-level` | `sim` | Unset | Perturbation magnitude: one probability for drop, or one rate in Hz for add. The parser accepts a list, but the legacy perturbation requires a single value. |
-| `--i-override-file` | `sim` | Unset | NPZ with a sparse per-trial I-spike stream (i_trial/i_t/i_cell + n_trials/T/n_i) to substitute for the inhibitory spikes each timestep — generic injection dual of --outputs rasters. |
-| `--scale-w-in` | `sim` | 1.0 | Multiply loaded input weights (W_ff[0]) before the forward pass. |
-| `--scale-w-ei` | `sim` | 1.0 | Multiply loaded W_ei matrices before the forward pass. |
-| `--scale-w-ie` | `sim` | 1.0 | Multiply loaded W_ie matrices before the forward pass. |
-| `--transition-bundle` | `sim` | Unset | Smoothly scale recurrent matrices from --bundle to the compatible SNNLang endpoint bundle while preserving dynamic state. |
-| `--transition-start-ms` | `sim` | Unset | Start time for --transition-bundle's smooth ramp. |
-| `--transition-end-ms` | `sim` | Unset | End time for --transition-bundle's smooth ramp. |
+| **Deprecated legacy:** `--outputs` | `sim` | Unset | Extra artifacts to emit from the one test-set forward pass (metrics.json is always written): per_cell_rates (per-cell E/I Hz → per_cell_rates.npz), pop_traces (per-trial population activity → pop_traces.npz, base signal for PSD/f_gamma), rasters (sparse per-trial spike indices → rasters.npz, for cycle-level analysis), spike_summary (--input-file only; compact per-presentation E/I/output spike counts). Choices: `per_cell_rates`, `pop_traces`, `rasters`, `spike_summary`. Takes one or more values. |
+| **Deprecated legacy:** `--recording-start-step` | `sim` | 0 | First retained timestep; simulation and metrics still use the full window. |
+| **Deprecated legacy:** `--recording-mode` | `sim` | full | Recording channels: full traces (default), E/I spikes only, or inhibitory spikes only. Metrics-only inference never records trajectories. Choices: `full`, `spikes`, `inhibitory`. |
+| **Deprecated legacy:** `--skip-load` | `sim` | Unset | Drop state_dict keys with these prefixes before loading (e.g. W_ei. W_ie.) so a fresh sub-block survives — transfer-load probes. Takes one or more values. |
+| **Deprecated legacy:** `--perturb-mode` | `sim` | Unset | Hidden-spike perturbation applied inside the forward loop: drop (Bernoulli mask), add (Poisson noise Hz). Choices: `drop`, `add`. |
+| **Deprecated legacy:** `--perturb-level` | `sim` | Unset | Perturbation magnitude: one probability for drop, or one rate in Hz for add. The parser accepts a list, but the legacy perturbation requires a single value. |
+| **Deprecated legacy:** `--i-override-file` | `sim` | Unset | NPZ with a sparse per-trial I-spike stream (i_trial/i_t/i_cell + n_trials/T/n_i) to substitute for the inhibitory spikes each timestep — generic injection dual of --outputs rasters. |
+| **Deprecated legacy:** `--scale-w-in` | `sim` | 1.0 | Multiply loaded input weights (W_ff[0]) before the forward pass. |
 
 #### Training
 
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
 | `--max-samples` | `sim`, `train` | Unset | Limit training or test-set evaluation to N samples; unset uses the full dataset. |
-| `--lr` | `train` | 0.01 | Learning rate for the legacy optimizer. Default 0.01; the PING training example above uses 0.0001. |
-| `--weight-decay` | `train` | 0.0 | AdamW decoupled weight decay; zero disables it. Applies during legacy training. |
+| **Deprecated legacy:** `--lr` | `train` | 0.01 | Learning rate for the legacy optimizer. Default 0.01; the PING training example above uses 0.0001. |
+| **Deprecated legacy:** `--weight-decay` | `train` | 0.0 | AdamW decoupled weight decay; zero disables it. Applies during legacy training. |
 | `--epochs` | `train` | 0 | Number of training epochs. 0 = probe only (init snapshot, no training). Default: 0. |
 | `--batch-size` | `train` | Unset | Mini-batch size for DataLoader. Default: 64 (from models.BATCH_SIZE). |
-| `--v-grad-dampen` | `train` | 80.0 | Gradient dampening for COBA membrane |
-| `--fr-reg-upper-target-hz` | `train` | 0.0 | Hidden-E activity regulariser: population-mean firing-rate ceiling for each presentation, in Hz. The one-sided squared penalty is averaged over samples and hidden layers. Default: 0 Hz (only active when strength &gt; 0). |
-| `--fr-reg-upper-strength` | `train` | 0.0 | Strength of the hidden-E firing-rate ceiling penalty; zero disables it. |
+| **Deprecated legacy:** `--v-grad-dampen` | `train` | 80.0 | Gradient dampening for COBA membrane |
+| **Deprecated legacy:** `--fr-reg-upper-target-hz` | `train` | 0.0 | Hidden-E activity regulariser: population-mean firing-rate ceiling for each presentation, in Hz. The one-sided squared penalty is averaged over samples and hidden layers. Default: 0 Hz (only active when strength &gt; 0). |
+| **Deprecated legacy:** `--fr-reg-upper-strength` | `train` | 0.0 | Strength of the hidden-E firing-rate ceiling penalty; zero disables it. |
 
 #### Output and execution
 
 | Flag | Commands | Default | Behaviour / accepted values |
 | --- | --- | --- | --- |
 | `-h` / `--help` | `sim`, `dump-weights`, `train` | — | show this help message and exit |
-| `--output-fields` | `sim`, `dump-weights` | Unset | Retain only these NPZ data fields, with lossless compression; shape metadata is automatic. Takes one or more values. |
+| **Deprecated legacy:** `--output-fields` | `sim`, `dump-weights` | Unset | Retain only these NPZ data fields, with lossless compression; shape metadata is automatic. Takes one or more values. |
 | `--executor` | `sim`, `dump-weights`, `train` | legacy | Execution backend (default: legacy). Graph execution is opt-in. Choices: `legacy`, `graph`. |
 | `--out-dir` | `sim`, `dump-weights`, `train` | Unset | Required output directory for every execution command. |
-| `--wipe-dir` | `sim`, `dump-weights`, `train` | false | Clear output directory before run |
+| **Deprecated legacy:** `--wipe-dir` | `sim`, `dump-weights`, `train` | false | Clear output directory before run |
 | `--seed` | `sim`, `dump-weights`, `train` | Unset | RNG seed. Seeds Python, NumPy, and torch (CPU + CUDA + MPS) before dataset load and model init. Persisted to config.json. |
 
 #### Graph-only arguments accepted by the parser

@@ -1,0 +1,159 @@
+---
+title: GraphExecutor
+description: PyTorch module for executing a compiled spiking-network graph, accessing parameters and continuing simulation state.
+---
+
+`GraphExecutor` is a `torch.nn.Module` that executes a prepared graph plan. Import it from `snnlab.sim.execution`; it is not re-exported from `snnlab.sim`.
+
+Use this class when composing a spiking network with ordinary PyTorch layers or writing an external optimization loop. For bundle loading, input bindings and execution provenance, use [ExecutionSpec](/api/sim/execution-spec) with `build`, `simulate`, `infer` or `train`.
+
+## Constructor
+
+```python
+from snnlab.sim.execution import GraphExecutor, plan_graph
+
+GraphExecutor(
+    plan,
+    *,
+    seed=0,
+    trainable_parameters=(),
+    surrogate_slope=5.0,
+    surrogate=None,
+)
+```
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `plan` | `GraphPlan` | Required execution plan returned by `plan_graph(graph)`. |
+| `seed` | `int` | Seeds parameter initialization. Construction calls `torch.manual_seed`, affecting the global PyTorch RNG. |
+| `trainable_parameters` | `Sequence[str]` | Graph parameter IDs whose tensors require gradients. The default selects none. |
+| `surrogate_slope` | `float` | Default slope for the executor's surrogate spike derivative. Neuron definitions can also specify their own slope. |
+| `surrogate` | `Mapping[str, Any]` or `None` | Serialized custom surrogate definition. Registered implementations must be imported before use. |
+
+Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Selecting trainable parameters enables gradients; it does not create an optimizer or perform training.
+
+When using a compiled training recipe, pass its `resolved_parameters.trainable`, surrogate slope and custom surrogate configuration explicitly, or let `build(ExecutionSpec(...))` configure the executor.
+
+## plan_graph and GraphPlan
+
+```python
+from snnlab.sim.execution import GraphPlan, plan_graph
+
+plan = plan_graph(bundle.graph)
+```
+
+`plan_graph(graph: Mapping[str, Any]) -> GraphPlan` checks backend capabilities, timebase, projection units and delays, then prepares population ordering and projection decay. It does not initialize weights. Unsupported graph features raise `ValueError`; projection delays must be integer multiples of the graph timestep.
+
+`GraphPlan` is a frozen dataclass containing `graph`, `dt_ms`, `populations`, `projections`, `observables` and `outputs`. Its nested graph data is not deeply frozen. Treat it as planning data; author networks through [snnlab.lang](/api/lang/network).
+
+## forward
+
+```python
+result = model(
+    inputs,
+    diagnostics=True,
+    runtime_state=None,
+    interventions=(),
+    resets=(),
+    decisions=None,
+    measurement=None,
+    recording=None,
+    retain_outputs=True,
+)
+```
+
+Calling the module invokes `forward` and returns an [ExecutionResult](/api/sim/execution-result).
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `inputs` | `Mapping[str, torch.Tensor]` | Dense tensors keyed by declared graph input IDs. Time-varying inputs normally use `(time, batch, *features)` axes. |
+| `diagnostics` | `bool` | Whether to retain declared diagnostic recordings. Defaults to `True`. |
+| `runtime_state` | `GraphRuntimeState` or `None` | Compatible dynamic state from a previous call. `None` starts with fresh dynamic state. |
+| `interventions` | `Sequence[Intervention]` | Ordered typed spike interventions, including replay. See [interventions](/api/sim/execution-spec#interventions). |
+| `resets` | `Sequence[ResetVoltage]` | Explicit selective voltage reset schedules. |
+| `decisions` | `DecisionSegments` or `None` | Per-batch decision boundaries and compact spike counts. |
+| `measurement` | `MeasurementWindow` or `None` | Absolute reduction window carried across continuation. |
+| `recording` | `RecordingSpec` or `None` | Selected dense cells, sparse events or recording sinks. |
+| `retain_outputs` | `bool` | Retain named outputs by default; sinks can consume them without accumulation. |
+
+Inputs must agree on time length and batch size and match the graph's feature dimensions and signal contracts. Direct calls consume tensors; they do not load files, encode datasets or generate Poisson stimuli. Use the execution request's input bindings for those tasks.
+
+Supported inference reductions accumulate automatically when a full history is unnecessary. Autograd execution retains its dense histories; use `torch.no_grad()` for inference with trainable parameters. See [measurement and recording controls](/api/sim/execution-spec#measurement) for windows, sinks and retention limits.
+
+`result.outputs` contains named output tensors that retain their gradient path when retained. Diagnostics and returned dynamic state are detached. Compute losses from the output tensors; `.numpy()` is for plotting and analysis.
+
+## parameter_map
+
+```python
+parameters = model.parameter_map()
+weight = parameters["input_to_E.weight"]
+```
+
+`parameter_map() -> dict[str, torch.Tensor]` returns live parameter tensors keyed by graph parameter IDs. PyTorch registration replaces periods with `__`; this method restores the graph-facing names.
+
+Projection matrices are declared as `(target, source)` in the graph and stored as `(source, target)` at runtime. Projection initialization follows its serialized `initialization_scaling` policy: normalized by default or explicitly direct. Linear operation matrices also use reversed runtime orientation and retain their declared initialization policy. Consult `model.initialization_metadata` for realized shapes, scaling and statistics.
+
+The tensors in `result.parameters` are detached copies. Use `model.parameter_map()` or `model.parameters()` when an optimizer needs the live parameters.
+
+## enforce_constraints
+
+```python
+optimizer.step()
+model.enforce_constraints()
+```
+
+`enforce_constraints() -> None` applies declared built-in and registered custom constraints to the live parameters without tracking gradients. Call it after an external optimizer step; ordinary PyTorch optimizers do not apply graph constraints automatically.
+
+## Continuing a simulation
+
+```python
+first = model(first_inputs, diagnostics=False)
+second = model(
+    second_inputs,
+    diagnostics=False,
+    runtime_state=first.runtime_state,
+)
+```
+
+`GraphRuntimeState` stores voltages, refractory state, synaptic state, delay histories and custom dynamic state needed to continue a compatible trajectory. It excludes static weights. Continuation state is detached, so this does not retain a gradient path across calls.
+
+Use `save_runtime_state` and `load_runtime_state` from `snnlab.sim.execution` to persist dynamic state. See [runtime state](/api/sim/execution-spec#runtime_state) for the execution request's continuation rules.
+
+## Complete example
+
+This example authors a current-based network, compiles it, constructs the executor and runs 20 timesteps with one batch item and four input channels.
+
+```python
+import torch
+from snnlab import lang
+from snnlab.sim.execution import GraphExecutor, plan_graph
+
+net = lang.Network("executor_example", dt=0.5 * lang.ms)
+inputs = net.input(
+    "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
+)
+cells = net.population(
+    "E", size=16,
+    neuron=lang.CUBA_LIF(tau_mem=20 * lang.ms, capacitance_nf=1.0),
+)
+net.connect(
+    inputs, cells.excitatory, name="input_to_E",
+    synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
+    weight=lang.Uniform(4.0, 6.0), constraint=lang.NonNegative(),
+)
+net.output("spikes", cells.spikes)
+
+bundle = lang.compile(net, target="tools/snnsim")
+model = GraphExecutor(plan_graph(bundle.graph), seed=17).to("cpu")
+spikes = torch.zeros(20, 1, 4)
+spikes[::5] = 1
+result = model({"inputs": spikes}, diagnostics=False)
+print(tuple(result.outputs["spikes"].shape))
+# (20, 1, 16)
+```
+
+## PyTorch module methods
+
+Inherited `.parameters()`, `.to(...)`, `.train()`, `.eval()` and `.state_dict()` follow PyTorch module conventions. `.train()` sets module mode; it does not run snnlab's training handler. Save and load the model's state dictionary for weights, and use runtime state separately for trajectory continuation.
+
+See [PyTorch integration](/api/sim/pytorch) for external layers and checkpoint conventions, and the runnable [PyTorch Integration guide](/pytorch-integration) for a complete training loop.

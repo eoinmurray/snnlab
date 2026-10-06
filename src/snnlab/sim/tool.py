@@ -25,6 +25,13 @@ from snnlab.sim.bundle import (
     load_simulation_recipe,
     translate_cobanet_v1,
 )
+from snnlab.sim.cli_policy import (
+    LEGACY_CONFIG_DEFAULTS,
+    LEGACY_REPLAY_FIELDS,
+    REMOVED_LEGACY_FLAGS,
+    mark_legacy_help,
+    warn_legacy_flags,
+)
 
 # Re-exported through cli/__init__.py for notebook runners (nb003–006).
 from snnlab.sim.config import (
@@ -176,6 +183,8 @@ def _build_config_mapping(parent_parser):
 
                 dest_to_flag[dest] = flag
 
+    # Preserve historical config fields independently of the accepted CLI switches.
+    config_to_args.update({key: key for key in LEGACY_REPLAY_FIELDS})
     return config_to_args, dest_to_flag
 
 
@@ -285,7 +294,8 @@ def _build_parent_parser():
     import argparse
 
     # Shared parent for network/input args
-    parent = argparse.ArgumentParser(add_help=False)
+    parent = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parent.set_defaults(**LEGACY_CONFIG_DEFAULTS)
     net_group = parent.add_argument_group("Network")
     net_group.add_argument(
         "--bundle",
@@ -360,120 +370,10 @@ def _build_parent_parser():
         "softmax of a non-spiking leaky decoder membrane.",
     )
     net_group.add_argument(
-        "--signed-readout",
-        action="store_true",
-        default=False,
-        help="Allow signed weights only in the abstract final classifier; "
-        "the simulated input, feed-forward, and recurrent synapses remain "
-        "Dale-constrained.",
-    )
-    net_group.add_argument(
-        "--no-signed-readout",
-        dest="signed_readout",
-        action="store_false",
-        help="Keep the final classifier weights non-negative (default).",
-    )
-    net_group.add_argument(
-        "--readout-bias",
-        action="store_true",
-        default=False,
-        help="Enable a trainable signed bias in the final classifier.",
-    )
-    net_group.add_argument(
-        "--no-readout-bias",
-        dest="readout_bias",
-        action="store_false",
-        help="Disable the final classifier bias (default).",
-    )
-    net_group.add_argument(
         "--dales-law",
         action="store_true",
         default=True,
         help="Enforce Dale's law: clamp weights to non-negative (default: True)",
-    )
-    net_group.add_argument(
-        "--no-dales-law",
-        dest="dales_law",
-        action="store_false",
-        help="Allow signed (positive + negative) weights.",
-    )
-    net_group.add_argument(
-        "--state-clamp",
-        action="store_true",
-        default=False,
-        help="Forward-pass state clamp: floor conductances at 0 (and cap "
-        "magnitude) each timestep, so a signed-weight net cannot drive "
-        "g_tot <= 0 into NaN. Bounds the state, keeps weights signed.",
-    )
-    net_group.add_argument(
-        "--train-leak",
-        action="store_true",
-        default=False,
-        help="Make each hidden COBA cell's leak membrane time constant trainable "
-        "under bounded positive τ_m ranges. Uses g_L = C_m / τ_m "
-        "without changing synaptic τ_AMPA/τ_GABA. Default off.",
-    )
-    net_group.add_argument(
-        "--no-train-leak",
-        dest="train_leak",
-        action="store_false",
-        help="Disable trainable leak conductance / τ_m heterogeneity (default).",
-    )
-    net_group.add_argument(
-        "--tau-m-e-bounds-ms",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("MIN", "MAX"),
-        help="Bounds for trainable excitatory membrane τ_m in ms when "
-        "--train-leak is enabled. Default: models.py "
-        "TRAINABLE_TAU_M_E_BOUNDS_MS.",
-    )
-    net_group.add_argument(
-        "--tau-m-i-bounds-ms",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("MIN", "MAX"),
-        help="Bounds for trainable inhibitory membrane τ_m in ms when "
-        "--train-leak is enabled. Default: models.py "
-        "TRAINABLE_TAU_M_I_BOUNDS_MS.",
-    )
-    net_group.add_argument(
-        "--adaptive-threshold",
-        action="store_true",
-        default=False,
-        help="Enable trainable E-cell adaptive thresholds: recent spikes raise "
-        "the effective threshold and decay with a bounded τ_adapt. Default off.",
-    )
-    net_group.add_argument(
-        "--no-adaptive-threshold",
-        dest="adaptive_threshold",
-        action="store_false",
-        help="Disable adaptive thresholds (default).",
-    )
-    net_group.add_argument(
-        "--adapt-tau-bounds-ms",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("MIN", "MAX"),
-        help="Bounds for trainable E-cell adaptive-threshold τ in ms. Default: "
-        "models.py ADAPT_TAU_BOUNDS_MS.",
-    )
-    net_group.add_argument(
-        "--adapt-strength-init-mv",
-        type=float,
-        default=1.0,
-        help="Initial per-spike adaptive-threshold increment in mV. The value "
-        "is trainable and bounded by --adapt-strength-max-mv. Default: 1.0.",
-    )
-    net_group.add_argument(
-        "--adapt-strength-max-mv",
-        type=float,
-        default=None,
-        help="Upper bound for trainable adaptive-threshold strength in mV. "
-        "Default: models.py ADAPT_STRENGTH_MAX_MV.",
     )
     net_group.add_argument(
         "--ei-strength",
@@ -491,78 +391,6 @@ def _build_parent_parser():
         help="Fraction of W_in parameters set to zero only at initialization. "
         "All entries remain trainable and may regrow. Survivors are rescaled "
         "by 1/(1-fraction). Default: 0.95.",
-    )
-    net_group.add_argument(
-        "--recurrent-initial-zero-fraction",
-        type=float,
-        default=0.0,
-        help="Fraction of recurrent W_EE/W_EI/W_IE/W_II parameters set to "
-        "zero only at initialization. Trainable entries may regrow. Survivors "
-        "are rescaled by 1/(1-fraction). Default: 0.",
-    )
-    net_group.add_argument(
-        "--independent-drive",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("RATE_HZ", "G_PER_SPIKE"),
-        help="Per-E-cell independent Poisson drive (bypasses W_in). Generates "
-        "N_E uncorrelated Poisson streams at RATE_HZ each and adds "
-        "G_PER_SPIKE μS of g_E to each E cell per spike. Works on the "
-        "synthetic-spikes input mode. Use for Brunel/Vreeswijk-style "
-        "experiments where input correlations across cells should be zero.",
-    )
-    net_group.add_argument(
-        "--independent-drive-i",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("RATE_HZ", "G_PER_SPIKE"),
-        help="Per-I-cell independent Poisson drive on the I population's "
-        "excitatory conductance. Same semantics as --independent-drive but "
-        "targets the I cells directly, so their membrane fluctuations are "
-        "no longer driven entirely by E spikes via W^EI. Required for full "
-        "V&S-style AI state where both populations need uncorrelated noise.",
-    )
-    net_group.add_argument(
-        "--quenched-drive",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("MEAN", "STD"),
-        help="Per-E-cell constant-in-time DC excitatory conductance, drawn "
-        "once from N(MEAN, STD) μS (clamped ≥ 0) and frozen for the whole "
-        "trial — V&S's quenched random input. Unlike --independent-drive it "
-        "has no per-timestep fluctuation, so it cannot pin spike times; the "
-        "Lyapunov probe then measures the network's autonomous chaos rather "
-        "than input entrainment. Works on synthetic-spikes mode.",
-    )
-    net_group.add_argument(
-        "--quenched-drive-i",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("MEAN", "STD"),
-        help="Per-I-cell frozen DC excitatory conductance. Same semantics as "
-        "--quenched-drive but targets the I population.",
-    )
-    net_group.add_argument(
-        "--exact-k-initialization",
-        action="store_true",
-        help="Choose exactly K initially non-zero recurrent entries per post "
-        "cell instead of Bernoulli zeroing, where K=round((1-f)N_pre). This "
-        "does not impose a persistent mask. No effect unless the recurrent "
-        "initial-zero fraction is greater than zero.",
-    )
-    net_group.add_argument(
-        "--lyapunov-eps",
-        type=float,
-        default=0.0,
-        help="If > 0 (synthetic-spikes image mode), rerun the forward pass "
-        "on identical input with all membrane voltages ε-perturbed at t=0 "
-        "and save the membrane-divergence curve ‖ΔV(t)‖ to recording.npz. "
-        "Its exponential growth rate is the max Lyapunov exponent: positive "
-        "for the chaotic V&S balanced state, ≈ 0 for cycle-locked PING.",
     )
     net_group.add_argument(
         "--dt",
@@ -596,20 +424,6 @@ def _build_parent_parser():
         help="Total simulation duration in ms (default: 200). "
         "Metrics are measured over the full trace; notebooks strip any "
         "startup transient in post.",
-    )
-    net_group.add_argument(
-        "--readout-w-out-scale",
-        type=float,
-        default=1.0,
-        help="Deprecated: multiply the readout matrix W_ff[-1] (and "
-        "bias b_ff[-1] if present) by this scalar "
-        "after build_net. Use to compensate for low "
-        "hidden firing rate under mem-mean / "
-        "spiking output-LIF readouts: bumping W_out up "
-        "equalises the trial-level drive into the "
-        "output LIF and recovers gradient signal. "
-        "Cannot be combined with --readout-w-init-mean/std. "
-        "Train-mode only. Default 1.0.",
     )
     net_group.add_argument(
         "--readout-w-init-mean",
@@ -693,49 +507,6 @@ def _build_parent_parser():
         "summed-coupling scale, not per-edge moments.",
     )
     wt_group.add_argument(
-        "--w-ei",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("SUMMED_PARENT_MEAN", "SUMMED_PARENT_STD"),
-        help="W_EI parent Gaussian parameters on the summed-coupling scale.",
-    )
-    wt_group.add_argument(
-        "--w-ie",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("SUMMED_PARENT_MEAN", "SUMMED_PARENT_STD"),
-        help="W_IE parent Gaussian parameters on the summed-coupling scale.",
-    )
-    wt_group.add_argument(
-        "--w-ii",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("SUMMED_PARENT_MEAN", "SUMMED_PARENT_STD"),
-        help="W_II parent Gaussian parameters on the summed-coupling scale. Default: 0 0 (no I→I, canonical "
-        "PING). Enable for Brunel/Vreeswijk balanced-network experiments.",
-    )
-    wt_group.add_argument(
-        "--w-ee",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("SUMMED_PARENT_MEAN", "SUMMED_PARENT_STD"),
-        help="W_EE parent Gaussian parameters on the summed-coupling scale. Default: 0 0 (no E→E, canonical "
-        "PING). Enable for the full four-coupling Brunel/Vreeswijk balanced "
-        "network (recurrent excitation pins the E rate).",
-    )
-    wt_group.add_argument(
-        "--trainable-w-ee",
-        action="store_true",
-        help="Make COBANet's E→E matrix gradient-carrying (default: "
-        "frozen). With --no-dales-law and the other three trainable-w-* "
-        "flags, the hidden layer becomes a free signed recurrent matrix "
-        "(a generic RSNN, no longer E/I-constrained).",
-    )
-    wt_group.add_argument(
         "--trainable-w-ei",
         action="store_true",
         help="Make COBANet's E→I matrix gradient-carrying (default: "
@@ -748,13 +519,6 @@ def _build_parent_parser():
         help="Make COBANet's I→E matrix gradient-carrying (default: "
         "frozen). Use to ask whether the optimiser would discover the "
         "PING-loop weights from scratch.",
-    )
-    wt_group.add_argument(
-        "--trainable-w-ii",
-        action="store_true",
-        help="Make COBANet's I→I matrix gradient-carrying (default: "
-        "frozen). Completes the set so all four recurrent blocks can train "
-        "together (see --trainable-w-ee).",
     )
     out_group = parent.add_argument_group("Output")
     out_group.add_argument("--out-dir", type=str, default=None, help="Output directory")
@@ -887,18 +651,6 @@ def _build_subparsers(parser, parent):
         help="[--infer] Multiply loaded input weights (W_ff[0]) before the forward pass.",
     )
     sim_parser.add_argument(
-        "--scale-w-ei",
-        type=float,
-        default=1.0,
-        help="[--infer] Multiply loaded W_ei matrices before the forward pass.",
-    )
-    sim_parser.add_argument(
-        "--scale-w-ie",
-        type=float,
-        default=1.0,
-        help="[--infer] Multiply loaded W_ie matrices before the forward pass.",
-    )
-    sim_parser.add_argument(
         "--scale-projection",
         action="append",
         default=[],
@@ -948,25 +700,6 @@ def _build_subparsers(parser, parent):
         type=float,
         default=None,
         help="[graph Poisson] Recompile an immutable graph copy at this inference timestep.",
-    )
-    sim_parser.add_argument(
-        "--transition-bundle",
-        type=str,
-        default=None,
-        help="[legacy bundle sim] Smoothly scale recurrent matrices from --bundle "
-        "to the compatible SNNLang endpoint bundle while preserving dynamic state.",
-    )
-    sim_parser.add_argument(
-        "--transition-start-ms",
-        type=float,
-        default=None,
-        help="Start time for --transition-bundle's smooth ramp.",
-    )
-    sim_parser.add_argument(
-        "--transition-end-ms",
-        type=float,
-        default=None,
-        help="End time for --transition-bundle's smooth ramp.",
     )
     # Uniform-Poisson drive knobs (--input synthetic-spikes / --input-file): the
     # net structure + drive for f–I curves and untrained-net parameter sweeps.
@@ -1247,6 +980,8 @@ def _build_subparsers(parser, parent):
         "training rate ceiling tracks f_γ.",
     )
 
+    return subparsers
+
 
 def parse_args(argv=None):
     """Parse command-line arguments with subparsers for sim/train."""
@@ -1254,58 +989,34 @@ def parse_args(argv=None):
 
     argv = sys.argv[1:] if argv is None else list(argv)
 
-    _examples = """\
-Each subcommand has its own complete argument listing. The top-level help
-above only shows the dispatcher; for the actual flags accepted by a mode,
-run:
+    _examples = """Each subcommand has its own argument listing:
+  python -m snnlab.sim sim --help
+  python -m snnlab.sim train --help
 
-  python -m snnlab.sim sim    --help
-  python -m snnlab.sim train  --help
-
-The flags fall into the following groups (every group is documented in
-each subcommand's --help):
-
-  Network        --model, --n-hidden, --ei-strength, --ei-ratio,
-                 --recurrent-initial-zero-fraction, --w-in-initial-zero-fraction, --dt, --t-ms, --seed
-  Dynamics       --train-leak, --adaptive-threshold
-  Readout        --readout {rate,mem-mean,spike-count,spike-rate,cumulative-potential},
-                 --signed-readout, --readout-bias, --readout-w-init-mean,
-                 --readout-w-init-std, --readout-w-out-scale,
-                 --dales-law, --no-dales-law
-  Input          --input, --input-rate, --dataset, --digit, --sample
-  Weights        --w-in, --w-ee, --w-ei, --w-ie, --w-ii
-  Gradient       --v-grad-dampen, --surrogate-slope
-  Train (train)  --lr, --epochs, --batch-size, --max-samples,
-                 --fr-reg-upper-target-hz, --fr-reg-upper-strength
-  Sim (sim)      --infer, --load-config, --load-weights, --max-samples
-  Output / exec  --out-dir, --wipe-dir
-
-Examples:
-  python -m cli                                    # sim (metrics only)
-  python -m cli sim --input dataset --dataset mnist --digit 3
-  python -m cli train --epochs 100
-  python -m cli sim --infer --load-weights weights.pth --dt 0.5
-  python -m cli sim --infer --load-config runs/foo/config.json --load-weights runs/foo/weights.pth
-
-Models:
-  ping        COBANet with E↔I coupling. With --ei-strength > 0 the
-              recurrent inhibitory loop is wired up and frozen at init;
-              feedforward weights train against this fixed substrate.
-              (With --ei-strength 0 the I-loop is silenced — E cells only.)
-
-Voltage-gradient damping scales the surrogate-gradient contribution to the
-membrane-voltage update.
+Modern execution uses --executor graph --bundle with snnlab.lang networks.
+Flags marked [deprecated legacy] remain supported for older experiments.
 """
     parser = argparse.ArgumentParser(
-        prog="pinglab-cli",
-        description="pinglab-cli — PING network toolkit",
+        prog="snnsim",
+        allow_abbrev=False,
+        description="snnsim — spiking network simulation",
         epilog=_examples,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parent = _build_parent_parser()
 
-    _build_subparsers(parser, parent)
+    subparsers = _build_subparsers(parser, parent)
+    for command_parser in subparsers.choices.values():
+        command_parser.allow_abbrev = False
+        mark_legacy_help(command_parser)
+    removed = sorted({arg.split("=", 1)[0] for arg in argv} & REMOVED_LEGACY_FLAGS)
+    if removed:
+        parser.error(
+            "removed legacy CLI arguments: "
+            + ", ".join(removed)
+            + "; use snnlab.lang bundles and graph execution"
+        )
 
     args = parser.parse_args(argv)
     if args.mode is None:
@@ -1374,6 +1085,7 @@ membrane-voltage update.
         args.input = "dataset"
         args._input_auto = True
 
+    warn_legacy_flags(argv)
     return args
 
 

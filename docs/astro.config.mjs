@@ -6,6 +6,7 @@ import { unified } from '@astrojs/markdown-remark';
 import { rehypeCode, remarkGfm, remarkHeading, remarkStructure } from 'fumadocs-core/mdx-plugins';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import contentReload from './scripts/content-reload.mjs';
 
 const base = process.env.SITE_BASE_PATH || '/';
 
@@ -56,5 +57,5 @@ export default defineConfig({
     }),
   },
   integrations: [isolatedCaches(), react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false })],
-  vite: { plugins: [tailwindcss()] },
+  vite: { plugins: [tailwindcss(), contentReload()] },
 });

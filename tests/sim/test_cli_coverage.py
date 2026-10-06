@@ -64,9 +64,19 @@ _FAST = ["--n-hidden", "32", "--dt", "0.5", "--t-ms", "40"]
 class TestParseArgsSubcommands:
     @pytest.mark.parametrize("snapshot", [False, True])
     @pytest.mark.parametrize("mode", ["full", "spikes", "inhibitory"])
-    def test_recording_mode_reaches_inference(self, monkeypatch, tmp_path, snapshot, mode):
-        args = parse_args(["sim", "--infer", "--load-weights", "fixture.pth",
-                           "--recording-mode", mode])
+    def test_recording_mode_reaches_inference(
+        self, monkeypatch, tmp_path, snapshot, mode
+    ):
+        args = parse_args(
+            [
+                "sim",
+                "--infer",
+                "--load-weights",
+                "fixture.pth",
+                "--recording-mode",
+                mode,
+            ]
+        )
         seen = []
 
         def capture(**kwargs):
@@ -117,46 +127,27 @@ class TestParseArgsSubcommands:
         assert exc.value.code == 0
 
     def test_readout_and_dales_law_flags(self):
-        args = parse_args(["train", "--readout", "mem-mean", "--no-dales-law"])
+        args = parse_args(["train", "--readout", "mem-mean", "--dales-law"])
         assert args.readout_mode == "mem-mean"
-        assert args.dales_law is False
+        assert args.dales_law is True
         args2 = parse_args(["train", "--readout", "rate"])
         assert args2.dales_law is True  # default
         args3 = parse_args(["train", "--readout", "spike-count"])
         assert args3.readout_mode == "spike-count"
 
-    def test_cumulative_signed_readout_flags(self):
-        args = parse_args([
-            "train", "--readout", "cumulative-potential",
-            "--signed-readout", "--readout-bias",
-        ])
-        assert args.readout_mode == "cumulative-potential"
-        assert args.signed_readout is True
-        assert args.readout_bias is True
-        disabled = parse_args([
-            "train", "--signed-readout", "--readout-bias",
-            "--no-signed-readout", "--no-readout-bias",
-        ])
-        assert disabled.signed_readout is False
-        assert disabled.readout_bias is False
-
     def test_nargs_weight_and_hidden_flags(self):
-        args = parse_args(
-            ["train", "--n-hidden", "64", "32", "--w-in", "10", "2", "--w-ei", "0.5", "0.1"]
-        )
+        args = parse_args(["train", "--n-hidden", "64", "32", "--w-in", "10", "2"])
         assert args.n_hidden == [64, 32]
         assert args.w_in == [10.0, 2.0]
-        assert args.w_ei == [0.5, 0.1]
 
     def test_drive_and_exec_flags(self):
         args = parse_args(
             [
                 "sim",
-                "--independent-drive", "500", "0.03",
-                "--seed", "7",
+                "--seed",
+                "7",
             ]
         )
-        assert args.independent_drive == [500.0, 0.03]
         assert args.seed == 7
 
 
@@ -169,9 +160,7 @@ class TestParseArgsAutoFlip:
 
     def test_explicit_input_not_flipped(self):
         # An explicit --input synthetic-spikes must be honoured even with --digit.
-        args = parse_args(
-            ["sim", "--input", "synthetic-spikes", "--digit", "3"]
-        )
+        args = parse_args(["sim", "--input", "synthetic-spikes", "--digit", "3"])
         assert args.input == "synthetic-spikes"
         assert args._input_auto is False
 
@@ -242,7 +231,11 @@ class TestApplyLoadConfig:
         # argv explicitly sets --t-ms → must NOT be overwritten by config's 150.
         argv = ["--load-config", str(cfg_path), "--t-ms", "200"]
         args = Namespace(
-            load_config=str(cfg_path), t_ms=200.0, dt=0.25, model="ping", n_hidden=None,
+            load_config=str(cfg_path),
+            t_ms=200.0,
+            dt=0.25,
+            model="ping",
+            n_hidden=None,
             dales_law=True,
         )
         _apply_load_config(args, argv, config_to_args, dest_to_flag)
@@ -262,7 +255,9 @@ class TestApplyLoadConfig:
         missing = tmp_path / "nope.json"
         args = Namespace(load_config=str(missing))
         with pytest.raises(SystemExit) as exc:
-            _apply_load_config(args, ["--load-config", str(missing)], config_to_args, dest_to_flag)
+            _apply_load_config(
+                args, ["--load-config", str(missing)], config_to_args, dest_to_flag
+            )
         assert exc.value.code == 1
 
     def test_legacy_n_hidden_int_promoted(self, tmp_path):
@@ -271,19 +266,23 @@ class TestApplyLoadConfig:
         cfg_path.write_text(json.dumps({"model": "ping", "n_hidden": 256}))
         config_to_args, dest_to_flag = _mapping()
         args = Namespace(load_config=str(cfg_path), n_hidden=None, model="ping")
-        _apply_load_config(args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag)
+        _apply_load_config(
+            args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag
+        )
         assert args.n_hidden == [256]
 
     def test_training_readout_mode_key_is_inherited(self, tmp_path):
         cfg_path = tmp_path / "train-config.json"
-        cfg_path.write_text(json.dumps({
-            "model": "ping",
-            "readout_mode": "cumulative-potential",
-        }))
-        config_to_args, dest_to_flag = _mapping()
-        args = Namespace(
-            load_config=str(cfg_path), model="ping", readout_mode="rate"
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "model": "ping",
+                    "readout_mode": "cumulative-potential",
+                }
+            )
         )
+        config_to_args, dest_to_flag = _mapping()
+        args = Namespace(load_config=str(cfg_path), model="ping", readout_mode="rate")
         _apply_load_config(
             args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag
         )
@@ -301,7 +300,9 @@ class TestApplyLoadConfig:
         cfg_path.write_text(json.dumps({"model": "old_ping", "dt": 0.5}))
         config_to_args, dest_to_flag = _mapping()
         args = Namespace(load_config=str(cfg_path), model="ping", dt=0.25)
-        _apply_load_config(args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag)
+        _apply_load_config(
+            args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag
+        )
         assert args.model == "ping"
         assert "legacy model name" in capsys.readouterr().out
 
@@ -311,7 +312,9 @@ class TestApplyLoadConfig:
         cfg_path.write_text(json.dumps({"model": "ping", "n_hidden": [64, 32]}))
         config_to_args, dest_to_flag = _mapping()
         args = Namespace(load_config=str(cfg_path), n_hidden=None, model="ping")
-        _apply_load_config(args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag)
+        _apply_load_config(
+            args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag
+        )
         assert args.n_hidden == [64, 32]
 
     def test_missing_critical_flag_warns(self, tmp_path, capsys):
@@ -320,7 +323,9 @@ class TestApplyLoadConfig:
         cfg_path.write_text(json.dumps({"model": "ping", "dt": 0.5}))
         config_to_args, dest_to_flag = _mapping()
         args = Namespace(load_config=str(cfg_path), dt=0.25, model="ping")
-        _apply_load_config(args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag)
+        _apply_load_config(
+            args, ["--load-config", str(cfg_path)], config_to_args, dest_to_flag
+        )
         out = capsys.readouterr().out
         assert "WARNING" in out and "dales_law" in out
 
@@ -339,13 +344,16 @@ class TestConfigureModels:
         args = parse_args(
             [
                 "sim",
-                "--surrogate-slope", "40",
-                "--input-rate", "33",
-                "--t-ms", "77",
-                "--exact-k-initialization",
-                "--recurrent-initial-zero-fraction", "0.5",
+                "--surrogate-slope",
+                "40",
+                "--input-rate",
+                "33",
+                "--t-ms",
+                "77",
             ]
         )
+        args.exact_k_initialization = True
+        args.recurrent_initial_zero_fraction = 0.5
         configure_models(args)
         assert M.SURROGATE_SLOPE == pytest.approx(40.0)
         assert M.max_rate_hz == pytest.approx(33.0)
@@ -442,13 +450,20 @@ def trained(tmp_path_factory):
     rc = cli.main(
         [
             "train",
-            "--model", "ping",
-            "--dataset", "mnist",
-            "--max-samples", "60",
-            "--epochs", "1",
-            "--w-in", "10",
-            "--w-in-initial-zero-fraction", "0",
-            "--out-dir", str(out),
+            "--model",
+            "ping",
+            "--dataset",
+            "mnist",
+            "--max-samples",
+            "60",
+            "--epochs",
+            "1",
+            "--w-in",
+            "10",
+            "--w-in-initial-zero-fraction",
+            "0",
+            "--out-dir",
+            str(out),
             "--wipe-dir",
             *_FAST,
         ]
@@ -465,15 +480,43 @@ class TestDispatchRuns:
         import numpy as np
 
         out = tmp_path / "gaba-decay"
-        assert cli.main([
-            "sim", "--model", "ping", "--input", "synthetic-spikes",
-            "--n-hidden", "64", "--n-inh", "16", "--n-in", "128",
-            "--input-rate", "45", "--ei-strength", "1.5",
-            "--w-in", "1.5", "0.3", "--seed", "42",
-            "--dt", "0.1", "--t-ms", "200",
-            "--tau-gaba", str(tau_ms), "--output-fields", "gi_e_1",
-            "--out-dir", str(out),
-        ]) == 0
+        assert (
+            cli.main(
+                [
+                    "sim",
+                    "--model",
+                    "ping",
+                    "--input",
+                    "synthetic-spikes",
+                    "--n-hidden",
+                    "64",
+                    "--n-inh",
+                    "16",
+                    "--n-in",
+                    "128",
+                    "--input-rate",
+                    "45",
+                    "--ei-strength",
+                    "1.5",
+                    "--w-in",
+                    "1.5",
+                    "0.3",
+                    "--seed",
+                    "42",
+                    "--dt",
+                    "0.1",
+                    "--t-ms",
+                    "200",
+                    "--tau-gaba",
+                    str(tau_ms),
+                    "--output-fields",
+                    "gi_e_1",
+                    "--out-dir",
+                    str(out),
+                ]
+            )
+            == 0
+        )
         with np.load(out / "recording.npz") as recording:
             conductance = recording["gi_e_1"]
         before, after = conductance[:-1], conductance[1:]
@@ -482,7 +525,8 @@ class TestDispatchRuns:
         decaying = (before > 1e-6) & (after < before)
         assert decaying.sum() > 10
         np.testing.assert_allclose(
-            after[decaying] / before[decaying], np.exp(-0.1 / tau_ms),
+            after[decaying] / before[decaying],
+            np.exp(-0.1 / tau_ms),
             rtol=2e-6,
         )
 
@@ -496,10 +540,14 @@ class TestDispatchRuns:
         rc = cli.main(
             [
                 "sim",
-                "--model", "ping",
-                "--input", "synthetic-spikes",
-                "--input-rate", "20",
-                "--out-dir", str(out),
+                "--model",
+                "ping",
+                "--input",
+                "synthetic-spikes",
+                "--input-rate",
+                "20",
+                "--out-dir",
+                str(out),
                 "--wipe-dir",
                 *_FAST,
             ]
@@ -508,16 +556,21 @@ class TestDispatchRuns:
         assert (out / "recording.npz").exists()
 
     def test_run_sim_cell_drive_tonic_path(self, tmp_path):
-        # A per-cell drive flag (--quenched-drive) routes _run_sim through the
-        # tonic-conductance branch instead of the uniform-Poisson branch.
+        # Historical config replay preserves the per-cell tonic drive path.
         out = tmp_path / "celldrive"
+        saved = tmp_path / "config.json"
+        saved.write_text(json.dumps({"quenched_drive": [0.5, 0.1]}))
         rc = cli.main(
             [
                 "sim",
-                "--model", "ping",
-                "--input", "synthetic-spikes",
-                "--quenched-drive", "0.5", "0.1",
-                "--out-dir", str(out),
+                "--model",
+                "ping",
+                "--input",
+                "synthetic-spikes",
+                "--load-config",
+                str(saved),
+                "--out-dir",
+                str(out),
                 "--wipe-dir",
                 *_FAST,
             ]
@@ -532,13 +585,20 @@ class TestDispatchRuns:
         rc = cli.main(
             [
                 "train",
-                "--model", "ping",
-                "--dataset", "mnist",
-                "--max-samples", "50",
-                "--epochs", "0",
-                "--w-in", "10",
-                "--w-in-initial-zero-fraction", "0",
-                "--out-dir", str(out),
+                "--model",
+                "ping",
+                "--dataset",
+                "mnist",
+                "--max-samples",
+                "50",
+                "--epochs",
+                "0",
+                "--w-in",
+                "10",
+                "--w-in-initial-zero-fraction",
+                "0",
+                "--out-dir",
+                str(out),
                 "--wipe-dir",
                 *_FAST,
             ]
@@ -552,10 +612,14 @@ class TestDispatchRuns:
         rc = cli.main(
             [
                 "sim",
-                "--model", "ping",
-                "--n-batch", "4",
-                "--n-in", "32",
-                "--out-dir", str(out),
+                "--model",
+                "ping",
+                "--n-batch",
+                "4",
+                "--n-in",
+                "32",
+                "--out-dir",
+                str(out),
                 "--wipe-dir",
                 *_FAST,
             ]
@@ -570,10 +634,14 @@ class TestDispatchRuns:
             [
                 "sim",
                 "--infer",
-                "--load-config", str(trained / "config.json"),
-                "--load-weights", str(trained / "weights.pth"),
-                "--max-samples", "60",
-                "--out-dir", str(out),
+                "--load-config",
+                str(trained / "config.json"),
+                "--load-weights",
+                str(trained / "weights.pth"),
+                "--max-samples",
+                "60",
+                "--out-dir",
+                str(out),
                 "--wipe-dir",
             ]
         )
@@ -590,11 +658,16 @@ class TestDispatchRuns:
         argv = [
             "sim",
             "--infer",
-            "--load-config", str(trained / "config.json"),
-            "--load-weights", str(trained / "weights.pth"),
-            "--digit", "0",
-            "--sample", "0",
-            "--out-dir", str(out),
+            "--load-config",
+            str(trained / "config.json"),
+            "--load-weights",
+            str(trained / "weights.pth"),
+            "--digit",
+            "0",
+            "--sample",
+            "0",
+            "--out-dir",
+            str(out),
             "--wipe-dir",
         ]
         monkeypatch.setattr("sys.argv", ["pinglab-cli", *argv])
@@ -608,9 +681,12 @@ class TestDispatchRuns:
         rc = cli.main(
             [
                 "dump-weights",
-                "--load-config", str(trained / "config.json"),
-                "--load-weights", str(trained / "weights.pth"),
-                "--out-dir", str(out),
+                "--load-config",
+                str(trained / "config.json"),
+                "--load-weights",
+                str(trained / "weights.pth"),
+                "--out-dir",
+                str(out),
                 "--wipe-dir",
             ]
         )

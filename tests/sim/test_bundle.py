@@ -86,18 +86,10 @@ def _legacy_argv(mode="sim"):
         "0.03",
         "--w-in-initial-zero-fraction",
         "0",
-        "--w-ei",
-        "0.5",
-        "0.05",
-        "--w-ie",
-        "1.0",
-        "0.1",
         "--ei-strength",
         "0.5",
         "--ei-ratio",
         "2",
-        "--recurrent-initial-zero-fraction",
-        "0",
         "--tau-gaba",
         "9",
     ]
@@ -113,9 +105,14 @@ def test_legacy_parse_defaults_are_unchanged():
 
 
 @pytest.mark.parametrize("executor", ["legacy", "graph"])
-@pytest.mark.parametrize("override", [
-    "--refractory-e-ms=1.2", "--refractory-i-ms=0.6", "--refractory-policy=exact",
-])
+@pytest.mark.parametrize(
+    "override",
+    [
+        "--refractory-e-ms=1.2",
+        "--refractory-i-ms=0.6",
+        "--refractory-policy=exact",
+    ],
+)
 def test_bundle_owns_refractory_settings(tmp_path, executor, override, capsys):
     root = _write_bundle(tmp_path)
     with pytest.raises(SystemExit):
@@ -127,6 +124,8 @@ def test_bundle_translates_to_same_structural_arguments_as_legacy(tmp_path):
     root = _write_bundle(tmp_path)
     bundle = parse_args(["sim", "--bundle", str(root)])
     legacy = parse_args(_legacy_argv())
+    legacy.w_ei = [0.5, 0.05]
+    legacy.w_ie = [1.0, 0.1]
     fields = (
         "model",
         "n_hidden",
@@ -520,6 +519,8 @@ def test_bundle_and_legacy_one_step_training_are_exactly_equivalent(tmp_path):
             str(bundle_args.weight_decay),
         ]
     )
+    legacy_args.w_ei = [0.5, 0.05]
+    legacy_args.w_ie = [1.0, 0.1]
     legacy_args.n_in = 784
 
     torch.manual_seed(123)
@@ -662,7 +663,8 @@ def test_bundle_cli_smoke_preserves_artifact_contract(tmp_path):
             "uv",
             "run",
             "python",
-            "-m", "snnlab.sim",
+            "-m",
+            "snnlab.sim",
             "sim",
             "--bundle",
             str(root),

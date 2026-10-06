@@ -5,6 +5,8 @@ description: GraphExecutor modules, execution plans, parameters, gradients and s
 
 Import `GraphExecutor`, `GraphPlan` and `plan_graph` from `snnlab.sim.execution`. `GraphExecutor` is a `torch.nn.Module` implementing the complete supported compiled graph, including multiple populations, connections and operations.
 
+See the [GraphExecutor API reference](/api/sim/graph-executor) for constructor arguments, forward calls, parameter access and simulation continuation.
+
 ## plan_graph
 
 ```python
@@ -69,6 +71,7 @@ See [PyTorch Integration](/pytorch-integration) for a complete hybrid training l
 ## Registered extensions and constraints
 
 Pass a serialized custom surrogate through `surrogate=...` when constructing an executor directly. Import registered implementations before planning the graph. `module.enforce_constraints()` applies built-in and custom constraints after an external optimizer step. Extra state and current-based neurons/synapses participate in the same module and state-dictionary workflow. See [Extensions](/api/lang/extensions).
+
 
 ## Voltage sampling
 

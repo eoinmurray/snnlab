@@ -14,8 +14,10 @@ export async function getStaticPaths() {
   }));
 }
 const source = await getSource();
-const { page } = Astro.props;
-const { Content, headings } = await render(page.data._raw);
+// Resolve the page again so development renders use the current content snapshot.
+const page = source.getPage(Astro.props.page.slugs)!;
+const { Content, headings } = page.data._render
+  ? await page.data._render() : await render(page.data._raw);
 const toc = headings.map((heading) => ({ depth: heading.depth, title: heading.text, url: `#${heading.slug}` }));
 ---
 <!doctype html>

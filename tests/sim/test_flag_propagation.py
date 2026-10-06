@@ -165,34 +165,6 @@ def test_readout_propagates(tmp_path, readout):
     assert _read_config(out)["readout_mode"] == readout
 
 
-@pytest.mark.slow
-def test_signed_cumulative_readout_round_trips_through_infer(tmp_path):
-    train_dir = tmp_path / "train"
-    _train_probe(
-        train_dir,
-        "--readout", "cumulative-potential",
-        "--signed-readout",
-        "--readout-bias",
-        "--t-ms", "20",
-        epochs=1,
-    )
-    config = _read_config(train_dir)
-    assert config["signed_readout"] is True
-    assert config["readout_bias"] is True
-
-    infer_dir = tmp_path / "infer"
-    _run_cli(
-        "sim", "--infer",
-        "--load-config", str(train_dir / "config.json"),
-        "--load-weights", str(train_dir / "weights.pth"),
-        "--max-samples", "50",
-        "--out-dir", str(infer_dir),
-        "--wipe-dir",
-    )
-    metrics = json.loads((infer_dir / "metrics.json").read_text())
-    assert metrics.get("best_acc") is not None
-
-
 def test_readout_changes_model_forward():
     """rate and mem-mean readouts share the same parameters — same W_out
     shape, only the output reduction differs."""
@@ -229,29 +201,6 @@ def test_v_grad_dampen_propagates(tmp_path):
     out = tmp_path / "cmbs"
     _train_probe(out, "--v-grad-dampen", "1234.0")
     assert _read_config(out)["v_grad_dampen"] == 1234.0
-
-
-@pytest.mark.slow
-def test_trainable_leak_and_adaptive_threshold_propagate_to_config(tmp_path):
-    out = tmp_path / "adaptive-conductance"
-    _train_probe(
-        out,
-        "--train-leak",
-        "--tau-m-e-bounds-ms", "6", "40",
-        "--tau-m-i-bounds-ms", "3", "15",
-        "--adaptive-threshold",
-        "--adapt-tau-bounds-ms", "60", "300",
-        "--adapt-strength-init-mv", "1.25",
-        "--adapt-strength-max-mv", "12",
-    )
-    cfg = _read_config(out)
-    assert cfg["train_leak"] is True
-    assert cfg["tau_m_e_bounds_ms"] == [6.0, 40.0]
-    assert cfg["tau_m_i_bounds_ms"] == [3.0, 15.0]
-    assert cfg["adaptive_threshold"] is True
-    assert cfg["adapt_tau_bounds_ms"] == [60.0, 300.0]
-    assert cfg["adapt_strength_init_mv"] == 1.25
-    assert cfg["adapt_strength_max_mv"] == 12.0
 
 
 # ── --ei-strength / --ei-ratio (in-process, fast) ────────────────────────
@@ -307,19 +256,6 @@ def test_ei_strength_scales_weights():
 
 
 # --kaiming-init / --dales-law (config propagation)
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize(
-    "flag,key,expected",
-    [
-        (["--no-dales-law"], "dales_law", False),
-    ],
-)
-def test_train_flag_propagates_to_config(tmp_path, flag, key, expected):
-    out = tmp_path / f"cfg-{key}"
-    _train_probe(out, *flag)
-    assert _read_config(out)[key] == expected
 
 
 # --fr-reg-upper (behavior)
@@ -437,23 +373,6 @@ def test_no_wipe_dir_preserves_existing(tmp_path):
 # ── V&S session additions ────────────────────────────────────────────────
 
 
-@pytest.mark.slow
-def test_w_ii_propagates_to_train_config(tmp_path):
-    """--w-ii MEAN STD lands in config.json and reaches the W^II matrix.
-
-    Caught a real bug: --w-ii was wired to image mode but not train() until
-    this test failed (train() didn't accept the kwarg). Keeping the test
-    pins both the round-trip AND the train-side plumbing."""
-    out = tmp_path / "wii"
-    _train_probe(out, "--w-ii", "0.5", "0.1")
-    cfg = _read_config(out)
-    # The trainer's config.json stores the per-cell tuple under whichever
-    # name maps to w_ii in the trained-state schema. Whatever key the
-    # trainer chooses, the float values must round-trip.
-    serialised = json.dumps(cfg)
-    assert "0.5" in serialised, f"w_ii MEAN missing from config: {cfg}"
-
-
 def test_trainable_w_flags_make_recurrent_matrices_gradient_carrying():
     """Each --trainable-w-{ee,ei,ie,ii} flag makes the corresponding
     recurrent matrix gradient-carrying. nb049's whole story depends on
@@ -470,13 +389,20 @@ def test_trainable_w_flags_make_recurrent_matrices_gradient_carrying():
     ]:
         torch.manual_seed(0)
         net_default = build_net(
-            "ping", w_in=(0.3, 0.03), w_in_initial_zero_fraction=0.0,
-            ei_strength=0.5, recurrent_initial_zero_fraction=0.0,
+            "ping",
+            w_in=(0.3, 0.03),
+            w_in_initial_zero_fraction=0.0,
+            ei_strength=0.5,
+            recurrent_initial_zero_fraction=0.0,
         )
         torch.manual_seed(0)
         net_trainable = build_net(
-            "ping", w_in=(0.3, 0.03), w_in_initial_zero_fraction=0.0,
-            ei_strength=0.5, recurrent_initial_zero_fraction=0.0, w_ii=(0.5, 0.1),
+            "ping",
+            w_in=(0.3, 0.03),
+            w_in_initial_zero_fraction=0.0,
+            ei_strength=0.5,
+            recurrent_initial_zero_fraction=0.0,
+            w_ii=(0.5, 0.1),
             **{flag: True},
         )
         W_default = getattr(net_default, attr)["1"]
@@ -485,62 +411,6 @@ def test_trainable_w_flags_make_recurrent_matrices_gradient_carrying():
         assert W_trainable.requires_grad, (
             f"--{flag.replace('_', '-')} did not make {attr} gradient-carrying"
         )
-
-
-@pytest.mark.slow
-def test_trainable_w_flags_propagate_through_cli(tmp_path):
-    """All four --trainable-w-* flags survive the CLI → _run_train → train()
-    path: they land in config.json AND raise n_trainable by the recurrent
-    block size. Guards the exact bug this session fixed — --trainable-w-ii was
-    accepted by the model/build_net but silently DROPPED in _run_train, so it
-    was dead from the CLI. The in-process build_net test above can't catch that
-    (it never exercises _run_train); this subprocess test does."""
-    frozen = tmp_path / "frozen"
-    _train_probe(frozen, "--no-dales-law", "--w-ee", "0.3", "0.1")
-    trained = tmp_path / "trained"
-    _train_probe(
-        trained, "--no-dales-law", "--w-ee", "0.3", "0.1",
-        "--trainable-w-ee", "--trainable-w-ei",
-        "--trainable-w-ie", "--trainable-w-ii",
-    )
-    cf, ct = _read_config(frozen), _read_config(trained)
-    for k in ("trainable_w_ee", "trainable_w_ei", "trainable_w_ie", "trainable_w_ii"):
-        assert cf[k] is False, f"{k} should default False"
-        assert ct[k] is True, f"--{k.replace('_', '-')} did not reach config.json"
-    assert ct["n_trainable"] > cf["n_trainable"], (
-        f"trainable-w flags did not add trainable params: "
-        f"frozen={cf['n_trainable']} trained={ct['n_trainable']}"
-    )
-
-
-def test_w_ee_init_and_trainable_flag_propagate_through_train_cli(tmp_path):
-    """--w-ee must reach train/build_net, not just the parser.
-
-    This supports Dale-constrained networks whose W_EE is nonzero at
-    initialisation and remains trainable under --trainable-w-ee.
-    """
-    out = tmp_path / "wee"
-    _train_probe(out, "--w-ee", "0.3", "0.01", "--trainable-w-ee")
-    cfg = _read_config(out)
-    assert cfg["w_ee"] == [0.3, 0.01]
-    assert cfg["trainable_w_ee"] is True
-
-
-    from snnlab.sim.config import build_net
-
-    torch.manual_seed(0)
-    net = build_net(
-        "ping",
-        w_in=(0.3, 0.03),
-        w_in_initial_zero_fraction=0.0,
-        w_ee=(0.3, 0.01),
-        ei_strength=0.5,
-        recurrent_initial_zero_fraction=0.0,
-        trainable_w_ee=True,
-    )
-    w_ee = net.W_ee["1"]
-    assert w_ee.requires_grad
-    assert float(w_ee.detach().abs().mean()) > 1e-4
 
 
 def test_ei_sparsity_zeros_recurrent_entries():
@@ -552,8 +422,10 @@ def test_ei_sparsity_zeros_recurrent_entries():
     torch.manual_seed(0)
     net = build_net(
         "ping",
-        w_in=(0.3, 0.03), w_in_initial_zero_fraction=0.0,
-        ei_strength=1.0, recurrent_initial_zero_fraction=0.9,
+        w_in=(0.3, 0.03),
+        w_in_initial_zero_fraction=0.0,
+        ei_strength=1.0,
+        recurrent_initial_zero_fraction=0.9,
     )
     W = net.W_ei["1"].detach()
     nonzero_frac = float((W > 0).float().mean())
@@ -581,8 +453,11 @@ def test_w_ii_changes_i_cell_membrane():
         def _i_rate(w_ii):
             torch.manual_seed(0)
             net = build_net(
-                "ping", w_in=(2.0, 0.4), w_in_initial_zero_fraction=0.0,
-                ei_strength=1.0, recurrent_initial_zero_fraction=0.0,
+                "ping",
+                w_in=(2.0, 0.4),
+                w_in_initial_zero_fraction=0.0,
+                ei_strength=1.0,
+                recurrent_initial_zero_fraction=0.0,
                 w_ii=(w_ii, w_ii * 0.1) if w_ii > 0 else None,
             )
             net.recording = True

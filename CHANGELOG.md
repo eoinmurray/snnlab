@@ -6,6 +6,14 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-06
+
+### Upgrade notes
+
+1. This release includes the Pinglab migration APIs for batchwise encoding, epoch observations, checkpoint selection, spike replay, selective resets, decision segments and bounded inference retention. Refractory-duration unification, autapse policy and full expected-request/checkpoint authentication remain separate work.
+2. Removed legacy CLI switches now fail explicitly, and retained deprecated switches emit a visible warning. See the [CLI reference](docs/content/docs/api/sim/cli.mdx) for the complete removal list; historical config replay and Python APIs retain their supported behavior.
+3. `recording` / `--recording` now accept the new typed `RecordingSpec` / JSON selection contract; old recording profile strings remain unsupported. Dataset checkpoints produced under the older eager encoding protocol cannot resume under the new batch encoding protocol. Runtime-state schemas 1–3 remain readable; explicit continued measurement windows use schema version 4.
+
 ### Added
 
 1. Added serialized `initialization_scaling="direct"` / `"fan_in_normalized"` controls to `Network.connect`, `Network.parameter` and `readouts.MeanVoltage`. Direct initialization preserves legacy readout weight scale without compensating initializer values or mutating tensors. Shared projection weights initialize once and reject conflicting policies. Older graphs retain normalized projection and direct operation defaults; checkpoint weights are loaded without rescaling. Updated API references and tutorial explanations.
@@ -22,13 +30,19 @@ separate compatibility contracts.
 
 7. Graph inference now automatically accumulates supported time sums, means and final selections, including linear readouts and masks, when full histories are unnecessary. Added explicit absolute measurement windows with portable partial reduction state, selected-cell dense and sparse spike-event recordings, CPU recording sinks/NPZ blocks, and optional output retention. Dataset inference/evaluation uses online reductions and one model load; sinks can avoid concatenating output/final-state histories across samples. Recording/window policy binds cache identity, diagnostics preserve dynamics/RNG and autograd training retains its full history. Added equivalence, continuation, allocation-scaling, segment/reset, CLI and artifact fixtures plus API/result/CLI documentation.
 
+8. Added a dedicated GraphExecutor API reference and simulator package guide covering direct PyTorch construction, parameters, constraints and continuation.
+
 ### Fixed
 
 1. Newly authored graphs now use explicit leaky-integrator voltage sampling: `.voltage` remains post-reset membrane state and `.pre_reset_voltage` exposes the pre-reset integration sample. Masked and unmasked sum/mean/final operations consistently use the declared signal; `MeanVoltage` explicitly selects pre-reset voltage to preserve classifier behavior. Serialized `voltage_sampling="explicit"` distinguishes the corrected contract; older graphs without it retain historical reductions without rewriting checkpoints or artifacts. Added threshold-crossing, masks, gradients, continuation, diagnostics and legacy-compatibility tests, and documented phase and measurement-window semantics.
 
+2. Documentation development now reloads page content, additions/deletions and navigation from current files, and resynchronizes changelog/example sources without restarting the server. Static documentation routes remain unchanged.
+
 ### Changed
 
-1. Removed the root release-helper scripts and separate migration/versioning documents. Release preparation is manual, with instructions in the README; CI and publishing read the package version directly.
+1. Removed 34 legacy simulator CLI switches without experiment callers in the audited snnlab/Pinglab sources. Supplying a removed switch now produces an error; the CLI reference lists all removals. Marked 45 retained legacy switches deprecated in help; explicitly supplying them emits one visible `LegacyCLIWarning` per invocation listing the deprecated switches used. Shared and graph controls remain ordinary arguments; legacy execution defaults, Python APIs and historical config replay are preserved. CLI abbreviations are no longer accepted.
+
+2. Removed the root release-helper scripts and separate migration/versioning documents. Release preparation is manual, with instructions in the README; CI and publishing read the package version directly.
 
 ## [0.2.0] - 2026-10-04
 

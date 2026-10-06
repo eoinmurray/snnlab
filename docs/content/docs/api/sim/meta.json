@@ -1,6 +1,7 @@
 {
   "title": "Sim",
   "pages": [
+    "graph-executor",
     "execution-spec",
     "execution-result",
     "pytorch",
