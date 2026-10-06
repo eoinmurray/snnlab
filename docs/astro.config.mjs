@@ -7,6 +7,7 @@ import { rehypeCode, remarkGfm, remarkHeading, remarkStructure } from 'fumadocs-
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import contentReload from './scripts/content-reload.mjs';
+import hydrationPreloads from './scripts/hydration-preloads.mjs';
 
 const base = process.env.SITE_BASE_PATH || '/';
 
@@ -56,6 +57,6 @@ export default defineConfig({
       rehypePlugins: [[rehypeKatex, { strict: 'error', throwOnError: true }], rehypeCode, baseLinks],
     }),
   },
-  integrations: [isolatedCaches(), react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false })],
+  integrations: [isolatedCaches(), react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false }), hydrationPreloads()],
   vite: { plugins: [tailwindcss(), contentReload()] },
 });

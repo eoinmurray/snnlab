@@ -1,6 +1,5 @@
 ---
 import { render } from 'astro:content';
-import { ClientRouter } from 'astro:transitions';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import { Docs } from '../components/Docs';
 import { getSource, markdownUrl, docsBaseUrl } from '../lib/source';
@@ -29,7 +28,6 @@ const toc = headings.map((heading) => ({ depth: heading.depth, title: heading.te
     <meta name="description" content={page.data.description} />
     <meta property="og:image" content={new URL(`${docsBaseUrl}og/docs/${[...page.slugs, 'image.png'].join('/')}`, Astro.site).href} />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
-    <ClientRouter />
   </head>
   <body class="flex flex-col min-h-screen">
     <Docs tree={source.getPageTree()} pathname={Astro.url.pathname}
@@ -43,7 +41,7 @@ const toc = headings.map((heading) => ({ depth: heading.depth, title: heading.te
 </html>
 
 <script>
-  // MDX remains static HTML; delegate its copy controls across Astro navigation.
+  // MDX remains static HTML; delegate its copy controls to the document.
   document.addEventListener('click', async (event) => {
     if (!(event.target instanceof Element)) return;
     const button = event.target.closest<HTMLButtonElement>('[data-static-content] button');

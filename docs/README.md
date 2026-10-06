@@ -28,6 +28,10 @@ bun run preview
 
 The build exports plain HTML, CSS, JavaScript, search data, and KaTeX fonts into `out/`. Astro uses `output: static`; no application server is needed. Markdown downloads use explicit `/llms.mdx/docs/.../content.md` routes; runtime content-negotiation rewrites are unavailable on static hosts.
 
+Documentation links use normal browser navigation. Each documentation page preloads
+its React island, renderer and shared JavaScript in the head so sidebar controls can
+hydrate promptly. Search stays lazy; the landing page loads no React JavaScript.
+
 ## GitHub Pages
 
 `.github/workflows/docs.yml` checks and builds docs on pull requests and deploys relevant pushes to `main` through GitHub Pages Actions. The production build sets `SITE_BASE_PATH=/` and `SITE_URL=https://snnlab.eoinmurray.info` so documentation is served at the custom-domain root.

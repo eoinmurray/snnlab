@@ -4,13 +4,12 @@ import { DocsPage, DocsTitle, DocsDescription, MarkdownCopyButton, type DocsPage
 import { ViewOptionsPopover } from './ViewOptionsPopover';
 import type { Root } from 'fumadocs-core/page-tree';
 import type { ReactNode } from 'react';
-import { navigate } from 'astro:transitions/client';
 const docsBaseUrl = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
 
 export function Docs({ tree, pathname, page, markdown, file, title, description, children }: {
   tree: Root; pathname: string; page: DocsPageProps; markdown: string; file: string; title: string; description?: string; children: ReactNode;
 }) {
-  return <RootProvider pathname={pathname} navigate={navigate}
+  return <RootProvider pathname={pathname}
     search={{ options: { type: 'static', api: `${docsBaseUrl}api/search` } }}>
     <DocsLayout tree={tree} nav={{ title: 'snnlab', url: import.meta.env.BASE_URL }} githubUrl="https://github.com/eoinmurray/snnlab">
       <DocsPage {...page}>

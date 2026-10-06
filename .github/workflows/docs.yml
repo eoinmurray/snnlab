@@ -27,6 +27,7 @@ jobs:
         with:
           bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
+      - run: bun test scripts/hydration-preloads.test.mjs
       - run: bun run types:check
       - run: bun run build
         env:
