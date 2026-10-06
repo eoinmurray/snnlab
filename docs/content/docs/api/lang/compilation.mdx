@@ -12,7 +12,6 @@ def compile(
     network: Network,
     *,
     training: TrainSpec | None = None,
-    simulation: SimulationSpec | None = None,
     target: str | None = None,
     assets: Mapping[str, str | Path] | None = None,
 ) -> Bundle: ...
@@ -22,7 +21,6 @@ def compile(
 | --- | --- |
 | `network` | The authored `Network`. |
 | `training` | Optional [TrainSpec](/api/lang/training) recipe. |
-| `simulation` | Optional structured simulation declaration. |
 | `target` | Optional backend capability target, such as `"tools/snnsim"`. |
 | `assets` | Mapping of declared logical asset names to physical files. |
 
@@ -37,10 +35,9 @@ class Bundle:
     manifest: dict[str, Any]
     diagnostics: list[Diagnostic]
     asset_sources: dict[str, Path] = field(default_factory=dict)
-    simulation: dict[str, Any] | None = None
 ```
 
-`graph`, `training` and `simulation` are serialized data mappings; optional recipes are `None` when absent. `manifest` describes integrity and capabilities. `diagnostics` contains compiler reports. `asset_sources` tracks physical files for writing.
+`graph` and `training` are serialized data mappings; optional recipes are `None` when absent. `manifest` describes integrity and capabilities. `diagnostics` contains compiler reports. `asset_sources` tracks physical files for writing.
 
 ```python
 bundle = lang.compile(net, training=recipe, target="tools/snnsim")
@@ -48,7 +45,7 @@ path = bundle.write("network.bundle")
 loaded = lang.load_bundle(path)
 ```
 
-`Bundle.write(path, *, visualise=False)` returns a `Path` to a directory containing `graph.json`, optional `training.json`/`simulation.json`, `manifest.json`, bundled assets and `reports/summary.md`. With `visualise=True`, it also renders structural diagrams; Graphviz is required. Use a fresh destination when changing which optional recipes exist: writing does not clear an existing directory.
+`Bundle.write(path, *, visualise=False)` returns a `Path` to a directory containing `graph.json`, optional `training.json`, `manifest.json`, bundled assets and `reports/summary.md`. With `visualise=True`, it also renders structural diagrams; Graphviz is required. Use a fresh destination when changing which optional recipes exist: writing does not clear an existing directory.
 
 ### Bundle.visualise
 

@@ -7,7 +7,6 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.bundle import BundleCompatibilityError, translate_cobanet_v1
 from snnlab.sim.execution import GraphExecutor, plan_graph
 from tests.sim._bundle_builders import ping_classifier
 
@@ -186,23 +185,13 @@ def test_legacy_graph_keeps_implicit_unmasked_mean_without_mutating_artifact():
     assert graph == original
 
 
-def test_mean_voltage_helper_and_bundle_legacy_adapter_select_pre_reset(tmp_path):
+def test_mean_voltage_helper_and_bundle_roundtrip_select_pre_reset(tmp_path):
     bundle = ping_classifier()
     operation = bundle.graph["operations"][0]
     assert operation["sources"][0].endswith(".pre_reset_voltage")
     assert bundle.graph["voltage_sampling"] == "explicit"
     bundle.write(tmp_path / "bundle")
     assert snn.load_bundle(tmp_path / "bundle").graph == bundle.graph
-    translate_cobanet_v1(bundle.graph)
-    post_graph = copy.deepcopy(bundle.graph)
-    post_graph["operations"][0]["sources"][0] = operation["sources"][0].replace(
-        ".pre_reset_voltage", ".voltage"
-    )
-    with pytest.raises(BundleCompatibilityError, match="MeanVoltage"):
-        translate_cobanet_v1(post_graph)
-    legacy_graph = copy.deepcopy(post_graph)
-    legacy_graph.pop("voltage_sampling")
-    translate_cobanet_v1(legacy_graph)
 
 
 def test_pre_reset_signal_is_limited_to_leaky_integrators_and_unknown_contract_fails():
@@ -220,11 +209,6 @@ def test_pre_reset_signal_is_limited_to_leaky_integrators_and_unknown_contract_f
         plan_graph(graph)
 
 
-def test_legacy_adapter_rejects_unknown_sampling_contract():
-    graph = ping_classifier().graph
-    graph["voltage_sampling"] = "unknown"
-    with pytest.raises(BundleCompatibilityError, match="voltage_sampling"):
-        translate_cobanet_v1(graph)
 
 
 @pytest.mark.parametrize("phase", ["pre", "post"])

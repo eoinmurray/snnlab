@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import torch
 
-from snnlab.sim import models as M
-
 EVAL_SEED = 20260415
 
 
@@ -26,7 +24,9 @@ def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None):
     if rates.ndim == 0:
         rates = rates.expand(B)
     if rates.shape != (B,):
-        raise ValueError(f"max_rate_hz must be scalar or shape ({B},), got {tuple(rates.shape)}")
+        raise ValueError(
+            f"max_rate_hz must be scalar or shape ({B},), got {tuple(rates.shape)}"
+        )
     if torch.any(rates < 0):
         raise ValueError("input rates must be non-negative")
     p = rates.reshape(1, B, 1) * dt / 1000.0
@@ -40,20 +40,3 @@ def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None):
     else:
         rand = torch.rand(T_steps, B, n_in, device=pixels.device)
     return (rand < pixels.unsqueeze(0) * p).float()
-
-
-def encode_batch(X_b, dt, generator=None, max_rate_hz=None):
-    """Encode a pre-moved pixel batch as spikes using the canonical scheme.
-
-    Shared by train, infer, and calibration loops so the three paths can't
-    drift. Routes 3-d already-spiked tensors through a transpose passthrough
-    and everything else through vanilla Poisson rate coding. Output is always
-    returned on X_b.device. Pass `generator` (typically a CPU torch.Generator
-    with a fixed seed) for deterministic eval — same weights + same split +
-    same generator seed → identical spike trains → identical accuracy.
-    """
-    if X_b.ndim == 3:
-        # (B, T, N_in) pre-spiked → (T, B, N_in); ignore dt/generator.
-        return X_b.permute(1, 0, 2).contiguous()
-    rate = M.max_rate_hz if max_rate_hz is None else max_rate_hz
-    return encode_images_poisson(X_b, M.T_steps, dt, rate, generator=generator)

@@ -18,6 +18,10 @@ from snnlab import analysis, lang, sim, viz
 
 The graph simulator supports COBA-LIF, current-based LIF and leaky-integrator populations, conductance and exponential-current synapses, recurrent/feedback connections and integer-timestep delays. Registered Python callbacks add custom models without embedding code in bundles; import their registration module before compilation or execution. See `examples/current-lif/current_lif.py` for a built-in current-based simulation and `examples/customisation/customisation.py` for an adaptive current neuron and custom weight distribution.
 
+The simulator executes authored graph bundles. Legacy Config/COBANet execution,
+flag-built networks and config replay have been removed; see the
+[CLI reference](docs/content/docs/api/sim/cli.mdx) for current inputs and controls.
+
 ## Simulator commands
 
 ```sh

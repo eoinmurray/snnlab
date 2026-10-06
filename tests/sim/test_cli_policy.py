@@ -1,124 +1,110 @@
-"""CLI removal and warning policy, including historical checkpoint replay."""
+"""The CLI executes graph bundles and rejects retired network controls."""
 
 import json
-import re
-import warnings
 
+import numpy as np
 import pytest
 
-from snnlab.sim.cli_policy import (
-    DEPRECATED_LEGACY_FLAGS,
-    LEGACY_CONFIG_DEFAULTS,
-    REMOVED_LEGACY_FLAGS,
-    LegacyCLIWarning,
+from snnlab.lang.compiler import digest
+from snnlab.sim.tool import main, parse_args
+from tests.sim._bundle_builders import ping_classifier
+from tests.sim._execution_builders import direct_train_bundle
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--model",
+        "--dt",
+        "--infer",
+        "--load-config",
+        "--dataset",
+        "--lr",
+        "--recording-mode",
+        "--adaptive-threshold",
+    ],
 )
-from snnlab.sim.tool import parse_args
+def test_legacy_switches_are_rejected(flag):
+    with pytest.raises(SystemExit) as error:
+        parse_args(["sim", flag, "1"])
+    assert error.value.code == 2
 
 
-@pytest.mark.parametrize("flag", sorted(REMOVED_LEGACY_FLAGS))
-def test_removed_flags_are_rejected(flag, capsys):
-    with pytest.raises(SystemExit) as exc:
-        parse_args(["sim", flag])
-    assert exc.value.code == 2
-    assert "removed legacy CLI arguments: " + flag in capsys.readouterr().err
+def test_no_execution_defaults_to_an_implicit_network(tmp_path):
+    with pytest.raises(SystemExit, match="explicit --bundle"):
+        main(["sim", "--out-dir", str(tmp_path)])
+    assert not list(tmp_path.iterdir())
 
 
-def test_removed_equals_form_and_abbreviations_are_rejected(capsys):
-    with pytest.raises(SystemExit):
-        parse_args(["sim", "--scale-w-ei=2"])
-    assert "removed legacy CLI arguments" in capsys.readouterr().err
-    with pytest.raises(SystemExit):
-        parse_args(["sim", "--scale-w", "2"])
-    assert "unrecognized arguments" in capsys.readouterr().err
-
-
-def test_warning_aggregates_explicit_legacy_flags_once():
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        parse_args(["sim", "--model=ping", "--n-hidden", "32", "--model", "ping"])
-    assert len(caught) == 1
-    assert caught[0].category is LegacyCLIWarning
-    message = str(caught[0].message)
-    assert message.count("--model") == 1
-    assert "--n-hidden" in message
-    assert "--dt" not in message
-    assert "--executor graph --bundle" in message
-
-
-def test_shared_and_graph_flags_do_not_warn():
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        args = parse_args(
+def test_graph_cli_writes_named_artifacts_without_legacy_bookkeeping(tmp_path):
+    bundle = ping_classifier().write(tmp_path / "network.bundle")
+    output = tmp_path / "run"
+    assert (
+        main(
             [
                 "sim",
-                "--executor",
-                "graph",
-                "--seed",
-                "7",
-                "--t-ms",
-                "10",
-                "--n-batch",
-                "2",
-                "--input-rate",
-                "5",
+                "--bundle",
+                str(bundle),
                 "--poisson-protocol",
                 "fixed-rate",
+                "--t-ms",
+                "0.2",
+                "--n-batch",
+                "1",
+                "--device",
+                "cpu",
+                "--out-dir",
+                str(output),
             ]
         )
-    assert not caught
-    assert args.executor == "graph"
-
-
-def test_defaults_do_not_warn_or_change():
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        args = parse_args(["train"])
-    assert not caught
-    assert args.executor == "legacy"
-    for key, value in LEGACY_CONFIG_DEFAULTS.items():
-        assert getattr(args, key) == value
-
-
-def test_help_marks_legacy_once_and_omits_removed_flags(capsys):
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        with pytest.raises(SystemExit) as exc:
-            parse_args(["sim", "--help"])
-    assert exc.value.code == 0
-    assert not caught
-    help_text = capsys.readouterr().out
-    assert "[deprecated legacy] [deprecated legacy]" not in help_text
-    assert "[deprecated legacy]" in help_text
-    for flag in REMOVED_LEGACY_FLAGS:
-        assert not re.search(re.escape(flag) + r"(?![\w-])", help_text)
-
-
-def test_historical_config_restores_removed_settings(tmp_path):
-    values = {
-        "signed_readout": True,
-        "readout_bias": True,
-        "state_clamp": True,
-        "train_leak": True,
-        "adaptive_threshold": True,
-        "tau_m_e_bounds_ms": [6, 40],
-        "recurrent_initial_zero_fraction": 0.5,
-        "w_ei": [0.5, 0.1],
-        "readout_w_out_scale": 2.0,
-        "dales_law": False,
+        == 0
+    )
+    assert {p.name for p in output.iterdir()} == {
+        "outputs.npz",
+        "recording.npz",
+        "parameters.npz",
+        "metrics.json",
+        "inference-manifest.json",
     }
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps(values))
-    with pytest.warns(LegacyCLIWarning, match="--load-config"):
-        args = parse_args(["sim", "--load-config", str(path)])
-    for key, value in values.items():
-        assert getattr(args, key) == value
-    assert "--load-config" in DEPRECATED_LEGACY_FLAGS
+    with np.load(output / "outputs.npz", allow_pickle=False) as payload:
+        assert payload["class_logits"].shape == (1, 10)
+    assert json.loads((output / "metrics.json").read_text())["device"] == "cpu"
 
 
-def test_sim_only_fields_do_not_gain_new_config_replay_effects(tmp_path):
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps({"scale_w_ei": 2.0, "transition_bundle": "old.bundle"}))
-    with pytest.warns(LegacyCLIWarning):
-        args = parse_args(["sim", "--load-config", str(path)])
-    assert args.scale_w_ei == 1.0
-    assert args.transition_bundle is None
+def test_retired_commands_and_abbreviated_switches_are_rejected():
+    for argv in (["dump-weights"], ["sim", "--diag"], ["sim", "--executor", "legacy"]):
+        with pytest.raises(SystemExit):
+            parse_args(argv)
+
+
+@pytest.mark.parametrize("epochs", [None, 0, 1])
+def test_training_uses_recipe_epochs_and_honors_explicit_zero(tmp_path, epochs):
+    bundle = direct_train_bundle()
+    bundle.training["epochs"] = 2
+    for entry in bundle.manifest["files"]:
+        if entry["path"] == "training.json":
+            entry["digest"] = digest(bundle.training)
+    network = bundle.write(tmp_path / "network.bundle")
+    inputs, targets = tmp_path / "inputs.npz", tmp_path / "targets.npz"
+    np.savez(inputs, events=np.ones((3, 2, 2), dtype=np.float32))
+    np.savez(targets, label=np.array([0, 1], dtype=np.int64))
+    output = tmp_path / "trained"
+    args = [
+        "train",
+        "--bundle",
+        str(network),
+        "--input-file",
+        str(inputs),
+        "--target-file",
+        str(targets),
+        "--device",
+        "cpu",
+        "--out-dir",
+        str(output),
+    ]
+    if epochs is not None:
+        args += ["--epochs", str(epochs)]
+    assert main(args) == 0
+    metrics = json.loads((output / "metrics.json").read_text())
+    expected_epochs = bundle.training["epochs"] if epochs is None else epochs
+    assert len(metrics["updates"]) == max(1, expected_epochs)

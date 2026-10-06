@@ -6,7 +6,6 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim import models
 from snnlab.sim.execution import (
     DenseArrayBinding,
     ExecutionSpec,
@@ -46,7 +45,7 @@ def test_direct_readout_matches_legacy_draw_and_bundle_roundtrip(tmp_path):
     assert loaded.graph == bundle.graph
     model = executor(loaded.graph)
     torch.manual_seed(17)
-    expected = models.init_readout_weight((8, 3), 0.05, 0.04)
+    expected = torch.randn(8, 3).mul_(0.04).add_(0.05).clamp_(min=0)
     torch.testing.assert_close(
         model.parameter_map()["scores_projection.weight"], expected, rtol=0, atol=0
     )
@@ -57,15 +56,22 @@ def test_direct_readout_matches_legacy_draw_and_bundle_roundtrip(tmp_path):
 
 @pytest.mark.parametrize("zeroing", ["bernoulli", "exact_k"])
 @pytest.mark.parametrize("scaling", ["direct", "fan_in_normalized"])
-def test_zeroing_and_rng_order_match_legacy(zeroing, scaling, monkeypatch):
+def test_zeroing_and_rng_order_match_independent_draws(zeroing, scaling):
     initializer = snn.LowerClampedNormal(
         0.5, 0.4, initial_zero_fraction=0.5, zeroing=zeroing
     )
     net, _ = readout_net(scaling, initializer)
     model = executor(snn.compile(net).graph)
-    monkeypatch.setattr(models, "EXACT_K_INITIALIZATION", zeroing == "exact_k")
     torch.manual_seed(17)
-    expected = models.init_weight((8, 3), p1=0.5, p2=0.4, initial_zero_fraction=0.5)
+    expected = torch.randn(8, 3).mul_(0.4).add_(0.5).clamp_(min=0)
+    if zeroing == "exact_k":
+        mask = torch.zeros(8, 3)
+        for column in range(3):
+            mask[torch.randperm(8)[:4], column] = 1
+        expected = expected * mask * 2
+    else:
+        expected = expected * (torch.rand(8, 3) > 0.5).float() / 0.5
+    expected = expected / 8
     if scaling == "direct":
         expected = expected * 8
     torch.testing.assert_close(
@@ -252,16 +258,6 @@ def test_legacy_shared_projection_rng_is_preserved():
     graph["parameters"][0].pop("initialization_scaling")
     model = executor(graph)
     torch.manual_seed(17)
-    models.init_weight((8, 3), p1=0.05, p2=0.04)
-    expected = models.init_weight((8, 3), p1=0.05, p2=0.04)
+    torch.randn(8, 3)
+    expected = torch.randn(8, 3).mul_(0.04).add_(0.05).clamp_(min=0) / 8
     torch.testing.assert_close(model.parameter_map()[weight], expected, rtol=0, atol=0)
-
-
-def test_legacy_bundle_adapter_rejects_direct_policy():
-    from snnlab.sim.bundle import BundleCompatibilityError, translate_cobanet_v1
-    from tests.sim._bundle_builders import ping_classifier
-
-    graph = ping_classifier().graph
-    graph["parameters"][0]["initialization_scaling"] = "direct"
-    with pytest.raises(BundleCompatibilityError, match="requires the graph executor"):
-        translate_cobanet_v1(graph)

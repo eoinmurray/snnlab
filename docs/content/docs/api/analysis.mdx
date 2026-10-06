@@ -148,7 +148,7 @@ The three arrays have identical one-dimensional shapes. Too-short traces return 
 
 The following 14 functions return dictionaries with `status` and resolved, JSON-compatible `metadata`. Array measurements can contain `NaN` for undefined entries; scalar undefined measurements use `None`. Metadata records measurement choices, not a digest or authenticity guarantee. Inputs are not modified. These functions support dense arrays; explicitly reconstruct a per-presentation raster from sparse events before calling them. A rank-3 batch raster is rejected, rather than accidentally pooled.
 
-Windows use `(start_step, end_step)` half-open indices into the supplied raster. Without a window the full presentation is used. Report absolute offsets separately when analysing a sliced recording. New functions do not change the legacy rhythmicity or aggregate-report conventions above.
+Windows use `(start_step, end_step)` half-open indices into the supplied raster. Without a window the full presentation is used. Report absolute offsets separately when analysing a sliced recording. These functions preserve the rhythmicity conventions described above.
 
 ## per_neuron_firing_rates
 
@@ -349,4 +349,4 @@ This is **opportunity-pooled occupancy**, not an equal-network average. For equa
 
 ## Compatibility
 
-The original `snnlab.sim.metrics` imports remain supported. Its historical `compute_metrics` aggregate is not part of the flat public analysis API; use the individual functions to construct your report. Existing rhythmicity/conductance calculations and signatures are preserved. The new basic activity helpers validate their inputs independently of the permissive legacy report.
+Import measurements directly from `snnlab.analysis`. The former simulator metrics path and specialised aggregate report have been removed; assemble the report your application needs.

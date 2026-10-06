@@ -1,8 +1,7 @@
 """Typed execution seam and graph-native forward executor.
 
 The bundle is data.  This module intentionally has no dependency on snnlang.
-Legacy requests continue to route through the existing CLI handlers; graph
-requests are planned once and execute a fixed vectorised schedule per step.
+Requests are planned once and execute a fixed vectorised schedule per step.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from dataclasses import dataclass, field, replace
 from numbers import Integral
 from pathlib import Path
 from types import EllipsisType
-from typing import Any, Callable, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -119,7 +118,7 @@ from snnlab.sim.streaming import (
     SignalRecording as SignalRecording,
 )
 
-ExecutorName = Literal["legacy", "graph"]
+ExecutorName = Literal["graph"]
 RequestKind = Literal["build", "simulate", "train", "infer"]
 
 
@@ -134,7 +133,6 @@ INFERENCE_INTERVENTION_SCHEMA = "tools/snnsim.inference-interventions/v1"
 INFERENCE_ARTIFACT_SCHEMA = "tools/snnsim.inference-artifacts/v1"
 DERIVED_INFERENCE_SCHEMA = "tools/snnsim.derived-inference/v1"
 TRAINING_CHECKPOINT_SCHEMA = "tools/snnsim.training-checkpoint/v1"
-LEGACY_PARAMETER_INTERCHANGE_SCHEMA = "tools/snnsim.legacy-parameter-interchange/v1"
 
 
 @dataclass(frozen=True)
@@ -307,6 +305,8 @@ class ExecutionSpec:
     retain_outputs: bool = True
 
     def __post_init__(self):
+        if self.executor != "graph":
+            raise ValueError("only the graph executor is supported")
         if self.recording is not None and not isinstance(self.recording, RecordingSpec):
             raise TypeError(
                 "recording must be RecordingSpec; legacy recording strings are unsupported"
@@ -426,12 +426,6 @@ class TrainingCheckpoint:
     selection_contract: Mapping[str, Any] | None = None
     selection_record: Mapping[str, Any] | None = None
     best_checkpoint: TrainingCheckpoint | None = None
-
-
-@dataclass(frozen=True)
-class ParameterInterchange:
-    parameters: dict[str, torch.Tensor]
-    provenance: Mapping[str, Any]
 
 
 GRAPH_CAPABILITIES_V1 = {
@@ -2789,67 +2783,6 @@ def restore_training_rng_state(
         torch.set_rng_state(checkpoint.rng_state.cpu())
 
 
-def legacy_parameter_map_v1(graph: Mapping[str, Any]) -> dict[str, str]:
-    """Map the supported one-layer legacy COBANet by semantic graph roles."""
-    populations = {row["id"]: row for row in graph.get("populations", [])}
-    input_ids = {row["id"] for row in graph.get("inputs", [])}
-    mapping: dict[str, str] = {}
-    recurrent_index = 1
-    for projection in graph.get("projections", []):
-        parameters = projection.get("parameters", [])
-        if len(parameters) != 1:
-            raise ValueError(
-                f"legacy parameter mapping requires one parameter on projection {projection.get('id')}"
-            )
-        parameter = parameters[0]
-        source = projection["source"].partition(".")[0]
-        target = projection["target"].partition(".")[0]
-        if source in input_ids:
-            legacy = "W_ff.0"
-        elif populations[target]["neuron"]["kind"] == "leaky_integrator":
-            legacy = "W_ff.1"
-        elif projection.get("connection") == "recurrent":
-            source_size = int(populations[source]["size"])
-            target_size = int(populations[target]["size"])
-            if source == target and projection["polarity"] == "excitatory":
-                legacy = f"W_ee.{recurrent_index}"
-            elif source == target and projection["polarity"] == "inhibitory":
-                legacy = f"W_ii.{recurrent_index}"
-            elif source_size >= target_size and projection["polarity"] == "excitatory":
-                legacy = f"W_ei.{recurrent_index}"
-            elif source_size <= target_size and projection["polarity"] == "inhibitory":
-                legacy = f"W_ie.{recurrent_index}"
-            else:
-                raise ValueError(
-                    f"legacy parameter mapping cannot classify recurrent projection {projection['id']}"
-                )
-        else:
-            raise ValueError(
-                f"legacy parameter mapping cannot classify projection {projection['id']}"
-            )
-        if legacy in mapping.values():
-            raise ValueError(f"legacy parameter mapping duplicates role {legacy}")
-        mapping[parameter] = legacy
-    for operation in graph.get("operations", []):
-        if operation.get("kind") != "linear":
-            continue
-        for parameter in operation.get("parameters", []):
-            if parameter in mapping:
-                continue
-            legacy = "W_ff.1"
-            if legacy in mapping.values():
-                raise ValueError(f"legacy parameter mapping duplicates role {legacy}")
-            mapping[parameter] = legacy
-    graph_parameters = {row["id"] for row in graph.get("parameters", [])}
-    if set(mapping) != graph_parameters:
-        missing = sorted(graph_parameters - set(mapping))
-        extra = sorted(set(mapping) - graph_parameters)
-        raise ValueError(
-            f"legacy parameter mapping must be complete; missing={missing}, extra={extra}"
-        )
-    return dict(sorted(mapping.items()))
-
-
 def _validate_interchange_parameters(
     graph: Mapping[str, Any], parameters: Mapping[str, torch.Tensor]
 ) -> None:
@@ -2866,55 +2799,6 @@ def _validate_interchange_parameters(
             )
         if not value.is_floating_point():
             raise ValueError(f"graph parameter {name} must use a floating dtype")
-
-
-def import_legacy_parameters_v1(
-    graph: Mapping[str, Any],
-    state_dict: Mapping[str, torch.Tensor],
-    *,
-    device: str | torch.device = "cpu",
-) -> ParameterInterchange:
-    """Import the exact supported one-layer legacy parameter state by semantic name."""
-    mapping = legacy_parameter_map_v1(graph)
-    reverse = {legacy: graph_name for graph_name, legacy in mapping.items()}
-    if set(state_dict) != set(reverse):
-        raise ValueError(
-            f"legacy parameter interchange requires exact keys; missing={sorted(set(reverse) - set(state_dict))}, extra={sorted(set(state_dict) - set(reverse))}"
-        )
-    parameters = {
-        reverse[name]: value.detach().clone().to(device)
-        for name, value in state_dict.items()
-    }
-    _validate_interchange_parameters(graph, parameters)
-    return ParameterInterchange(
-        parameters=dict(sorted(parameters.items())),
-        provenance={
-            "schema": LEGACY_PARAMETER_INTERCHANGE_SCHEMA,
-            "mapping_version": 1,
-            "direction": "legacy_to_graph",
-            "mapping": mapping,
-        },
-    )
-
-
-def export_legacy_parameters_v1(
-    graph: Mapping[str, Any], parameters: Mapping[str, torch.Tensor]
-) -> ParameterInterchange:
-    """Export a complete supported graph parameter set under legacy state keys."""
-    _validate_interchange_parameters(graph, parameters)
-    mapping = legacy_parameter_map_v1(graph)
-    exported = {
-        mapping[name]: value.detach().clone() for name, value in parameters.items()
-    }
-    return ParameterInterchange(
-        parameters=dict(sorted(exported.items())),
-        provenance={
-            "schema": LEGACY_PARAMETER_INTERCHANGE_SCHEMA,
-            "mapping_version": 1,
-            "direction": "graph_to_legacy",
-            "mapping": mapping,
-        },
-    )
 
 
 class DelayBuffer:
@@ -4302,10 +4186,6 @@ class GraphExecutor(nn.Module):
 
 
 def build(spec: ExecutionSpec) -> ExecutionResult:
-    if spec.executor == "legacy":
-        return ExecutionResult(
-            executor="legacy", metrics={"request": "build", "routing": "legacy"}
-        )
     graph = spec.graph
     training = spec.training
     if graph is None and spec.bundle is not None:
@@ -4346,20 +4226,6 @@ def simulate(
     if "inference_interventions" in spec.options:
         raise ValueError(
             "move options['inference_interventions'] to ExecutionSpec.interventions using typed intervention objects"
-        )
-    if spec.executor != "graph" and (
-        spec.resets
-        or spec.decisions is not None
-        or spec.measurement is not None
-        or spec.recording is not None
-        or not spec.retain_outputs
-    ):
-        raise ValueError("resets and decisions require the graph executor")
-    if spec.executor != "graph" and spec.interventions:
-        raise ValueError("interventions require the graph executor")
-    if spec.executor != "graph":
-        return ExecutionResult(
-            executor="legacy", metrics={"request": "simulate", "routing": "legacy"}
         )
     sources = _split_input_bindings(spec.input_bindings)
     overrides = dict(spec.options.get("inference_overrides", {}))
@@ -4485,19 +4351,7 @@ def simulate(
                 "format": "graph_torch_state_dict",
                 "path": str(checkpoint_path),
             }
-            if "W_ff.0" in state_dict:
-                imported = import_legacy_parameters_v1(
-                    built.model.plan.graph, state_dict, device=device
-                )
-                with torch.no_grad():
-                    for name, parameter in built.model.parameter_map().items():
-                        parameter.copy_(imported.parameters[name])
-                checkpoint_provenance.update(
-                    format="legacy_torch_state_dict",
-                    interchange=imported.provenance,
-                )
-            else:
-                built.model.load_state_dict(state_dict)
+            built.model.load_state_dict(state_dict)
     scales = dict(overrides.get("projection_scales", {}))
     if scales:
         projection_parameters = {
@@ -4655,10 +4509,6 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         spec.observations, EpochObservations
     ):
         raise TypeError("observations must be an EpochObservations specification")
-    if spec.executor != "graph":
-        return ExecutionResult(
-            executor="legacy", metrics={"request": "train", "routing": "legacy"}
-        )
     moved_options = set(spec.options) & {
         "epochs",
         "batch_size",
@@ -5651,25 +5501,19 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
 
 
 def infer(spec: ExecutionSpec) -> ExecutionResult:
-    return (
-        simulate(spec)
-        if spec.executor == "graph"
-        else ExecutionResult(
-            executor="legacy", metrics={"request": "infer", "routing": "legacy"}
-        )
-    )
+    return simulate(spec)
 
 
 def execution_spec_from_args(
     args: Any, *, kind: RequestKind | None = None
 ) -> ExecutionSpec:
     """Compatibility adapter: resolved CLI arguments become one typed request."""
-    resolved_kind = kind or ("infer" if getattr(args, "infer", False) else args.mode)
+    resolved_kind = kind or args.mode
     if resolved_kind == "sim":
         resolved_kind = "simulate"
     return ExecutionSpec(
         kind=resolved_kind,
-        executor=getattr(args, "executor", "legacy"),
+        executor=getattr(args, "executor", "graph"),
         bundle=Path(args.bundle) if getattr(args, "bundle", None) else None,
         seed=int(getattr(args, "seed", 0) or 0),
         device=resolve_device(getattr(args, "device", "auto")),
@@ -5763,27 +5607,11 @@ def resolve_device(requested: str | torch.device = "auto") -> str:
     return name
 
 
-def execute_request(
-    spec: ExecutionSpec,
-    *,
-    legacy: Callable[[], ExecutionResult] | None = None,
-) -> ExecutionResult:
-    """Dispatch one typed request; the CLI supplies its unchanged legacy body."""
-    if spec.executor == "legacy":
-        if (
-            spec.resets
-            or spec.decisions is not None
-            or spec.measurement is not None
-            or spec.recording is not None
-            or not spec.retain_outputs
-        ):
-            raise ValueError(
-                "reset, measurement and recording controls require the graph executor"
-            )
-        if legacy is None:
-            raise ValueError(
-                "legacy execution requires the registered legacy request body"
-            )
-        return legacy()
+def execute_request(spec: ExecutionSpec) -> ExecutionResult:
+    """Dispatch one graph execution request."""
     handlers = {"build": build, "simulate": simulate, "train": train, "infer": infer}
-    return handlers[spec.kind](spec)
+    try:
+        handler = handlers[spec.kind]
+    except KeyError:
+        raise ValueError(f"unsupported execution request: {spec.kind}") from None
+    return handler(spec)

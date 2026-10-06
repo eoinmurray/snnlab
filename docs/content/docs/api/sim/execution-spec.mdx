@@ -14,7 +14,7 @@ from snnlab.sim.execution import ExecutionSpec
 
 ExecutionSpec(
     kind: Literal["build", "simulate", "train", "infer"],
-    executor: Literal["legacy", "graph"] = "graph",
+    executor: Literal["graph"] = "graph",
     bundle: Path | None = None,
     graph: Mapping[str, Any] | None = None,
     input_bindings: Sequence[InputBinding] = (),
@@ -65,15 +65,13 @@ Chooses the handler when using `execute_request(spec)`:
 | `"infer"` | Currently delegates to the graph simulation handler, including checkpoint loading. |
 | `"train"` | Build the graph and perform AdamW updates using a training recipe and targets. |
 
-Calling a handler directly selects that operation independently of `kind`: `simulate(spec)` does not dispatch on `spec.kind`. Keep `kind` consistent with the handler. In particular, `build` only automatically loads bundle training metadata when `kind="train"`. An unsupported `kind` reaches a `KeyError` in the graph dispatcher.
+Calling a handler directly selects that operation independently of `kind`: `simulate(spec)` does not dispatch on `spec.kind`. Keep `kind` consistent with the handler. In particular, `build` only automatically loads bundle training metadata when `kind="train"`. An unsupported `kind` raises `ValueError` in the dispatcher.
 
 ### executor
 
-**Type:** `Literal["legacy", "graph"]`. **Default:** `"graph"`.
+**Type:** `Literal["graph"]`. **Default:** `"graph"`.
 
-Typed requests use the graph API by default, as shown in Quickstart. Set `executor="legacy"` explicitly for historical routing. The CLI independently retains its legacy default.
-
-`execute_request` requires a registered `legacy` callback for legacy execution; without one it raises `ValueError`. Calling `build`, `simulate`, `train` or `infer` directly with `executor="legacy"` returns a routing-only `ExecutionResult`; it does not invoke the legacy simulation/training body. Use the supported executor names; the dataclass does not reject arbitrary strings itself.
+The Python API and CLI execute graphs. `ExecutionSpec` rejects every executor value except `"graph"` with `ValueError`. `execute_request(spec)` dispatches directly to the graph handler.
 
 ### bundle
 
@@ -430,7 +428,7 @@ Weights or training state to load before execution. Behaviour depends on the han
 
 | Handler | Behaviour |
 | --- | --- |
-| `simulate` / `infer` | A directory loads a digest-verified graph training checkpoint's parameters. A non-directory path loads a PyTorch state dictionary with `weights_only=True`; supported legacy state dictionaries use explicit parameter interchange. |
+| `simulate` / `infer` | A directory loads a digest-verified graph training checkpoint's parameters. A non-directory path loads a PyTorch state dictionary with `weights_only=True`; the keys must match `GraphExecutor.state_dict()`. Historical COBANet dictionaries require an application-owned conversion before loading. |
 | `train` | Loads a graph training-checkpoint directory and resumes parameters, AdamW state, RNG state and iteration coordinates. |
 | `build` | Does not load the checkpoint field. |
 
@@ -543,7 +541,7 @@ File location is not part of intervention identity: relocating identical bytes p
 
 **Type:** `Mapping[str, Any]`. **Default:** empty mapping.
 
-Inference and compatibility options. Training controls are explicit fields described above. The top-level mapping is not a universally validated configuration schema: unknown top-level keys can be ignored. Only the keys consumed below affect direct graph handlers. CLI adapters may carry additional legacy/CLI fields here; that does not make them supported typed graph options.
+Inference and compatibility options. Training controls are explicit fields described above. The top-level mapping is not a universally validated configuration schema: unknown top-level keys can be ignored. Only the keys consumed below affect direct graph handlers. CLI adapters may carry additional CLI fields here; that does not make them supported typed graph options.
 
 ### inference_overrides
 

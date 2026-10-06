@@ -318,8 +318,7 @@ def test_unsupported_neuron_reset_and_training_rejected():
     resets, decisions = policy()
     with pytest.raises(ValueError, match="simulation/inference"):
         train(ExecutionSpec(kind="train", graph=graph_fixture(), resets=resets))
-    with pytest.raises(ValueError, match="graph executor"):
+    with pytest.raises(ValueError, match="only the graph executor"):
         execute_request(
             ExecutionSpec(kind="infer", executor="legacy", decisions=decisions),
-            legacy=lambda: None,
         )

@@ -1,0 +1,19 @@
+{
+  "source_commit": "dbe0f44071601f102312b902ca8d6e75424dd60e",
+  "source_test": "tests/sim/test_numeric_conformance.py",
+  "reference": "COBANet before legacy backend removal; graph comparison passed before capture",
+  "torch_version": "2.14.1",
+  "files": {
+    "forward-0.05-0.npz": "927b4d360d8c85a105a7b2080c669024a69ba1d7af966eebfc85fe0bed13f8d1",
+    "forward-0.1-0.npz": "1828b343d3c8e7a49a10ff3e34b4f5c92929a328284b81c48df68010a4d4ba61",
+    "forward-0.2-0.npz": "9031d425e8018d55763197022d2fbf2985d8e6890ca3896b32217e849e6c8098",
+    "forward-0.3-0.npz": "796ab13c304c6e69ab2f8723069efb785a6f04654c0874754502a7b23a6d8dd9",
+    "forward-0.6-0.npz": "3ace124c3ca963380a09425bd9b280c11b5937ab43853cdf1dba0e21df0e5342",
+    "forward-0.05-1.npz": "f2877a8ce4e0896381ba08f2d3deff219cf9aa7308c48ae21b265b574ec1d15d",
+    "forward-0.1-1.npz": "1235edf50e72d22ae57d81d203bae87d06520e065f4b357abf23f00240e5e005",
+    "forward-0.2-1.npz": "de59bc9998c5ecb3a251f7e3cb27f6970ac511c816c3693a2536bd668dfc65cc",
+    "forward-0.3-1.npz": "9ad1b85ad8787f418afb20ce5457b62814a567aec025d00a60481ed741aecb7f",
+    "forward-0.6-1.npz": "9f3ce031089f7639d5913ada4ccaf4b8816005b5c62409b64f6e32093d54f162",
+    "backward.npz": "7f34126ed114374b941ab8dff35a7eca0acb28f530f85e0f506913185b6e144a"
+  }
+}

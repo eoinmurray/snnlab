@@ -9,6 +9,25 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-06
+
+### Upgrade notes
+
+1. This is a breaking release: the CLI and Python request API execute authored graphs only. Replace flag-built networks and config replay with `snnlab.lang` bundles, explicit input bindings and training recipes. `--executor graph` remains accepted and is optional; `--executor legacy` is rejected.
+2. Import measurements from `snnlab.analysis`. Load graph checkpoint directories or native `GraphExecutor.state_dict()` files; historical COBANet matrices require an explicit conversion in the consuming application. Construct general `snnlab.viz.Recording` objects from named signals instead of using the removed snapshot loader.
+3. Shared numerical kernels, dataset loading, Poisson image encoding, graph voltage-sampling compatibility and persisted graph/runtime/checkpoint schemas retain their supported contracts. Preserve historical run configurations and evidence unchanged.
+
+### Removed
+
+1. Removed legacy Config/COBANet execution, predefined network construction, training/inference/probe runners, mutable network-size globals and specialised run logging. The CLI and typed request API now support only graph execution; `--executor graph` remains optional. All commands require explicit bundle, input and output paths.
+2. Removed the remaining 45 deprecated CLI switches, `dump-weights`, config replay/default restoration, bundle-to-COBANet translation and built-in legacy parameter interchange. Graph/PyTorch checkpoints, runtime continuation, interventions, recordings, training recipes and current numerical kernels remain supported.
+3. Removed unused SimulationSpec/simulation.json authoring and execution, the legacy recording loader, `snnlab.sim.metrics`, specialised `compute_metrics`, legacy batch encoding, single-image loading and dataset-dependent network-size defaults. Import measurements from `snnlab.analysis`; keep using `load_dataset` and `encode_images_poisson` in graph applications.
+
+### Validation
+
+1. Preserved authenticated pre-removal numerical fixtures covering ten forward cases and a four-update optimizer trajectory; graph continuation/resume and independent Brian2 checks remain in the suite. Retired tests specific to removed execution features and corrected obsolete import paths in shared neuron-kernel tests.
+2. Local validation passed 556 tests with one accelerator test skipped, lint, documentation type checking, root and GitHub Pages static builds, package builds and installed-wheel graph execution. Confirmed that all 12 retired modules are absent from the wheel.
+
 ## [0.4.0] - 2026-10-06
 
 ### Added

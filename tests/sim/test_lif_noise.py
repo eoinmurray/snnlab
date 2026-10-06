@@ -21,16 +21,7 @@ import torch
 from snnlab.sim import models as M
 from snnlab.sim.models import spike_biophysical
 
-pytest.importorskip("models")  # noqa
-# The symbol under test — implemented in a follow-up commit.
-lif_step_expeuler = pytest.importorskip(
-    "models", reason="lif_step_expeuler not yet implemented"
-).__dict__.get("lif_step_expeuler")
-
-pytestmark = pytest.mark.skipif(
-    lif_step_expeuler is None,
-    reason="lif_step_expeuler not yet implemented — TDD stub",
-)
+lif_step_expeuler = M.lif_step_expeuler
 
 
 def _fresh_state(v0=None, B=1, N=1, dtype=torch.float32):

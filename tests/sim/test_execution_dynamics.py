@@ -8,19 +8,15 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim import config
-from snnlab.sim import models as M
 from snnlab.sim.execution import (
     DelayBuffer,
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
-    build,
     plan_graph,
     simulate,
 )
 from tests._circuits import author_ping
-from tests.sim._bundle_builders import ping_classifier
 from tests.sim._execution_builders import expose_graph_diagnostics
 
 
@@ -231,54 +227,3 @@ def test_non_integral_delay_is_rejected_before_execution():
         assert "integer number" in str(exc)
     else:
         raise AssertionError("fractional-step delay must fail planning")
-
-
-def test_single_ping_seeded_parameters_and_forward_match_legacy_exactly():
-    bundle = ping_classifier()
-    graph = bundle.graph
-    torch.manual_seed(17)
-    M.N_IN = 784
-    M.N_OUT = 10
-    config.set_sim_dt(0.1, 1.2)
-    M.T_steps = 12
-    legacy = config.build_net(
-        "ping",
-        w_in=(0.2, 0.03),
-        w_in_initial_zero_fraction=0.0,
-        w_ei=(0.5, 0.05),
-        w_ie=(1.0, 0.1),
-        ei_strength=0.5,
-        ei_ratio=2.0,
-        recurrent_initial_zero_fraction=0.0,
-        hidden_sizes=[256],
-        readout_mode="mem-mean",
-    )
-    graph_model = build(
-        ExecutionSpec(kind="build", executor="graph", graph=graph, seed=17)
-    ).model
-    assert isinstance(graph_model, GraphExecutor)
-    mapping = {
-        "sensory_ping_input.weight": legacy.W_ff[0],
-        "classifier_projection.weight": legacy.W_ff[1],
-        "sensory_ping_E_to_I.weight": legacy.W_ei["1"],
-        "sensory_ping_I_to_E.weight": legacy.W_ie["1"],
-    }
-    for name, expected in mapping.items():
-        torch.testing.assert_close(
-            graph_model.parameter_map()[name], expected, rtol=0, atol=0
-        )
-
-    spikes = torch.zeros(12, 2, 784)
-    spikes[0::2, :, :48] = 1.0
-    legacy.recording = True
-    legacy_logits = legacy(input_spikes=spikes)
-    native = graph_model({"image": spikes})
-    torch.testing.assert_close(
-        native.outputs["class_logits"], legacy_logits, rtol=0, atol=2e-7
-    )
-    torch.testing.assert_close(
-        native.diagnostics["cell_0"], legacy.spike_record["hid"], rtol=0, atol=0
-    )
-    torch.testing.assert_close(
-        native.diagnostics["cell_1"], legacy.spike_record["inh"], rtol=0, atol=0
-    )

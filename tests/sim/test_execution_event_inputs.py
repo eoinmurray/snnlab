@@ -236,7 +236,7 @@ def test_event_stream_file_loader_and_cli_emit_replayable_protocol(tmp_path):
     assert protocol["dataset"]["shuffle"] is False
     assert protocol["seeds"] == {"execution": 41}
     assert protocol["inputs"][0]["source"]["digest"].startswith("sha256:")
-    with pytest.raises(SystemExit, match="--event-file requires --executor graph"):
+    with pytest.raises(SystemExit, match="requires an explicit --bundle"):
         main(
             [
                 "sim",

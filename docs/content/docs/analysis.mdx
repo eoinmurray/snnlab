@@ -212,6 +212,6 @@ The [API reference](/api/analysis) specifies all rounding, smoothing, threshold,
 
 ## Existing imports
 
-Existing `snnlab.sim.metrics` functions remain compatibility re-exports. Its `compute_metrics` remains available for the historical specialised simulator report, with its original keys and population-size defaults. New code should call the flat `snnlab.analysis` functions and explicitly assemble whatever report it needs. `compute_metrics` is not exported from the new package.
+Import measurements directly from `snnlab.analysis` and assemble the report your application needs. The former `snnlab.sim.metrics` import path and specialised `compute_metrics` report have been removed.
 
 `ExecutionResult.metrics` continues to hold execution/training metadata; its name and contract are unchanged. Moving analysis functions does not automatically add rhythmicity measurements to graph execution results.

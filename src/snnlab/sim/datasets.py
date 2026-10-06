@@ -1,14 +1,13 @@
 """Dataset loaders — MNIST (static images) and SHD (spiking audio events).
 
-Pulled out of cli.py. The single
-canonical entry point is `load_dataset(name, ...)`. Image-mode notebooks
-(snapshot rendering) use `_load_dataset_image()` for a single sample.
+The canonical entry point is `load_dataset(name, ...)`, used by graph-based
+applications to obtain source arrays before binding or encoding them.
 
 MNIST returns dense (N, 784) pixel rows in [0, 1] that the train/infer paths
 Poisson-encode per batch. SHD is event data — each utterance is a list of
 (spike_time_seconds, unit) pairs over 700 channels — so it returns an OBJECT
 array of per-sample event tuples instead of a dense block; the caller bins each
-sample to spikes lazily (see ShdBinnedDataset in train.py). Densifying the whole
+sample to spikes lazily (application-owned event binning). Densifying the whole
 set at the model's native dt would be tens of GB, hence the lazy contract.
 """
 
@@ -34,11 +33,6 @@ _SHD_URLS = {
     "test": "https://zenkelab.org/datasets/shd_test.h5.gz",
 }
 
-# Smart per-dataset hidden-size defaults (used by build_net auto-config).
-DATASET_N_HIDDEN_DEFAULTS = {
-    "mnist": 1024,  # n_in = 784, next pow2
-    "shd": 256,  # n_in = 700; Cramer et al. RSNNs use ~128-256 recurrent units
-}
 
 MNIST_SPLIT_SEED = 42
 MNIST_VALIDATION_FRACTION = 0.1
@@ -98,8 +92,6 @@ def load_dataset(
     name,
     max_samples=None,
     split=False,
-    dt_ms=None,
-    t_ms=None,
     evaluation_split="validation",
     evaluation_only=False,
 ):
@@ -114,7 +106,6 @@ def load_dataset(
         evaluation_split: for MNIST, select either the deterministic validation
                split used during training or the untouched official test split.
                SHD retains its official train/test contract.
-        dt_ms, t_ms: currently unused; kept for call-site compatibility
         evaluation_only: skip the unused MNIST training partition; requires
                split=True and evaluation_split='test'. Training outputs are None.
 
@@ -122,7 +113,9 @@ def load_dataset(
     "first digit-0 sample" means the same physical sample everywhere.
     """
     if evaluation_only and (not split or evaluation_split != "test"):
-        raise ValueError("evaluation_only requires split=True and evaluation_split='test'")
+        raise ValueError(
+            "evaluation_only requires split=True and evaluation_split='test'"
+        )
     if name == "mnist":
         from torchvision import datasets, transforms
 
@@ -189,23 +182,3 @@ def load_dataset(
             f"got {evaluation_split!r}"
         )
     return X, y
-
-
-def _load_dataset_image(dataset="mnist", digit_class=0, sample_idx=0):
-    """Load a single image from a dataset. Returns (pixel_vec, digit_image)."""
-    if dataset == "mnist":
-        from torchvision import datasets, transforms
-
-        mnist = datasets.MNIST(
-            root="/tmp/mnist",
-            train=False,
-            download=True,
-            transform=transforms.ToTensor(),
-        )
-        data = mnist.data.numpy().reshape(-1, 784).astype(np.float32) / 255.0
-        targets = mnist.targets.numpy()
-        images = mnist.data.numpy()
-    else:
-        raise ValueError(f"Unknown dataset: {dataset}")
-    idx = np.where(targets == digit_class)[0][sample_idx]
-    return data[idx], images[idx]

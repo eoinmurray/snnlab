@@ -26,7 +26,6 @@ from snnlab.viz import (  # noqa: E402
     render_diagram,
     representative_frame,
 )
-from snnlab.viz.loaders import load_snnsim_recording
 
 
 def test_recording_validates_shared_timeline():
@@ -105,24 +104,6 @@ def test_timeline_composes_slow_motion_repeats_and_holds():
     assert timeline.steps.tolist() == [0, 4, 9, 5, 5, 9, 4, 0]
 
 
-def test_snnsim_loader_separates_retained_static_arrays(tmp_path):
-    np.savez(
-        tmp_path / "recording.npz",
-        dt=np.asarray(0.25),
-        spk_e=np.zeros((8, 3)),
-        input_excitatory_e_executed=np.zeros((8, 3)),
-        input_excitatory_e_rate_scale=np.ones(3),
-    )
-
-    recording = load_snnsim_recording(tmp_path)
-
-    assert recording.steps == 8
-    assert "input_excitatory_e_executed" in recording.signals
-    assert "input_excitatory_e_rate_scale" not in recording.signals
-    np.testing.assert_array_equal(
-        recording.metadata["retained_static"]["input_excitatory_e_rate_scale"],
-        np.ones(3),
-    )
 
 
 def test_diagram_contract_compiles_deterministically():

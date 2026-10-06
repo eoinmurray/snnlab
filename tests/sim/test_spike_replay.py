@@ -455,90 +455,6 @@ def test_diagnostics_do_not_change_outputs_or_rng():
         )
 
 
-def test_small_legacy_inhibitory_override_matches_graph_replay(monkeypatch):
-    from snnlab.sim import models as M
-    from snnlab.sim.execution import export_legacy_parameters_v1
-
-    for name, value in {
-        "N_IN": 2,
-        "N_OUT": 2,
-        "dt": 0.1,
-        "T_ms": 4.0,
-        "T_steps": 40,
-    }.items():
-        monkeypatch.setattr(M, name, value)
-    net = snn.Network("legacy_replay", dt=0.1 * snn.ms)
-    events = net.input(
-        "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
-    )
-    cell = author_ping(
-        net, name="cell", n_e=4, n_i=1, source=events, include_silent_recurrence=True
-    )
-    scores = snn.readouts.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")
-    net.output("logits", scores)
-    graph = expose_graph_diagnostics(snn.compile(net).graph)
-    model = GraphExecutor(plan_graph(graph), seed=7)
-    with torch.no_grad():
-        for value in model.parameter_map().values():
-            value.zero_()
-        model.parameter_map()["cell_input.weight"].fill_(10)
-        model.parameter_map()["cell_E_to_I.weight"].fill_(2)
-        model.parameter_map()["cell_I_to_E.weight"].fill_(5)
-        model.parameter_map()["scores_projection.weight"].fill_(1)
-    legacy = M.COBANet(
-        hidden_sizes=[4],
-        n_inh_per_layer={1: 1},
-        refractory_e_ms=1.2,
-        refractory_i_ms=0.6,
-        refractory_policy="exact",
-        readout_mode="mem-mean",
-        w_in=(0, 0),
-        w_hid=(0, 0),
-        w_ee=(0, 0),
-        w_ei=(0, 0),
-        w_ie=(0, 0),
-        w_ii=(0, 0),
-    )
-    legacy.recording = True
-    exported = export_legacy_parameters_v1(graph, model.parameter_map())
-    with torch.no_grad():
-        for name, value in exported.parameters.items():
-            dict(legacy.named_parameters())[name].copy_(value)
-    replacement = torch.zeros(40, 2, 1)
-    replacement[::3, 0] = 1
-    replacement[1::4, 1] = 1
-    index = {"step": 0}
-
-    def override(s_e, s_i, layer):
-        value = replacement[index["step"]]
-        index["step"] += 1
-        return s_e, value
-
-    legacy._hidden_perturb_fn = override
-    inputs = torch.ones(40, 2, 2)
-    replay = DenseSpikeReplay.from_tensor(replacement, dt_ms=0.1)
-    with torch.no_grad():
-        expected = legacy(input_spikes=inputs)
-        actual = model(
-            {"events": inputs}, interventions=(ReplaySpikes("cell_I", replay),)
-        )
-    assert index["step"] == 40
-    for legacy_name, graph_name in [
-        ("inh", "cell_I.spikes"),
-        ("hid", "cell_E.spikes"),
-        ("v_i_1", "cell_I.voltage"),
-        ("v_e_1", "cell_E.voltage"),
-        ("gi_e_1", "cell_I_to_E.conductance"),
-    ]:
-        torch.testing.assert_close(
-            legacy.spike_record[legacy_name],
-            actual.diagnostics[graph_name],
-            rtol=0,
-            atol=0,
-        )
-    torch.testing.assert_close(expected, actual.outputs["logits"], rtol=1e-6, atol=1e-6)
-
-
 def test_direct_forward_artifacts_retain_authenticated_replay_identity(tmp_path):
     graph = graph_fixture()
     interventions = (ReplaySpikes("source", dense()),)
@@ -596,3 +512,44 @@ def test_replay_cli_runs_typed_request_and_writes_authenticated_artifacts(tmp_pa
     )
     with np.load(out / "outputs.npz", allow_pickle=False) as arrays:
         np.testing.assert_array_equal(arrays["emitted"], stream().numpy())
+
+
+def test_inhibitory_replay_drives_conductance_on_the_declared_delay():
+    net = snn.Network("replay_delay", dt=0.1 * snn.ms)
+    events = net.input(
+        "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+    )
+    author_ping(net, name="cell", n_e=4, n_i=1, source=events)
+    graph = expose_graph_diagnostics(snn.compile(net).graph)
+    model = GraphExecutor(plan_graph(graph), seed=7)
+    with torch.no_grad():
+        for value in model.parameter_map().values():
+            value.zero_()
+        model.parameter_map()["cell_I_to_E.weight"].fill_(5)
+    replacement = torch.zeros(40, 2, 1)
+    replacement[::3, 0] = 1
+    replacement[1::4, 1] = 1
+    result = model(
+        {"events": torch.zeros(40, 2, 2)},
+        interventions=(
+            ReplaySpikes(
+                "cell_I", DenseSpikeReplay.from_tensor(replacement, dt_ms=0.1)
+            ),
+        ),
+    )
+    torch.testing.assert_close(
+        result.diagnostics["cell_I.spikes"], replacement, rtol=0, atol=0
+    )
+    decay = torch.exp(torch.tensor(-0.1 / 9.0))
+    state = torch.zeros(2, 4)
+    reference = []
+    for step in range(40):
+        kick = replacement[step - 1].expand(2, 4) * 5 if step else torch.zeros(2, 4)
+        state = state * decay + kick
+        reference.append(state)
+    torch.testing.assert_close(
+        result.diagnostics["cell_I_to_E.conductance"],
+        torch.stack(reference),
+        rtol=0,
+        atol=0,
+    )

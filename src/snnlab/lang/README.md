@@ -146,17 +146,16 @@ uv run python -m snnlab.sim sim \
 
 Graph validity is checked independently of a simulator backend. Passing
 `target="tools/snnsim"` adds capability diagnostics but never changes the graph.
-The first additive `tools/snnsim` backend route accepts the deliberately narrow
-single-layer MNIST PING subset:
+The `tools/snnsim` backend executes supported graphs directly:
 
 ```sh
 uv run python -m snnlab.sim sim \
-  --bundle small_ping.bundle \
+  --bundle small_ping.bundle --poisson-protocol fixed-rate --input-rate 40 \
   --t-ms 200 \
   --out-dir run/
 
 uv run python -m snnlab.sim train \
-  --bundle classifier.bundle \
+  --bundle classifier.bundle --input-file inputs.npz --target-file targets.npz \
   --max-samples 1000 \
   --batch-size 64 \
   --out-dir train-run/
@@ -164,17 +163,16 @@ uv run python -m snnlab.sim train \
 
 Execution choices such as duration, seed, input mode, output directory, and
 recordings remain CLI concerns. Structural flags cannot override the bundle.
-For the first training subset, `training.json` owns cross-entropy, AdamW,
-epochs, learning rate, and a trainable input/readout plus frozen recurrent
-scope; dataset cap and batch size remain execution choices.
+`training.json` owns objectives, optimizer settings, epoch defaults and
+trainable/frozen parameter groups; dataset cap and batch size remain execution
+choices.
 Parameter groups are exhaustive and non-overlapping. The compiled recipe also
 contains resolved trainable/frozen parameter lists and a stable per-parameter
 learning-rate map; frozen groups use zero and trainable groups require a
 positive finite rate.
 The standard backward contract uses an explicit fast-sigmoid surrogate and
 positive per-population voltage-gradient dampening factors. Compilation records
-both in `resolved_gradients`; the legacy adapter maps the supported shared
-dampening case back to its established CLI settings.
+both in `resolved_gradients`; graph execution uses the declared settings directly.
 Training recipes may declare a physical presentation duration independently of
 graph `dt`, plus the collection's exact multi-layer spike-budget penalty. Its
 stored aggregation contract is the mean over presentations and layers of each
@@ -183,9 +181,8 @@ Before serialization, reverse reachability proves that every objective and
 regularizer reaches at least one trainable parameter through enabled graph
 elements. The check respects frozen groups and stop-gradient boundaries and
 reports the exact reachable and trainable sets when a route is absent.
-Unsupported graph structures fail with an element-level capability error;
-legacy commands that omit `--bundle` retain their existing defaults and
-behaviour.
+Unsupported graph structures fail with an element-level capability error.
+The CLI requires an explicit bundle and input source.
 
 ## Graph-native forward execution
 
@@ -256,61 +253,16 @@ a seed-derived permutation per epoch. The execution protocol records target
 digests, dataset identity and split, sample cap, batch size, shuffle policy,
 epoch count, and order seed.
 
-Graph training checkpoints use a versioned manifest plus a digest-verified
-tensor payload. They key parameters and AdamW state by stable graph id and
-record graph/training digests, completed updates, execution protocol,
-initializer metadata, CPU random state, exact named accelerator random states,
-and the exact next epoch/batch. Manifest version 2 records `cpu`, `cuda`, or
-`mps` as the random backend. CUDA captures every contiguous device generator;
-MPS captures its single generator. Resume requires the same backend and exact
-device topology before changing any stream. CPU-only version 1 checkpoints
-remain loadable. The
-trainer can save final and invocation-selected checkpoints and resume exactly after rejecting recipe,
-protocol, initializer, shape, dtype, or parameter-set mismatches. An explicit
-one-layer legacy parameter map fails closed when any graph parameter is
-unrepresentable. Mocked topology tests cover accelerator-state serialization
-and fail-closed restore dispatch, but production accelerator trajectory parity
-remains a hardware gate. The legacy CLI
-and bundle adapter remain the default and retain their historical numerical
-contract.
+`snnlab.sim.conformance` compares complete named tensor layers under explicit
+exact or numerical policies, checks coverage/shape/dtype, and writes versioned
+conformance reports. Forward and backward regression fixtures retain the
+pre-removal COBANet numerical reference without shipping its implementation.
+They cover E/I spikes, voltages, conductances, logits, gradients, parameters
+and AdamW state. A two-plus-two checkpoint resume matches uninterrupted training.
 
-`tools/snnsim/conformance.py` provides the versioned, fail-closed comparison layer
-for migration evidence. It compares complete named tensor layers under an
-explicit exact or numerical policy, reports coverage, shape, dtype, and error
-bounds, and writes `tools/snnsim.conformance-report/v1` JSON. Canonical JSON
-encoding brings topology, initializer metadata, protocols, and checkpoint
-coordinates into the same report as forward outputs, gradients, parameters,
-and optimizer tensors. Declared tolerance rules that match no field are errors.
-
-The first cross-backend CPU fixtures copy one complete one-layer parameter set
-through the semantic legacy map and compare E/I spikes, membrane traces,
-input/AMPA/GABA conductances, and mean-voltage logits with recurrence both
-isolated and active. Dynamic state and parameters match exactly; logits use a
-predeclared `1e-6` absolute/relative tolerance. The fixtures established that
-legacy recurrent keys are one-based (`W_ee.1`,
-`W_ei.1`, `W_ie.1`, and `W_ii.1`) and that the compatible mean-voltage readout
-uses the legacy 2 ms output-membrane time constant.
-
-The corresponding four-update backward fixture trains all six mapped tensors
-and compares the complete cross-entropy trajectory, final named surrogate
-gradients, constrained parameters, and AdamW step/first-moment/second-moment
-tensors under the same frozen CPU policy. A two-plus-two checkpoint resume is
-bit-identical to the uninterrupted graph trajectory.
-Both routes apply the non-negative parameter projection after the optimizer
-step; optimizer state itself remains the unconstrained AdamW update record.
-
-`import_legacy_parameters_v1` and `export_legacy_parameters_v1` provide
-bidirectional parameter-only interchange for the supported one-layer legacy
-state. They require exact keys, runtime shapes, floating dtypes, and complete
-graph coverage, and return mapping-version/direction provenance. Legacy
-optimizer objects are not presented as portable graph training checkpoints.
-
-Graph simulation/inference can load a selected or final training-checkpoint
-directory after authenticating its payload, graph digest, names, shapes, and
-dtypes. Inference metrics retain checkpoint format/path, graph and training
-digests, completed update, and selected loss; optimizer and iterator state are
-not restored for inference. Non-directory checkpoints remain the explicit
-legacy PyTorch state-file route.
+Graph simulation and inference load authenticated selected/final graph-training
+checkpoints, or ordinary `GraphExecutor.state_dict()` files. Historical COBANet
+weights require an explicit conversion in the consuming application.
 
 Inference variations use the request-local `tools/snnsim.inference-overrides/v1`
 contract. Generated Poisson inputs may override a positive, timestep-aligned

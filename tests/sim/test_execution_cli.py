@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import torch
 
@@ -12,8 +10,6 @@ from snnlab.sim.execution import (
     ExecutionSpec,
     GraphRuntimeState,
     PoissonInputBinding,
-    build,
-    execute_request,
     execution_spec_from_args,
     graph_capability_issues,
     resolve_device,
@@ -23,21 +19,6 @@ from snnlab.sim.execution import (
 from snnlab.sim.tool import parse_args
 from tests.sim._bundle_builders import deep_network, ping_classifier
 from tests.sim._execution_builders import coupled_graph as _coupled_graph
-
-
-def test_legacy_and_bundle_cli_arguments_both_lower_to_typed_specs(tmp_path):
-    legacy = execution_spec_from_args(parse_args(["sim"]))
-    assert legacy.executor == "legacy" and legacy.bundle is None
-    root = ping_classifier().write(tmp_path / "ping.bundle")
-    graph = execution_spec_from_args(
-        parse_args(["sim", "--bundle", str(root), "--executor", "graph"])
-    )
-    assert graph.executor == "graph" and graph.bundle == root
-    called = []
-    result = execute_request(
-        legacy, legacy=lambda: called.append(True) or build(legacy)
-    )
-    assert called and result.executor == "legacy"
 
 
 def test_training_cli_maps_controls_to_direct_fields(tmp_path):
@@ -187,15 +168,6 @@ def test_graph_cpu_mps_parity_and_all_result_state_follows_device():
     assert mps.metrics["device"] == "mps"
 
 
-def test_representative_shd_checkpoint_and_recording_requests_remain_legacy():
-    shd = execution_spec_from_args(
-        parse_args(["train", "--dataset", "shd", "--max-samples", "8", "--epochs", "1"])
-    )
-    assert shd.executor == "legacy"
-    assert shd.options["dataset"] == "shd"
-    assert shd.options["max_samples"] == 8
-
-
 def test_production_shaped_mnist_and_shd_graphs_execute_named_outputs():
     mnist = ping_classifier()
     shd = deep_network()
@@ -286,12 +258,6 @@ def test_production_ping_fine_timestep_and_variable_rate_protocol():
     }
     assert set(protocol["inputs"][0]["realized_rates_hz"]) <= {0.0, 5.0, 25.0}
     assert result.outputs["class_logits"].shape == (3, 10)
-    checkpoint = execution_spec_from_args(
-        parse_args(["sim", "--load-weights", "checkpoint.pth", "--outputs", "rasters"])
-    )
-    assert checkpoint.executor == "legacy"
-    assert checkpoint.checkpoint == Path("checkpoint.pth")
-    assert checkpoint.options["outputs"] == ["rasters"]
 
 
 def test_arbitrary_sizes_independent_inputs_and_all_population_recordings():
@@ -318,3 +284,11 @@ def test_arbitrary_sizes_independent_inputs_and_all_population_recordings():
     } <= result.diagnostics.keys()
     assert result.diagnostics["coupled_0"].shape == (8, 1, 4)
     assert result.diagnostics["coupled_3"].shape == (8, 1, 2)
+
+
+def test_graph_is_the_only_cli_and_request_executor():
+    assert execution_spec_from_args(parse_args(["sim"])).executor == "graph"
+    with pytest.raises(SystemExit):
+        parse_args(["sim", "--executor", "legacy"])
+    with pytest.raises(ValueError, match="only the graph executor"):
+        ExecutionSpec(kind="build", executor="legacy")

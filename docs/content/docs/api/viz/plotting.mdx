@@ -30,14 +30,6 @@ recording = viz.Recording(
 )
 ```
 
-### load_snnsim_recording
-
-```python
-def load_snnsim_recording(run_dir: str | Path) -> Recording: ...
-```
-
-Loads a legacy/native `recording.npz` snapshot containing `dt` and a recognized time-series anchor (`spk_e`, `v_e_1` or `input_spikes`). It retains time-varying signal fields and stores other array fields under `metadata["retained_static"]`; optional `config.json` is loaded as metadata. It does not directly load a training checkpoint or `ExecutionResult`.
-
 ## FigureGrid
 
 ```python

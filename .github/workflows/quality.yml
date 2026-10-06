@@ -31,7 +31,6 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pytest -q -m "not slow"
         env:
-          PINGLAB_NO_COMPILE: "1"
           OMP_NUM_THREADS: "1"
           MPLBACKEND: Agg
       - run: uv build

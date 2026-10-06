@@ -10,10 +10,38 @@ from snnlab.sim.execution import (
     DenseArrayBinding,
     ExecutionSpec,
     build,
-    export_legacy_parameters_v1,
     simulate,
 )
-from tests.sim._bundle_builders import ping_classifier
+from tests.sim._execution_builders import direct_train_bundle
+
+
+def test_native_pytorch_checkpoint_restores_parameters_and_rejects_old_keys(tmp_path):
+    bundle = direct_train_bundle()
+    built = build(ExecutionSpec(kind="build", graph=bundle.graph, seed=7))
+    checkpoint = tmp_path / "parameters.pt"
+    torch.save(built.model.state_dict(), checkpoint)
+    result = simulate(
+        ExecutionSpec(
+            kind="simulate",
+            graph=bundle.graph,
+            seed=99,
+            checkpoint=checkpoint,
+            input_bindings=(DenseArrayBinding("events", torch.zeros(3, 1, 2)),),
+        )
+    )
+    for name, expected in built.model.parameter_map().items():
+        torch.testing.assert_close(result.parameters[name], expected, rtol=0, atol=0)
+    assert result.metrics["checkpoint"]["format"] == "graph_torch_state_dict"
+    torch.save({"W_ff.0": torch.zeros(2, 2)}, checkpoint)
+    with pytest.raises(RuntimeError, match="state_dict"):
+        simulate(
+            ExecutionSpec(
+                kind="simulate",
+                graph=bundle.graph,
+                checkpoint=checkpoint,
+                input_bindings=(DenseArrayBinding("events", torch.zeros(3, 1, 2)),),
+            )
+        )
 
 
 @pytest.mark.parametrize("spiking", [False, True])
@@ -65,37 +93,3 @@ def test_soft_reset_integrator_records_spikes_only_when_declared(spiking):
     torch.testing.assert_close(
         result.diagnostics["out.voltage"].flatten(), torch.tensor(expected_voltage)
     )
-
-
-def test_graph_inference_restores_complete_legacy_checkpoint(tmp_path):
-    graph = ping_classifier().graph
-    built = build(ExecutionSpec(kind="build", executor="graph", graph=graph, seed=7))
-    legacy = export_legacy_parameters_v1(graph, built.model.parameter_map())
-    path = tmp_path / "weights.pth"
-    torch.save(legacy.parameters, path)
-    result = simulate(
-        ExecutionSpec(
-            kind="simulate",
-            executor="graph",
-            graph=graph,
-            seed=99,
-            checkpoint=path,
-            input_bindings=(DenseArrayBinding("image", torch.zeros(2, 1, 784)),),
-        )
-    )
-    for name, expected in built.model.parameter_map().items():
-        torch.testing.assert_close(result.parameters[name], expected, rtol=0, atol=0)
-    assert result.metrics["checkpoint"]["interchange"]["direction"] == "legacy_to_graph"
-    incomplete = dict(legacy.parameters)
-    incomplete.pop("W_ff.1")
-    torch.save(incomplete, path)
-    with pytest.raises(ValueError, match="requires exact keys"):
-        simulate(
-            ExecutionSpec(
-                kind="simulate",
-                executor="graph",
-                graph=graph,
-                checkpoint=path,
-                input_bindings=(DenseArrayBinding("image", torch.zeros(2, 1, 784)),),
-            )
-        )

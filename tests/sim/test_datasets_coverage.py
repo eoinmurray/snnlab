@@ -10,17 +10,12 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.sim.datasets import _load_dataset_image, load_dataset
+from snnlab.sim.datasets import load_dataset
 
 
 def test_load_dataset_unknown_name_raises():
     with pytest.raises(ValueError, match="Unknown dataset"):
         load_dataset("not_a_dataset")
-
-
-def test_load_dataset_image_unknown_raises():
-    with pytest.raises(ValueError, match="Unknown dataset"):
-        _load_dataset_image(dataset="not_a_dataset")
 
 
 def test_evaluation_only_never_loads_training_and_preserves_test_pixels(monkeypatch):
@@ -39,7 +34,9 @@ def test_evaluation_only_never_loads_training_and_preserves_test_pixels(monkeypa
     monkeypatch.setattr(datasets, "MNIST", mnist)
     old = load_dataset("mnist", split=True, evaluation_split="test")
     calls.clear()
-    new = load_dataset("mnist", split=True, evaluation_split="test", evaluation_only=True)
+    new = load_dataset(
+        "mnist", split=True, evaluation_split="test", evaluation_only=True
+    )
     assert calls == [False]
     assert new[0] is None and new[2] is None
     assert np.array_equal(old[1], new[1])

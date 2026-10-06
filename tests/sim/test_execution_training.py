@@ -10,7 +10,6 @@ from snnlab.lang import training
 from snnlab.sim.execution import (
     DenseArrayBinding,
     ExecutionSpec,
-    build,
     execute_request,
     train,
 )
@@ -60,9 +59,8 @@ def test_typed_request_defaults_to_graph_and_graph_training_requires_recipe():
     assert result.executor == "graph"
     assert result.model is not None
     assert result.parameters
-    request = ExecutionSpec(kind="build", executor="legacy")
-    assert request.device == "auto"
-    assert build(request).metrics["routing"] == "legacy"
+    with pytest.raises(ValueError, match="only the graph executor"):
+        ExecutionSpec(kind="build", executor="legacy")
     try:
         train(ExecutionSpec(kind="train", graph=_coupled_graph(), device="cpu"))
     except ValueError as exc:

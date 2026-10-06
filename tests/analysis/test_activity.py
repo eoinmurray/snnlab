@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from snnlab import analysis
-from snnlab.sim import metrics as compatibility
 
 
 def test_known_counts_and_population_denominators():
@@ -72,21 +71,6 @@ def test_invalid_population_denominator_is_rejected(n_cells):
             function(np.zeros((4, 2)), n_cells=n_cells, **kwargs)
 
 
-def test_flat_public_surface_and_compatibility_exports():
-    assert len(analysis.__all__) == 24
-    assert not hasattr(analysis, "metrics")
-    for name in compatibility.__all__:
-        if name != "compute_metrics":
-            assert getattr(compatibility, name) is getattr(analysis, name)
-    spikes = np.array([[1, 0], [0, 0], [1, 0], [1, 0]])
-    report = compatibility.compute_metrics(spikes, None, dt=1, n_e=2)
-    assert report["rate_e"] == analysis.firing_rate(spikes, 1)
-    assert report["cv"] == analysis.population_spike_count_cv(spikes, 1)
-    assert report["act"] == analysis.active_fraction(spikes)
-    assert report["rate_i"] == 0
-    assert report["f0_hz"] is None
-
-
 def test_analysis_does_not_import_simulator_or_torch():
     result = subprocess.run(
         [
@@ -99,3 +83,8 @@ def test_analysis_does_not_import_simulator_or_torch():
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_flat_public_surface_excludes_legacy_report():
+    assert len(analysis.__all__) == 24
+    assert not hasattr(analysis, "compute_metrics")

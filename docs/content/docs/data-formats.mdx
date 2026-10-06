@@ -264,6 +264,6 @@ Sink output is separate from the inference artifact set; its JSONL records per-b
 
 ## Older specialised CLI formats
 
-Specialised accelerator snapshot/inference paths use different layouts, even when the filename is also `recording.npz`. A snapshot can contain `spk_e`, `spk_i`, scalar `dt` (ms), `n_e`, `n_i`, plus voltage/conductance/input arrays; single-presentation spikes usually have `(time, cells)` axes. Optional field selection can omit arrays. Other specialised products include `per_cell_rates.npz`, `pop_traces.npz`, `rasters.npz`, `spike_summary.npz` and `weights_dump.npz`, with mode-specific keys.
+Historical specialised accelerator snapshot/inference paths used different layouts, even when the filename is also `recording.npz`. A snapshot can contain `spk_e`, `spk_i`, scalar `dt` (ms), `n_e`, `n_i`, plus voltage/conductance/input arrays; single-presentation spikes usually have `(time, cells)` axes. Optional field selection can omit arrays. Other specialised products include `per_cell_rates.npz`, `pop_traces.npz`, `rasters.npz`, `spike_summary.npz` and `weights_dump.npz`, with mode-specific keys.
 
 Do not apply the graph tables to those archives. Identify the producing command/executor, inspect `.files`, shapes and available metadata first. Graph artifacts have `inference-manifest.json`; use that schema to distinguish their contract from a legacy snapshot. Current graph examples use declared output/exposure names rather than fixed `spk_e`/`spk_i` aliases.

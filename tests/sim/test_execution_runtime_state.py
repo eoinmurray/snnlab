@@ -310,7 +310,7 @@ def test_runtime_state_validates_batch_shape_and_dtype():
         raise AssertionError("runtime-state dtype mismatch must fail")
 
 
-def test_graph_cli_runtime_state_round_trip_and_legacy_rejection(tmp_path):
+def test_graph_cli_runtime_state_round_trip_requires_bundle(tmp_path):
     graph, inputs = _continuation_case()
     bundle = snn.compiler.Bundle(
         graph=graph,
@@ -391,7 +391,7 @@ def test_graph_cli_runtime_state_round_trip_and_legacy_rejection(tmp_path):
             ]
         )
     except SystemExit as exc:
-        assert "require --executor graph" in str(exc)
+        assert "requires an explicit --bundle" in str(exc)
     else:
         raise AssertionError("legacy executor must reject graph-runtime-state flags")
 

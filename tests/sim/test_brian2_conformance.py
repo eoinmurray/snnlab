@@ -17,7 +17,6 @@ import torch
 from scipy.signal import find_peaks
 
 from snnlab.sim import models as M
-from snnlab.sim.config import build_net, set_sim_dt
 from snnlab.sim.timing import duration_steps, refractory_steps
 
 b2 = pytest.importorskip("brian2")
@@ -169,47 +168,68 @@ def test_threshold_reset_and_refractory_match_brian2():
 
 
 @pytest.mark.parametrize("dt_ms", [0.05, 0.1, 0.2, 0.3, 0.6])
-@pytest.mark.parametrize("drive_us", [0.2, 100.0], ids=["voltage-release", "strong-drive"])
+@pytest.mark.parametrize(
+    "drive_us", [0.2, 100.0], ids=["voltage-release", "strong-drive"]
+)
 def test_collection_production_refractory_and_duration_match_brian2(
     monkeypatch, dt_ms, drive_us
 ):
     """Public production wiring agrees with independent E/I refractory clocks."""
     nominal_ms = 200.0
     expected_steps = int(Fraction("200") / Fraction(str(dt_ms)))
-    monkeypatch.setattr(M, "N_IN", 1)
-    monkeypatch.setattr(M, "N_OUT", 1)
-    set_sim_dt(dt_ms, nominal_ms)
-    net = build_net(
-        "ping", hidden_sizes=[4], w_ee=(0.0, 0.0), w_ei=(0.0, 0.0),
-        w_ie=(0.0, 0.0), w_ii=(0.0, 0.0), refractory_e_ms=1.2,
-        refractory_i_ms=0.6, refractory_policy="exact",
-    )
-    net.recording = True
-    # Production external drive adds to an exponentially decaying conductance.
-    # Balance each decay after the first kick to hold that conductance fixed.
-    e_drive = torch.full((expected_steps, 4), drive_us * (1 - math.exp(-dt_ms / 2)))
-    i_drive = torch.full((expected_steps, 1), drive_us * (1 - math.exp(-dt_ms / 2)))
-    e_drive[0] = drive_us
-    i_drive[0] = drive_us
-    with torch.no_grad():
-        net(ext_g=e_drive, ext_g_i=i_drive)
+    from snnlab import lang
+    from snnlab.sim.execution import GraphExecutor, plan_graph
 
-    assert net.timing_metadata["nominal_duration_ms"] == nominal_ms
-    assert net.timing_metadata["duration_steps"] == expected_steps
-    assert net.timing_metadata["realized_duration_ms"] == pytest.approx(
-        199.8 if dt_ms in (0.3, 0.6) else 200.0
+    net = lang.Network("refractory-oracle", dt=dt_ms * lang.ms)
+    drive = net.input(
+        "drive", shape=("time", "batch", 1), signal_type="conductance", unit="uS"
     )
+    for name, capacitance, leak, refractory_ms in (
+        ("E", 1.0, 0.05, 1.2),
+        ("I", 0.5, 0.1, 0.6),
+    ):
+        cell = net.population(
+            name,
+            size=1,
+            neuron=lang.COBA_LIF(
+                tau_mem=capacitance / leak * lang.ms,
+                capacitance_nf=capacitance,
+                leak_us=leak,
+                initial_voltage_mv=-65.0,
+                refractory_steps=refractory_steps(refractory_ms, dt_ms),
+            ),
+        )
+        net.connect(
+            drive,
+            cell.excitatory,
+            name=name + "_drive",
+            synapse=lang.AMPA(tau=2 * lang.ms),
+            weight=lang.Constant(1),
+            initialization_scaling="direct",
+        )
+        net.expose(cell.spikes, name=name + "_spikes")
+        net.expose(cell.voltage, name=name + "_voltage")
+    graph = lang.compile(net).graph
+    model = GraphExecutor(plan_graph(graph))
+    values = torch.full((expected_steps, 1, 1), drive_us * (1 - math.exp(-dt_ms / 2)))
+    values[0] = drive_us
+    with torch.no_grad():
+        result = model({"drive": values})
     for key, voltage_key, capacitance, leak, refractory_ms in (
-        ("hid", "v_e_1", 1.0, 0.05, 1.2),
-        ("inh", "v_i_1", 0.5, 0.1, 0.6),
+        ("E_spikes", "E_voltage", 1.0, 0.05, 1.2),
+        ("I_spikes", "I_voltage", 0.5, 0.1, 0.6),
     ):
         brian_voltage, brian_times = _brian_lif(
-            dt_ms=dt_ms, duration_ms=nominal_ms, capacitance_nf=capacitance,
-            leak_us=leak, refractory_ms=refractory_ms,
-            excitatory_us=drive_us, inhibitory_us=0.0,
+            dt_ms=dt_ms,
+            duration_ms=nominal_ms,
+            capacitance_nf=capacitance,
+            leak_us=leak,
+            refractory_ms=refractory_ms,
+            excitatory_us=drive_us,
+            inhibitory_us=0.0,
         )
-        actual_voltage = net.spike_record[voltage_key][:, 0].numpy()
-        actual_indices = torch.where(net.spike_record[key][:, 0] != 0)[0].numpy()
+        actual_voltage = result.diagnostics[voltage_key][:, 0, 0].numpy()
+        actual_indices = torch.where(result.diagnostics[key][:, 0, 0] != 0)[0].numpy()
         expected_counter = Fraction(str(refractory_ms)) / Fraction(str(dt_ms))
         assert expected_counter.denominator == 1
         expected_counter = int(expected_counter)

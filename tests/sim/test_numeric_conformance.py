@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from fractions import Fraction
+from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
 from snnlab import lang as snn
 from snnlab.lang import training
-from snnlab.sim import models as M
 from snnlab.sim.conformance import (
     CONFORMANCE_REPORT_SCHEMA,
     ComparisonPolicy,
@@ -22,13 +24,23 @@ from snnlab.sim.execution import (
     ExecutionSpec,
     GraphExecutor,
     build,
-    export_legacy_parameters_v1,
-    import_legacy_parameters_v1,
-    legacy_parameter_map_v1,
     train,
 )
 from tests._circuits import author_ping
 from tests.sim._execution_builders import expose_graph_diagnostics
+
+
+def _legacy_reference(case):
+    root = Path(__file__).parent / "fixtures" / "legacy-numerics"
+    manifest = json.loads((root / "manifest.json").read_text())
+    path = root / (case + ".npz")
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == manifest["files"][path.name]
+    layers = {}
+    with np.load(path, allow_pickle=False) as arrays:
+        for key in arrays.files:
+            layer, name = key.split("/", 1)
+            layers.setdefault(layer, {})[name] = torch.from_numpy(arrays[key].copy())
+    return layers
 
 
 def test_layered_conformance_requires_complete_exact_named_coverage(tmp_path):
@@ -103,15 +115,11 @@ def test_explicit_name_remapping_rejects_partial_and_duplicate_maps():
 
 @pytest.mark.parametrize("active_recurrence", [False, True])
 @pytest.mark.parametrize("dt_ms", [0.05, 0.1, 0.2, 0.3, 0.6])
-def test_minimal_legacy_and_graph_ping_forward_share_parameters_and_logits(
+def test_ping_forward_matches_preserved_pre_removal_reference(
     active_recurrence,
     dt_ms,
 ):
-    M.N_IN = 2
-    M.N_OUT = 2
-    M.dt = dt_ms
-    M.T_ms = 200.0
-    M.T_steps = int(Fraction("200") / Fraction(str(dt_ms)))
+    steps = int(Fraction("200") / Fraction(str(dt_ms)))
     net = snn.Network("legacy_graph_ping", dt=0.1 * snn.ms)
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
@@ -171,90 +179,39 @@ def test_minimal_legacy_and_graph_ping_forward_share_parameters_and_logits(
             torch.tensor([[1.0, 0.5], [0.25, 1.5], [1.25, 0.75], [0.5, 1.0]])
         )
 
-    legacy = M.COBANet(
-        hidden_sizes=[4],
-        n_inh_per_layer={1: 1},
-        refractory_e_ms=1.2,
-        refractory_i_ms=0.6,
-        refractory_policy="exact",
-        readout_mode="mem-mean",
-        w_in=(0.0, 0.0),
-        w_hid=(0.0, 0.0),
-        w_ee=(0.0, 0.0),
-        w_ei=(0.0, 0.0),
-        w_ie=(0.0, 0.0),
-        w_ii=(0.0, 0.0),
-    )
-    legacy.recording = True
-    mapping = legacy_parameter_map_v1(bundle.graph)
-    exported = export_legacy_parameters_v1(bundle.graph, graph_parameters)
-    imported = import_legacy_parameters_v1(bundle.graph, exported.parameters)
-    with torch.no_grad():
-        for name, value in imported.parameters.items():
-            graph_parameters[name].copy_(value)
-    legacy_parameters = dict(legacy.named_parameters())
-    with torch.no_grad():
-        for legacy_name, value in exported.parameters.items():
-            legacy_parameters[legacy_name].copy_(value)
-
-    inputs = torch.zeros(M.T_steps, 2, 2)
+    inputs = torch.zeros(steps, 2, 2)
     inputs[:, 0, 0] = 1
     inputs[::2, 1, 1] = 1
     graph = graph_model({"events": inputs})
-    legacy_logits = legacy(input_spikes=inputs)
-    assert legacy.timing_metadata["duration_steps"] == inputs.shape[0]
-    assert legacy.timing_metadata["nominal_duration_ms"] == 200.0
-    assert legacy.timing_metadata["realized_duration_ms"] == pytest.approx(
-        199.8 if dt_ms in (0.3, 0.6) else 200.0
-    )
-    if active_recurrence:
-        assert torch.count_nonzero(legacy.spike_record["inh"]) > 0
-        assert torch.count_nonzero(legacy.spike_record["gi_e_1"]) > 0
-    report = compare_conformance_layers(
-        "minimal-legacy-graph-ping",
-        {
-            "parameters": remap_named_tensors(graph.parameters, mapping),
-            "forward": {
-                "e_spikes": legacy.spike_record["hid"],
-                "i_spikes": legacy.spike_record["inh"],
-                "e_voltage": legacy.spike_record["v_e_1"],
-                "i_voltage": legacy.spike_record["v_i_1"],
-                "input_conductance": legacy.spike_record["ge_e_1"],
-                "e_to_i_conductance": legacy.spike_record["ge_i_1"],
-                "i_to_e_conductance": legacy.spike_record["gi_e_1"],
-                "logits": legacy_logits.detach(),
-            },
+    expected = _legacy_reference(f"forward-{dt_ms:g}-{int(active_recurrence)}")
+    candidate = {
+        "parameters": graph.parameters,
+        "forward": {
+            "e_spikes": graph.diagnostics["cell_E.spikes"],
+            "i_spikes": graph.diagnostics["cell_I.spikes"],
+            "e_voltage": graph.diagnostics["cell_E.voltage"],
+            "i_voltage": graph.diagnostics["cell_I.voltage"],
+            "input_conductance": graph.diagnostics["cell_input.conductance"],
+            "e_to_i_conductance": graph.diagnostics["cell_E_to_I.conductance"],
+            "i_to_e_conductance": graph.diagnostics["cell_I_to_E.conductance"],
+            "logits": graph.outputs["class_logits"].detach(),
         },
-        {
-            "parameters": {
-                name: value.detach() for name, value in legacy_parameters.items()
-            },
-            "forward": {
-                "e_spikes": graph.diagnostics["cell_E.spikes"],
-                "i_spikes": graph.diagnostics["cell_I.spikes"],
-                "e_voltage": graph.diagnostics["cell_E.voltage"],
-                "i_voltage": graph.diagnostics["cell_I.voltage"],
-                "input_conductance": graph.diagnostics["cell_input.conductance"],
-                "e_to_i_conductance": graph.diagnostics["cell_E_to_I.conductance"],
-                "i_to_e_conductance": graph.diagnostics["cell_I_to_E.conductance"],
-                "logits": graph.outputs["class_logits"].detach(),
-            },
-        },
+    }
+    compare_conformance_layers(
+        "preserved-ping-forward",
+        expected,
+        candidate,
         policies={
             "forward": {
                 "logits": ComparisonPolicy(mode="numeric", atol=1e-6, rtol=1e-6)
             }
         },
-    )
-    report.require_passed()
+    ).require_passed()
 
 
-def test_legacy_and_graph_four_update_trajectory_and_resume_are_conformant(tmp_path):
-    M.N_IN = 2
-    M.N_OUT = 2
-    M.dt = 0.1
-    M.T_ms = 4.0
-    M.T_steps = 40
+def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
+    tmp_path,
+):
     net = snn.Network("legacy_graph_backward", dt=0.1 * snn.ms)
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
@@ -296,31 +253,6 @@ def test_legacy_and_graph_four_update_trajectory_and_resume_are_conformant(tmp_p
         )
     )
     assert isinstance(initial.model, GraphExecutor)
-    mapping = legacy_parameter_map_v1(bundle.graph)
-    graph_neurons = {row["id"]: row["neuron"] for row in bundle.graph["populations"]}
-    legacy = M.COBANet(
-        hidden_sizes=[4],
-        n_inh_per_layer={1: 1},
-        refractory_e_ms=graph_neurons["cell_E"]["refractory_steps"] * M.dt,
-        refractory_i_ms=graph_neurons["cell_I"]["refractory_steps"] * M.dt,
-        refractory_policy="exact",
-        readout_mode="mem-mean",
-        w_in=(0.0, 0.0),
-        w_hid=(0.0, 0.0),
-        w_ee=(0.0, 0.0),
-        w_ei=(0.0, 0.0),
-        w_ie=(0.0, 0.0),
-        w_ii=(0.0, 0.0),
-        trainable_w_ee=True,
-        trainable_w_ei=True,
-        trainable_w_ie=True,
-        trainable_w_ii=True,
-    )
-    legacy_parameters = dict(legacy.named_parameters())
-    with torch.no_grad():
-        for graph_name, legacy_name in mapping.items():
-            legacy_parameters[legacy_name].copy_(initial.parameters[graph_name])
-
     inputs = torch.zeros(40, 2, 2)
     inputs[:, 0, 0] = 1
     inputs[::2, 1, 1] = 1
@@ -373,74 +305,32 @@ def test_legacy_and_graph_four_update_trajectory_and_resume_are_conformant(tmp_p
         torch.testing.assert_close(
             resumed.parameters[name], graph.parameters[name], rtol=0, atol=0
         )
-    optimizer = torch.optim.AdamW(
-        [legacy_parameters[mapping[name]] for name in sorted(trainable)],
-        lr=0.01,
-        weight_decay=0.0,
-    )
-    legacy_losses = []
-    legacy_gradients = {}
-    for _ in range(update_count):
-        optimizer.zero_grad(set_to_none=True)
-        legacy_logits = legacy(input_spikes=inputs)
-        legacy_loss = torch.nn.functional.cross_entropy(legacy_logits, labels)
-        legacy_losses.append(legacy_loss.detach().clone())
-        legacy_loss.backward()
-        legacy_gradients = {
-            mapping[name]: legacy_parameters[mapping[name]].grad.detach().clone()
-            for name in trainable
-        }
-        optimizer.step()
-        with torch.no_grad():
-            for parameter in legacy_parameters.values():
-                parameter.clamp_(min=0)
-    assert torch.count_nonzero(legacy_gradients["W_ff.0"]) > 0
-    assert torch.count_nonzero(legacy_gradients["W_ff.1"]) > 0
-    assert any(
-        torch.count_nonzero(legacy_gradients[mapping[name]]) > 0 for name in recurrent
-    )
-    legacy_optimizer = {}
-    for name in sorted(legacy_gradients):
-        for state, value in optimizer.state[legacy_parameters[name]].items():
-            if isinstance(value, torch.Tensor):
-                legacy_optimizer[f"{name}.{state}"] = value.detach()
-    graph_optimizer = {
-        f"{mapping[name]}.{state}": value
-        for name, values in graph.optimizer_state.items()
-        for state, value in values.items()
-        if isinstance(value, torch.Tensor)
+    expected = _legacy_reference("backward")
+    candidate = {
+        "loss": {
+            "cross_entropy": torch.tensor(
+                [row["loss"] for row in graph.metrics["updates"]]
+            )
+        },
+        "gradients": graph.gradients,
+        "parameters": graph.parameters,
+        "optimizer": {
+            f"{name}.{state}": value
+            for name, values in graph.optimizer_state.items()
+            for state, value in values.items()
+            if isinstance(value, torch.Tensor)
+        },
     }
     numeric = ComparisonPolicy(mode="numeric", atol=1e-6, rtol=1e-6)
-    report = compare_conformance_layers(
-        "legacy-graph-backward",
-        {
-            "loss": {"cross_entropy": torch.stack(legacy_losses)},
-            "gradients": legacy_gradients,
-            "parameters": {
-                name: value.detach() for name, value in legacy_parameters.items()
-            },
-            "optimizer": legacy_optimizer,
-        },
-        {
-            "loss": {
-                "cross_entropy": torch.tensor(
-                    [row["loss"] for row in graph.metrics["updates"]]
-                )
-            },
-            "gradients": remap_named_tensors(
-                graph.gradients, {name: mapping[name] for name in graph.gradients}
-            ),
-            "parameters": remap_named_tensors(graph.parameters, mapping),
-            "optimizer": graph_optimizer,
-        },
+    compare_conformance_layers(
+        "preserved-ping-backward",
+        expected,
+        candidate,
         policies={
-            "loss": {"cross_entropy": numeric},
-            "gradients": {name: numeric for name in legacy_gradients},
-            "parameters": {name: numeric for name in legacy_parameters},
-            "optimizer": {name: numeric for name in legacy_optimizer},
+            layer: {name: numeric for name in values}
+            for layer, values in expected.items()
         },
-    )
-    report.require_passed()
+    ).require_passed()
 
 
 def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
