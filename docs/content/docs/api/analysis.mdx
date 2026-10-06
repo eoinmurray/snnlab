@@ -1,0 +1,352 @@
+---
+title: Analysis
+description: Complete flat snnlab.analysis function reference for spike and conductance measurements.
+---
+
+Import all functions directly from `snnlab.analysis`, or call them through `from snnlab import analysis`. No public `analysis.metrics` module is provided. See the [Analysis guide](/analysis) for a runnable workflow and interpretation cautions.
+
+## Input conventions
+
+Spike functions expect one presentation's binary NumPy-compatible `(time, cells)` raster. Select the batch axis before calling them. `dt`, `bin_ms`, `max_lag_ms`, `bio_lag_ms`, `window_ms`, `stride_ms` and returned times/lags use **milliseconds**. Rates use **Hz**; fractions, CVs and scores are dimensionless. Convert PyTorch tensors with `.detach().cpu().numpy()` or `result.numpy(batch=...)` first.
+
+The basic activity functions and new raster measurements validate rank, a nonempty cell axis and binary values. The original rhythmicity/conductance functions retain their historical NumPy behaviour; supply finite arrays and positive timing/bin arguments rather than relying on universal validation. None of these functions infer timestep or units from an array or handle a batch dimension automatically.
+
+## firing_rate
+
+```python
+firing_rate(spikes, dt, *, n_cells=None) -> float
+```
+
+Mean population firing rate per neuron: total spikes divided by cell count and full raster duration in seconds. Duration is `spikes.shape[0] * dt / 1000`, not the difference between the first and last timestamp.
+
+| Argument | Meaning |
+| --- | --- |
+| `spikes` | Binary `(time, cells)` raster |
+| `dt` | Finite positive timestep, ms |
+| `n_cells` | Optional positive integer denominator; defaults to the raster's column count |
+
+Returns zero for a silent raster with positive duration. Raises `ValueError` for an empty time axis, invalid raster/timestep or invalid denominator. Overriding `n_cells` changes only the denominator and does not estimate missing spikes.
+
+## population_spike_count_cv
+
+```python
+population_spike_count_cv(spikes, dt, *, bin_ms=2.0) -> float
+```
+
+Bins total population spike counts, then returns population standard deviation (`ddof=0`) divided by mean count, with the mean floored at `1e-9`. This is a population-count CV, not an ISI CV or an average of per-cell CVs.
+
+`spikes` is binary `(time, cells)`; `dt` and `bin_ms` must be finite and positive. Each bin contains `max(1, int(bin_ms / dt))` steps, using floor rounding. The realized width can differ from `bin_ms`; an incomplete trailing bin is discarded. Returns `0.0` for silent activity or fewer than two complete bins, including an empty time axis. Invalid inputs raise `ValueError`.
+
+## active_fraction
+
+```python
+active_fraction(spikes, *, n_cells=None) -> float
+```
+
+Counts raster columns with at least one spike and divides by the column count, or the positive integer `n_cells` override. No timestep is needed. Returns `0.0` for silent activity or an empty time axis; invalid rasters/denominators raise `ValueError`. With the default denominator, results lie in `[0, 1]`. An override smaller than the observed active-cell count can produce a value above one.
+
+## population_event_times
+
+```python
+population_event_times(spikes, dt) -> np.ndarray
+```
+
+Returns a sorted one-dimensional floating array of pooled event times in ms. Every nonzero raster entry contributes one event at `step * dt`; simultaneous spikes across cells produce repeated times. No events returns an empty array. Times are relative to the supplied raster's start; add the absolute recording offset yourself. This does not return cell IDs or sparse `(step, batch, cell)` rows.
+
+## iei_histogram
+
+```python
+iei_histogram(event_times_ms, max_lag_ms=100.0, bin_ms=1.0)
+# -> (lag_centers_ms, counts)
+```
+
+Sorts the one-dimensional pooled event times, differences consecutive events and bins those intervals. Histogram edges are `np.arange(0, max_lag_ms + bin_ms, bin_ms)`; returned centers and floating counts have matching one-dimensional shapes. Fewer than two events returns zero counts. Intervals outside the histogram range are excluded. Repeated event times contribute zero intervals. These pooled intervals differ from individual neurons' ISIs.
+
+## spike_autocorrelogram
+
+```python
+spike_autocorrelogram(spikes, dt, max_lag_ms=100.0, bin_ms=1.0)
+# -> (lags_ms, ac)
+```
+
+Bins population counts using `max(1, int(round(bin_ms / dt)))` steps. Unlike population-count CV, this uses nearest-integer rounding. Incomplete trailing bins are discarded; lag spacing uses the realized bin width.
+
+Computes a non-circular FFT autocorrelation, normalizes each lag by its overlap count and the square of the mean population count. Independent rate-matched activity has an approximate baseline of one. The returned arrays are one-dimensional, with length `max(1, round(max_lag_ms / realized_bin_ms)) + 1`. The zero-lag value is always `NaN`. Silent data or at most `max_lag_bins + 1` complete bins returns an all-`NaN` curve rather than an inferred rhythm.
+
+## rhythmicity_scalars
+
+```python
+rhythmicity_scalars(
+    ac_lags, ac, iei_lags, iei_counts, bin_ms=1.0, bio_lag_ms=None,
+) -> dict
+```
+
+Accepts an autocorrelation curve and interval histogram, each with its corresponding one-dimensional lag array. Curves must have compatible lengths and uniformly spaced autocorrelation lags. `bin_ms` is retained for signature compatibility; the current extraction reads lag spacing from `ac_lags` instead.
+
+A three-point smoothing kernel `(0.25, 0.5, 0.25)` fills the zero-lag `NaN` from its neighbour. The estimator finds the first local trough starting at lag index 2, then the preceding central-lobe maximum. It does not search for a frequency-band peak.
+
+| Return key | Meaning |
+| --- | --- |
+| `iei_mode_lag` | Center of the largest interval-histogram bin, ms; first maximum wins ties |
+| `lobe_lag`, `trough_lag` | Located central-lobe and first-trough lags, ms |
+| `iei_anchored` | Unsmoothed autocorrelation sampled nearest the interval-mode lag |
+| `lobe_to_trough` | Smoothed lobe height divided by trough height floored at `0.05` |
+| `contrast` | Smoothed `(lobe - trough) / (lobe + trough)` when the denominator is positive |
+| `biophysical` | Unsmoothed autocorrelation sampled nearest `bio_lag_ms`, when supplied |
+
+Unavailable scalars are `None`, including absent extrema or nonfinite curves. Sampling requested lags clips to available positive-lag indices rather than extrapolating. Contrast is a descriptive measure, not a probability. `lobe_lag` need not be the oscillation period.
+
+## rhythmicity_metrics
+
+```python
+rhythmicity_metrics(
+    spikes, dt, max_lag_ms=100.0, bin_ms=1.0, bio_lag_ms=None,
+) -> dict
+```
+
+Combines `population_event_times`, `iei_histogram`, `spike_autocorrelogram` and `rhythmicity_scalars`. Returns every scalar listed above plus:
+
+| Return key | Meaning |
+| --- | --- |
+| `iei_lags`, `iei_counts` | Interval-histogram centers in ms and floating counts |
+| `ac_lags`, `ac` | Autocorrelation lags in ms and normalized curve |
+| `n_events` | Integer count of pooled spike events |
+
+Insufficient/silent data retains arrays and event counts while allowing unavailable scalars to be `None`. The autocorrelogram baseline is near one; flat-activity contrast approaches zero. No frequency estimate or significance test is returned.
+
+## conductance_loop_score
+
+```python
+conductance_loop_score(g_e, g_i) -> float
+```
+
+For equal-length, finite conductance traces sampled at the same times and in the same unit, returns a geometric score in `[0, 1]`. Inputs are flattened: explicitly select a cell or average over cells first. The trajectory is centered and closed, and its score combines the isoperimetric quotient with signed-rotation coherence. A single traversal of a circular trajectory approaches one; cancelling rotations and degenerate trajectories approach zero.
+
+Uniform scaling of both traces leaves the score unchanged; separate axis scaling does not. Repeating a closed orbit increases path length and can reduce the score; it is not invariant to the number of traversals. Unequal lengths, fewer than three points, zero perimeter or zero absolute sweep return `0.0`. This is a geometric descriptor, not a neural-mechanism classification or statistical test.
+
+## rolling_conductance_loop_score
+
+```python
+rolling_conductance_loop_score(
+    g_e, g_i, dt, *, window_ms=40.0, stride_ms=5.0,
+    normalize_percentiles=(10.0, 95.0),
+) -> dict
+```
+
+Computes the loop score over complete windows of equal-length flattened traces. Use finite traces, positive `dt`, positive window/stride and ordered percentiles in `[0, 100]`. Window length is `max(3, round(window_ms / dt))` steps; stride is `max(1, round(stride_ms / dt))` steps. Unequal trace lengths raise `ValueError`.
+
+| Return key | Meaning |
+| --- | --- |
+| `times_ms` | Exclusive window-end boundaries relative to the trace start |
+| `raw` | One loop score per complete window |
+| `normalized` | `(raw - low) / max(high - low, 1e-12)`, clipped to `[0, 1]` |
+| `normalization_low`, `normalization_high` | Run-specific raw-score percentile values |
+
+The three arrays have identical one-dimensional shapes. Too-short traces return empty arrays and zero normalization bounds. Equal bounds yield zero normalized values when all raw scores agree. Normalization is relative to the supplied run; it is unsuitable as a shared cross-run calibration. No incomplete trailing window is measured.
+
+## New measurement results
+
+The following 14 functions return dictionaries with `status` and resolved, JSON-compatible `metadata`. Array measurements can contain `NaN` for undefined entries; scalar undefined measurements use `None`. Metadata records measurement choices, not a digest or authenticity guarantee. Inputs are not modified. These functions support dense arrays; explicitly reconstruct a per-presentation raster from sparse events before calling them. A rank-3 batch raster is rejected, rather than accidentally pooled.
+
+Windows use `(start_step, end_step)` half-open indices into the supplied raster. Without a window the full presentation is used. Report absolute offsets separately when analysing a sliced recording. New functions do not change the legacy rhythmicity or aggregate-report conventions above.
+
+## per_neuron_firing_rates
+
+```python
+per_neuron_firing_rates(spikes, dt, *, window=None)
+```
+
+Returns `rates_hz`, shape `(cells,)`, from per-cell counts divided by selected duration in seconds. Silent cells have rate zero. An empty window returns all-`NaN` rates and `status="empty_window"`; otherwise status is `ok`. Metadata records timestep, window and duration. Unlike `firing_rate`, this returns individual cell rates rather than their population mean.
+
+## binned_spike_counts
+
+```python
+binned_spike_counts(
+    spikes, dt, *, bin_ms=2.0, window=None,
+    rounding="floor", trailing="drop", alignment="left",
+)
+```
+
+Returns `counts` as `int64` `(bins, cells)`, plus parallel `start_steps`, `end_steps`, `duration_ms` and `times_ms` vectors. Step indices are relative to the supplied raster, including the window offset.
+
+| Setting | Contract |
+| --- | --- |
+| `rounding="floor"` | `max(1, int(bin_ms / dt))` steps per bin; preserves population-count CV defaults |
+| `rounding="nearest"` | `max(1, round(bin_ms / dt))` steps, using Python's tie-to-even rounding |
+| `rounding="exact"` | Requires an integer multiple of the timestep, within absolute ratio tolerance `1e-9` |
+| `trailing="drop"` | Discards the incomplete final bin |
+| `trailing="include"` | Retains the partial bin with its actual duration |
+| `trailing="error"` | Rejects an incomplete final bin |
+| `alignment` | `left`, `center` or `right` timestamp labels; does not change bin membership |
+
+Bins are anchored at window start. Metadata records requested/realized width, bin steps, discarded steps and all policies. Empty/no-complete-bin results have correctly shaped empty arrays and `status="no_bins"`. Timing and bin widths must be positive and finite. These bins are shared with rate traces, correlations and the existing population-count CV.
+
+## population_rate_trace
+
+```python
+population_rate_trace(
+    spikes, dt, *, bin_ms=2.0, window=None, rounding="floor",
+    trailing="drop", alignment="left", smoothing_ms=0.0,
+)
+```
+
+Returns the binning result plus `rate_hz`, shape `(bins,)`: each bin's total count divided by cells and its actual duration in seconds. `smoothing_ms` is a Gaussian standard deviation, not a moving-average width. Zero disables smoothing; a positive finite value uses a normalized Gaussian kernel truncated at four standard deviations, with zero padding outside the trace. This can attenuate edge rates and does not renormalize the truncated edge kernel. Metadata records the smoothing choice.
+
+Smoothing requires equal-duration bins and rejects a retained partial bin. A silent population has a valid zero trace; no bins gives an empty trace with `status="no_bins"`. Use `metadata["realized_bin_ms"]` as the spectral timestep for complete bins. Unequal-duration bins are unsuitable for a uniformly sampled spectrum.
+
+## power_spectrum
+
+```python
+power_spectrum(
+    trace, dt, *, method="welch", center=False, detrend="constant",
+    window="hann", nperseg=None, noverlap=None, nfft=None,
+    scaling="density", aggregation="none",
+)
+```
+
+Accepts a finite one-dimensional uniformly sampled trace, or equal-length `(trials, time)` traces. `dt` describes these samples, not necessarily the original raster's timestep. Returns `frequencies_hz` and `power`; the frequency dimension is always last.
+
+| Setting | Contract |
+| --- | --- |
+| `method="welch"` | SciPy Welch estimator; default segment length is `min(256, trial_samples)` |
+| `method="fft"` | SciPy periodogram over each whole trial; `nperseg`/`noverlap` must be omitted |
+| `center` | Subtract each complete trial's mean before estimation |
+| `detrend` | `False`, `"constant"` or `"linear"`, applied by SciPy per segment |
+| `window` | SciPy window name or parameter tuple; default Hann |
+| `nperseg`, `noverlap` | Integer segment samples and overlap samples; default overlap is half the resolved segment |
+| `nfft` | FFT length, at least the segment length; default equals that length |
+| `scaling` | `"density"` gives input-unit squared/Hz; `"spectrum"` gives input-unit squared |
+| `aggregation` | `none`, `mean` or `median` over independent trial spectra; never concatenates trials |
+
+Explicit segments longer than the trace, invalid overlap and invalid FFT lengths raise `ValueError` rather than being silently resized. Welch averages segments using SciPy's mean default. With trial aggregation disabled, a two-dimensional input returns `(trials, frequencies)` power; aggregation produces `(frequencies,)`. One-dimensional input always returns a one-dimensional spectrum.
+
+Fewer than two samples returns empty frequency/power arrays and `status="short_recording"`. A collection of constant traces has `status="constant_signal"`; its numerical spectrum is retained, with DC removal governed by your centering/detrending policy. Otherwise status is `ok`. Resolved metadata includes sampling rate, trial count/length, segment length, overlap, FFT length, window, detrending, scaling and aggregation. Zero padding refines the frequency grid without adding recording duration or independent resolution.
+
+## spectral_peak
+
+```python
+spectral_peak(
+    frequencies_hz, power, band_hz, *, interpolation="none",
+    interpolation_boundary="band", clamp_band=True,
+)
+```
+
+Accepts matching finite one-dimensional frequencies and nonnegative power. Frequencies must be strictly increasing and nonnegative. Selects the maximum among bins in inclusive `(low_hz, high_hz)` bounds. Returns `frequency_hz`, `peak_power` and `bin_frequency_hz`; the latter retains the un-interpolated location. Ties use the first maximum.
+
+`interpolation="parabolic"` fits the immediate neighbours in **linear power**, requiring equal neighbouring frequency spacing. It clamps the offset to half a bin and applies only to an interior in-band maximum with negative fitted curvature. Metadata records requested interpolation and whether it was applied; `none` is the default. By default, neighbours must lie within the selected band and boundary maxima fall back to the bin location. `interpolation_boundary="spectrum"` allows adjacent bins outside the selected band, and `clamp_band=False` permits a fitted peak outside the declared selection band. Together these reproduce historical whole-spectrum neighbour interpolation; both choices are recorded in metadata.
+
+An empty band, zero band power or an exactly flat multi-bin band returns `None` measurements and respectively `empty_band`, `no_power` or `flat_band`. A peak alone is neither a significance test nor evidence of a particular neural mechanism.
+
+## band_power
+
+```python
+band_power(frequencies_hz, power, band_hz, *, integration="trapezoid")
+```
+
+Integrates a one-dimensional **spectral density** over a declared band using the trapezoid rule. Linearly interpolates power at covered band edges rather than discarding edge fractions. Returns scalar `power`; units are input-unit squared when supplied with density-scaled power. Do not integrate spectrum-scaled values and label the result variance.
+
+The band is intersected with available frequency coverage: status is `ok` for full coverage, `partial_coverage` when clipped, and `no_band_coverage` with `power=None` when fewer than two frequencies or no positive-width overlap are available. A covered all-zero spectrum has a valid power of zero. Metadata retains requested and covered bands and the integration method. Optional `integration="bin_sum"` instead sums density values at inclusive in-band bin centers and multiplies by the uniform frequency spacing, without edge interpolation. It requires a uniform grid and can reproduce historical ratios of PSD-bin sums; the ratio helper passes the same integration choice to numerator and denominator.
+
+## band_power_fraction
+
+```python
+band_power_fraction(
+    frequencies_hz, power, band_hz, *, reference_band_hz, integration="trapezoid",
+)
+```
+
+Returns `fraction`, `band_power` and `reference_power`, using the same edge-aware integration for numerator and denominator. The explicit reference band must contain the target band. Zero/unavailable reference power produces `fraction=None` and `status="undefined_reference"`. Otherwise status reports `ok` or `partial_coverage`. Metadata contains both resolved integration settings. Use a declared reference band rather than implicitly normalizing by whichever bins happen to be available.
+
+## inter_spike_intervals
+
+```python
+inter_spike_intervals(spikes, dt, *, window=None, trial_boundaries=None)
+```
+
+Returns `intervals_ms`, a tuple of one-dimensional interval arrays, one per cell; parallel `trial_indices` identify the presentation for each interval. `spike_counts` has `(trials, cells)` axes and counts spikes within each trial/window intersection.
+
+`trial_boundaries` must strictly partition the full raster with integer edges starting at zero and ending at its length; omission treats the raster as one presentation. No interval crosses a boundary, and intervals with endpoints outside the selected window are excluded. The arrays are empty where a cell has fewer than two spikes within a presentation. Status is `ok` if any interval exists, otherwise `no_intervals`. Metadata retains timestep, window and boundaries. Unlike `iei_histogram`, these are **individual-cell** ISIs, not pooled population intervals.
+
+## isi_cv
+
+```python
+isi_cv(
+    spikes, dt, *, window=None, trial_boundaries=None,
+    min_spikes=3, ddof=0, aggregation="none",
+)
+```
+
+Uses within-trial intervals. A trial contributes intervals for a cell only when that trial/window intersection contains at least `min_spikes` events; `min_spikes` must be at least two. Eligible intervals are pooled **within each cell**, and CV is standard deviation (`ddof`) divided by mean ISI. This is not an equal-trial average of separately estimated CVs.
+
+Returns `cv`, `valid` and `interval_counts`, each `(cells,)`. Cells without enough eligible intervals for the requested nonnegative integer `ddof` have `NaN` CV. Optional `aggregation="mean"` or `"median"` computes scalar `aggregate` over valid cells only; `none` returns `aggregate=None`. No valid cells gives `status="insufficient_spikes"`; otherwise `ok`. Metadata records all eligibility, boundary and aggregation choices. Regular periodic cells have a defined CV of zero; silent cells do not.
+
+## spike_count_correlations
+
+```python
+spike_count_correlations(
+    spikes, dt, *, bin_ms=10.0, window=None, cells=None,
+    rounding="floor", trailing="drop", constant="nan", aggregation="none",
+)
+```
+
+Computes Pearson correlations between per-cell binned counts. Optional `cells` is an explicit sequence of unique in-range original cell indices, preserved in selection order. Sampling should be done by the caller and recorded through these indices; no hidden random neuron selection occurs.
+
+| Setting | Constant-cell / aggregation handling |
+| --- | --- |
+| `constant="nan"` | Retains undefined rows/columns as `NaN` |
+| `constant="omit"` | Omits cells with constant counts or insufficient bins |
+| `constant="error"` | Raises on either condition |
+| `aggregation` | `none`, `mean` or `median` over finite upper-triangle pairs, excluding the diagonal |
+
+Returns `correlations` `(selected_cells, selected_cells)`, original `cells`, `excluded_cells`, finite unique `pair_count` and scalar `aggregate` or `None`. Status is `no_valid_pairs` when there are no estimable pairs, otherwise `ok`. At least two bins and positive cell-count variance are required. Metadata retains resolved binning, cell selection and policies. This accepts one presentation; analyse independent trials separately rather than concatenating them or allowing bins to cross trial boundaries.
+
+## detect_population_bursts
+
+```python
+detect_population_bursts(
+    spikes, dt, *, window=None, smoothing_ms=1.0, height=None,
+    relative_height=0.05, prominence=None, min_separation_ms=1.0,
+)
+```
+
+Sums population spikes per simulation step, optionally Gaussian-smooths them, and runs SciPy peak detection. Use inhibitory spikes when inhibitory bursts define your cycles; the function itself is population-neutral. Thresholds and returned smoothed values use **spikes per step**, not Hz.
+
+Smoothing is zero-padded with a four-standard-deviation truncation. A positive requested sigma uses `max(1, smoothing_ms / dt)` steps, preserving the historical one-step minimum; zero disables it. Absolute `height` overrides `relative_height * maximum_smoothed_count`. Optional `prominence` is an absolute peak prominence. Minimum separation uses `max(1, int(min_separation_ms / dt))` steps. Endpoints are not peaks under SciPy's interior-peak rule.
+
+Returns `peak_steps` (raster-relative, including window offset), `peak_times_ms`, `peak_heights`, and the window's `smoothed_counts`. No detected burst gives empty peak arrays and `status="no_peaks"`; otherwise `ok`. Metadata records requested/resolved smoothing, separation, threshold and window. To reproduce the historical half-period separation, explicitly supply `min_separation_ms=0.5 * 1000 / frequency_hz`; no spectral frequency is inferred silently.
+
+## cycle_boundaries
+
+```python
+cycle_boundaries(peak_steps, steps_count, *, policy="midpoints", start_step=0)
+```
+
+Accepts increasing integer peaks inside `[start_step, start_step + steps_count)`. Returns integer `edges`, `cycle_count` and resolved policy metadata. Bounds are half-open.
+
+`midpoints` uses floor-rounded integer midpoints between peaks and extends first/last intervals to the recording edges. It produces one opportunity per detected peak and includes partial edge cycles. `peak_to_peak` uses consecutive peak steps as edges and excludes both recording-edge partial intervals. No peaks yields no cycles; peak-to-peak needs at least two peaks. Undefined cycle sets have an empty edge array, count zero and `status="no_cycles"`. A policy producing a zero-width cycle raises `ValueError` rather than counting it as an opportunity.
+
+## cycle_spike_counts
+
+```python
+cycle_spike_counts(spikes, boundaries, *, start_step=0)
+```
+
+Counts binary events in supplied increasing integer half-open edges, returning `int64` `counts` with `(cycles, cells)` axes. For a sliced raster, edges can use absolute steps when `start_step` specifies the slice offset. Edges must lie within its coverage; they need not span the entire raster. There is no burst detection or implied boundary policy in this function.
+
+An empty edge sequence returns `(0, cells)` counts and `status="no_cycles"`; a single edge is invalid. Otherwise status is `ok`. Metadata retains edges, start offset and axis order. Never count cycles that straddle independent presentation boundaries: call it separately for each presentation.
+
+## cycle_occupancy_distribution
+
+```python
+cycle_occupancy_distribution(counts, *, max_count=None)
+```
+
+Accepts nonnegative integer `(cycles, cells)` counts. Returns integer `spike_counts` bucket labels, integer `opportunity_counts`, floating `fractions` and total `opportunities`. Every cell-cycle contributes one opportunity, including zero-spike opportunities.
+
+Without `max_count`, buckets span zero through the maximum observed count. With a nonnegative integer `max_count`, the final bucket includes all counts at or above that value; metadata flags overflow explicitly. No opportunities gives zero bucket counts, `NaN` fractions and `status="no_opportunities"`; otherwise `ok`.
+
+This is **opportunity-pooled occupancy**, not an equal-network average. For equal-network summaries, compute individual distributions with consistent buckets and average their fractions outside this library. Metadata includes cycle/cell dimensions, bucket policy and aggregation identity.
+
+## Compatibility
+
+The original `snnlab.sim.metrics` imports remain supported. Its historical `compute_metrics` aggregate is not part of the flat public analysis API; use the individual functions to construct your report. Existing rhythmicity/conductance calculations and signatures are preserved. The new basic activity helpers validate their inputs independently of the permissive legacy report.

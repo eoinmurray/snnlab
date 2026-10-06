@@ -1600,7 +1600,7 @@ def _run_sim(args, C, out_dir, log):
 
     spk_e = rec[primary_hid_key(rec)]
     spk_i = rec[primary_inh_key(rec)] if primary_inh_key(rec) else None
-    from snnlab.sim.metrics import compute_metrics
+    from snnlab.analysis._legacy import compute_metrics
 
     _m = compute_metrics(spk_e, spk_i, dt, args.model, n_e=C.N_E, n_i=C.N_I)
     runlog.metrics_line(log, _m, label="result")

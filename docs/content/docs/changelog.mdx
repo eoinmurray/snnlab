@@ -9,6 +9,12 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+### Added
+
+1. Added the flat `snnlab.analysis` API with 24 public functions for population activity, event intervals, rhythmicity, FFT/Welch spectra, irregularity, correlations, burst detection, cycle occupancy and conductance trajectories. Shared binning exposes rounding, alignment and incomplete-bin policies; new measurements return resolved estimator metadata and explicit undefined-result status. Existing rhythmicity calculations, population-count CV defaults and `snnlab.sim.metrics` imports remain compatible.
+
+2. Added an Analysis guide, complete function reference and downloadable saved-activity example. Added known-signal tests for rates, sinusoidal power, correlations, trial boundaries and cycle opportunities, alongside historical-estimator comparisons.
+
 ## [0.3.0] - 2026-10-06
 
 ### Upgrade notes

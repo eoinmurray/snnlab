@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from snnlab.sim.metrics import (  # noqa: E402
+from snnlab.analysis import (  # noqa: E402
     conductance_loop_score,
     population_event_times,
     rhythmicity_metrics,

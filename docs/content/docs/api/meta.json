@@ -3,7 +3,8 @@
   "pages": [
     "lang",
     "sim",
-    "viz"
+    "viz",
+    "analysis"
   ],
   "collapsible": true,
   "defaultOpen": false

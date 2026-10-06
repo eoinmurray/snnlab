@@ -1,0 +1,217 @@
+---
+title: Analysis
+description: Measure firing rates, active cells, rhythmicity and conductance trajectories from recorded data.
+---
+
+`snnlab.analysis` provides 24 array analysis functions directly at the package level. It can analyse arrays from snnlab, saved archives or another simulator without building a model or importing PyTorch. There is no public `analysis.metrics` module.
+
+```python
+from snnlab import analysis
+from snnlab.analysis import firing_rate, rhythmicity_metrics
+```
+
+The [API reference](/api/analysis) documents every function's arguments and return values. The [data-format guide](/data-formats) explains how to retrieve and load outputs and diagnostics.
+
+## Choose one presentation
+
+Spike analysis expects a **binary `(time, cells)` raster** and a timestep `dt` in **milliseconds**. Counts, firing rates and weighted readout values are different inputs: do not pass them as binary spike events. For a graph result, select a presentation before measuring:
+
+```python
+from snnlab import analysis
+
+sample = result.numpy(batch=0)
+spikes = sample.outputs["spikes"]  # use your declared output name
+# Diagnostics work too: sample.diagnostics["e_spikes"].
+dt = result.metrics["execution_protocol"]["timing"]["dt_ms"]
+rate_hz = analysis.firing_rate(spikes, dt)
+active = analysis.active_fraction(spikes)
+count_cv = analysis.population_spike_count_cv(spikes, dt, bin_ms=2.0)
+```
+
+These are population summaries: `firing_rate` gives mean Hz **per neuron**, `active_fraction` gives the fraction of cells that fired, and `population_spike_count_cv` measures variation of the population's binned counts. The latter is not a per-cell inter-spike-interval CV.
+
+The default denominator uses all raster columns, including silent cells. If you select only some cells, the results describe that subset. Optional `n_cells` on firing rate and active fraction overrides the denominator; it does not recover spikes missing from a partial recording. For per-cell Hz use `analysis.per_neuron_firing_rates(spikes, dt)["rates_hz"]`.
+
+Keep independent presentations separate. Concatenating them in time fabricates inter-event intervals and temporal correlations across presentation boundaries. Measure each presentation, then explicitly choose how to aggregate its results. Sparse event coordinates must first be converted to a dense presentation raster for these spike functions; preserve the intended window and original cell mapping.
+
+## Runnable example
+
+Save the following as `analyse_spikes.py` and run `python analyse_spikes.py` after [installation](/installation). It compares deterministic synchronous volleys with a random input raster having approximately the same mean rate. It also analyses a synthetic circular conductance trajectory. These are demonstration signals, not evidence about a trained network.
+
+```python
+import numpy as np
+from snnlab import analysis
+
+dt = 1.0  # milliseconds
+steps, cells = 2000, 40
+period_steps = 25
+volleys = np.zeros((steps, cells), dtype=bool)
+volleys[::period_steps] = True
+rng = np.random.default_rng(7)
+random_spikes = rng.random((steps, cells)) < 1 / period_steps
+
+for name, spikes in (("volleys", volleys), ("random", random_spikes)):
+    rhythm = analysis.rhythmicity_metrics(spikes, dt, max_lag_ms=100)
+    print(name, {
+        "rate_hz": analysis.firing_rate(spikes, dt),
+        "active_fraction": analysis.active_fraction(spikes),
+        "population_count_cv": analysis.population_spike_count_cv(spikes, dt),
+        "contrast": rhythm["contrast"],
+        "events": rhythm["n_events"],
+    })
+
+# Access the intermediate curves, or measure supplied/averaged curves directly.
+events_ms = analysis.population_event_times(volleys, dt)
+iei_lags, iei_counts = analysis.iei_histogram(events_ms)
+ac_lags, ac = analysis.spike_autocorrelogram(volleys, dt)
+scalars = analysis.rhythmicity_scalars(ac_lags, ac, iei_lags, iei_counts)
+assert len(events_ms) == 3200
+assert analysis.firing_rate(volleys, dt) == 40.0
+assert analysis.active_fraction(volleys) == 1.0
+print("Volley curve contrast:", scalars["contrast"])
+
+# Same-unit, one-dimensional excitatory and inhibitory conductance traces.
+phase = np.linspace(0, 2 * np.pi, 600, endpoint=False)
+g_e, g_i = 2 + np.cos(phase), 2 + np.sin(phase)
+score = analysis.conductance_loop_score(g_e, g_i)
+rolling = analysis.rolling_conductance_loop_score(
+    g_e, g_i, dt, window_ms=200, stride_ms=20,
+)
+assert 0.99 < score <= 1.0
+print("Circular conductance score:", score)
+print("Rolling windows:", rolling["raw"].shape)
+```
+
+The volleys have exactly 40 Hz per cell, active fraction 1 and 3,200 events. The circular loop score is close to one. Random-raster estimates fluctuate with the finite draw; rhythmicity values can be unavailable (`None`) when the estimator cannot locate the requested extrema.
+
+## Interpret the descriptors
+
+The autocorrelogram's normalization gives rate-matched independent activity a baseline near **one**; its zero-lag value is `NaN`. Rhythmicity `contrast` is a separate descriptor that approaches **zero** for flat activity. `lobe_lag` identifies an early autocorrelation lobe, not necessarily the oscillation period: taking its reciprocal is not a reliable frequency estimator. Pooled event intervals include zero intervals from simultaneous spikes across cells; they are not single-neuron ISIs.
+
+These rhythmicity scalars and the conductance-loop score are the library's descriptive estimators. They are not calibrated hypothesis tests, probabilities, or guarantees of a particular neural mechanism. Report the bin widths, analysis window, cell selection and averaging procedure when using them scientifically.
+
+Conductance-loop scores describe the geometry of paired traces. Use both traces in the same conductance unit and sample them at the same times. Uniformly scaling both axes leaves the score unchanged; separately rescaling the axes changes the geometry. For graph conductance diagnostics shaped `(time, cells)`, choose an explicit cell or population mean before calling the function; it flattens its inputs rather than averaging cells for you.
+
+The rolling result contains `raw` scores and a `normalized` view based on percentiles of that **same run**. Compare raw scores across runs; the normalized values do not share a cross-run calibration. Rolling `times_ms` denote exclusive window-end boundaries relative to the supplied trace. Add your recording's starting-time offset when plotting against an absolute timeline.
+
+## Rates, spectra, irregularity and cycles from saved activity
+
+The new functions compose independently. Binning is shared by rate traces, population-count CV and correlations. Spectrum estimation is separate from peak selection; burst detection is separate from boundary construction and counting. All 14 new functions return a mapping with measurements, `status` and JSON-compatible resolved `metadata`. Scalar undefined estimates are `None`; unavailable array entries are `NaN`, accompanied by status or validity information. A silent population has a defined zero rate; an ISI CV without enough spikes is undefined.
+
+All spike measurements here accept one dense `(time, cells)` presentation. `window=(start_step, end_step)` uses half-open indices into the supplied raster. Bins start at that window's first step; alignment changes time labels rather than shifting bin membership. Trial boundaries can be supplied to ISI measurements so no interval crosses presentations. Analyse separate trials independently for binning, correlations and cycle detection; spectrum estimation additionally accepts equal-length `(trials, time)` traces and aggregates their spectra without joining the traces.
+
+Download [analyse_saved_activity.py](/analysis/analyse_saved_activity.py), or save and run the full script below. It creates a small saved activity fixture, reloads it and performs analysis without running a simulator. To analyse your own recording, replace the fixture-writing section with your archive path and key names. The fixture has seven active E cells at 20 Hz, one silent E cell, and 40 inhibitory bursts. Its occupancy fractions are 0.125 for zero spikes and 0.875 for one spike per cell-cycle opportunity. This synthetic construction does not establish a PING mechanism.
+
+```python
+"""Analyse a saved demonstration raster without constructing or running a model."""
+
+import json
+from pathlib import Path
+
+import numpy as np
+
+from snnlab import analysis
+
+root = Path("analysis-example")
+root.mkdir(exist_ok=True)
+# Stand-in for activity saved by a simulation or experimental recording.
+e = np.zeros((2000, 8), dtype=bool)
+i = np.zeros((2000, 2), dtype=bool)
+i[25::50] = True
+e[26::50, :6] = True
+e[27::50, 6] = True
+np.savez_compressed(root / "activity.npz", e_spikes=e, i_spikes=i, dt_ms=1.0)
+
+with np.load(root / "activity.npz", allow_pickle=False) as saved:
+    e, i, dt = saved["e_spikes"], saved["i_spikes"], float(saved["dt_ms"])
+
+rates = analysis.per_neuron_firing_rates(e, dt)
+trace = analysis.population_rate_trace(e, dt, bin_ms=5, rounding="exact")
+# The spectrum's timestep is the binned trace's timestep, not the raw raster's.
+spectrum = analysis.power_spectrum(
+    trace["rate_hz"],
+    trace["metadata"]["realized_bin_ms"],
+    method="welch",
+    nperseg=200,
+    noverlap=100,
+)
+peak = analysis.spectral_peak(
+    spectrum["frequencies_hz"],
+    spectrum["power"],
+    (10, 30),
+    interpolation="parabolic",
+)
+fraction = analysis.band_power_fraction(
+    spectrum["frequencies_hz"],
+    spectrum["power"],
+    (10, 30),
+    reference_band_hz=(1, 95),
+)
+irregularity = analysis.isi_cv(e, dt, min_spikes=3, aggregation="mean")
+correlations = analysis.spike_count_correlations(
+    e,
+    dt,
+    bin_ms=5,
+    constant="omit",
+    aggregation="mean",
+)
+bursts = analysis.detect_population_bursts(i, dt, min_separation_ms=25)
+cycles = analysis.cycle_boundaries(bursts["peak_steps"], len(e), policy="midpoints")
+counts = analysis.cycle_spike_counts(e, cycles["edges"])
+occupancy = analysis.cycle_occupancy_distribution(counts["counts"], max_count=2)
+
+np.testing.assert_equal(rates["rates_hz"], [20] * 7 + [0])
+assert cycles["cycle_count"] == 40
+np.testing.assert_equal(occupancy["fractions"], [0.125, 0.875, 0])
+assert abs(peak["frequency_hz"] - 20) < 1
+assert np.isnan(irregularity["cv"][7])
+print("Rates (Hz):", rates["rates_hz"])
+print("Band peak (Hz):", peak["frequency_hz"])
+print("ISI CV:", irregularity["cv"])
+print("Mean count correlation:", correlations["aggregate"])
+print("Cycles:", cycles["cycle_count"])
+print("Occupancy fractions:", occupancy["fractions"])
+
+results = dict(
+    rates=rates,
+    trace=trace,
+    spectrum=spectrum,
+    peak=peak,
+    fraction=fraction,
+    irregularity=irregularity,
+    correlations=correlations,
+    bursts=bursts,
+    cycles=cycles,
+    counts=counts,
+    occupancy=occupancy,
+)
+(root / "settings.json").write_text(
+    json.dumps(
+        {name: result["metadata"] for name, result in results.items()},
+        indent=2,
+        allow_nan=False,
+    )
+    + "\n"
+)
+```
+
+The crucial spectral detail is the **effective sample spacing**: a 5 ms binned rate trace must be analysed with `dt=5`, even if its source raster used `dt=1`. Do not pass irregular or partial-width bins to a uniformly sampled spectral estimator. Use `scaling="density"` before band-power integration, and inspect band coverage and status before interpreting a peak or fraction.
+
+`cycle_boundaries(policy="midpoints")` includes the partial cycles at the recording edges; `policy="peak_to_peak"` retains only consecutive-peak intervals. The occupancy helper pools **cell-cycle opportunities**, with optional overflow buckets. For equal-network averages, compute each network's distribution first and average those distributions outside the library. Keep the different denominators explicit.
+
+```python
+# A concatenated stream with two independent presentations:
+intervals = analysis.inter_spike_intervals(spikes, dt, trial_boundaries=[0, 100, 200])
+cv = analysis.isi_cv(spikes, dt, trial_boundaries=[0, 100, 200], min_spikes=5)
+# An independent PSD for every equal-length trial, followed by a mean PSD:
+spectra = analysis.power_spectrum(trial_rate_traces, bin_dt_ms, aggregation="none")
+mean_spectrum = analysis.power_spectrum(trial_rate_traces, bin_dt_ms, aggregation="mean")
+```
+
+The [API reference](/api/analysis) specifies all rounding, smoothing, threshold, trial aggregation, constant-cell and undefined-result policies. The older rhythmicity and basic aggregate helpers retain their established contracts, including historical zero fallbacks; those are documented individually rather than silently rewritten.
+
+## Existing imports
+
+Existing `snnlab.sim.metrics` functions remain compatibility re-exports. Its `compute_metrics` remains available for the historical specialised simulator report, with its original keys and population-size defaults. New code should call the flat `snnlab.analysis` functions and explicitly assemble whatever report it needs. `compute_metrics` is not exported from the new package.
+
+`ExecutionResult.metrics` continues to hold execution/training metadata; its name and contract are unchanged. Moving analysis functions does not automatically add rhythmicity measurements to graph execution results.

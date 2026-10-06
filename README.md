@@ -7,13 +7,14 @@ uv add snnlab
 ```
 
 ```python
-from snnlab import lang, sim, viz
+from snnlab import analysis, lang, sim, viz
 ```
 
 1. `snnlab.lang` authors and validates deterministic graph bundles.
 2. `snnlab.sim` executes graphs and supports surrogate-gradient training.
 3. `snnlab.viz` renders recordings, diagrams, figures and animations.
-4. `snnlab.extensions` registers versioned Python definitions for custom dynamics, weights, operations, training and encoders.
+4. `snnlab.analysis` measures population activity, rhythmicity and conductance trajectories from recorded NumPy data.
+5. `snnlab.extensions` registers versioned Python definitions for custom dynamics, weights, operations, training and encoders.
 
 The graph simulator supports COBA-LIF, current-based LIF and leaky-integrator populations, conductance and exponential-current synapses, recurrent/feedback connections and integer-timestep delays. Registered Python callbacks add custom models without embedding code in bundles; import their registration module before compilation or execution. See `examples/current-lif/current_lif.py` for a built-in current-based simulation and `examples/customisation/customisation.py` for an adaptive current neuron and custom weight distribution.
 

@@ -148,6 +148,8 @@ print("Demonstration accuracy:", summary["accuracy"])
 
 The output inspection shows `spikes (100, 2, 4)`, `class_scores (2, 2)`, `e_spikes (100, 2, 4)` and `e_voltage (100, 2, 4)`, all `float32` in this example. `E.spikes` contains a variable number of `int64` event rows. Demonstration accuracy is not a trained model benchmark. Delete or rename `analysis-run/derived/` before rerunning the derivation.
 
+For reusable population and rhythmicity measurements, see the [Analysis guide](/analysis) and [flat function reference](/api/analysis).
+
 ## Time axes and rate calculations
 
 `data.time_ms` is one-dimensional and uses the effective timestep, including overrides. A fresh run's labels are `0, dt_ms, ..., (T - 1) * dt_ms`. A continued run starts at its absolute continuation step. Time-reduced outputs have no time axis even though `time_ms` describes the executed presentation.

@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from snnlab.analysis._legacy import compute_metrics
 from snnlab.sim import config as C
 from snnlab.sim import models as M
 from snnlab.sim import runlog
@@ -34,7 +35,6 @@ from snnlab.sim.datasets import (
     load_dataset,
 )
 from snnlab.sim.encoders import EVAL_SEED, encode_batch
-from snnlab.sim.metrics import compute_metrics
 from snnlab.sim.scan import _auto_device, primary_hid_key, primary_inh_key
 from snnlab.sim.timing import duration_metadata, refractory_metadata
 
