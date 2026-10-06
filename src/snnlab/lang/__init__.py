@@ -1,6 +1,6 @@
 """snnlang: deterministic authoring and inspection of spiking network graphs."""
 
-from . import components, ops, readouts, simulation, training
+from . import ops, readouts, simulation, training
 from ._version import __version__
 from .compiler import Bundle, Diagnostic, compile, load_bundle, validate_graph
 from .core import (
@@ -98,7 +98,6 @@ __all__ = [
     "diagram",
     "load_bundle",
     "validate_graph",
-    "components",
     "ops",
     "readouts",
     "training",

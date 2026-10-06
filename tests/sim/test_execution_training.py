@@ -14,6 +14,7 @@ from snnlab.sim.execution import (
     execute_request,
     train,
 )
+from tests._circuits import author_ping
 
 
 def _coupled_graph(*, direction="reciprocal", delay_ms=0.1):
@@ -24,8 +25,8 @@ def _coupled_graph(*, direction="reciprocal", delay_ms=0.1):
     drive_b = net.input(
         "drive_b", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    a = snn.components.ping(net, name="a", n_e=4, n_i=1, source=drive_a)
-    b = snn.components.ping(net, name="b", n_e=6, n_i=2, source=drive_b)
+    a = author_ping(net, name="a", n_e=4, n_i=1, source=drive_a)
+    b = author_ping(net, name="b", n_e=6, n_i=2, source=drive_b)
     if direction in {"unidirectional", "reciprocal"}:
         net.connect(
             a.I.spikes,
@@ -193,7 +194,7 @@ def test_graph_training_backpropagates_through_recurrence_and_spike_budget():
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    cell = snn.components.ping(net, name="cell", n_e=4, n_i=2, source=events)
+    cell = author_ping(net, name="cell", n_e=4, n_i=2, source=events)
     input_parameter = next(
         row for row in net.parameters if row["id"] == "cell_input.weight"
     )

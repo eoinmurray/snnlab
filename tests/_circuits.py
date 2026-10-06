@@ -1,10 +1,10 @@
-"""Reusable authoring functions; components expand before serialisation."""
+"""Shared E/I circuit fixtures for authoring and simulator regression tests."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .core import (
+from snnlab.lang import (
     AMPA,
     COBA_LIF,
     GABA,
@@ -18,12 +18,12 @@ from .core import (
 
 
 @dataclass(frozen=True)
-class PING:
+class PingCircuit:
     E: Population
     I: Population
 
 
-def ping(
+def author_ping(
     net: Network,
     *,
     name: str,
@@ -41,7 +41,7 @@ def ping(
     w_in=None,
     w_in_e=None,
     w_in_i=None,
-) -> PING:
+) -> PingCircuit:
     """Author an explicit E/I PING circuit.
 
     Weight specs are optional so existing callers retain the canonical
@@ -150,4 +150,4 @@ def ping(
                 weight=w_in_i,
                 constraint=NonNegative(),
             )
-    return PING(e, i)
+    return PingCircuit(e, i)

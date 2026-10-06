@@ -1,6 +1,6 @@
 ---
 title: Components
-description: Neuron models, synapses, population signals and reusable circuits.
+description: Neuron models, synapses and population signals.
 ---
 
 Neuron and synapse constructors return data specifications. They accept keyword values; their existence does not guarantee that a backend supports the specification. Use them with [Network.population](/api/lang/network#population) and [Network.connect](/api/lang/network#connect).
@@ -57,34 +57,6 @@ The public constructors accept keyword arguments and produce specifications. For
 | `lang.Modulatory(**values)` | Authoring specification for modulatory synapses. | Currently unsupported; graph compilation/execution rejects it. |
 
 `LeakyIntegrator` is also a neuron constructor. Using it as `synapse` specifies the projection, while using it as `neuron` specifies the receiving population. A constructor's availability does not guarantee backend support.
-
-## Reusable PING circuit
-
-```python
-def ping(
-    net: Network,
-    *,
-    name: str,
-    n_e: int,
-    n_i: int,
-    source: Signal | None = None,
-    source_e: Signal | None = None,
-    source_i: Signal | None = None,
-    tau_gaba=9 * ms,
-    include_silent_recurrence: bool = False,
-    w_ee=None,
-    w_ei=None,
-    w_ie=None,
-    w_ii=None,
-    w_in=None,
-    w_in_e=None,
-    w_in_i=None,
-) -> PING: ...
-```
-
-`lang.components.ping` expands into explicit E and I populations and projections inside a named group. It returns `PING(E, I)`, exposing the two populations. Choose a shared `source` for E input or separate `source_e` and `source_i`; combining both styles raises `ValueError`.
-
-Default E→I weights use `Normal(0.5, 0.05)` and I→E weights use `Normal(1.0, 0.1)`. Input defaults use `Normal(0.2, 0.03)`. `w_in_e`/`w_in_i` override `w_in`; individual recurrent arguments override their corresponding projections. Same-population recurrence is included when its weight is supplied or `include_silent_recurrence=True`. `tau_gaba` defaults to 9 ms. This helper uses explicit historical refractory step counts (12 for E, 6 for I), so changing network timestep changes their physical durations.
 
 ## Custom neurons and synapses
 

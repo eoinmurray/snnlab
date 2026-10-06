@@ -25,6 +25,7 @@ from snnlab.sim.bundle import (
 )
 from snnlab.sim.simulation_inputs import realize_simulation_inputs
 from snnlab.sim.tool import _bundle_transition_schedule, parse_args
+from tests._circuits import author_ping
 from tests.sim._bundle_builders import ping_classifier
 
 
@@ -43,7 +44,7 @@ def _write_transition_bundle(tmp_path, name, w_ee):
             mean, std, initial_zero_fraction=0.975, zeroing="exact_k"
         )
 
-    cell = snn.components.ping(
+    cell = author_ping(
         net,
         name="circuit",
         n_e=400,
@@ -159,7 +160,7 @@ def test_bundle_owns_four_recurrent_blocks_and_exact_k(tmp_path):
             mean, std, initial_zero_fraction=0.975, zeroing="exact_k"
         )
 
-    cell = snn.components.ping(
+    cell = author_ping(
         net,
         name="circuit",
         n_e=400,
@@ -197,7 +198,7 @@ def _write_combined_bundle(tmp_path):
     source = net.input(
         "input", shape=("time", "batch", 400), signal_type="spikes", unit="spike"
     )
-    cell = snn.components.ping(
+    cell = author_ping(
         net,
         name="circuit",
         n_e=400,

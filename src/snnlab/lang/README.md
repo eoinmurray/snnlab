@@ -11,9 +11,26 @@ net = snn.Network("small_ping")
 events = net.input(
     "events", shape=("time", "batch", 128), signal_type="spikes", unit="spike"
 )
-cell = snn.components.ping(net, name="cell", n_e=256, n_i=64, source=events)
+with net.group("cell"):
+    e = net.population("cell_E", size=256, neuron=snn.COBA_LIF(tau_mem=20 * snn.ms))
+    i = net.population("cell_I", size=64, neuron=snn.COBA_LIF(tau_mem=5 * snn.ms))
+    net.connect(
+        events, e.excitatory, name="cell_input",
+        synapse=snn.AMPA(tau=2 * snn.ms), weight=snn.Normal(0.2, 0.03),
+        constraint=snn.NonNegative(),
+    )
+    net.connect(
+        e.spikes, i.excitatory, name="cell_E_to_I",
+        synapse=snn.AMPA(tau=2 * snn.ms), weight=snn.Normal(0.5, 0.05),
+        constraint=snn.NonNegative(), connection="recurrent", delay=0.1 * snn.ms,
+    )
+    net.connect(
+        i.spikes, e.inhibitory, name="cell_I_to_E",
+        synapse=snn.GABA(tau=9 * snn.ms), weight=snn.Normal(1.0, 0.1),
+        constraint=snn.NonNegative(), connection="recurrent", delay=0.1 * snn.ms,
+    )
 scores = snn.readouts.MeanVoltage(
-    source=cell.E.spikes, classes=10, name="classifier"
+    source=e.spikes, classes=10, name="classifier"
 )
 net.output("scores", scores)
 
@@ -273,18 +290,6 @@ predeclared `1e-6` absolute/relative tolerance. The fixtures established that
 legacy recurrent keys are one-based (`W_ee.1`,
 `W_ei.1`, `W_ie.1`, and `W_ii.1`) and that the compatible mean-voltage readout
 uses the legacy 2 ms output-membrane time constant.
-
-The bounded forward accelerator check reuses the active-recurrence case. It
-runs the graph executor twice on one accelerator, then compares graph and
-legacy forward state on that same device under predeclared `1e-6` absolute and
-relative tolerances. It deliberately excludes training, checkpoints, datasets,
-and cross-device equality:
-
-```sh
-uv run python tools/snnsim/accelerator_forward.py --device mps
-# or, on a CUDA host:
-uv run python tools/snnsim/accelerator_forward.py --device cuda
-```
 
 The corresponding four-update backward fixture trains all six mapped tensors
 and compares the complete cross-entropy trajectory, final named surrogate

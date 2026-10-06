@@ -2,6 +2,7 @@
 
 from snnlab import lang as snn
 from snnlab.lang import training
+from tests._circuits import author_ping
 
 
 def state_tensors(state):
@@ -23,8 +24,8 @@ def coupled_graph(*, direction="reciprocal", delay_ms=0.1):
     drive_b = net.input(
         "drive_b", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    a = snn.components.ping(net, name="a", n_e=4, n_i=1, source=drive_a)
-    b = snn.components.ping(net, name="b", n_e=6, n_i=2, source=drive_b)
+    a = author_ping(net, name="a", n_e=4, n_i=1, source=drive_a)
+    b = author_ping(net, name="b", n_e=6, n_i=2, source=drive_b)
     if direction in {"unidirectional", "reciprocal"}:
         net.connect(
             a.I.spikes,

@@ -8,12 +8,13 @@ import pytest
 from snnlab import lang as snn
 from snnlab.lang import training
 from snnlab.lang.compiler import canonical_json, graph_dict, validate_graph
+from tests._circuits import author_ping
 
 
 def small_network():
     net = snn.Network("small")
     x = net.input("x", shape=("time", "batch", 8), signal_type="spikes", unit="spike")
-    cell = snn.components.ping(net, name="cell", n_e=12, n_i=3, source=x)
+    cell = author_ping(net, name="cell", n_e=12, n_i=3, source=x)
     return net, cell
 
 
@@ -39,7 +40,7 @@ def _background_channel():
 def test_combined_inputs_compile_as_graph_and_authenticated_simulation_recipe(tmp_path):
     net = snn.Network("combined")
     x = net.input("afferent", shape=("time", "batch", 12), signal_type="spikes")
-    cell = snn.components.ping(
+    cell = author_ping(
         net,
         name="cell",
         n_e=12,
@@ -90,7 +91,7 @@ def test_weather_inputs_serialize_correlated_afferents_and_local_groups():
     source_i = net.input(
         "afferent_i", shape=("time", "batch", 12), signal_type="spikes"
     )
-    cell = snn.components.ping(
+    cell = author_ping(
         net, name="cell", n_e=12, n_i=3, source_e=source_e, source_i=source_i
     )
     local = snn.BackgroundChannel(

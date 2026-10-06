@@ -2,6 +2,7 @@
 
 from snnlab import lang as snn
 from snnlab.lang import training
+from tests._circuits import author_ping
 
 
 def ping_classifier():
@@ -9,7 +10,7 @@ def ping_classifier():
     image = net.input(
         "image", shape=("time", "batch", 784), signal_type="spikes", unit="spike"
     )
-    cell = snn.components.ping(
+    cell = author_ping(
         net,
         name="sensory_ping",
         n_e=256,
@@ -57,11 +58,11 @@ def deep_network():
     events = net.input(
         "events", shape=("time", "batch", 700), signal_type="spikes", unit="spike"
     )
-    first = snn.components.ping(net, name="encoder", n_e=384, n_i=96, source=events)
-    second = snn.components.ping(
+    first = author_ping(net, name="encoder", n_e=384, n_i=96, source=events)
+    second = author_ping(
         net, name="association", n_e=256, n_i=64, source=first.E.spikes
     )
-    third = snn.components.ping(
+    third = author_ping(
         net, name="decision", n_e=128, n_i=32, source=second.E.spikes
     )
     result = snn.readouts.SpikeCount(

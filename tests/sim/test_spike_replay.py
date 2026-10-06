@@ -25,6 +25,7 @@ from snnlab.sim.execution import (
     write_inference_artifacts,
 )
 from snnlab.sim.tool import parse_args
+from tests._circuits import author_ping
 from tests.sim._execution_builders import expose_graph_diagnostics
 
 
@@ -470,7 +471,7 @@ def test_small_legacy_inhibitory_override_matches_graph_replay(monkeypatch):
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    cell = snn.components.ping(
+    cell = author_ping(
         net, name="cell", n_e=4, n_i=1, source=events, include_silent_recurrence=True
     )
     scores = snn.readouts.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")

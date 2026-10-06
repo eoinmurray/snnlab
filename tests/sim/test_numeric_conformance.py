@@ -27,6 +27,7 @@ from snnlab.sim.execution import (
     legacy_parameter_map_v1,
     train,
 )
+from tests._circuits import author_ping
 from tests.sim._execution_builders import expose_graph_diagnostics
 
 
@@ -115,7 +116,7 @@ def test_minimal_legacy_and_graph_ping_forward_share_parameters_and_logits(
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    cell = snn.components.ping(
+    cell = author_ping(
         net,
         name="cell",
         n_e=4,
@@ -258,7 +259,7 @@ def test_legacy_and_graph_four_update_trajectory_and_resume_are_conformant(tmp_p
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    cell = snn.components.ping(
+    cell = author_ping(
         net,
         name="cell",
         n_e=4,
