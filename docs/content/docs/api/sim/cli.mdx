@@ -402,3 +402,18 @@ python -m snnlab.sim sim --executor graph --bundle network.bundle \
 ```
 
 Use the usual direct dense/event/Poisson input flags for the stream. Boundary JSON also accepts `{"events":[{"step":0},{"step":200,"batches":[0]}]}` instead of `steps`. Inference `metrics.json` includes completed decisions and the resolved reset/segment policy. Use the existing runtime-state load/save flags for partial segments; provide the same full policy on each continued invocation. Legacy execution and independent dataset batches reject these fields.
+
+
+## Bounded inference retention
+
+Supported time reductions are optimized automatically. Graph simulation accepts `--measurement JSON` for an absolute reduction window, `--recording JSON` for selected signal/cell recordings and an optional NPZ sink directory, and `--no-retain-outputs` to consume outputs through a sink without accumulating them. Dense exposed diagnostics remain controlled by `--diagnostics` / `--no-diagnostics`.
+
+```bash
+python -m snnlab.sim sim --executor graph --bundle network.bundle \
+  --input-file inputs.npy --out-dir inference \
+  --no-diagnostics --no-retain-outputs \
+  --measurement '{"start_step":0,"end_step":600}' \
+  --recording '{"signals":[{"signal":"E.spikes","kind":"spike_events"},{"signal":"out.voltage","cells":[0,1]}],"directory":"recording-blocks"}'
+```
+
+The sink directory must be empty. Omit `directory` to retain selections in `recordings.npz`; optional recording `window` restricts selected history. Sparse event rows contain absolute timestep, global batch and original cell indices. Use the same measurement policy with runtime-state load/save on continued invocations and a separate sink directory per invocation. Dataset inference streams batchwise using one model load; output tensors/final states are not concatenated when retention is disabled. See [measurement](/api/sim/execution-spec#measurement), [recording](/api/sim/execution-spec#recording) and [output retention](/api/sim/execution-spec#retain_outputs) for partial results, compatibility and memory limits.

@@ -22,6 +22,7 @@ from snnlab.sim.execution import ExecutionResult, NumpyExecutionResult
 | `training_checkpoint` | Final in-memory training checkpoint. |
 | `selected_checkpoint` | In-memory selected training checkpoint. |
 | `final_state` | Named final dynamic tensors from graph forward execution. |
+| `recorded_signals` | Explicit selected dense histories or sparse `(step, batch, cell)` events; empty when a sink consumes them. |
 | `decisions` | Completed per-batch decision segments, with step bounds, duration and integer population/per-neuron spike counts. |
 | `runtime_state` | Structured continuation state from graph forward execution. |
 | `metrics` | Build/run timing, initialization/protocol and operation-specific evidence. |
@@ -133,6 +134,7 @@ class ExecutionResult:
     training_checkpoint: TrainingCheckpoint | None = None
     selected_checkpoint: TrainingCheckpoint | None = None
     final_state: dict[str, torch.Tensor] = field(default_factory=dict)
+    recorded_signals: dict[str, torch.Tensor] = {}
     decisions: list[dict[str, Any]] = []
     runtime_state: GraphRuntimeState | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
@@ -161,3 +163,10 @@ Dataset inference returns full concatenated sample outputs and `metrics["encodin
 ## decisions
 
 `result.decisions` contains completed records from an explicit [DecisionSegments policy](/api/sim/execution-spec#decisions). Partial segments remain in `runtime_state.segment_counts` with their cursor and full policy in `runtime_state.segment_state`; they are not prematurely reported at a call boundary. The result defaults to an empty list when no segments complete. Inference artifacts retain completed records in `metrics.json` and bind the policy and absolute execution window into the request digest. Ordinary output and diagnostic retention is unchanged.
+
+
+## recorded_signals
+
+Explicit [RecordingSpec selections](/api/sim/execution-spec#recording) return tensors keyed by graph signal ID in `recorded_signals`. Dense values have `(recorded_time, batch, selected_cells)` axes; sparse population spikes have `int64` rows `(absolute_step, batch, original_cell)`. Signal units and cell selections are retained in metrics. A sink consumes independent CPU blocks and leaves this mapping empty. `numpy()` continues to convert named outputs and diagnostics; convert selected recording tensors explicitly with `.numpy()` because sparse event axes differ from ordinary time-series axes.
+
+Inference metrics expose automatic `online_reductions`, remaining `retained_signal_samples`, `measurement_complete` and digest-bound `inference_retention`. An explicit measurement window retains partial accumulators/cursor in runtime state, including portable save/load. With `retain_outputs=False`, `outputs` is empty; dataset inference also avoids collecting per-sample `final_state` tensors. Exposed diagnostics remain independent and explicitly controlled.

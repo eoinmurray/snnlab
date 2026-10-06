@@ -288,7 +288,16 @@ def batch_tensors(inputs, indices, *, phase="evaluation", epoch=0, draw_seed=Non
 
 
 def simulate_dataset(
-    model, provider, *, batch_size, diagnostics, interventions, runtime_state
+    model,
+    provider,
+    *,
+    batch_size,
+    diagnostics,
+    interventions,
+    runtime_state,
+    measurement=None,
+    recording=None,
+    retain_outputs=True,
 ):
     from snnlab.sim.execution import DenseSpikeReplay, ReplaySpikes, SparseSpikeReplay
     from snnlab.sim.interventions import prepare_interventions
@@ -307,7 +316,12 @@ def simulate_dataset(
         steps_count=provider.steps_count,
         batch_size=provider.sample_count,
     )
-    collected_outputs, collected_diagnostics, collected_states = {}, {}, {}
+    collected_outputs, collected_diagnostics, collected_states, collected_recordings = (
+        {},
+        {},
+        {},
+        {},
+    )
     batches = []
     result = None
     for start in range(0, provider.sample_count, batch_size):
@@ -347,12 +361,17 @@ def simulate_dataset(
             diagnostics=diagnostics,
             interventions=tuple(active),
             runtime_state=runtime_state,
+            measurement=measurement,
+            recording=recording,
+            retain_outputs=retain_outputs,
+            batch_offset=start,
         )
         batches.append(copy.deepcopy(provider.last_batch))
         for target, values in (
             (collected_outputs, result.outputs),
             (collected_diagnostics, result.diagnostics),
-            (collected_states, result.final_state),
+            (collected_states, result.final_state if retain_outputs else {}),
+            (collected_recordings, result.recorded_signals),
         ):
             for name, value in values.items():
                 target.setdefault(name, []).append(value)
@@ -368,12 +387,21 @@ def simulate_dataset(
                 for name, values in collected.items()
             },
         )
+    kinds = {row.signal: row.kind for row in recording.signals} if recording else {}
+    result.recorded_signals = {
+        name: torch.cat(values, dim=0 if kinds[name] == "spike_events" else 1)
+        for name, values in collected_recordings.items()
+    }
     result.final_state = {
         name: torch.cat(values, dim=0) for name, values in collected_states.items()
     }
     if provider.sample_count > batch_size:
         result.runtime_state = None
     result.metrics["inference_interventions"] = identity if interventions else None
+    if result.metrics.get("inference_retention"):
+        result.metrics["inference_retention"]["window"].update(
+            batch_size=provider.sample_count, batch_offset=0
+        )
     result.metrics["encoding_batches"] = batches
     provider.protocol["dataset"]["batch_size"] = batch_size
     return result

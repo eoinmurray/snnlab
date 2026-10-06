@@ -906,6 +906,24 @@ def _build_subparsers(parser, parent):
         help="[graph] Multiply a named graph projection for this inference request; repeatable.",
     )
     sim_parser.add_argument(
+        "--measurement",
+        metavar="JSON",
+        default=None,
+        help="[graph] Absolute start_step/end_step reduction window as JSON.",
+    )
+    sim_parser.add_argument(
+        "--recording",
+        metavar="JSON",
+        default=None,
+        help="[graph] Signal/cell selections and optional NPZ sink directory as JSON.",
+    )
+    sim_parser.add_argument(
+        "--retain-outputs",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="[graph] Retain named output tensors; sinks receive outputs either way.",
+    )
+    sim_parser.add_argument(
         "--reset-voltage",
         action="append",
         default=[],
@@ -2247,6 +2265,14 @@ def main(argv=None):
         raise SystemExit("--poisson-protocol requires --executor graph")
     if request.executor == "legacy" and getattr(args, "scale_projection", None):
         raise SystemExit("--scale-projection requires --executor graph")
+    if request.executor == "legacy" and (
+        getattr(args, "measurement", None)
+        or getattr(args, "recording", None)
+        or not getattr(args, "retain_outputs", True)
+    ):
+        raise SystemExit(
+            "measurement/recording retention controls require --executor graph"
+        )
     if request.executor == "legacy" and (
         getattr(args, "reset_voltage", None) or getattr(args, "decisions", None)
     ):

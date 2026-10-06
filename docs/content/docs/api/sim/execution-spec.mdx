@@ -40,6 +40,9 @@ ExecutionSpec(
     interventions: Sequence[Intervention] = (),
     resets: Sequence[ResetVoltage] = (),
     decisions: DecisionSegments | None = None,
+    measurement: MeasurementWindow | None = None,
+    recording: RecordingSpec | None = None,
+    retain_outputs: bool = True,
 )
 ```
 
@@ -641,3 +644,71 @@ Partial accumulators use one `int64` tensor of shape `(batch, population_size)` 
 These fields are supported by graph simulation/inference and by `GraphExecutor.forward(..., resets=..., decisions=...)`. Training rejects them. Supply continuous streams through dense, event or Poisson bindings. Dataset snapshots encode independent sample batches and reject continuous reset/decision policies.
 
 For cache reuse, compute the resolved policy with `segment_identity(resets, decisions, graph=effective_graph, batch_size=batch_size)` and pass it as `validate_inference_artifacts(path, expected_segments=identity)`. Passing `expected_segments=None` requires a cache without this policy; omission checks internal integrity only. Reset targets, values, absolute schedules, timing and count selections are bound into the inference request digest. This is a policy check; complete expected-request verification remains separate.
+
+
+## Automatic inference reductions
+
+Graph inference automatically accumulates supported `reduce_sum`, `reduce_mean` and `select_final` operations while stepping the network. Native population/input/projection/custom-state signals and chains of timewise `linear` operations are supported. This includes weighted SpikeCount, MeanVoltage, FinalVoltage and SpikeRate readouts, with input valid-time masks. A full-history consumer still receives its requested history; unsupported operation chains retain the existing dense path. There is no optimization flag to enable.
+
+This optimization leaves spike propagation, dynamic state and RNG consumption unchanged. Output names, shapes, dtypes and units are preserved. CPU/CUDA non-pre-reset floating sums use float64 accumulators and cast results back to the model dtype; pre-reset signals retain their historical sequential arithmetic, and MPS uses the native dtype. Dense parallel and online sequential sums can differ through floating-point ordering. Bounded equivalence fixtures use `rtol=2e-6`, `atol=2e-6`; these are tested tolerances rather than universal error bounds for arbitrarily long or cancellation-heavy runs.
+
+Training with autograd keeps its dense history and gradients. No truncated backpropagation is introduced. Direct PyTorch execution optimizes when gradients are disabled or no inputs/parameters require gradients. Epoch evaluation uses the automatic path under `no_grad`. `metrics["online_reductions"]` identifies lowered operations and `metrics["retained_signal_samples"]` reports remaining dense histories.
+
+## measurement
+
+`measurement: MeasurementWindow | None = None` selects one explicit absolute `[start_step, end_step)` window for graph time reductions. Without it, each call reduces its own input interval, preserving the previous API behavior. An unrelated chunk boundary cannot restart an explicitly declared window.
+
+```python
+from snnlab.sim.execution import MeasurementWindow
+
+window = MeasurementWindow(start_step=0, end_step=600)
+first = model(first_inputs, diagnostics=False, measurement=window)
+continued = model(
+    remaining_inputs,
+    diagnostics=False,
+    measurement=window,
+    runtime_state=first.runtime_state,
+)
+assert continued.metrics["measurement_complete"]
+```
+
+Partial calls return aggregates accumulated so far and set `measurement_complete=False`. A mean with no valid samples yet returns zero until the window completes; a completed empty masked mean/rate window fails. Final selection tracks the last sample inside the window. Activity outside the window is excluded, and subsequent calls preserve the completed aggregate. Masked rates carry valid duration alongside counts; an explicitly authored fixed rate duration retains its declared meaning.
+
+Runtime state retains compact `reduction_tensors`, the policy and an absolute cursor in `reduction_state`. Portable save/load uses schema version 4, preserving older schemas. Reuse the same graph, parameters, backend and window for uninterrupted/continued equivalence. Changed or removed window policies, missing tensors, unsupported window reductions and adding a window to an unaudited continuation fail explicitly. Measurement windows require inference without autograd.
+
+[DecisionSegments](/api/sim/execution-spec#decisions) independently close/reset per-decision integer counters at their explicit boundaries. A MeasurementWindow covers its declared interval across those decisions; selective voltage resets do not silently reset its aggregate. Both policies and their partial accumulators survive the same runtime checkpoint.
+
+## recording
+
+`recording: RecordingSpec | None = None` selects additional time/batch/cell signals without requiring full exposed diagnostics. Import `RecordingSpec`, `SignalRecording`, `RecordingBlock` and `NPZRecordingSink` from `snnlab.sim.execution`.
+
+```python
+from snnlab.sim.execution import RecordingSpec, SignalRecording, NPZRecordingSink
+
+sink = NPZRecordingSink("recording-blocks")  # requires an empty directory
+recording = RecordingSpec(
+    signals=(
+        SignalRecording("E.spikes", kind="spike_events"),
+        SignalRecording("out.voltage", cells=(0, 1), kind="dense"),
+    ),
+    sink=sink,
+    sink_id=sink.identity,
+)
+result = model(inputs, diagnostics=False, recording=recording, retain_outputs=False)
+```
+
+`SignalRecording(signal, cells=None, kind="dense")` supports native signals and timewise linear chains. Cell selections must be nonempty, unique and in range. Dense recordings retain `(recorded_time, batch, selected_cells)` values in selection order. `kind="spike_events"` accepts population spikes and produces an `int64` `(events, 3)` tensor: absolute timestep, batch index and original cell index. Coordinates remain absolute during continuation; dataset batch indices identify positions in the full selected presentation sequence. Event rows follow execution/batch-block order rather than promising a global sort.
+
+`RecordingSpec.window` optionally restricts selected recordings to an absolute MeasurementWindow. Without a sink, tensors are returned in `result.recorded_signals` and saved as authenticated `recordings.npz` (inference-artifact schema version 2). In-memory sparse retention scales with emitted events; selected dense retention scales with selected history. An empty recording window returns a correctly shaped empty tensor. `metrics["recording_units"]` declares signal units.
+
+A sink is a callable receiving independent CPU `RecordingBlock` objects. Blocks carry signal, kind, values, absolute bounds, timestep, batch offset, original cell selection and units. Selected recordings are delivered one timestep at a time; no recording tensors are accumulated in the result. Named reduced outputs are also delivered at call completion. Their block bounds describe accumulated measurement coverage, and `measurement_window` retains the full requested bounds, including for partial results. A stable `sink_id` is required, and callback RNG state is restored so recording cannot consume the executor's random streams. Sink callbacks should consume/write blocks rather than retain them when bounded memory is required.
+
+The built-in NPZ sink writes one compressed block file plus a JSONL manifest containing coordinates, units, shapes, dtypes and payload SHA-256 digests. Sink files are separate from inference-artifact files; generic external sink contents are not authenticated by the inference cache validator. Use a separate empty sink directory for each continued invocation.
+
+## retain_outputs
+
+`retain_outputs: bool = True` preserves the existing named output tensors by default. Set it to `False` to omit them from the result. A recording sink still receives reduced outputs at completion; supported timewise outputs are delivered per timestep without assembling a dense output history. Unsupported streamed output chains fail explicitly. Diagnostics are controlled independently: use `diagnostics=False` to avoid exposed dense histories.
+
+Dataset inference uses one initialized/checkpoint-loaded model, encodes successive batches and supplies global batch offsets to the sink. With diagnostics disabled, a sink and `retain_outputs=False`, it does not concatenate named outputs, selected recordings or per-sample final states across the dataset. Input/label/order metadata and batch provenance still scale with sample count. Requesting retained outputs, dense diagnostics or in-memory recordings explicitly restores the corresponding storage cost. These controls do not claim constant-memory training through time.
+
+Recording/window/retention policy and execution coordinates bind the inference request digest. Before cache reuse, call `retention_identity(graph=graph, start_step=0, steps_count=600, batch_size=2, diagnostics=False, measurement=window, recording=recording, retain_outputs=False)` and pass the result to `validate_inference_artifacts(path, expected_retention=identity)`. Explicit `None` requires older artifacts without retention identity; omission checks internal integrity only. Full checkpoint/input expected-request verification remains a separate contract.
