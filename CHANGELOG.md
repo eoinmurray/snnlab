@@ -6,6 +6,13 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-07
+
+### Added
+
+1. Built-in ALIF and AdEx neurons for current and conductance synapses: `ALIF`/`CUBA_ALIF`, `COBA_ALIF`, `ADEX`/`CUBA_ADEX` and `COBA_ADEX`. ALIF adapts its firing threshold; AdEx combines exponential spike initiation with subthreshold and spike-triggered adaptation current. Parameters use explicit ms/mV/nF/uS/nA units. Per-cell adaptation supports outputs, diagnostics, streamed recordings, surrogate-gradient training and saved runtime continuation. Existing LIF defaults and bundle format versions are retained.
+2. Neurons, Synapses and Weights documentation pages covering equations, model selection, units, initialization scaling, constraints and runnable examples. Neurons covers both COBA and CUBA versions of LIF, ALIF and AdEx, including their distinct input equations, compatible synapses and defaults. Its runnable example compares all three models separately under current and conductance input, with downloadable source, network diagrams and voltage/adaptation/spike plots for both families.
+
 ## [0.6.0] - 2026-10-06
 
 ### Added

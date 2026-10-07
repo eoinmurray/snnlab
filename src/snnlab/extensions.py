@@ -15,6 +15,8 @@ from importlib import metadata
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
+from snnlab import _neurons as N
+
 
 @dataclass(frozen=True)
 class Definition:
@@ -242,11 +244,17 @@ def synapse_unit(spec: Mapping[str, Any]) -> str:
 
 
 def neuron_unit(spec: Mapping[str, Any]) -> str:
-    if spec.get("kind") in {"cuba_lif", "lif"}:
+    if spec.get("kind") in N.CURRENT_KINDS:
         return "nA"
     if spec.get("kind") == "custom_neuron":
         return resolve("neuron", spec).unit
     return "uS"
+
+
+def state_units(category: str, spec: Mapping[str, Any]) -> Mapping[str, str]:
+    if is_custom(spec):
+        return resolve(category, spec).state_units
+    return N.state_units(spec) if category == "neuron" else {}
 
 
 def projection_port(spec: Mapping[str, Any]) -> str:

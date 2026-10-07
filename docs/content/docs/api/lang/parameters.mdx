@@ -5,6 +5,8 @@ description: Named parameters, weight initializers, automatic sizing and constra
 
 Declare explicit weights with [Network.parameter](/api/lang/network#parameter), or let [Network.connect](/api/lang/network#connect) create and size them. `ParameterRef` identifies a graph parameter; it is not a live PyTorch tensor. [GraphExecutor.parameter_map](/api/sim/pytorch#parameter-map) supplies live runtime tensors.
 
+See [Weights](/weights) for a runnable introduction to physical units, fan-in scaling and shared parameters.
+
 ## Weights
 
 When `weight` is an initializer, `connect` automatically sizes and creates a parameter named `"<projection-name>.weight"`, with graph shape `(target_cells, source_channels)` and unit `uS` (microsiemens) for conductance synapses or `nA` (nanoamperes) for current synapses.

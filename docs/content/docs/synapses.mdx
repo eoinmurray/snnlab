@@ -1,0 +1,99 @@
+---
+title: Synapses
+description: Current and conductance synapses, exponential decay, inhibition and delays.
+---
+
+A synapse turns presynaptic events into a drive that reaches a neuron's membrane. The synapse controls the drive's time course; its [weight](/weights) controls the increment caused by an event. Match current synapses to current neurons and conductance synapses to conductance neurons.
+
+## Built-in choices
+
+| Constructor | Output unit | Connect to | Behaviour |
+| --- | --- | --- | --- |
+| `lang.ExponentialCurrent(tau=5 * lang.ms)` | `nA` | `LIF`, `ALIF`, `ADEX` and their `CUBA_` variants. | Current jumps on an event and decays exponentially. |
+| `lang.AMPA(tau=2 * lang.ms)` | `uS` | `COBA_LIF`, `COBA_ALIF`, `COBA_ADEX`. | Exponentially decaying conductance, typically connected to `.excitatory`. |
+| `lang.GABA(tau=5 * lang.ms)` | `uS` | `COBA_LIF`, `COBA_ALIF`, `COBA_ADEX`. | Exponentially decaying conductance, typically connected to `.inhibitory`. |
+| `lang.LeakyIntegrator(tau=20 * lang.ms)` | `uS` | A `LeakyIntegrator` readout. | Projection drive has no carry-over; the receiving population supplies temporal integration. |
+| `lang.Modulatory(...)` | — | — | Authoring specification only; the graph executor rejects it. |
+
+Always supply `tau` to AMPA and GABA. `ExponentialCurrent` supplies a 5 ms default. The AMPA/GABA names denote simplified exponential conductance models, rather than detailed receptor kinetics. The target port selects the excitatory or inhibitory contribution; changing only the synapse name does not select polarity.
+
+## Exponential decay and spike increments
+
+For current, AMPA and GABA projections, SNNLab advances the synaptic state as
+
+$$x_{i,k+1}=e^{-\Delta t/\tau_s}x_{i,k}+\sum_j s_{j,k}W_{ji}.$$
+
+Here $i$ indexes target cells, $j$ indexes source channels, $k$ indexes timesteps, $x_{i,k}$ is the synaptic state arriving at target $i$, $\Delta t$ is the timestep in ms, $\tau_s$ is the synaptic decay time constant in ms, $s_{j,k}$ is the source event value for that step, and $W_{ji}$ is the stored runtime weight from source $j$ to target $i$. State and weight use nA for a current synapse or uS for a conductance synapse. For binary spike inputs, $s_{j,k}$ is either 0 or 1.
+
+Decay occurs before adding the new event increment. The stored weight specifies the full per-event jump, independent of timestep. A jump's subsequent samples decay with `tau`; changing `dt` changes sampling and membrane integration, rather than adding a timestep factor to the event weight. These are the standard exponential synapse dynamics discussed in [Neuronal Dynamics, chapter 3](https://neuronaldynamics.epfl.ch/online/Ch3.S1.html).
+
+## Current versus conductance
+
+With a current synapse, the membrane receives the net current $I_e-I_i$, where $I_e$ and $I_i$ are sums of excitatory and inhibitory current states in nA. The same current has the same magnitude regardless of membrane voltage.
+
+Conductances generate the membrane current
+
+$$I_{\mathrm{syn}}=g_e(E_e-V)+g_i(E_i-V).$$
+
+Here $I_{\mathrm{syn}}$ is net synaptic current in nA, $g_e$ and $g_i$ are sums of excitatory and inhibitory conductances in uS, $E_e$ and $E_i$ are reversal voltages in mV, and $V$ is membrane voltage in mV. The conductance contribution depends on voltage and approaches zero at its reversal potential. A positive inhibitory conductance can therefore be depolarizing when voltage is below its reversal potential; "inhibitory" is the port's role, not a guarantee of a negative voltage change at every voltage.
+
+Conductance ALIF/AdEx accept `excitatory_reversal_mv` and `inhibitory_reversal_mv`; `COBA_LIF` retains fixed 0 mV and -80 mV reversals. SNNLab does not convert a current weight into a conductance weight automatically.
+
+## A complete excitation/inhibition example
+
+This script drives current ALIF and conductance ALIF with one excitatory pulse, then one inhibitory pulse. The two weights have different physical units, so their raw values are not an equivalence claim.
+
+```python
+import torch
+from snnlab import lang
+from snnlab.sim.execution import GraphExecutor, plan_graph
+
+net = lang.Network("synapse_families", dt=0.25 * lang.ms)
+exc = net.input("exc", shape=("time", "batch", 1),
+                signal_type="spikes", unit="spike")
+inh = net.input("inh", shape=("time", "batch", 1),
+                signal_type="spikes", unit="spike")
+for name, neuron, e_syn, i_syn, e_weight, i_weight in (
+    ("current", lang.ALIF(), lang.ExponentialCurrent, lang.ExponentialCurrent, 1.5, 0.5),
+    ("conductance", lang.COBA_ALIF(), lang.AMPA, lang.GABA, 0.04, 0.02),
+):
+    cells = net.population(name, size=1, neuron=neuron)
+    e = net.connect(exc, cells.excitatory, name=f"{name}_exc",
+                    synapse=e_syn(tau=2 * lang.ms), weight=lang.Constant(e_weight),
+                    constraint=lang.NonNegative(), initialization_scaling="direct")
+    i = net.connect(inh, cells.inhibitory, name=f"{name}_inh",
+                    synapse=i_syn(tau=5 * lang.ms), weight=lang.Constant(i_weight),
+                    constraint=lang.NonNegative(), initialization_scaling="direct")
+    net.output(f"{name}_voltage", cells.voltage)
+    net.output(f"{name}_exc_trace", e.current if name == "current" else e.conductance)
+    net.output(f"{name}_inh_trace", i.current if name == "current" else i.conductance)
+
+model = GraphExecutor(plan_graph(lang.compile(net).graph))
+exc_events = torch.zeros(80, 1, 1)
+inh_events = torch.zeros_like(exc_events)
+exc_events[0] = 1
+inh_events[20] = 1
+result = model({"exc": exc_events, "inh": inh_events})
+print(result.outputs["current_exc_trace"][0].item())      # 1.5 nA
+print(result.outputs["conductance_exc_trace"][0].item())  # about 0.04 uS
+print(result.outputs["current_inh_trace"][20].item())     # 0.5 nA
+```
+
+Use `.current` on current projections and `.conductance` on conductance projections. Neuron voltage and both synapse traces have `(time, batch, target_cells)` axes. See [Neurons](/neurons) for membrane dynamics and [Components](/api/lang/components#synapses) for the constructor reference.
+
+## Inhibition, delays and recurrence
+
+For conventional inhibition, connect to `cells.inhibitory` and use non-negative weights. The current model subtracts that port's current; the conductance model uses its inhibitory reversal voltage. A `NonNegative` constraint maintains weight sign during training. A non-negative initializer alone does not do so.
+
+`delay` is a time quantity that must be an integer multiple of network `dt`. Input delays shift the presynaptic events before synaptic accumulation. A zero-delay feedforward population connection can use the current step's source spikes when its source is evaluated first. Recurrent and feedback population connections are causal and have at least one step of delay. They share the same synaptic update rule after an event arrives.
+
+```python
+net.connect(
+    source.spikes, target.inhibitory, name="feedback",
+    synapse=lang.GABA(tau=5 * lang.ms),
+    weight=lang.Uniform(0.05, 0.1), constraint=lang.NonNegative(),
+    connection="feedback", delay=0.25 * lang.ms,
+)
+```
+
+This connection fragment assumes conductance populations `source` and `target` in a network with `dt=0.25 * lang.ms`. For additional synaptic state or kinetics, register a [CustomSynapse](/api/lang/extensions) with the correct input/output family; its extra state also supports recording and saved continuation.

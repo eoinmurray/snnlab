@@ -3,4 +3,4 @@
 Subpackages are imported on demand: from snnlab import lang, sim, viz, analysis, extensions.
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

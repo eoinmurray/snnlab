@@ -4,8 +4,14 @@ from . import ops, readouts, training
 from ._version import __version__
 from .compiler import Bundle, Diagnostic, compile, load_bundle, validate_graph
 from .core import (
+    ADEX,
+    ALIF,
     AMPA,
+    COBA_ADEX,
+    COBA_ALIF,
     COBA_LIF,
+    CUBA_ADEX,
+    CUBA_ALIF,
     CUBA_LIF,
     GABA,
     LIF,
@@ -40,10 +46,16 @@ from .diagram import diagram
 from .training import TrainSpec
 
 __all__ = [
+    "ADEX",
+    "ALIF",
     "AMPA",
     "GABA",
     "COBA_LIF",
     "CUBA_LIF",
+    "COBA_ALIF",
+    "CUBA_ALIF",
+    "COBA_ADEX",
+    "CUBA_ADEX",
     "ExponentialCurrent",
     "CustomNeuron",
     "CustomSynapse",

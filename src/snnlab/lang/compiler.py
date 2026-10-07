@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from snnlab import _neurons as N
 from snnlab import extensions as E
 
 from ._version import __version__
@@ -180,38 +181,7 @@ def _check_extension(out, category, spec, subject=None):
 
 
 def _validate_neuron(neuron):
-    if neuron.get("kind") != "cuba_lif":
-        return
-    tau = neuron.get("tau_mem", {})
-    if (
-        tau.get("unit") != "ms"
-        or not isinstance(tau.get("value"), (int, float))
-        or not math.isfinite(tau["value"])
-        or tau["value"] <= 0
-    ):
-        raise ValueError("CUBA_LIF tau_mem must be positive finite ms")
-    for key in ("capacitance_nf", "voltage_grad_dampen"):
-        value = neuron.get(key, 1.0)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            or value <= 0
-        ):
-            raise ValueError(f"CUBA_LIF {key} must be positive and finite")
-    for key in ("resting_mv", "threshold_mv", "reset_mv", "initial_voltage_mv"):
-        value = neuron.get(key)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-        ):
-            raise ValueError(f"CUBA_LIF {key} must be finite")
-    count = neuron.get("refractory_steps", 0)
-    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
-        raise ValueError("CUBA_LIF refractory_steps must be a non-negative integer")
-    if neuron["reset_mv"] >= neuron["threshold_mv"]:
-        raise ValueError("CUBA_LIF reset_mv must be below threshold_mv")
+    N.validate(neuron)
 
 
 def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
@@ -264,14 +234,14 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
         neuron = row.get("neuron", {})
         if neuron.get("kind") == "custom_neuron":
             _check_extension(out, "neuron", neuron, row["id"])
-            try:
-                for port, unit in E.resolve("neuron", neuron).state_units.items():
-                    signals[f"{row['id']}.{port}"] = {
-                        "shape": ["time", "batch", row["size"]],
-                        "unit": unit,
-                    }
-            except (ValueError, TypeError):
-                pass
+        try:
+            for port, unit in E.state_units("neuron", neuron).items():
+                signals[f"{row['id']}.{port}"] = {
+                    "shape": ["time", "batch", row["size"]],
+                    "unit": unit,
+                }
+        except (ValueError, TypeError):
+            pass
         try:
             _validate_neuron(neuron)
         except ValueError as error:
@@ -1144,7 +1114,12 @@ def capability_report(graph: Mapping[str, Any], target: str | None) -> list[Diag
     }
     diagnostics = []
     vocabulary = "snnlang.capabilities/v1"
-    neuron_support = {"coba_lif", "cuba_lif", "leaky_integrator", "custom_neuron"}
+    neuron_support = {
+        "coba_lif",
+        "cuba_lif",
+        "leaky_integrator",
+        "custom_neuron",
+    } | N.ADAPTIVE_KINDS
     synapse_support = {
         "ampa",
         "gaba",

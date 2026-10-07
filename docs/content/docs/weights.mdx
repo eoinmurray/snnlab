@@ -1,0 +1,113 @@
+---
+title: Weights
+description: Physical weight units, initializers, fan-in scaling, shared parameters and training constraints.
+---
+
+A weight sets the increment that a presynaptic event adds to a [synapse](/synapses). In SNNLab, projection weights carry physical units. Their initialization policy, constraints and trainability are separate choices.
+
+## Units and shapes
+
+| Connection | Weight unit | Meaning of a stored weight |
+| --- | --- | --- |
+| `ExponentialCurrent` into a current neuron | `nA` | Per-event current increment. |
+| AMPA or GABA into a conductance neuron | `uS` | Per-event conductance increment. |
+
+When `net.connect(..., weight=initializer)` creates a parameter, its graph shape is `(target_cells, source_channels)`. The executor stores the tensor transposed as `(source_channels, target_cells)`, so source events multiply it on the left. `projection.weight` is a symbolic `ParameterRef`; `model.parameter_map()[projection.weight.id]` is the live PyTorch tensor.
+
+Units are validated. SNNLab neither converts nA to uS nor interprets a weight's sign as a target port. For ordinary excitation/inhibition, use non-negative weights and choose `cells.excitatory` or `cells.inhibitory` explicitly.
+
+## Initializers
+
+| Constructor | Before scaling and constraints |
+| --- | --- |
+| `lang.Constant(value)` | Every entry has the supplied value. |
+| `lang.Zeros()` | Every entry is zero. |
+| `lang.Uniform(low, high)` | Uniform samples between the supplied bounds. |
+| `lang.LowerClampedNormal(mean, std)` | Normal samples, with negative values clamped to zero. |
+| `lang.Normal(mean, std)` | Alias for `LowerClampedNormal`; not a signed normal distribution. |
+| `lang.SignedNormal(mean, std)` | Normal samples retaining both signs. |
+
+The execution seed controls random draws. The initializer's numeric values use the projection's unit. The final stored values also depend on scaling and constraints. A clamped normal is not a truncated normal distribution: its negative draws become exactly zero.
+
+## Fan-in scaling
+
+Projection initialization defaults to `initialization_scaling="fan_in_normalized"`. If a projection has $N$ source channels, the initialized values are divided by $N$:
+
+$$W_{ji}=\frac{\widetilde W_{ji}}{N}.$$
+
+Here $j$ indexes source channels, $i$ indexes target cells, $\widetilde W_{ji}$ is the initialized value before fan-in scaling, and $W_{ji}$ is the stored runtime weight. Both weights have the same physical unit; $N$ is a dimensionless channel count. This is SNNLab's initialization convention, not a claim that every neural-network initializer uses this rule.
+
+With four source channels, `Constant(2.0)` stores 0.5 per edge under the default policy and 2.0 per edge under `"direct"`. Use direct scaling when an initializer already specifies the intended per-edge increment.
+
+### Runnable comparison
+
+```python
+import torch
+from snnlab import lang
+from snnlab.sim.execution import GraphExecutor, plan_graph
+
+net = lang.Network("weight_scaling", dt=0.25 * lang.ms)
+events = net.input("events", shape=("time", "batch", 4),
+                   signal_type="spikes", unit="spike")
+projections = {}
+for policy in ("fan_in_normalized", "direct"):
+    cells = net.population(policy, size=3, neuron=lang.ALIF())
+    projections[policy] = net.connect(
+        events, cells.excitatory, name=f"drive_{policy}",
+        synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
+        weight=lang.Constant(2.0), constraint=lang.NonNegative(),
+        initialization_scaling=policy,
+    )
+    net.output(f"{policy}_current", projections[policy].current)
+
+model = GraphExecutor(plan_graph(lang.compile(net).graph), seed=17)
+for policy, projection in projections.items():
+    weights = model.parameter_map()[projection.weight.id]
+    print(policy, tuple(weights.shape), weights[0, 0].item())
+# fan_in_normalized (4, 3) 0.5
+# direct (4, 3) 2.0
+
+events = torch.zeros(2, 1, 4)
+events[0] = 1
+result = model({"events": events})
+print(result.outputs["fan_in_normalized_current"][0, 0].tolist())  # [2.0, 2.0, 2.0]
+print(result.outputs["direct_current"][0, 0].tolist())             # [8.0, 8.0, 8.0]
+```
+
+Scaling applies at initialization. Simulation and checkpoint loading use stored values directly and do not divide them again. Changing the graph's scaling policy changes graph identity rather than reinterpreting an existing checkpoint.
+
+## Shared parameters
+
+Declare a weight once and pass its `ParameterRef` to multiple compatible projections. Set its initializer, unit, constraint and scaling on the parameter itself. It is initialized once, and gradients from its uses accumulate into the same tensor.
+
+```python
+weights = net.parameter(
+    "shared_weights", shape=(3, 4), unit="nA",
+    initializer=lang.Uniform(0.5, 1.0), constraint=lang.NonNegative(),
+    initialization_scaling="direct",
+)
+projection = net.connect(
+    inputs, cells.excitatory, name="shared_drive",
+    synapse=lang.ExponentialCurrent(tau=5 * lang.ms), weight=weights,
+)
+```
+
+This fragment assumes a four-channel input `inputs` and a three-cell current population `cells`. A shared parameter's graph shape must match every connection. When a parameter is passed to `connect`, that call's `constraint` does not change the parameter's constraint. An explicit conflicting scaling policy is rejected; an omitted policy inherits the parameter's declared policy, or selects fan-in normalization on its first connection if no policy was declared.
+
+## Initial sparsity and persistent constraints
+
+`LowerClampedNormal` also accepts `initial_zero_fraction` and `zeroing`. The fraction must satisfy `0 <= fraction < 1`. `zeroing="bernoulli"` removes entries independently; `zeroing="exact_k"` keeps a fixed count of incoming entries for each target cell. Retained values are rescaled to compensate for the zeroing before fan-in scaling. The exact count is rounded and retains at least one incoming entry.
+
+```python
+initializer = lang.LowerClampedNormal(
+    0.5, 0.1, initial_zero_fraction=0.9, zeroing="exact_k",
+)
+```
+
+This changes initialization. Initially zero weights can become nonzero during training; it does not create a permanent sparse mask. Likewise, a non-negative initializer does not constrain later optimizer updates. `lang.NonNegative()` clamps weights at initialization and after updates in built-in training. Use a [registered constraint](/api/lang/extensions) for other persistent restrictions.
+
+## Trainable weights
+
+The graph's [training recipe](/api/lang/training) selects trainable parameter groups. For an external PyTorch loop, supply parameter IDs to `GraphExecutor(..., trainable_parameters=(...))`, optimize those tensors, and call `model.enforce_constraints()` after every optimizer step. Unselected parameters remain frozen.
+
+Weights, optimizer state and simulation state are distinct. A weight checkpoint does not contain the current ALIF threshold offset or AdEx adaptation current; use saved `runtime_state` to continue those trajectories. See [PyTorch Integration](/pytorch-integration), [Training](/training), and [Parameters and constraints](/api/lang/parameters) for complete workflows and signatures.

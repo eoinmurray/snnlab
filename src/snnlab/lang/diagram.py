@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
+from snnlab import extensions as E
 from snnlab.viz import Diagram, DiagramEdge, DiagramGroup, DiagramNode
 
 from .compiler import Bundle
@@ -128,6 +129,10 @@ def diagram(
                 + {
                     "coba_lif": "COBA-LIF",
                     "cuba_lif": "CUBA-LIF",
+                    "cuba_alif": "CUBA-ALIF",
+                    "coba_alif": "COBA-ALIF",
+                    "cuba_adex": "CUBA-AdEx",
+                    "coba_adex": "COBA-AdEx",
                     "lif": "LIF",
                     "leaky_integrator": "Leaky integrator",
                 }.get(
@@ -177,7 +182,7 @@ def diagram(
 
     signal_shapes = {f"{row['id']}.value": row["shape"] for row in graph["operations"]}
     for population in graph["populations"]:
-        for signal in ("spikes", "voltage"):
+        for signal in ("spikes", "voltage", *E.state_units("neuron", population["neuron"])):
             signal_shapes[f"{population['id']}.{signal}"] = (
                 "time",
                 "batch",

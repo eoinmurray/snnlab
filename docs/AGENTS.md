@@ -24,3 +24,5 @@ Keep input declarations in `api/lang/network.mdx` and execution binding fields/r
 Customisation is generated from `scripts/customisation.mdx` and `../examples/customisation/customisation.py` by `scripts/sync-customisation.ts`. Keep it immediately after Current-based LIF and before API Reference. Regenerate its figures after changes; preserve the same shared weights for standard/adaptive comparisons. Extensions reference documents callback contracts, units, tensor state and named implementation requirements.
 
 Current-based LIF is generated from `scripts/current-lif.mdx` and `../examples/current-lif/current_lif.py` by `scripts/sync-current-lif.ts`. Keep it after PyTorch Integration and before Customisation. Regenerate its diagram and four-row figure after example changes.
+
+Neurons is generated from `scripts/neurons.mdx` and `../examples/neurons/neurons.py` by `scripts/sync-neurons.ts`. Edit those sources and regenerate both COBA and CUBA diagrams and comparison plots after example changes. Keep Neurons, Synapses and Weights together after Customisation; Synapses and Weights are authored directly in `content/docs`.

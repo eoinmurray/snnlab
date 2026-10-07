@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-changelog.ts && bun run --bun astro build",
-    "dev": "bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-changelog.ts && bun run --bun astro dev",
+    "build": "bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-neurons.ts && bun scripts/sync-changelog.ts && bun run --bun astro build",
+    "dev": "bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-neurons.ts && bun scripts/sync-changelog.ts && bun run --bun astro dev",
     "start": "bun run preview",
-    "types:check": "bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-changelog.ts && bun run --bun astro check",
+    "types:check": "bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-neurons.ts && bun scripts/sync-changelog.ts && bun run --bun astro check",
     "preview": "bun run --bun astro preview",
     "deploy:cloudflare": "bun run build && bunx --bun wrangler deploy"
   },

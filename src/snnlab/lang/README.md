@@ -45,7 +45,10 @@ checkpoint paths deliberately do not belong in the graph.
 
 Conductance projection weights use `uS` (microsiemens), matching the graph
 executor and its `leak_us` neuron parameters. Current projection weights use
-`nA` (nanoamperes) with `CUBA_LIF`/`LIF` and `ExponentialCurrent`. Authoring and
+`nA` (nanoamperes) with `CUBA_LIF`/`LIF`, `CUBA_ALIF`/`ALIF`,
+`CUBA_ADEX`/`ADEX` and `ExponentialCurrent`. `COBA_ALIF` and `COBA_ADEX`
+accept conductance synapses. Adaptive populations expose `.state("adaptation")`
+in mV for ALIF and nA for AdEx. Authoring and
 execution validate the synapse/neuron family and parameter units; values are
 never silently converted between physical units. Bundles produced before SNNLang 0.2.0 may carry an
 incorrect legacy `nS` label even though their values were executed as `uS`.

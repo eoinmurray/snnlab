@@ -4,6 +4,13 @@
 training. The Python graph-execution API lives in `snnlab.sim.execution`;
 these types and functions are not re-exported from `snnlab.sim`.
 
+Built-in spiking models include current and conductance LIF, ALIF and AdEx.
+ALIF uses a spike-triggered threshold offset; AdEx uses an exponential voltage
+term and adaptation current. Their per-cell adaptation is differentiable and
+included in saved runtime state and recordings. See the
+[Neurons guide](../../../docs/content/docs/neurons.mdx) for parameters and
+the exponential-Euler discretization.
+
 ## GraphExecutor
 
 `GraphExecutor` is a PyTorch `torch.nn.Module` that executes a prepared

@@ -208,15 +208,14 @@ class Recorder:
                 ("synapse", graph.get("projections", ())),
             ):
                 for row in rows:
-                    if row[category]["kind"] == f"custom_{category}":
-                        self.units.update(
-                            {
-                                f"{row['id']}.{port}": unit
-                                for port, unit in E.resolve(
-                                    category, row[category]
-                                ).state_units.items()
-                            }
-                        )
+                    self.units.update(
+                        {
+                            f"{row['id']}.{port}": unit
+                            for port, unit in E.state_units(
+                                category, row[category]
+                            ).items()
+                        }
+                    )
             self.units.update(
                 {
                     row["id"]: self.units.get(row["signal"])

@@ -1,0 +1,224 @@
+---
+title: Neurons
+description: COBA and CUBA variants of LIF, ALIF and AdEx, their units, equations and numerical updates.
+---
+
+A neuron turns synaptic input into membrane voltage and, for a spiking population, output spikes. SNNLab supplies LIF, ALIF and AdEx with either current or conductance input. Use a leaky integrator for a continuous readout. These are established model families; the parameters and discrete update conventions below describe SNNLab's implementation.
+
+## Choose a model
+
+| Model | CUBA: current input (`nA`) | COBA: conductance input (`uS`) | Extra state |
+| --- | --- | --- | --- |
+| LIF | `lang.LIF()` / `lang.CUBA_LIF()` | `lang.COBA_LIF(tau_mem=20 * lang.ms)` | None. |
+| ALIF | `lang.ALIF()` / `lang.CUBA_ALIF()` | `lang.COBA_ALIF()` | Threshold offset in mV. |
+| AdEx | `lang.ADEX()` / `lang.CUBA_ADEX()` | `lang.COBA_ADEX()` | Adaptation current in nA. |
+
+LIF provides a simple baseline. ALIF adds a threshold that rises after firing and relaxes between spikes. AdEx adds both nonlinear spike initiation and a slow adaptation current. Each has both COBA and CUBA variants. `lang.LeakyIntegrator(tau=20 * lang.ms)` is a separate continuous readout model, normally used with `spiking=False`; it is not a COBA/CUBA spiking-neuron variant.
+
+## COBA and CUBA: how input enters the membrane
+
+**CUBA** means current-based: synapses supply current in nA, and the membrane receives excitatory current minus inhibitory current. Use `ExponentialCurrent` with `CUBA_LIF`, `CUBA_ALIF` or `CUBA_ADEX`. The short names `LIF`, `ALIF` and `ADEX` select their CUBA variants.
+
+**COBA** means conductance-based: synapses supply conductance in uS, and their resulting current depends on the membrane voltage and reversal voltage. Use AMPA and GABA with `COBA_LIF`, `COBA_ALIF` or `COBA_ADEX`. A conductance increases the membrane's total linear conductance as well as supplying a driving current. It therefore changes the linear membrane time constant; a CUBA input leaves that time constant unchanged.
+
+| Property | CUBA neurons | COBA neurons |
+| --- | --- | --- |
+| Synaptic drive | Excitatory minus inhibitory current. | Conductance multiplied by reversal-minus-membrane voltage. |
+| Projection weight unit | `nA`, a current increment per event. | `uS`, a conductance increment per event. |
+| Built-in synapses | `ExponentialCurrent` on either target port. | Usually AMPA on `.excitatory`, GABA on `.inhibitory`. |
+| Linear membrane time constant | Set by membrane capacitance and leak. | Also depends on the current synaptic conductances. |
+| Reversal voltages | Not needed for input currents. | Applied separately to excitatory and inhibitory conductance. |
+
+The input family and the neuron model are separate choices: COBA/CUBA determines how synaptic drive enters the membrane, while LIF/ALIF/AdEx determines its intrinsic dynamics and adaptation. Match the neuron family to the [synapse](/synapses); compilation rejects a current/conductance mismatch. Equal numeric weight values across the two families do not specify equal physical inputs.
+
+## LIF membrane dynamics
+
+The general subthreshold LIF equation is
+
+$$C_m\frac{dV}{dt}=-g_L(V-E_L)+I_{\mathrm{syn}}.$$
+
+Here $t$ is time in ms, $V$ is membrane voltage in mV, $C_m$ is capacitance in nF, $g_L$ is leak conductance in uS, $E_L$ is resting voltage in mV, and $I_{\mathrm{syn}}$ is synaptic current in nA. The leak membrane time constant is $\tau_m=C_m/g_L$ in ms.
+
+### CUBA LIF
+
+`CUBA_LIF` receives excitatory current $I_e$ and inhibitory current $I_i$, both in nA:
+
+$$C_m\frac{dV}{dt}=-g_L(V-E_L)+I_e-I_i.$$
+
+All membrane symbols retain their definitions above. SNNLab sets $g_L=C_m/\tau_m$ from `capacitance_nf` and `tau_mem`. The currents do not depend on voltage, so the linear time constant stays at `tau_mem`. The constructor applies its supplied resting, reset and initial voltage values.
+
+### COBA LIF
+
+`COBA_LIF` receives excitatory and inhibitory conductances:
+
+$$C_m\frac{dV}{dt}=-g_L(V-E_L)+g_e(E_e-V)+g_i(E_i-V).$$
+
+Here $g_e$ and $g_i$ are excitatory and inhibitory conductances in uS, and $E_e$ and $E_i$ are their reversal voltages in mV; the remaining symbols retain their definitions above. With conductances held fixed within a step, the linear membrane time constant is
+
+$$\tau_{\mathrm{eff}}=\frac{C_m}{g_L+g_e+g_i},$$
+
+where $\tau_{\mathrm{eff}}$ is the effective time constant in ms. Input conductance shortens this time constant for non-negative $g_e$ and $g_i$. Its current contribution approaches zero as voltage approaches the corresponding reversal potential. `COBA_LIF` retains fixed resting/reset voltage of -65 mV and excitatory/inhibitory reversals of 0/-80 mV.
+
+When voltage reaches the firing threshold, the neuron emits a spike, resets and optionally holds reset voltage for a specified number of subsequent steps. The linear membrane update is exact while synaptic drive is held fixed within a step. These are standard integrate-and-fire equations; see [Neuronal Dynamics, chapter 1](https://neuronaldynamics.epfl.ch/online/Ch1.S3.html).
+
+```python
+from snnlab import lang
+
+cuba = lang.CUBA_LIF(tau_mem=20 * lang.ms, refractory_steps=4)
+coba = lang.COBA_LIF(tau_mem=20 * lang.ms, refractory_steps=4)
+```
+
+The two LIF constructors have different defaults and refractory scheduling conventions, described below. Sharing a parameter name does not make every setting or default identical across them.
+
+## ALIF: an adapting threshold
+
+SNNLab's ALIF uses the threshold-adaptation model family described by [Bellec et al. (2018)](https://arxiv.org/abs/1803.09574), with adaptation expressed directly as a voltage offset:
+
+$$\theta_k=V_{\mathrm{th}}+h_k,\qquad h_{k+1}=e^{-\Delta t/\tau_h}h_k+q_h s_k.$$
+
+Here $k$ indexes timesteps; $\theta_k$ is the threshold used for that step's spike decision in mV; $V_{\mathrm{th}}$ is the baseline threshold in mV; $h_k$ is the threshold offset at the start of the step in mV; $\Delta t$ is the timestep in ms; $\tau_h$ is the adaptation time constant in ms; $q_h$ is the increment per spike in mV; and $s_k$ is 1 when the neuron spikes in that step and 0 otherwise. This physical-unit parameterization and timestep convention are SNNLab's adaptation of the model, rather than a reproduction of the paper's parameter normalization.
+
+The spike decision uses the offset at the start of the step. The recorded offset is the updated value after decay and the spike increment. Adaptation continues to decay during refractory steps. Setting `adaptation_increment_mv=0` and `initial_adaptation_mv=0` makes current ALIF reproduce current LIF.
+
+Both ALIF variants use the corresponding LIF membrane equation above, replacing its fixed threshold with $\theta_k$:
+
+```python
+cuba = lang.CUBA_ALIF(
+    tau_mem=20 * lang.ms,
+    tau_adaptation=200 * lang.ms,
+    adaptation_increment_mv=1.0,
+    initial_adaptation_mv=0.0,
+)
+coba = lang.COBA_ALIF(
+    tau_mem=20 * lang.ms,
+    tau_adaptation=200 * lang.ms,
+    adaptation_increment_mv=1.0,
+    excitatory_reversal_mv=0.0,
+    inhibitory_reversal_mv=-80.0,
+)
+```
+
+`ALIF(...)` is the short name for `CUBA_ALIF(...)`. `COBA_ALIF` uses the same threshold adaptation with voltage-dependent conductance input and configurable reversals. Both variants apply configurable resting, reset and initial voltage values. Read or record the offset through `cells.state("adaptation")`; its unit is mV in both families. Add `threshold_mv` to that offset to obtain the threshold for the following step.
+
+## AdEx: exponential onset and adaptation current
+
+The [Brette and Gerstner (2005)](https://doi.org/10.1152/jn.00686.2005) AdEx model adds an exponential voltage term and an adaptation current:
+
+$$C_m\frac{dV}{dt}=-g_L(V-E_L)+g_L\Delta_T\exp\!\left(\frac{V-V_T}{\Delta_T}\right)-w+I_{\mathrm{syn}},$$
+
+$$\tau_w\frac{dw}{dt}=a(V-E_L)-w.$$
+
+The membrane terms retain their definitions above. $V_T$ is the exponential onset voltage in mV, $\Delta_T$ is the slope factor in mV, $w$ is the adaptation current in nA, $\tau_w$ is its time constant in ms, and $a$ is the subthreshold adaptation coupling in uS. At the spike detection cutoff $V_{\mathrm{peak}}$ in mV, voltage resets to $V_r$ in mV and $w$ increases by $b$ in nA. SNNLab names these settings `threshold_mv`, `delta_t_mv`, `spike_mv`, `reset_mv`, and `b_na`, respectively. Crossing `threshold_mv` alone does not emit a spike.
+
+For `CUBA_ADEX`, substitute $I_{\mathrm{syn}}=I_e-I_i$ into the membrane equation, with $I_e$ and $I_i$ the excitatory and inhibitory currents in nA. For `COBA_ADEX`, substitute $I_{\mathrm{syn}}=g_e(E_e-V)+g_i(E_i-V)$, with the conductances and reversal voltages defined in the COBA LIF section. The exponential term and adaptation-current equation stay the same in both families. The conductance-dependent $\tau_{\mathrm{eff}}$ describes the COBA model's linear membrane part; the full AdEx dynamics also contain the nonlinear exponential term.
+
+```python
+cuba = lang.CUBA_ADEX(
+    tau_adaptation=200 * lang.ms,
+    delta_t_mv=2.0,
+    threshold_mv=-50.0,
+    spike_mv=-30.0,
+    a_us=0.002,
+    b_na=0.05,
+    initial_adaptation_na=0.0,
+)
+coba = lang.COBA_ADEX(
+    tau_adaptation=200 * lang.ms,
+    delta_t_mv=2.0,
+    threshold_mv=-50.0,
+    spike_mv=-30.0,
+    a_us=0.002,
+    b_na=0.05,
+    excitatory_reversal_mv=0.0,
+    inhibitory_reversal_mv=-80.0,
+)
+```
+
+`ADEX(...)` is the short name for `CUBA_ADEX(...)`. Both variants expose `cells.state("adaptation")` in nA, even though COBA's incoming synapses carry conductance in uS. Both apply configurable resting, reset and initial voltage values. Adaptation evolves during refractory steps, with voltage held at reset. Reset may lie above the exponential onset voltage, but both must stay below the detection cutoff.
+
+### Numerical update
+
+SNNLab uses exponential Euler: the linear membrane equation is integrated exactly while the exponential voltage term, adaptation current and synaptic values are held at their values for that step. The adaptation update integrates its linear decay exactly while holding its voltage-dependent target at the previous membrane voltage, then adds the spike increment. This is a first-order approximation to the coupled AdEx equations, not an adaptive continuous-time solver.
+
+Reduce `dt` and compare spike counts and timings when those quantities matter. An exponent cap limits extreme suprathreshold voltage increments to avoid floating-point overflow; it is not an additional biological parameter. At most one spike is emitted per neuron per timestep. Spike resets use the same discrete scheduling convention as the other graph neurons. The independent SciPy comparison in the test suite checks convergence of subthreshold AdEx trajectories as the timestep is reduced.
+
+## Parameters and state
+
+Current LIF, both ALIF variants and both AdEx variants share these defaults:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `tau_mem` | `20 * lang.ms` | Membrane time constant. |
+| `capacitance_nf` | `1.0` | Membrane capacitance in nF; leak is capacitance divided by `tau_mem`. |
+| `resting_mv` | `-65.0` | Leak reversal voltage. |
+| `threshold_mv` | `-50.0` | LIF/ALIF baseline threshold or AdEx exponential onset. |
+| `reset_mv` | `-65.0` | Voltage after a spike. |
+| `initial_voltage_mv` | `None` | Starts at `resting_mv` unless an initial voltage is supplied. |
+| `refractory_steps` | `0` | Number of following steps held at reset with spikes suppressed. |
+| `voltage_grad_dampen` | `1.0` | Divides the voltage-update gradient; leaves forward dynamics unchanged. |
+
+ALIF adds `tau_adaptation=200 * lang.ms`, `adaptation_increment_mv=1.0` and `initial_adaptation_mv=0.0`. AdEx adds the defaults displayed in its code above. Conductance ALIF/AdEx also accept `excitatory_reversal_mv=0.0` and `inhibitory_reversal_mv=-80.0`. These constructors apply all the listed overrides.
+
+### COBA LIF defaults and compatibility
+
+`COBA_LIF` requires an explicit `tau_mem` and retains its earlier parameter contract:
+
+| Parameter | `COBA_LIF` behaviour |
+| --- | --- |
+| `capacitance_nf` | Defaults to 1 nF for `tau_mem >= 15 ms`, otherwise 0.5 nF. |
+| `leak_us` | Optional explicit leak conductance; otherwise capacitance divided by `tau_mem`. With an override, the leak time constant follows capacitance divided by the supplied leak. |
+| `threshold_mv` | Defaults to -50 mV. |
+| `refractory_steps` | Defaults to 3 ms for `tau_mem >= 15 ms`, otherwise 1.5 ms, rounded to steps with a minimum of one. |
+| `voltage_grad_dampen` | Defaults to 80. |
+| Resting/reset and initial voltage | Fixed at -65 mV; supplied `resting_mv`, `reset_mv` and `initial_voltage_mv` are not per-population overrides in this model. |
+| Reversal voltages | Fixed at 0 mV for excitatory and -80 mV for inhibitory conductance. |
+
+COBA LIF decrements its refractory counter before testing spike eligibility: a configured count of $n$ suppresses the following $\max(n-1,0)$ steps. Here $n$ is the integer `refractory_steps` setting. CUBA LIF and both families of ALIF/AdEx test eligibility before decrementing and suppress the following $n$ steps. The shared-parameter table above applies to those newer constructors; it does not replace COBA LIF's defaults or counter convention. See the [Components contract](/api/lang/components#graph-neuron-parameters) for its supported settings.
+
+### Leaky-integrator readouts
+
+Use `lang.LeakyIntegrator(tau=20 * lang.ms)` with `spiking=False` when a continuous readout is wanted. Its compatible `LeakyIntegrator` projection carries the source drive without synaptic carry-over, while the receiving population supplies temporal integration. This readout has neither ALIF threshold adaptation nor AdEx adaptation current. It is separate from the COBA/CUBA model choices above; see [readouts](/api/lang/operations-readouts).
+
+Time constants, capacitance and AdEx slope factor must be positive. All values must be finite. Adaptation increments, ALIF initial offset and AdEx coupling `a_us` must be non-negative; AdEx initial current can be negative. Every batch item and neuron has independent state. Saved `runtime_state` includes adaptation, so a resumed simulation preserves it. A parameter checkpoint holds weights; it is separate from simulation state.
+
+Spikes use the configured surrogate derivative during [training](/training). Adaptation remains in the computation graph, allowing gradients to propagate through its history; biological neuron settings are graph configuration, not trainable weight tensors. Use [Customisation](/customisation) and [Extensions](/api/lang/extensions) to define additional dynamics.
+
+## Runnable comparison
+
+The script runs two comparisons: one using CUBA neurons and current synapses, and one using COBA neurons and conductance synapses. Each comparison drives one LIF, one ALIF and one AdEx cell with the same event train and the same weights within that input family. It uses stronger adaptation than the constructor defaults so its effect is visible. Different firing patterns illustrate these chosen parameters; they do not compare model accuracy or learning performance.
+
+```sh
+uv run python examples/neurons/neurons.py
+```
+
+The script writes `network-cuba.png`, `neurons-cuba.png`, `network-coba.png` and `neurons-coba.png` beside itself and prints each cell's spike count. In both plots, the left column shows the first 70 ms of voltage; the middle column shows the full adaptation trace; the right column shows spike times over 400 ms. The dotted voltage line is the LIF/ALIF baseline threshold and AdEx onset voltage. The displayed state is sampled after each update and reset.
+
+With the included settings, the example produces these counts over 400 ms:
+
+| Model | CUBA spikes | COBA spikes |
+| --- | --- | --- |
+| LIF | 75 | 83 |
+| ALIF | 25 | 18 |
+| AdEx | 19 | 18 |
+
+### CUBA comparison
+
+All three neurons receive `ExponentialCurrent` synapses with a direct weight of 0.8 nA and a 5 ms decay time constant.
+
+![Three CUBA neuron populations receiving the same current input](/neurons/network-cuba.png)
+
+![CUBA LIF, ALIF and AdEx voltage, adaptation and spike traces](/neurons/neurons-cuba.png)
+
+### COBA comparison
+
+All three neurons receive AMPA synapses with a direct weight of 0.015 uS and a 5 ms decay time constant. These conductance values are independent example settings, rather than a conversion of the CUBA weights. The same event train produces voltage-dependent current here. The script sets COBA LIF's capacitance, refractory count and gradient dampening explicitly; its earlier refractory counter convention still applies.
+
+![Three COBA neuron populations receiving the same conductance input](/neurons/network-coba.png)
+
+![COBA LIF, ALIF and AdEx voltage, adaptation and spike traces](/neurons/neurons-coba.png)
+
+[Download the complete Python script](/neurons/neurons.py). Diagram generation requires Graphviz's `dot` command. See [GraphExecutor](/api/sim/graph-executor) for direct PyTorch execution and [Components](/api/lang/components) for constructor contracts.
+
+```python
+{{SCRIPT}}
+```

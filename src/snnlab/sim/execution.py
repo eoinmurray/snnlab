@@ -24,6 +24,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from snnlab import _neurons as N
 from snnlab import extensions as E
 from snnlab.sim import extensions as X
 from snnlab.sim import models as M
@@ -430,7 +431,8 @@ class TrainingCheckpoint:
 
 GRAPH_CAPABILITIES_V1 = {
     "schema": "tools/snnsim.capabilities/v1",
-    "neurons": {"coba_lif", "cuba_lif", "leaky_integrator", "custom_neuron"},
+    "neurons": {"coba_lif", "cuba_lif", "leaky_integrator", "custom_neuron"}
+    | N.ADAPTIVE_KINDS,
     "synapses": {
         "ampa",
         "gaba",
@@ -1646,7 +1648,7 @@ def graph_capability_issues(graph: Mapping[str, Any]) -> list[CapabilityIssue]:
         "cuba_lif",
         "leaky_integrator",
         "custom_neuron",
-    }
+    } | N.ADAPTIVE_KINDS
     synapse_capabilities: set[str] = {
         "ampa",
         "gaba",
@@ -1754,9 +1756,8 @@ def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
             populations[target]["size"],
         )
     for row in graph.get("populations", []):
-        if row["neuron"]["kind"] == "custom_neuron":
-            for port in E.resolve("neuron", row["neuron"]).state_units:
-                axes[f"{row['id']}.{port}"] = ("time", "batch", row["size"])
+        for port in E.state_units("neuron", row["neuron"]):
+            axes[f"{row['id']}.{port}"] = ("time", "batch", row["size"])
     for row in graph.get("projections", []):
         if row["synapse"]["kind"] == "custom_synapse":
             size = populations[row["target"].partition(".")[0]]["size"]
@@ -2848,6 +2849,9 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
             != "leaky_integrator"
         ):
             raise ValueError(f"{signal}: pre_reset_voltage requires a leaky integrator")
+    for population in populations.values():
+        if population["neuron"]["kind"] in N.ADAPTIVE_KINDS:
+            N.validate(population["neuron"])
     issues = graph_capability_issues(graph)
     if issues:
         detail = "; ".join(
@@ -3249,6 +3253,7 @@ class GraphExecutor(nn.Module):
                         (batch, p["size"]),
                         float(p["neuron"].get("initial_voltage_mv", M.E_L))
                         if p["neuron"]["kind"] == "cuba_lif"
+                        or p["neuron"]["kind"] in N.ADAPTIVE_KINDS
                         else M.E_L,
                         device=device,
                     )
@@ -3436,34 +3441,56 @@ class GraphExecutor(nn.Module):
         ):
             for row in rows:
                 spec = row[category]
-                if spec["kind"] != f"custom_{category}":
+                adaptive = category == "neuron" and spec["kind"] in N.ADAPTIVE_KINDS
+                if not adaptive and spec["kind"] != f"custom_{category}":
                     continue
-                definition = E.resolve(category, spec)
                 owner = row["id"]
                 target = (
                     owner if category == "neuron" else row["target"].partition(".")[0]
                 )
                 shape = (batch, populations[target]["size"])
-                context = E.StateContext(
-                    shape,
-                    device,
-                    parameter_dtype,
-                    self.plan.dt_ms,
-                    spec.get("config", {}),
-                )
-                if definition.initialize is None:
+                if adaptive:
+                    label = spec["kind"]
+                    initial_key = (
+                        "initial_adaptation_mv"
+                        if spec["kind"].endswith("alif")
+                        else "initial_adaptation_na"
+                    )
                     state = {
-                        "value": torch.zeros(
-                            shape, device=device, dtype=parameter_dtype
-                        )
+                        "voltage": voltage[owner],
+                        "refractory": refractory[owner],
+                        "adaptation": torch.full(
+                            shape,
+                            float(spec[initial_key]),
+                            device=device,
+                            dtype=parameter_dtype,
+                        ),
                     }
                 else:
-                    state = X.checked_state(
-                        definition.initialize(context),
-                        None,
-                        definition.name,
-                        required=("voltage",) if category == "neuron" else ("value",),
+                    definition = E.resolve(category, spec)
+                    label = definition.name
+                    context = E.StateContext(
+                        shape,
+                        device,
+                        parameter_dtype,
+                        self.plan.dt_ms,
+                        spec.get("config", {}),
                     )
+                    if definition.initialize is None:
+                        state = {
+                            "value": torch.zeros(
+                                shape, device=device, dtype=parameter_dtype
+                            )
+                        }
+                    else:
+                        state = X.checked_state(
+                            definition.initialize(context),
+                            None,
+                            label,
+                            required=("voltage",)
+                            if category == "neuron"
+                            else ("value",),
+                        )
                 if category == "neuron":
                     state.setdefault(
                         "refractory",
@@ -3477,24 +3504,22 @@ class GraphExecutor(nn.Module):
                         shape=shape,
                         device=device,
                         dtype=torch.long if key == "refractory" else parameter_dtype,
-                        name=f"{definition.name}.{key}",
+                        name=f"{label}.{key}",
                     )
                 for key, value in state.items():
                     if value.device != torch.device(device):
                         raise ValueError(
-                            f"{definition.name}.{key}: state must use execution device {device}"
+                            f"{label}.{key}: state must use execution device {device}"
                         )
-                for port in definition.state_units:
+                for port in E.state_units(category, spec):
                     if port not in state:
-                        raise ValueError(
-                            f"{definition.name}: declared state port {port} missing"
-                        )
+                        raise ValueError(f"{label}: declared state port {port} missing")
                     X.checked_tensor(
                         state[port],
                         shape=shape,
                         device=device,
                         dtype=parameter_dtype,
-                        name=f"{definition.name}.{port}",
+                        name=f"{label}.{port}",
                     )
                 for key, value in state.items():
                     state_key = f"{category}/{owner}/{key}"
@@ -3718,6 +3743,28 @@ class GraphExecutor(nn.Module):
                         name, new_spikes[name], completed_steps + t
                     )
                     continue
+                if neuron["kind"] in N.ADAPTIVE_KINDS:
+                    state, spike_values = X.adaptive_neuron(
+                        neuron_states[name],
+                        incoming["excitatory"],
+                        incoming["inhibitory"],
+                        dt_ms=self.plan.dt_ms,
+                        config=neuron,
+                        spike_function=spike_function,
+                    )
+                    neuron_states[name] = state
+                    voltage[name], refractory[name] = (
+                        state["voltage"],
+                        state["refractory"],
+                    )
+                    new_spikes[name] = intervene(
+                        name,
+                        spike_values
+                        if pop["spiking"]
+                        else torch.zeros_like(spike_values),
+                        completed_steps + t,
+                    )
+                    continue
                 if neuron["kind"] == "cuba_lif":
                     voltage[name], new_spikes[name], refractory[name] = X.current_lif(
                         {"voltage": voltage[name], "refractory": refractory[name]},
@@ -3800,7 +3847,7 @@ class GraphExecutor(nn.Module):
                     spec = rows[owner][category]
                     for key, value in state.items():
                         custom_state[f"{category}/{owner}/{key}"] = value
-                    for port in E.resolve(category, spec).state_units:
+                    for port in E.state_units(category, spec):
                         signal = f"{owner}.{port}"
                         if signal in needed_signals:
                             state_traces.setdefault(signal, []).append(state[port])
@@ -3833,7 +3880,7 @@ class GraphExecutor(nn.Module):
                             if category == "neuron"
                             else projection_rows[owner][category]
                         )
-                        for port in E.resolve(category, spec).state_units:
+                        for port in E.state_units(category, spec):
                             step_signals[f"{owner}.{port}"] = state[port]
                 step_signals = online.samples(step_signals)
                 online.observe(step_signals, completed_steps + t)

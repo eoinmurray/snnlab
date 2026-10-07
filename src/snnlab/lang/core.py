@@ -103,6 +103,84 @@ def ExponentialCurrent(*, tau=5 * ms) -> Spec:
     return Spec("exponential_current", {"tau": tau})
 
 
+def ALIF(**values: Any) -> Spec:
+    """Current-based LIF with a spike-triggered adapting threshold."""
+    return CUBA_ALIF(**values)
+
+
+def CUBA_ALIF(
+    *,
+    tau_adaptation=200 * ms,
+    adaptation_increment_mv=1.0,
+    initial_adaptation_mv=0.0,
+    **lif_values: Any,
+) -> Spec:
+    return Spec(
+        "cuba_alif",
+        dict(
+            CUBA_LIF(**lif_values).values,
+            tau_adaptation=tau_adaptation,
+            adaptation_increment_mv=adaptation_increment_mv,
+            initial_adaptation_mv=initial_adaptation_mv,
+        ),
+    )
+
+
+def COBA_ALIF(
+    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+) -> Spec:
+    return Spec(
+        "coba_alif",
+        dict(
+            CUBA_ALIF(**values).values,
+            excitatory_reversal_mv=excitatory_reversal_mv,
+            inhibitory_reversal_mv=inhibitory_reversal_mv,
+        ),
+    )
+
+
+def ADEX(**values: Any) -> Spec:
+    """Current-based adaptive exponential integrate-and-fire neuron."""
+    return CUBA_ADEX(**values)
+
+
+def CUBA_ADEX(
+    *,
+    tau_adaptation=200 * ms,
+    delta_t_mv=2.0,
+    spike_mv=-30.0,
+    a_us=0.002,
+    b_na=0.05,
+    initial_adaptation_na=0.0,
+    **lif_values: Any,
+) -> Spec:
+    return Spec(
+        "cuba_adex",
+        dict(
+            CUBA_LIF(**lif_values).values,
+            tau_adaptation=tau_adaptation,
+            delta_t_mv=delta_t_mv,
+            spike_mv=spike_mv,
+            a_us=a_us,
+            b_na=b_na,
+            initial_adaptation_na=initial_adaptation_na,
+        ),
+    )
+
+
+def COBA_ADEX(
+    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+) -> Spec:
+    return Spec(
+        "coba_adex",
+        dict(
+            CUBA_ADEX(**values).values,
+            excitatory_reversal_mv=excitatory_reversal_mv,
+            inhibitory_reversal_mv=inhibitory_reversal_mv,
+        ),
+    )
+
+
 def _custom(category: str, definition: str, config: dict[str, Any]) -> Spec:
     from snnlab.extensions import get
 
@@ -380,19 +458,18 @@ class Network:
                 name,
                 "pre_reset_voltage",
             )
-        if neuron.kind == "custom_neuron":
-            from snnlab.extensions import resolve
+        from snnlab.extensions import state_units
 
-            for port, unit in resolve("neuron", neuron.json()).state_units.items():
-                self._signals[f"{name}.{port}"] = Signal(
-                    self,
-                    f"{name}.{port}",
-                    ("time", "batch", size),
-                    unit,
-                    "continuous",
-                    name,
-                    port,
-                )
+        for port, unit in state_units("neuron", neuron.json()).items():
+            self._signals[f"{name}.{port}"] = Signal(
+                self,
+                f"{name}.{port}",
+                ("time", "batch", size),
+                unit,
+                "continuous",
+                name,
+                port,
+            )
         return Population(self, name, size, neuron, spiking, group)
 
     def parameter(

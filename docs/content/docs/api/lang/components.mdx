@@ -12,6 +12,10 @@ Neuron and synapse constructors return data specifications. They accept keyword 
 | `lang.COBA_LIF(tau_mem=20 * lang.ms, **values)` | Conductance-based leaky integrate-and-fire neurons. | Supported. |
 | `lang.LeakyIntegrator(tau=20 * lang.ms, **values)` | Leaky-integrator populations; also used for readouts. | Supported. |
 | `lang.CUBA_LIF(...)` / `lang.LIF(...)` | Current-based leaky integrate-and-fire neurons. | Supported; `LIF` is a convenience alias. |
+| `lang.CUBA_ALIF(...)` / `lang.ALIF(...)` | Current-based LIF with an adaptive threshold. | Supported; `ALIF` is a convenience alias. |
+| `lang.COBA_ALIF(...)` | Conductance-based LIF with an adaptive threshold. | Supported. |
+| `lang.CUBA_ADEX(...)` / `lang.ADEX(...)` | Current-based adaptive exponential integrate-and-fire neurons. | Supported; `ADEX` is a convenience alias. |
+| `lang.COBA_ADEX(...)` | Conductance-based adaptive exponential integrate-and-fire neurons. | Supported. |
 
 These constructors produce specifications from keyword arguments. Backend support determines which models and settings can execute. `LeakyIntegrator` can also specify a [synapse](#synapses); its meaning depends on whether it is passed as `neuron` or `synapse`.
 
@@ -39,6 +43,19 @@ def CUBA_LIF(*, tau_mem=20 * ms, capacitance_nf=1.0, resting_mv=-65.0, threshold
 All displayed settings are applied. `initial_voltage_mv=None` starts at `resting_mv`. `refractory_steps=0` permits immediate recovery; a positive count suppresses that many following steps while holding reset voltage. Reset must be below threshold, time constants/capacitance must be positive and values finite. During training, spikes use the configured surrogate.
 
 Connect current neurons with `ExponentialCurrent` or a compatible registered current synapse. A conductance/current mismatch fails compilation or planning. See [Customisation](/customisation) for a comparison with custom adaptive dynamics.
+
+### ALIF and AdEx
+
+`ALIF(**values)` and `ADEX(**values)` return `CUBA_ALIF` and `CUBA_ADEX` specifications. Both families accept every `CUBA_LIF` parameter above. Conductance variants additionally accept `excitatory_reversal_mv=0.0` and `inhibitory_reversal_mv=-80.0`. Leak is `capacitance_nf / tau_mem`; these models apply the supplied resting, reset and initial voltage values.
+
+| Family | Additional parameters and defaults |
+| --- | --- |
+| ALIF | `tau_adaptation=200 * ms`, `adaptation_increment_mv=1.0`, `initial_adaptation_mv=0.0`. |
+| AdEx | `tau_adaptation=200 * ms`, `delta_t_mv=2.0`, `spike_mv=-30.0`, `a_us=0.002`, `b_na=0.05`, `initial_adaptation_na=0.0`. |
+
+For ALIF, `threshold_mv` is the baseline threshold and `.state("adaptation")` is its offset in mV. For AdEx, `threshold_mv` is the exponential onset voltage, `spike_mv` is the detection cutoff and adaptation is a current in nA. AdEx reset voltage can exceed the onset voltage, but reset and onset must both remain below `spike_mv`. Time constants, capacitance and `delta_t_mv` must be positive; adaptation increments and `a_us` are non-negative. AdEx's initial adaptation current can have either sign.
+
+Adaptation participates in outputs, diagnostics, streamed recordings and saved continuation. Spikes use the configured surrogate during training. See [Neurons](/neurons) for the equations, integrator and runnable comparison; see [Synapses](/synapses) for compatible connections and [Weights](/weights) for initialization.
 
 ### Population and projection signals
 
