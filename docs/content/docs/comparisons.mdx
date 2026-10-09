@@ -1,0 +1,133 @@
+---
+title: Comparing SNN libraries
+description: How SNNLab's declarative network language and experimental workflow compare with SpikingJelly, snnTorch, Brian 2, NEST and Norse.
+---
+
+SNN libraries serve different purposes. Some focus on learning from neuromorphic datasets; others focus on biological network dynamics. SNNLab brings explicit circuit modelling and surrogate-gradient training into one workflow, with **`snnlab.lang` as the shared description of the network**.
+
+This guide compares design choices, rather than ranking libraries overall. It draws on the projects' official documentation, reviewed on 9 October 2026. It is not a performance benchmark: we have not established that SNNLab is faster, more accurate or more scalable than these alternatives.
+
+## At a glance
+
+| Library | Main emphasis | How networks are described | Why consider SNNLab instead? |
+| --- | --- | --- | --- |
+| [SpikingJelly](https://github.com/fangwei123456/spikingjelly) | SNN machine learning, datasets and conversion | PyTorch modules and spiking layers | Explicit circuit structure, physical units and a saved graph for simulation and training. |
+| [snnTorch](https://snntorch.readthedocs.io/en/latest/) | Gradient-based SNN learning | Spiking neurons composed with ordinary PyTorch layers | Named populations, synapses, outputs and constraints in a separate authoring language. |
+| [Brian 2](https://brian2.readthedocs.io/en/stable/user/models.html) | Flexible neuroscience modelling | Differential equations, neuron groups and synapses | Built-in differentiable execution of an authored circuit, with reusable bundles and training recipes. |
+| [NEST](https://www.nest-simulator.org/) | Biological network dynamics and large simulations | Python commands creating model instances, connections and recording devices | A PyTorch training path using the same graph as simulation and inference. |
+| [Norse](https://norse.github.io/norse/) | Differentiable, biologically inspired components | PyTorch modules and functional state transitions | A declarative circuit representation with validation, persistence and structural diagrams. |
+
+## What `snnlab.lang` brings to the workflow
+
+`lang` lets you describe **what the circuit contains** before choosing the inputs and execution request. Populations, projection dynamics, weight initializers, constraints and observable signals have explicit names. You can inspect the compiled description without advancing the simulation.
+
+Here is a complete authoring example: four input channels drive sixteen conductance-based LIF neurons through an excitatory AMPA projection.
+
+```python
+from snnlab import lang
+
+net = lang.Network("comparison", dt=0.1 * lang.ms)
+inputs = net.input(
+    "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
+)
+cells = net.population(
+    "E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms)
+)
+projection = net.connect(
+    inputs,
+    cells.excitatory,
+    name="input_to_E",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=lang.Uniform(0.1, 0.5),
+    constraint=lang.NonNegative(),
+)
+net.output("spikes", cells.spikes)
+net.expose(cells.voltage, name="e_voltage")
+net.expose(projection.conductance, name="input_conductance")
+
+bundle = lang.compile(net, target="tools/snnsim")
+bundle_path = bundle.write("comparison.bundle")
+```
+
+![Diagram generated from the example's compiled graph: four input channels connect through one AMPA projection to sixteen conductance-based LIF neurons.](/comparisons/network.png)
+
+This diagram is generated from the example's compiled graph. The boxes identify the input, neuron population and spike output; the AMPA-labelled connection identifies the synaptic projection. It describes the circuit structure, rather than measured activity or training performance.
+
+The projection has 64 weights, sized automatically from the four source channels and sixteen target neurons. Its stored weights and conductance state use microsiemens. The default fan-in normalization divides the sampled weights by four at initialization; use `initialization_scaling="direct"` to retain their sampled magnitudes. AMPA here denotes simplified exponential conductance dynamics. The target port selects excitation.
+
+The description makes several useful choices visible:
+
+1. **The circuit is inspectable data.** Compilation produces `graph.json`, an optional `training.json`, a manifest and a report. Compilation validates and serializes declarations; it does not generate a standalone native simulation binary.
+2. **Signals carry meaning.** Shapes, signal types and physical units support compatibility checks. Authoring, graph validation and execution planning check different parts of the contract; compilation alone does not guarantee that every declared feature can execute on a backend. Review `bundle.diagnostics` for capability reports and warnings before execution.
+3. **Observations belong to the description.** Named outputs and optional diagnostics identify the spikes, voltages and conductances the experiment will expose.
+4. **Diagrams follow the graph.** `lang.diagram(bundle)` produces a structural diagram from the compiled description. Rendering it with `viz.render_diagram` requires Graphviz. [Groups and reusable components](/api/lang/components) help organise larger circuits.
+5. **The architecture can travel between runs.** Save a bundle once, then supply different input bindings and execution settings. Optional [training recipes](/api/lang/training) record parameter selection and training configuration alongside the graph.
+
+Continue the example with a short simulation of the saved bundle:
+
+```python
+from snnlab.sim.execution import ExecutionSpec, PoissonInputBinding, simulate
+
+result = simulate(ExecutionSpec(
+    kind="simulate",
+    bundle=bundle_path,
+    input_bindings=(PoissonInputBinding(
+        input_id="inputs", steps_count=1000, rates_hz=(80,), seed=17,
+    ),),
+    seed=17,
+    device="cpu",
+))
+data = result.numpy(batch=0)
+print(data.outputs["spikes"].shape)  # (1000, 16)
+print(data.diagnostics["e_voltage"].shape)  # (1000, 16)
+```
+
+This runs 100 ms at a 0.1 ms timestep. Changing the input stimulus does not require rebuilding the circuit. See [Quickstart](/quickstart) for a complete plotting workflow and [Compilation and bundles](/api/lang/compilation) for the persistence contract.
+
+A bundle stores architecture, initializers and optional recipes; learned weights need a checkpoint, and continuing a running simulation needs its runtime state. File digests help detect changed bundle contents, but do not guarantee scientific reproducibility across environments. Custom extensions retain import references, so their external Python modules must be available when loading the bundle.
+
+## SpikingJelly
+
+[SpikingJelly](https://github.com/fangwei123456/spikingjelly) offers a broad machine-learning workflow: spiking modules, surrogate gradients, ANN-to-SNN conversion, event-based datasets and specialised execution paths. Its current repository also describes memory-efficient training and hardware interchange; availability varies between released and development versions.
+
+SNNLab is attractive when the central object is an explicit circuit: named populations, excitatory and inhibitory projections, synaptic time constants and physical observables. `lang` keeps those choices together in a graph that can drive simulation, training and diagrams. This can reduce the amount of experiment-specific code needed to preserve the circuit description.
+
+Choose SpikingJelly when its dataset, conversion or architecture tooling matches your task. SNNLab does not currently offer an equivalent breadth of those workflows, and its graph executor should not be assumed to match specialised kernels in throughput.
+
+## snnTorch
+
+[snnTorch](https://snntorch.readthedocs.io/en/latest/) treats spiking neurons as components that fit naturally into PyTorch networks. It provides surrogate gradients, encoders, plotting utilities, detailed learning tutorials and NIR import/export. Convolutional and residual architectures can use familiar PyTorch layers.
+
+SNNLab also exposes a PyTorch `GraphExecutor`, but `lang` adds a separate description of the circuit. Instead of making a Python module's forward method the only expression of the architecture, you declare populations, projections, constraints and outputs that can be validated, saved and diagrammed. Built-in current and conductance models make the synaptic interpretation explicit.
+
+Choose snnTorch for a direct route from conventional PyTorch training to spiking networks. Choose SNNLab when the structured circuit and its scientific observables are central to the experiment. Both have plotting tools; visualisation alone is not a unique SNNLab feature.
+
+## Brian 2
+
+[Brian 2's model language](https://brian2.readthedocs.io/en/stable/user/models.html) lets researchers define differential equations, thresholds and reset rules directly. Its [equation system](https://brian2.readthedocs.io/en/stable/user/equations.html) includes dimensional checking, and its [execution machinery](https://brian2.readthedocs.io/en/stable/user/computation.html) supports generated code. This is a substantial modelling strength.
+
+The distinction is what the languages describe. Brian's equations express the dynamics themselves; `snnlab.lang` expresses a circuit assembled from model specifications, with named signals and optional training recipes. SNNLab then executes the graph as a differentiable PyTorch module, allowing surrogate-gradient learning through its supported spiking dynamics.
+
+Choose Brian when developing new equations or controlling numerical integration is the main task. Choose SNNLab when its built-in dynamics suit the experiment and you want an integrated authoring-to-training workflow. SNNLab supports [custom Python extensions](/customisation), but `lang` is not a general equation parser or a replacement for Brian's modelling language.
+
+## NEST
+
+[NEST](https://www.nest-simulator.org/) has an extensive neuron and synapse repertoire, including conductance models, AdEx, spike-timing-dependent plasticity and short-term plasticity. Its C++ kernel supports multicore and cluster execution, with Python commands for building networks and attaching recording devices.
+
+SNNLab's opportunity is a different workflow: define the circuit in `lang`, train supported parameters through PyTorch, save learned weights and reuse the graph for inference. Constraints and named observations remain attached to the circuit description. This is useful for experiments that study how learning changes the dynamics of a recurrent network.
+
+Choose NEST for large biological-network simulations or its established local plasticity models. SNNLab's built-in surrogate-gradient training is not equivalent to NEST's biological learning rules. A saved SNNLab graph is also not a NEST export; backend declarations do not imply cross-simulator execution.
+
+## Norse
+
+[Norse](https://norse.github.io/norse/) is the closest comparison in modelling philosophy: differentiable spiking components built on PyTorch. Its [component reference](https://norse.github.io/norse/norse.torch.html) includes conductance LIF, AdEx, adaptive networks, Izhikevich and multicompartment variants, alongside functional and module interfaces.
+
+SNNLab therefore does not claim that differentiable conductance modelling is unique. Its emphasis is the layer around those dynamics: `lang` gives the circuit an explicit graph representation, records initializers and constraints, names observations and generates diagrams. Bundles provide a common description for the simulation, training and inference request APIs.
+
+Choose Norse when you want to compose state transitions and modules directly in Python, or need one of its additional neuron families. Choose SNNLab when you prefer a circuit declaration that can be inspected and reused independently of the execution loop. That structure adds conventions; direct Python composition can be more flexible.
+
+## Where SNNLab fits
+
+SNNLab is a good fit when you want to **describe a circuit once, inspect it, train it and analyse its activity using the same named structure**. Its strengths are the combination of explicit current/conductance dynamics, declarative authoring, saved graph contracts and integrated experimental outputs.
+
+Other libraries offer broader model catalogues, dataset ecosystems, equation languages or established large-scale execution. We aim to make SNNLab's particular workflow clear and useful, while leaving those trade-offs visible. Start with [Quickstart](/quickstart), then explore [Training](/training), [PyTorch Integration](/pytorch-integration) and the [Lang API](/api/lang/network).

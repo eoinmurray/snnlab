@@ -13,6 +13,8 @@ The site contains Installation, Quickstart, Training, Inference, PyTorch Integra
 
 The Output and diagnostic data guide lives in `content/docs/data-formats.mdx` and documents graph arrays, saved artifacts and analysis code.
 
+The library comparison guide lives in `content/docs/comparisons.mdx`. It explains `snnlab.lang` through a runnable circuit and compares SpikingJelly, snnTorch, Brian 2, NEST and Norse using official sources. Its graph diagram lives in `public/comparisons/network.png`; regenerate it when changing the example's topology.
+
 Edit Installation in `content/docs/` and keep navigation in `content/docs/meta.json`. Changelog is generated from the root `CHANGELOG.md` before development, type checks and builds; edit that source file.
 
 During development, navigation and page rendering use Vite's current content
