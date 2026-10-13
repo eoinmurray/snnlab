@@ -2294,6 +2294,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "snntorch" },
 ]
 
 [package.metadata]
@@ -2313,6 +2314,16 @@ dev = [
     { name = "pytest", specifier = ">=9.0.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.15.20" },
+    { name = "snntorch", specifier = ">=0.9.4,<1.1" },
+]
+
+[[package]]
+name = "snntorch"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/49/05/84564a9468c09f6501213eeb4a5c76f35eb82a5c3e1981005e5dba79cd13/snntorch-1.0.0.tar.gz", hash = "sha256:93c33506a5975c1d0d2387a130def02382789197314cefb2c70511b05a03536e", size = 101429, upload-time = "2026-06-29T13:30:14.765Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/bc/38ad8a5fc17dfbfc62cbf896c11e71f20376b4cd57e204325e6c1578dcbb/snntorch-1.0.0-py2.py3-none-any.whl", hash = "sha256:b5a85f6f44c6d27c8a1dcea16cb18a630d00b8d2f3cfec85b7e580cb177e606b", size = 133558, upload-time = "2026-06-29T13:30:13.384Z" },
 ]
 
 [[package]]

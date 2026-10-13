@@ -29,12 +29,18 @@ include = ["/examples/analysis", "/examples/current-lif", "/examples/neurons", "
 exclude = ["/examples/customisation/network.bundle", "/examples/pytorch/trained.pt", "/examples/pytorch/metrics.json", "/examples/inference/predictions.json", "/examples/training/network.bundle", "/examples/training/trained.checkpoint", "/examples/training/metrics.json", "/docs/node_modules", "/docs/.next", "/docs/.source", "/docs/.astro", "/docs/out", "/docs/.wrangler", "/docs/.env*", "/docs/next-env.d.ts", "**/__pycache__", "**/*.pyc", "**/*.tsbuildinfo", "**/.DS_Store"]
 
 [dependency-groups]
-dev = ["pytest>=9.0.1", "pytest-cov>=7.1.0", "ruff>=0.15.20", "brian2>=2.10; python_version >= '3.12'"]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.20",
+    "brian2>=2.10; python_version >= '3.12'",
+    "snntorch>=0.9.4,<1.1",
+]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
 testpaths = ["tests"]
-markers = ["integration: crosses module or process boundaries", "brian2: independent Brian2 comparisons", "accelerator: accelerator execution", "slow: substantial runtime", "regression: retained-artifact comparisons"]
+markers = ["integration: crosses module or process boundaries", "brian2: independent Brian2 comparisons", "snntorch: independent snnTorch comparisons", "accelerator: accelerator execution", "slow: substantial runtime", "regression: retained-artifact comparisons"]
 filterwarnings = ["ignore:`torch.jit.script_method` is deprecated:DeprecationWarning", "ignore::pyparsing.exceptions.PyparsingDeprecationWarning"]
 
 [tool.ruff]
