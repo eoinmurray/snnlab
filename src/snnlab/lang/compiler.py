@@ -68,6 +68,7 @@ def graph_dict(net: Network) -> dict[str, Any]:
     return {
         "schema": SCHEMA,
         "voltage_sampling": "explicit",
+        "refractory_timing": N.REFRACTORY_TIMING,
         "name": net.name,
         "timebase": {"dt": net.dt.json()},
         "inputs": sorted(net.inputs, key=lambda x: x["id"]),
@@ -180,8 +181,13 @@ def _check_extension(out, category, spec, subject=None):
         out.diagnostics.append(Diagnostic("error", "E500", str(error), subject))
 
 
-def _validate_neuron(neuron):
-    N.validate(neuron)
+def _validate_neuron(neuron, graph):
+    legacy = graph.get("refractory_timing") != N.REFRACTORY_TIMING
+    N.validate(neuron, legacy=legacy)
+    if neuron.get("kind") in N.SPIKING_KINDS:
+        N.resolve_refractory(
+            neuron, float(graph["timebase"]["dt"]["value"]), legacy=legacy
+        )
 
 
 def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
@@ -194,6 +200,14 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
     if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
         out.diagnostics.append(
             Diagnostic("error", "E115", "unsupported voltage_sampling contract")
+        )
+    if graph.get("refractory_timing") not in (
+        None,
+        N.REFRACTORY_TIMING,
+        N.LEGACY_REFRACTORY_TIMING,
+    ):
+        out.diagnostics.append(
+            Diagnostic("error", "E116", "unsupported refractory_timing contract")
         )
     collections = (
         "inputs",
@@ -243,7 +257,7 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
         except (ValueError, TypeError):
             pass
         try:
-            _validate_neuron(neuron)
+            _validate_neuron(neuron, graph)
         except ValueError as error:
             out.diagnostics.append(Diagnostic("error", "E501", str(error), row["id"]))
         dampening = row.get("neuron", {}).get("voltage_grad_dampen", 1.0)
@@ -1406,6 +1420,18 @@ def compile(
         diagnostics,
         asset_sources,
     )
+
+
+def migrate_refractory(graph: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a duration-only graph copy, preserving historical scheduling.
+
+    Authenticate saved bundles with load_bundle first. The returned graph has
+    a new digest; source manifests, checkpoints and runtime state are unchanged.
+    """
+    validate_graph(graph).raise_for_errors()
+    migrated = N.migrate_refractory(graph)
+    validate_graph(migrated).raise_for_errors()
+    return migrated
 
 
 def load_bundle(path: str | Path) -> Bundle:

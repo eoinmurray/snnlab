@@ -125,6 +125,7 @@ def lif_step_expeuler(
     V_max=None,
     threshold_offset=None,
     v_noise_std=0.0,
+    refractory_after_step=False,
 ):
     """COBA LIF step under exponential Euler with a zero-order hold on g_e, g_i.
 
@@ -165,8 +166,9 @@ def lif_step_expeuler(
         tau_leak = C_m / g_L
         v = v + v_noise_std * (2.0 * dt_step / tau_leak) ** 0.5 * torch.randn_like(v)
     v = v.clamp(min=V_floor) if V_max is None else v.clamp(min=V_floor, max=V_max)
+    active = ref == 0
     ref = (ref - 1).clamp(min=0)
-    can_spike = ref == 0
+    can_spike = active if refractory_after_step else ref == 0
     if threshold_offset is None:
         s = spike_fn(v) * can_spike.float()
     else:
@@ -236,7 +238,7 @@ def e_step_coba(
 ):
     """One E-neuron LIF step with COBA driving force."""
     if ref_steps is None:
-        ref_steps = refractory_steps(ref_ms_E, dt, policy="nearest")
+        ref_steps = refractory_steps(ref_ms_E, dt)
     C_m = C_m_E if C_m is None else C_m
     g_L = g_L_E if g_L is None else g_L
     if COBA_INTEGRATOR == "expeuler":
@@ -283,7 +285,7 @@ def i_step_coba(
     recurrent self-inhibition. Default ``None`` preserves the canonical PING
     architecture (no I→I)."""
     if ref_steps is None:
-        ref_steps = refractory_steps(ref_ms_I, dt, policy="nearest")
+        ref_steps = refractory_steps(ref_ms_I, dt)
     C_m = C_m_I if C_m is None else C_m
     g_L = g_L_I if g_L is None else g_L
     if COBA_INTEGRATOR == "expeuler":

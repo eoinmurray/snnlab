@@ -64,11 +64,11 @@ When voltage reaches the firing threshold, the neuron emits a spike, resets and 
 ```python
 from snnlab import lang
 
-cuba = lang.CUBA_LIF(tau_mem=20 * lang.ms, refractory_steps=4)
-coba = lang.COBA_LIF(tau_mem=20 * lang.ms, refractory_steps=4)
+cuba = lang.CUBA_LIF(tau_mem=20 * lang.ms, refractory=1 * lang.ms)
+coba = lang.COBA_LIF(tau_mem=20 * lang.ms, refractory=1 * lang.ms)
 ```
 
-The two LIF constructors have different defaults and refractory scheduling conventions, described below. Sharing a parameter name does not make every setting or default identical across them.
+The two LIF constructors have different defaults, described below. Newly authored LIF, ALIF and AdEx neurons share the same physical-duration refractory contract.
 
 ## ALIF: an adapting threshold
 
@@ -154,26 +154,34 @@ Current LIF, both ALIF variants and both AdEx variants share these defaults:
 | `threshold_mv` | `-50.0` | LIF/ALIF baseline threshold or AdEx exponential onset. |
 | `reset_mv` | `-65.0` | Voltage after a spike. |
 | `initial_voltage_mv` | `None` | Starts at `resting_mv` unless an initial voltage is supplied. |
-| `refractory_steps` | `0` | Number of following steps held at reset with spikes suppressed. |
+| `refractory` | `0 * lang.ms` | Exact physical duration held at reset after a spike, with spikes suppressed. |
 | `voltage_grad_dampen` | `1.0` | Divides the voltage-update gradient; leaves forward dynamics unchanged. |
 
 ALIF adds `tau_adaptation=200 * lang.ms`, `adaptation_increment_mv=1.0` and `initial_adaptation_mv=0.0`. AdEx adds the defaults displayed in its code above. Conductance ALIF/AdEx also accept `excitatory_reversal_mv=0.0` and `inhibitory_reversal_mv=-80.0`. These constructors apply all the listed overrides.
 
 ### COBA LIF defaults and compatibility
 
-`COBA_LIF` requires an explicit `tau_mem` and retains its earlier parameter contract:
+`COBA_LIF` requires an explicit `tau_mem` and uses these defaults:
 
 | Parameter | `COBA_LIF` behaviour |
 | --- | --- |
 | `capacitance_nf` | Defaults to 1 nF for `tau_mem >= 15 ms`, otherwise 0.5 nF. |
 | `leak_us` | Optional explicit leak conductance; otherwise capacitance divided by `tau_mem`. With an override, the leak time constant follows capacitance divided by the supplied leak. |
 | `threshold_mv` | Defaults to -50 mV. |
-| `refractory_steps` | Defaults to 3 ms for `tau_mem >= 15 ms`, otherwise 1.5 ms, rounded to steps with a minimum of one. |
+| `refractory` | Defaults to `3 * lang.ms` for `tau_mem >= 15 ms`, otherwise `1.5 * lang.ms`; the duration must fit the timestep exactly. |
 | `voltage_grad_dampen` | Defaults to 80. |
 | Resting/reset and initial voltage | Fixed at -65 mV; supplied `resting_mv`, `reset_mv` and `initial_voltage_mv` are not per-population overrides in this model. |
 | Reversal voltages | Fixed at 0 mV for excitatory and -80 mV for inhibitory conductance. |
 
-COBA LIF decrements its refractory counter before testing spike eligibility: a configured count of $n$ suppresses the following $\max(n-1,0)$ steps. Here $n$ is the integer `refractory_steps` setting. CUBA LIF and both families of ALIF/AdEx test eligibility before decrementing and suppress the following $n$ steps. The shared-parameter table above applies to those newer constructors; it does not replace COBA LIF's defaults or counter convention. See the [Components contract](/api/lang/components#graph-neuron-parameters) for its supported settings.
+### Refractory durations
+
+Define refractory periods only as ms quantities, for example `refractory=1.2 * lang.ms`. The duration must be a whole-number multiple of the network timestep. At `dt=0.1 * lang.ms`, 1.2 ms becomes twelve internal steps; at `dt=0.2 * lang.ms`, it becomes six. At 0.25 ms, compilation fails. Changing the timestep preserves the requested physical duration or fails before execution; it never silently rounds the duration. There is no `refractory_policy` argument, and `refractory_steps` is no longer an authoring argument.
+
+Zero disables the refractory hold. Positive durations shorter than one timestep fail, as do negative or non-finite durations and quantities with another unit. Conversion tolerates only floating-point representation errors around exact integer ratios. All six built-in spiking models hold reset voltage and suppress spikes for the derived number of **following** steps. A neuron with a two-step hold can spike on the third following step. New graphs serialize `refractory_timing="following_steps"`. Compared with historical COBA LIF at the same derived counter, this holds reset for one additional timestep.
+
+`result.metrics["refractory"][population_id]` records `requested_refractory_ms`, `realized_refractory_ms`, the internal `refractory_steps`, `held_steps`, `held_duration_ms` and the timing contract. For newly authored graphs, the requested, realised and held durations agree. Internal integer counters also remain in continuation state; they are derived execution state rather than user-defined periods.
+
+Old bundles retain their authenticated identity and historical scheduling. Legacy COBA LIF decrements before checking spike eligibility, so a count of twelve suppresses eleven following steps. Historical CUBA LIF, ALIF and AdEx already suppress all twelve. The loader does not rewrite these artifacts or rebind their checkpoints. To obtain a duration-only graph copy, authenticate the bundle with `lang.load_bundle`, then call [`lang.migrate_refractory`](/api/lang/compilation#migrate_refractory). Migration uses the original timestep, retains legacy COBA scheduling and assigns a new graph identity; runtime state and checkpoints must remain paired with their original graph. Reauthor the network to adopt the new common scheduling. Supplying both duration and step-count representations fails.
 
 ### Leaky-integrator readouts
 
@@ -197,7 +205,7 @@ With the included settings, the example produces these counts over 400 ms:
 
 | Model | CUBA spikes | COBA spikes |
 | --- | --- | --- |
-| LIF | 75 | 83 |
+| LIF | 75 | 79 |
 | ALIF | 25 | 18 |
 | AdEx | 19 | 18 |
 
@@ -211,7 +219,7 @@ All three neurons receive `ExponentialCurrent` synapses with a direct weight of 
 
 ### COBA comparison
 
-All three neurons receive AMPA synapses with a direct weight of 0.015 uS and a 5 ms decay time constant. These conductance values are independent example settings, rather than a conversion of the CUBA weights. The same event train produces voltage-dependent current here. The script sets COBA LIF's capacitance, refractory count and gradient dampening explicitly; its earlier refractory counter convention still applies.
+All three neurons receive AMPA synapses with a direct weight of 0.015 uS and a 5 ms decay time constant. These conductance values are independent example settings, rather than a conversion of the CUBA weights. The same event train produces voltage-dependent current here. The script sets COBA LIF's capacitance, 1 ms refractory duration and gradient dampening explicitly; all three models use the same following-step refractory scheduling.
 
 ![Three COBA neuron populations receiving the same conductance input](/neurons/network-coba.png)
 
@@ -245,7 +253,7 @@ def compare(input_family):
     common = dict(
         tau_mem=20 * lang.ms,
         capacitance_nf=1.0,
-        refractory_steps=4,
+        refractory=1 * lang.ms,
         voltage_grad_dampen=1.0,
     )
     lif, alif, adex = (

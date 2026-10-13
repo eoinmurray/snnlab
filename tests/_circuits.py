@@ -57,9 +57,6 @@ def author_ping(
     w_in_e = w_in_e or w_in or Normal(0.2, 0.03)
     w_in_i = w_in_i or w_in or Normal(0.2, 0.03)
     with net.group(name):
-        # The explicit step counts preserve the legacy COBANet numerical
-        # contract: its refractory constants were derived at the historical
-        # 0.25 ms module default and are 12 E / 6 I steps for every run.
         e = net.population(
             f"{name}_E",
             size=n_e,
@@ -70,7 +67,7 @@ def author_ping(
                 resting_mv=-65.0,
                 threshold_mv=-50.0,
                 reset_mv=-65.0,
-                refractory_steps=12,
+                refractory=3 * ms,
                 voltage_grad_dampen=80.0,
                 initial_voltage_mv=-65.0,
             ),
@@ -85,7 +82,7 @@ def author_ping(
                 resting_mv=-65.0,
                 threshold_mv=-50.0,
                 reset_mv=-65.0,
-                refractory_steps=6,
+                refractory=1.5 * ms,
                 voltage_grad_dampen=80.0,
                 initial_voltage_mv=-65.0,
             ),

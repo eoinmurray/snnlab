@@ -8,6 +8,7 @@
     "schema": {"const": "snnlang.graph/v1"},
     "name": {"type": "string", "minLength": 1},
     "voltage_sampling": {"const": "explicit"},
+    "refractory_timing": {"enum": ["following_steps", "legacy_coba"]},
     "extensions": {"type": "array", "items": {"$ref": "#/$defs/extension"}},
     "timebase": {"type": "object"},
     "inputs": {"type": "array", "items": {"$ref": "#/$defs/named"}},

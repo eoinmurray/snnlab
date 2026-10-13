@@ -9,6 +9,18 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-13
+
+### Changed
+
+1. Breaking authoring change: all built-in LIF, ALIF and AdEx neurons define refractory periods with `refractory=duration * lang.ms`. `refractory_steps` and `refractory_policy` are unsupported constructor arguments. Duration conversion supports exact timestep multiples only; the `nearest` policy and policy arguments to timing helpers have been removed. Zero disables the refractory hold, while non-divisible, negative and non-finite durations fail before execution. Physical defaults remain zero for CUBA LIF and ALIF/AdEx, and 3 ms or 1.5 ms for COBA LIF according to its membrane time constant.
+2. Newly compiled graphs serialize `refractory_timing="following_steps"` and all built-in spiking neurons suppress the derived number of following steps while holding reset voltage. This adds one held timestep to new COBA LIF graphs compared with the historical counter convention. Runtime counters are resolved once during planning; result/build metrics record requested and realised ms, derived steps, actual held duration and scheduling. Timestep inference overrides preserve source physical durations or fail exact-grid validation.
+
+### Compatibility
+
+1. Authenticated historical bundles retain their original identity, counts, COBA scheduling and compatible saved runtime state without rewriting files. Added `lang.migrate_refractory(graph)` to create a validated duration-only copy using the original timestep and retaining legacy COBA scheduling. Conflicting duration/count representations fail. Migrated copies have new graph identities; checkpoints and runtime state are not silently converted or rebound. Removed legacy configs, CLI switches and predefined E/I components remain removed.
+2. Updated neuron/API documentation and regenerated the neuron comparison, Quickstart and Training → Inference/PyTorch example figures under the new scheduling. E/I test circuits now use explicit 3 ms/1.5 ms durations; authenticated historical forward/backward fixtures continue to exercise their original graph contracts. Added coverage across all six models for exact conversion, common scheduling, zero/invalid durations, bundle migration, saved continuation and timestep overrides.
+
 ## [0.7.0] - 2026-10-07
 
 ### Added

@@ -23,7 +23,7 @@ def compare(input_family):
     common = dict(
         tau_mem=20 * lang.ms,
         capacitance_nf=1.0,
-        refractory_steps=4,
+        refractory=1 * lang.ms,
         voltage_grad_dampen=1.0,
     )
     lif, alif, adex = (

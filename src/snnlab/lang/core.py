@@ -63,8 +63,23 @@ class Spec:
         }
 
 
-def COBA_LIF(**values: Any) -> Spec:
-    return Spec("coba_lif", values)
+def COBA_LIF(*, refractory=None, **values: Any) -> Spec:
+    _check_refractory_arguments(values)
+    if refractory is None:
+        tau = values.get("tau_mem", 20 * ms)
+        refractory = (
+            3.0 if isinstance(tau, Quantity) and tau.value >= 15 else 1.5
+        ) * ms
+    return Spec("coba_lif", dict(values, refractory=refractory))
+
+
+def _check_refractory_arguments(values: dict[str, Any]) -> None:
+    for key in ("refractory_steps", "refractory_policy"):
+        if key in values:
+            raise TypeError(
+                f"{key} is no longer supported; use refractory=duration * ms "
+                "with an exactly compatible graph timestep"
+            )
 
 
 def LIF(**values: Any) -> Spec:
@@ -78,7 +93,7 @@ def CUBA_LIF(
     resting_mv=-65.0,
     threshold_mv=-50.0,
     reset_mv=-65.0,
-    refractory_steps=0,
+    refractory=0 * ms,
     initial_voltage_mv=None,
     voltage_grad_dampen=1.0,
 ) -> Spec:
@@ -90,7 +105,7 @@ def CUBA_LIF(
             resting_mv=resting_mv,
             threshold_mv=threshold_mv,
             reset_mv=reset_mv,
-            refractory_steps=refractory_steps,
+            refractory=refractory,
             initial_voltage_mv=resting_mv
             if initial_voltage_mv is None
             else initial_voltage_mv,

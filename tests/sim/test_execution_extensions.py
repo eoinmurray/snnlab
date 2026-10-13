@@ -94,7 +94,7 @@ def test_current_matches_independent_analytic_recurrence():
 
 def test_current_inhibition_and_refractory_reset():
     net, inputs, cells, _ = current_network(
-        threshold_mv=-64.5, reset_mv=-67, refractory_steps=2
+        threshold_mv=-64.5, reset_mv=-67, refractory=2 * lang.ms
     )
     bundle = lang.compile(net)
     result = run(bundle, torch.ones(8, 1, 1))
@@ -146,7 +146,7 @@ def test_reject_current_conductance_family_mismatch(model):
     [
         {"tau_mem": 0 * lang.ms},
         {"capacitance_nf": 0},
-        {"refractory_steps": -1},
+        {"refractory": -1 * lang.ms},
         {"threshold_mv": float("nan")},
         {"reset_mv": -40},
     ],

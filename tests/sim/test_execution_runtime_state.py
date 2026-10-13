@@ -74,6 +74,19 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
             seed=11,
         )
     )
+    # Choose a spike boundary near the midpoint so delayed events and
+    # refractory state remain live when the neural timing contract changes.
+    spike_steps = torch.where(
+        torch.stack(
+            [
+                values.flatten(1).any(dim=1)
+                for name, values in whole.diagnostics.items()
+                if name.endswith(".spikes")
+            ]
+        ).any(dim=0)
+    )[0]
+    assert spike_steps.numel() > 0
+    split_step = int(spike_steps[(spike_steps - 500).abs().argmin()]) + 1
     first = simulate(
         ExecutionSpec(
             kind="simulate",
@@ -82,7 +95,7 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
             input_bindings=tuple(
                 DenseArrayBinding(name, value)
                 for name, value in (
-                    {name: value[:500] for name, value in inputs.items()}
+                    {name: value[:split_step] for name, value in inputs.items()}
                 ).items()
             ),
             seed=11,
@@ -109,7 +122,7 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
             input_bindings=tuple(
                 DenseArrayBinding(name, value)
                 for name, value in (
-                    {name: value[500:] for name, value in inputs.items()}
+                    {name: value[split_step:] for name, value in inputs.items()}
                 ).items()
             ),
             seed=11,

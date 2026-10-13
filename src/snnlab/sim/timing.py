@@ -1,8 +1,8 @@
 """Physical-time conversion shared by simulation entry points.
 
 Trial durations use whole steps rounded downward, except for floating-point
-representations of an integer ratio. Refractory conversion declares whether
-physical durations must be exact or may use the nearest positive step count.
+representations of an integer ratio. Refractory durations must be exactly
+representable on the timestep grid; zero disables the refractory hold.
 """
 
 from __future__ import annotations
@@ -16,7 +16,10 @@ def _step_ratio(duration_ms: float, dt_ms: float) -> float:
         raise ValueError("dt_ms must be finite and positive")
     if not math.isfinite(duration_ms) or duration_ms < 0:
         raise ValueError("duration_ms must be finite and nonnegative")
-    return duration_ms / dt_ms
+    ratio = duration_ms / dt_ms
+    if not math.isfinite(ratio):
+        raise ValueError("duration/timestep ratio must be finite")
+    return ratio
 
 
 def _is_integer_ratio(ratio: float, nearest: int) -> bool:
@@ -32,20 +35,17 @@ def duration_steps(duration_ms: float, dt_ms: float) -> int:
     return nearest if _is_integer_ratio(ratio, nearest) else math.floor(ratio)
 
 
-def refractory_steps(duration_ms: float, dt_ms: float, *, policy: str = "exact") -> int:
-    """Resolve a positive refractory duration using an explicit grid policy."""
+def refractory_steps(duration_ms: float, dt_ms: float) -> int:
+    """Resolve an exact, nonnegative refractory duration into internal steps."""
     ratio = _step_ratio(duration_ms, dt_ms)
-    if duration_ms <= 0:
-        raise ValueError("refractory duration must be positive")
+    if duration_ms == 0:
+        return 0
     nearest = round(ratio)
-    if policy == "nearest":
-        return max(1, nearest)
-    if policy != "exact":
-        raise ValueError("refractory policy must be 'exact' or 'nearest'")
     if nearest < 1 or not _is_integer_ratio(ratio, nearest):
         raise ValueError(
             f"refractory duration {duration_ms:g} ms is not a positive whole "
-            f"number of steps at dt={dt_ms:g} ms"
+            f"number of steps at dt={dt_ms:g} ms; choose a compatible timestep "
+            "or duration (refractory rounding is not supported)"
         )
     return nearest
 
@@ -64,16 +64,13 @@ def refractory_metadata(
     refractory_e_ms: float,
     refractory_i_ms: float,
     dt_ms: float,
-    *,
-    policy: str = "exact",
 ) -> dict:
     """Record physical E/I durations and their validated runtime counters."""
-    e_steps = refractory_steps(refractory_e_ms, dt_ms, policy=policy)
-    i_steps = refractory_steps(refractory_i_ms, dt_ms, policy=policy)
+    e_steps = refractory_steps(refractory_e_ms, dt_ms)
+    i_steps = refractory_steps(refractory_i_ms, dt_ms)
     return {
         "refractory_e_ms": float(refractory_e_ms),
         "refractory_i_ms": float(refractory_i_ms),
-        "refractory_policy": policy,
         "refractory_e_steps": e_steps,
         "refractory_i_steps": i_steps,
         "realized_refractory_e_ms": e_steps * float(dt_ms),

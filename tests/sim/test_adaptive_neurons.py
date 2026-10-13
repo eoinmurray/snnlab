@@ -68,7 +68,7 @@ def step(model, previous, drive=0.0, inhibition=0.0, dt=0.1):
 
 @pytest.mark.parametrize("model", MODELS)
 def test_bundle_gradients_and_saved_continuation(model, tmp_path):
-    net, cells, projection = network(model, refractory_steps=2)
+    net, cells, projection = network(model, refractory=0.5 * lang.ms)
     bundle = lang.compile(net, target="tools/snnsim")
     restored = lang.load_bundle(bundle.write(tmp_path / "bundle"))
     assert restored.graph == bundle.graph
@@ -129,7 +129,7 @@ def test_rejects_incompatible_synaptic_units(model):
         {"tau_adaptation": 1 * lang.mV},
         {"tau_adaptation": float("nan") * lang.ms},
         {"capacitance_nf": False},
-        {"refractory_steps": -1},
+        {"refractory": -1 * lang.ms},
         {"initial_voltage_mv": float("inf")},
     ],
 )
@@ -165,7 +165,7 @@ def test_alif_adapts_threshold_then_decays_during_refractory():
         threshold_mv=-64.5,
         adaptation_increment_mv=2,
         tau_adaptation=10 * lang.ms,
-        refractory_steps=2,
+        refractory=2 * lang.ms,
     )
     first, spikes = step(model, state(), drive=1, dt=1)
     assert spikes.item() == 1 and first["adaptation"].item() == 2
@@ -205,7 +205,7 @@ def test_inhibition_hyperpolarizes(model):
 
 
 def test_adex_spike_cutoff_and_spike_triggered_adaptation():
-    model = lang.ADEX(a_us=0, b_na=0.3, refractory_steps=1)
+    model = lang.ADEX(a_us=0, b_na=0.3, refractory=0.1 * lang.ms)
     updated, spikes = step(model, state(voltage=-49), dt=0.1)
     assert spikes.item() == 0  # Crossing V_T alone is not a spike.
     updated, spikes = step(model, state(voltage=-31), drive=100, dt=0.1)

@@ -7,6 +7,7 @@ from typing import Mapping
 
 import torch
 
+from snnlab import _neurons as N
 from snnlab import extensions as E
 
 
@@ -81,7 +82,11 @@ def spike(value, *, slope, custom=None):
     return RegisteredSpike.apply(value)
 
 
-def current_lif(state, excitatory, inhibitory, *, dt_ms, config, spike_function):
+def current_lif(
+    state, excitatory, inhibitory, *, dt_ms, config, spike_function, ref_steps=None
+):
+    if ref_steps is None:
+        ref_steps = N.resolve_refractory(config, dt_ms)["refractory_steps"]
     voltage, refractory = state["voltage"], state["refractory"]
     tau = float(config["tau_mem"]["value"])
     capacitance = float(config["capacitance_nf"])
@@ -104,13 +109,15 @@ def current_lif(state, excitatory, inhibitory, *, dt_ms, config, spike_function)
     )
     next_ref = torch.where(
         spikes.bool(),
-        torch.full_like(refractory, int(config["refractory_steps"])),
+        torch.full_like(refractory, ref_steps),
         (refractory - 1).clamp(min=0),
     )
     return next_voltage, spikes, next_ref
 
 
-def adaptive_neuron(state, excitatory, inhibitory, *, dt_ms, config, spike_function):
+def adaptive_neuron(
+    state, excitatory, inhibitory, *, dt_ms, config, spike_function, ref_steps=None
+):
     """ALIF/AdEx with exponential Euler and left-endpoint nonlinear terms.
 
     Linear membrane dynamics are integrated exactly with frozen synaptic drive
@@ -118,6 +125,8 @@ def adaptive_neuron(state, excitatory, inhibitory, *, dt_ms, config, spike_funct
     previous voltage. Adaptation decays even during refractory steps, then gets
     its per-spike increment. All state is per batch item and per cell.
     """
+    if ref_steps is None:
+        ref_steps = N.resolve_refractory(config, dt_ms)["refractory_steps"]
     voltage, refractory = state["voltage"], state["refractory"]
     adaptation = state["adaptation"]
     kind = config["kind"]
@@ -178,7 +187,7 @@ def adaptive_neuron(state, excitatory, inhibitory, *, dt_ms, config, spike_funct
         "voltage": torch.where(spikes.bool(), reset, candidate),
         "refractory": torch.where(
             spikes.bool(),
-            torch.full_like(refractory, int(config["refractory_steps"])),
+            torch.full_like(refractory, ref_steps),
             (refractory - 1).clamp(min=0),
         ),
         "adaptation": next_adaptation,

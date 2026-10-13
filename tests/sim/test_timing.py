@@ -35,15 +35,20 @@ def test_exact_refraction_conversion_avoids_binary_truncation(dt, e_steps, i_ste
     assert meta["realized_refractory_i_ms"] == pytest.approx(0.6)
 
 
-def test_nonintegral_refractory_requires_declared_quantization():
+def test_nonintegral_refractory_rejects_quantization():
     with pytest.raises(ValueError, match="not a positive whole number"):
         refractory_steps(0.6, 0.25)
-    assert refractory_steps(0.6, 0.25, policy="nearest") == 2
-    assert refractory_steps(0.6, 1.0, policy="nearest") == 1
-    meta = refractory_metadata(3.0, 1.5, 1.0, policy="nearest")
-    assert meta["refractory_policy"] == "nearest"
-    assert meta["refractory_i_ms"] == 1.5
-    assert meta["realized_refractory_i_ms"] == 2.0
+    with pytest.raises(ValueError):
+        refractory_steps(0.6, 1.0)
+    with pytest.raises(TypeError):
+        refractory_steps(0.6, 0.25, policy="nearest")
+    with pytest.raises(TypeError):
+        refractory_metadata(3.0, 1.5, 1.0, policy="nearest")
+
+
+def test_zero_refractory_disables_hold():
+    assert refractory_steps(0, 0.25) == 0
+    assert refractory_metadata(0, 0, 0.25)["realized_refractory_e_ms"] == 0
 
 
 @pytest.mark.parametrize(

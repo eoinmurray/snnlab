@@ -44,7 +44,7 @@ plan = plan_graph(bundle.graph)
 
 `plan_graph(graph: Mapping[str, Any]) -> GraphPlan` checks backend capabilities, timebase, projection units and delays, then prepares population ordering and projection decay. It does not initialize weights. Unsupported graph features raise `ValueError`; projection delays must be integer multiples of the graph timestep.
 
-`GraphPlan` is a frozen dataclass containing `graph`, `dt_ms`, `populations`, `projections`, `observables` and `outputs`. Its nested graph data is not deeply frozen. Treat it as planning data; author networks through [snnlab.lang](/api/lang/network).
+`GraphPlan` is a frozen dataclass containing `graph`, `dt_ms`, `populations`, `projections`, `observables`, `outputs` and resolved `refractory` timing. Its nested graph data is not deeply frozen. Treat it as planning data; author networks through [snnlab.lang](/api/lang/network).
 
 ## forward
 
@@ -105,6 +105,8 @@ model.enforce_constraints()
 `enforce_constraints() -> None` applies declared built-in and registered custom constraints to the live parameters without tracking gradients. Call it after an external optimizer step; ordinary PyTorch optimizers do not apply graph constraints automatically.
 
 ## Continuing a simulation
+
+Built-in refractory counters are resolved once by `plan_graph` from each neuron's `refractory` ms quantity and graph timestep. Exact-grid validation fails before execution; zero disables the hold. New LIF, ALIF and AdEx neurons share following-step scheduling. `model.plan.refractory[population_id]` and `result.metrics["refractory"][population_id]` expose requested/realised duration, derived counter, actual held duration and the scheduling contract. See [Refractory durations](/neurons#refractory-durations).
 
 ```python
 first = model(first_inputs, diagnostics=False)

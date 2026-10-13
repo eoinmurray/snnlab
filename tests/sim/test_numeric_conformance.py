@@ -11,6 +11,7 @@ import torch
 
 from snnlab import lang as snn
 from snnlab.lang import training
+from snnlab.lang.compiler import digest
 from snnlab.sim.conformance import (
     CONFORMANCE_REPORT_SCHEMA,
     ComparisonPolicy,
@@ -135,16 +136,13 @@ def test_ping_forward_matches_preserved_pre_removal_reference(
     scores = snn.readouts.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_logits", scores)
     bundle = snn.compile(net)
-    # Authoring defaults intentionally retain historical 12/6 step counters.
-    # This explicit comparison graph instead represents the collection's
-    # physical durations and production's one-update recurrent delay.
+    # Reconstruct the historical graph contract for the authenticated fixtures.
+    bundle.graph.pop("refractory_timing")
     bundle.graph["timebase"]["dt"]["value"] = dt_ms
     for population in bundle.graph["populations"]:
         if population["id"] in {"cell_E", "cell_I"}:
             neuron = population["neuron"]
-            assert neuron["refractory_steps"] == (
-                12 if population["id"] == "cell_E" else 6
-            )
+            neuron.pop("refractory")
             physical_ms = "1.2" if population["id"] == "cell_E" else "0.6"
             count = Fraction(physical_ms) / Fraction(str(dt_ms))
             assert count.denominator == 1
@@ -247,6 +245,13 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
         presentation_duration=4.0 * snn.ms,
     )
     bundle = snn.compile(net, training=recipe)
+    bundle.graph.pop("refractory_timing")
+    for population in bundle.graph["populations"]:
+        if population["id"] in {"cell_E", "cell_I"}:
+            neuron = population["neuron"]
+            neuron.pop("refractory")
+            neuron["refractory_steps"] = 12 if population["id"] == "cell_E" else 6
+    bundle.training["graph_digest"] = digest(bundle.graph)
     initial = build(
         ExecutionSpec(
             kind="build",

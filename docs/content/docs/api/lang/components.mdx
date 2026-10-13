@@ -23,24 +23,26 @@ These constructors produce specifications from keyword arguments. Backend suppor
 
 | Model | Required settings and runtime behaviour |
 | --- | --- |
-| `COBA_LIF` | Supply `tau_mem` as a time quantity. Runtime supports `capacitance_nf`, `leak_us`, `threshold_mv`, `refractory_steps` and `voltage_grad_dampen`. |
+| `COBA_LIF` | Supply `tau_mem` as a time quantity. Runtime supports `capacitance_nf`, `leak_us`, `threshold_mv`, `refractory` in ms and `voltage_grad_dampen`. |
 | `LeakyIntegrator` | Supply `tau` as a time quantity. Optional `soft_reset_threshold` enables subtraction of the threshold when crossed; optional `surrogate_slope` controls that reset's backward derivative. Use `spiking=False` for a continuous readout. |
 | `CUBA_LIF` / `LIF` | Configurable current-based membrane dynamics; see below. |
 
-For `COBA_LIF`, omitted capacitance defaults to 1 nF when `tau_mem >= 15 ms`, otherwise 0.5 nF; omitted leak is capacitance divided by `tau_mem`. The threshold defaults to -50 mV. Default refractory duration is 3 ms for the first case and 1.5 ms for the second, rounded to steps with a minimum of one. The default voltage gradient dampening is 80.
+For `COBA_LIF`, omitted capacitance defaults to 1 nF when `tau_mem >= 15 ms`, otherwise 0.5 nF; omitted leak is capacitance divided by `tau_mem`. The threshold defaults to -50 mV. Default refractory duration is `3 * ms` for the first case and `1.5 * ms` for the second. These defaults must fit the timestep exactly; there is no rounding. The default voltage gradient dampening is 80.
 
 The current graph executor initializes COBA voltages at its fixed leak reversal (-65 mV) and leaky integrators at zero. Constructor values such as `initial_voltage_mv`, `resting_mv`, `reset_mv` and integrator `initial_voltage` are not applied as per-population overrides by this backend. Do not infer runtime support from arbitrary keyword acceptance.
 
 ### Current-based LIF
 
 ```python
-def CUBA_LIF(*, tau_mem=20 * ms, capacitance_nf=1.0, resting_mv=-65.0, threshold_mv=-50.0, reset_mv=-65.0, refractory_steps=0, initial_voltage_mv=None, voltage_grad_dampen=1.0) -> Spec:
+def CUBA_LIF(*, tau_mem=20 * ms, capacitance_nf=1.0, resting_mv=-65.0, threshold_mv=-50.0, reset_mv=-65.0, refractory=0 * ms, initial_voltage_mv=None, voltage_grad_dampen=1.0) -> Spec:
     ...
 ```
 
 `LIF(**values)` returns the same specification as `CUBA_LIF(**values)`. Synaptic drive is in nanoamperes (`nA`), membrane voltage in millivolts and capacitance in nanofarads. The membrane integrates net excitatory minus inhibitory current using an exponential update that holds current fixed for that step.
 
-All displayed settings are applied. `initial_voltage_mv=None` starts at `resting_mv`. `refractory_steps=0` permits immediate recovery; a positive count suppresses that many following steps while holding reset voltage. Reset must be below threshold, time constants/capacitance must be positive and values finite. During training, spikes use the configured surrogate.
+All displayed settings are applied. `initial_voltage_mv=None` starts at `resting_mv`. `refractory=0 * ms` permits immediate recovery. A positive duration must be an exact multiple of graph `dt`; its derived number of following steps holds reset voltage and suppresses spikes. Reset must be below threshold, time constants/capacitance must be positive and values finite. During training, spikes use the configured surrogate.
+
+All built-in LIF, ALIF and AdEx constructors accept only `refractory` as a non-negative finite ms quantity. `refractory_steps` and `refractory_policy` are unsupported authoring arguments. Newly compiled graphs use `refractory_timing="following_steps"`; archived graphs retain their historical scheduling. See [Refractory durations](/neurons#refractory-durations) for exact-grid examples, timing metadata and the COBA compatibility boundary.
 
 Connect current neurons with `ExponentialCurrent` or a compatible registered current synapse. A conductance/current mismatch fails compilation or planning. See [Customisation](/customisation) for a comparison with custom adaptive dynamics.
 

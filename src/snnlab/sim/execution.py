@@ -1733,6 +1733,7 @@ class GraphPlan:
     projections: tuple[PlannedProjection, ...]
     observables: tuple[Mapping[str, Any], ...]
     outputs: tuple[Mapping[str, Any], ...]
+    refractory: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
 
 def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
@@ -2834,6 +2835,13 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
     E.restore(graph)
     if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
         raise ValueError("unsupported voltage_sampling contract")
+    if graph.get("refractory_timing") not in (
+        None,
+        N.REFRACTORY_TIMING,
+        N.LEGACY_REFRACTORY_TIMING,
+    ):
+        raise ValueError("unsupported refractory_timing contract")
+    legacy_refractory = graph.get("refractory_timing") != N.REFRACTORY_TIMING
     populations = {p["id"]: p for p in graph.get("populations", [])}
     signal_references = [
         r["signal"] for r in (*graph.get("outputs", []), *graph.get("observables", []))
@@ -2850,8 +2858,7 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
         ):
             raise ValueError(f"{signal}: pre_reset_voltage requires a leaky integrator")
     for population in populations.values():
-        if population["neuron"]["kind"] in N.ADAPTIVE_KINDS:
-            N.validate(population["neuron"])
+        N.validate(population["neuron"], legacy=legacy_refractory)
     issues = graph_capability_issues(graph)
     if issues:
         detail = "; ".join(
@@ -2859,8 +2866,17 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
         )
         raise ValueError(f"graph executor capability failure: {detail}")
     dt = float(graph["timebase"]["dt"]["value"])
-    if dt <= 0:
-        raise ValueError("graph timebase dt must be positive")
+    if not math.isfinite(dt) or dt <= 0:
+        raise ValueError("graph timebase dt must be finite and positive")
+    refractory = {}
+    for population in populations.values():
+        if population["neuron"]["kind"] in N.SPIKING_KINDS:
+            try:
+                refractory[population["id"]] = N.resolve_refractory(
+                    population["neuron"], dt, legacy=legacy_refractory
+                )
+            except ValueError as error:
+                raise ValueError(f"{population['id']}: {error}") from error
     parameter_rows = {row["id"]: row for row in graph.get("parameters", [])}
     planned = []
     for row in graph.get("projections", []):
@@ -2945,6 +2961,7 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
         projections=tuple(planned),
         observables=tuple(graph.get("observables", [])),
         outputs=tuple(graph.get("outputs", [])),
+        refractory=refractory,
     )
 
 
@@ -3750,6 +3767,7 @@ class GraphExecutor(nn.Module):
                         incoming["inhibitory"],
                         dt_ms=self.plan.dt_ms,
                         config=neuron,
+                        ref_steps=self.plan.refractory[name]["refractory_steps"],
                         spike_function=spike_function,
                     )
                     neuron_states[name] = state
@@ -3772,6 +3790,7 @@ class GraphExecutor(nn.Module):
                         incoming["inhibitory"],
                         dt_ms=self.plan.dt_ms,
                         config=neuron,
+                        ref_steps=self.plan.refractory[name]["refractory_steps"],
                         spike_function=spike_function,
                     )
                     new_spikes[name] = intervene(
@@ -3808,18 +3827,7 @@ class GraphExecutor(nn.Module):
                 tau_mem = float(neuron["tau_mem"]["value"])
                 c_m = float(neuron.get("capacitance_nf", 1.0 if tau_mem >= 15 else 0.5))
                 g_l = float(neuron.get("leak_us", c_m / tau_mem))
-                ref_steps = int(
-                    neuron.get(
-                        "refractory_steps",
-                        max(
-                            1,
-                            round(
-                                (M.ref_ms_E if tau_mem >= 15 else M.ref_ms_I)
-                                / self.plan.dt_ms
-                            ),
-                        ),
-                    )
-                )
+                ref_steps = self.plan.refractory[name]["refractory_steps"]
                 dampen = float(neuron.get("voltage_grad_dampen", M.V_GRAD_DAMPEN))
                 threshold = float(neuron.get("threshold_mv", M.V_th))
                 voltage[name], new_spikes[name], refractory[name] = M.lif_step_expeuler(
@@ -3835,6 +3843,8 @@ class GraphExecutor(nn.Module):
                     ),
                     dt_override=self.plan.dt_ms,
                     v_grad_dampen=dampen,
+                    refractory_after_step=self.plan.refractory[name]["timing"]
+                    == N.REFRACTORY_TIMING,
                 )
                 new_spikes[name] = intervene(
                     name, new_spikes[name], completed_steps + t
@@ -4207,6 +4217,7 @@ class GraphExecutor(nn.Module):
                 else None,
                 "decisions": segments.records,
                 "resolved_interventions": resolved_interventions,
+                "refractory": dict(self.plan.refractory),
                 "inference_interventions": intervention_request
                 if interventions
                 else None,
@@ -4265,6 +4276,7 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
         metrics={
             "build_s": time.perf_counter() - started,
             "initialization": model.initialization_metadata,
+            "refractory": dict(model.plan.refractory),
             "training_schema": training.get("schema") if training else None,
         },
     )
@@ -4314,6 +4326,7 @@ def simulate(
         source_graph_digest = _json_digest(source_graph)
         source_dt_ms = float(source_graph["timebase"]["dt"]["value"])
         recompiled_graph = copy.deepcopy(source_graph)
+        recompiled_graph = N.migrate_refractory(recompiled_graph)
         recompiled_graph["timebase"]["dt"] = {
             "value": timestep_ms,
             "unit": "ms",

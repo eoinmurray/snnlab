@@ -2,7 +2,14 @@
 
 from . import ops, readouts, training
 from ._version import __version__
-from .compiler import Bundle, Diagnostic, compile, load_bundle, validate_graph
+from .compiler import (
+    Bundle,
+    Diagnostic,
+    compile,
+    load_bundle,
+    migrate_refractory,
+    validate_graph,
+)
 from .core import (
     ADEX,
     ALIF,
@@ -83,6 +90,7 @@ __all__ = [
     "compile",
     "diagram",
     "load_bundle",
+    "migrate_refractory",
     "validate_graph",
     "ops",
     "readouts",

@@ -100,7 +100,7 @@ def _snnsim_lif(
     refractory = torch.zeros((1, 1), dtype=torch.long)
     g_e = torch.tensor([[excitatory_us]], dtype=torch.float64)
     g_i = torch.tensor([[inhibitory_us]], dtype=torch.float64)
-    ref_count = refractory_steps(refractory_ms, dt_ms, policy="nearest")
+    ref_count = refractory_steps(refractory_ms, dt_ms)
     voltages = []
     spike_times = []
     for step in range(steps):
@@ -196,7 +196,7 @@ def test_collection_production_refractory_and_duration_match_brian2(
                 capacitance_nf=capacitance,
                 leak_us=leak,
                 initial_voltage_mv=-65.0,
-                refractory_steps=refractory_steps(refractory_ms, dt_ms),
+                refractory=refractory_ms * lang.ms,
             ),
         )
         net.connect(
@@ -224,7 +224,9 @@ def test_collection_production_refractory_and_duration_match_brian2(
             duration_ms=nominal_ms,
             capacitance_nf=capacitance,
             leak_us=leak,
-            refractory_ms=refractory_ms,
+            # Brian2 releases at elapsed >= its duration. The graph contract
+            # suppresses n following steps, so release is on step n + 1.
+            refractory_ms=refractory_ms + dt_ms,
             excitatory_us=drive_us,
             inhibitory_us=0.0,
         )
@@ -241,10 +243,10 @@ def test_collection_production_refractory_and_duration_match_brian2(
         # Production states use float32; Brian2's independent solver uses float64.
         np.testing.assert_allclose(actual_voltage, brian_voltage, atol=2e-4, rtol=0)
         if drive_us == 100.0:
-            np.testing.assert_array_equal(np.diff(actual_indices), expected_counter)
+            np.testing.assert_array_equal(np.diff(actual_indices), expected_counter + 1)
         else:
             first_spike = actual_indices[0]
-            release = first_spike + expected_counter
+            release = first_spike + expected_counter + 1
             np.testing.assert_array_equal(actual_voltage[first_spike:release], -65.0)
             assert actual_voltage[release] > -65.0
             assert brian_voltage[release] > -65.0
@@ -468,7 +470,7 @@ def _snnsim_ping_network(
             g_ie,
             1.0,
             0.05,
-            refractory_steps(refractory_e_ms, dt_ms, policy="nearest"),
+            refractory_steps(refractory_e_ms, dt_ms),
             M.spike_biophysical,
             v_grad_dampen=1.0,
             dt_override=dt_ms,
@@ -480,7 +482,7 @@ def _snnsim_ping_network(
             None,
             0.5,
             0.1,
-            refractory_steps(refractory_i_ms, dt_ms, policy="nearest"),
+            refractory_steps(refractory_i_ms, dt_ms),
             M.spike_biophysical,
             v_grad_dampen=1.0,
             dt_override=dt_ms,
