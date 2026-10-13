@@ -353,6 +353,7 @@ class Projection:
     parameter_ids: tuple[str, ...]
     group: str | None
     enabled: bool
+    allow_autapses: bool = False
 
     @property
     def conductance(self) -> Signal:
@@ -535,7 +536,10 @@ class Network:
         delay: Quantity | None = None,
         enabled: bool = True,
         initialization_scaling: str | None = None,
+        allow_autapses: bool = False,
     ) -> Projection:
+        if not isinstance(allow_autapses, bool):
+            raise TypeError("allow_autapses must be boolean")
         if initialization_scaling is not None and initialization_scaling not in (
             "direct",
             "fan_in_normalized",
@@ -592,6 +596,7 @@ class Network:
             "synapse": synapse.json(),
             "connection": connection,
             "polarity": target_port,
+            "allow_autapses": allow_autapses,
             "delay": _value(delay),
             "parameters": [parameter_id],
             "group": self.current_group,
@@ -635,6 +640,7 @@ class Network:
             (parameter_id,),
             self.current_group,
             enabled,
+            allow_autapses,
         )
 
     def operation(

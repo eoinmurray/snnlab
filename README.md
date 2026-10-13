@@ -18,6 +18,8 @@ from snnlab import analysis, lang, sim, viz
 
 The graph simulator supports LIF, ALIF and AdEx populations with current or conductance synapses, plus leaky-integrator readouts, recurrent/feedback connections and integer-timestep delays. `lang.ALIF()` and `lang.ADEX()` select current models; `lang.COBA_ALIF()` and `lang.COBA_ADEX()` select conductance models. See `examples/neurons/neurons.py` for a LIF/ALIF/AdEx comparison and the [Neurons](docs/content/docs/neurons.mdx), [Synapses](docs/content/docs/synapses.mdx) and [Weights](docs/content/docs/weights.mdx) guides. Register importable Python callbacks when authoring custom models; bundle loaders automatically resolve their saved references in each execution process. See `examples/current-lif/current_lif.py` for a built-in current-based simulation and `examples/customisation/customisation.py` with its sibling `custom_neurons.py` for a custom adaptive current neuron and weight distribution. Run the Customisation script with `--simulate` to execute its saved bundle without rebuilding or manually registering callbacks.
 
+New same-population projections exclude self-connections by default. Use `Network.connect(..., allow_autapses=True)` for deliberate self-feedback. Exclusion persists through training and checkpoints; historical bundles without the policy retain their original behaviour. See [Weights](docs/content/docs/weights.mdx) for eligible fan-in, initialization and compatibility.
+
 The simulator executes authored graph bundles. Legacy Config/COBANet execution,
 flag-built networks and config replay have been removed; see the
 [CLI reference](docs/content/docs/api/sim/cli.mdx) for current inputs and controls.

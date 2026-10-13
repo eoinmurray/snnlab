@@ -9,6 +9,20 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-13
+
+### Added
+
+1. Added projection-level `allow_autapses=False` to `Network.connect` and returned `Projection` objects. Newly authored same-population connections exclude self-feedback by default; `True` deliberately enables it. Identity determines exclusion, so equally sized different populations keep matching-index connections. Graphs and bundles serialize the requested policy; initialization/run metadata, native PyTorch checkpoints and runtime continuation record its effective policy and eligible fan-in. Shared weights with incompatible structural masks fail validation.
+
+### Changed
+
+1. Autapse-free initialization calculates sparsity and fan-in normalization from eligible other neurons. Exact-K samples distinct eligible partners directly and retains ties-to-even rounding and the minimum-one rule when partners exist; a single-neuron population receives no recurrent connections. Direct scaling still skips only fan-in division. Execution and gradient masks, post-update constraints and checkpoint restoration preserve exclusion without freezing other initially zero weights.
+
+### Compatibility
+
+1. Historical graphs/bundles without `allow_autapses` retain permissive initialization, random draws, normalization, graph identity and checkpoint metadata. Native checkpoints without policy metadata remain loadable with their historical graphs; loading them into a graph that excludes autapses fails explicitly. Changing a declared policy invalidates checkpoint and runtime continuation compatibility. Updated connectivity/weights documentation and added E→E/I→I initialization, optimization, persistence, shared-weight and boundary tests. Downstream experiment reporting remains tracked in [Pinglab issue 90](https://github.com/eoinmurray/pinglab/issues/90).
+
 ## [0.8.0] - 2026-10-13
 
 ### Changed

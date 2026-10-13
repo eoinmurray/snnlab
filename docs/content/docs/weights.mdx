@@ -31,11 +31,11 @@ The execution seed controls random draws. The initializer's numeric values use t
 
 ## Fan-in scaling
 
-Projection initialization defaults to `initialization_scaling="fan_in_normalized"`. If a projection has $N$ source channels, the initialized values are divided by $N$:
+Projection initialization defaults to `initialization_scaling="fan_in_normalized"`. If a projection has $N$ eligible source channels, the initialized values are divided by $N$:
 
 $$W_{ji}=\frac{\widetilde W_{ji}}{N}.$$
 
-Here $j$ indexes source channels, $i$ indexes target cells, $\widetilde W_{ji}$ is the initialized value before fan-in scaling, and $W_{ji}$ is the stored runtime weight. Both weights have the same physical unit; $N$ is a dimensionless channel count. This is SNNLab's initialization convention, not a claim that every neural-network initializer uses this rule.
+Here $j$ indexes source channels, $i$ indexes target cells, $\widetilde W_{ji}$ is the initialized value before fan-in scaling, and $W_{ji}$ is the stored runtime weight. Both weights have the same physical unit; $N$ is a dimensionless channel count. With autapses excluded in a same-population projection, eligibility omits the target neuron: a population of 32 divides by 31. A single-neuron population has no eligible partners and stores zero recurrent weights without dividing by zero. This is SNNLab's initialization convention, not a claim that every neural-network initializer uses this rule.
 
 With four source channels, `Constant(2.0)` stores 0.5 per edge under the default policy and 2.0 per edge under `"direct"`. Use direct scaling when an initializer already specifies the intended per-edge increment.
 
@@ -96,7 +96,7 @@ This fragment assumes a four-channel input `inputs` and a three-cell current pop
 
 ## Initial sparsity and persistent constraints
 
-`LowerClampedNormal` also accepts `initial_zero_fraction` and `zeroing`. The fraction must satisfy `0 <= fraction < 1`. `zeroing="bernoulli"` removes entries independently; `zeroing="exact_k"` keeps a fixed count of incoming entries for each target cell. Retained values are rescaled to compensate for the zeroing before fan-in scaling. The exact count is rounded and retains at least one incoming entry.
+`LowerClampedNormal` also accepts `initial_zero_fraction` and `zeroing`. The fraction must satisfy `0 <= fraction < 1`. `zeroing="bernoulli"` removes eligible entries independently; `zeroing="exact_k"` selects a fixed count of eligible incoming entries for each target cell. Retained values are rescaled to compensate for the zeroing before fan-in scaling. The count retains at least one selected entry when eligible partners exist. Numerical zeros from the initializer itself can still reduce the number of nonzero weights.
 
 ```python
 initializer = lang.LowerClampedNormal(
@@ -105,6 +105,38 @@ initializer = lang.LowerClampedNormal(
 ```
 
 This changes initialization. Initially zero weights can become nonzero during training; it does not create a permanent sparse mask. Likewise, a non-negative initializer does not constrain later optimizer updates. `lang.NonNegative()` clamps weights at initialization and after updates in built-in training. Use a [registered constraint](/api/lang/extensions) for other persistent restrictions.
+
+## Self-connections (autapses)
+
+An autapse feeds a neuron's output back into that same neuron. New `Network.connect` calls default to `allow_autapses=False`: same-population projections exclude the weight matrix's diagonal. Set `allow_autapses=True` to intentionally allow self-feedback. Different populations keep their matching-index connections even when both have the same size. The decision follows neuron identity, independently of whether the connection is labelled feedforward, recurrent or feedback.
+
+```python
+from snnlab import lang
+from snnlab.sim.execution import GraphExecutor, plan_graph
+
+net = lang.Network("self_connectivity", dt=0.1 * lang.ms)
+E = net.population("E", size=32, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
+projection = net.connect(
+    E.spikes, E.excitatory, name="E_to_E", synapse=lang.AMPA(),
+    weight=lang.LowerClampedNormal(
+        1.0, 0.0, initial_zero_fraction=0.5, zeroing="exact_k",
+    ),
+    connection="recurrent", allow_autapses=False,
+)
+model = GraphExecutor(plan_graph(lang.compile(net).graph), seed=0)
+weights = model.parameter_map()[projection.weight.id]
+print(int(weights.diagonal().count_nonzero()))       # 0 self-connections
+print((weights != 0).sum(dim=0).unique().tolist())    # [16] other-cell partners
+print(model.autapse_metadata[projection.id]["eligible_fan_in"])  # 31
+```
+
+The same policy applies to I→I connections using `I.spikes`, `I.inhibitory` and `lang.GABA()`. Exact-K samples distinct partners directly from the eligible set. With $M$ eligible partners and initial zero fraction $f$, the selected count is $K=\max(1,\operatorname{round}((1-f)M))$ when $M>0$, and zero otherwise. Here $M$ is the eligible source count, $f$ is `initial_zero_fraction`, $K$ is the count selected per target, and `round` uses Python's ties-to-even rule. Retained values receive compensation $M/K$ when $K>0$; normalized scaling then divides by $M$. Thus strictly positive retained values of 1 become weights of $1/K$. Direct scaling keeps the compensation and skips the final division. No count exceeding the eligible set can be produced by the supported fraction range.
+
+Exclusion is permanent connectivity, separate from initial sparsity and value constraints. Forward execution masks forbidden entries and their gradients. Built-in training clears them after every optimizer step, including updates caused by optimizer momentum. External PyTorch loops should still call `model.enforce_constraints()` after each step. Declared value constraints run before structural exclusion; they cannot restore self-connections. Other initially zero weights remain trainable. Shared weights must require the same structural mask everywhere; conflicting projections or operation uses fail validation.
+
+The requested boolean is saved in new graphs and bundles. `model.autapse_metadata` and result/build `metrics["autapses"]` report `requested`, resolved `allow_autapses`, `effective` (`"excluded"`, `"allowed"` or `"not_applicable"`), `origin` and `eligible_fan_in` per projection. New initialization metadata and training checkpoints retain these records under each parameter's `autapses` field. Native `state_dict()` checkpoints also save the policy, validate it on loading and clear excluded diagonals.
+
+Historical graphs without the field retain their original permissive connectivity, random draws, normalization and identities. Their policy reports `requested=None` and `origin="legacy_default"`; their historical initialization metadata remains unchanged so training can resume. A native checkpoint without policy metadata can load with its historical graph; loading it into a graph that excludes autapses raises an explicit error. Changing a declared policy requires fresh compatible checkpoints and continuation state. These defaults are a SNNLab convention; downstream experiment reporting is tracked in [Pinglab issue 90](https://github.com/eoinmurray/pinglab/issues/90).
 
 ## Trainable weights
 

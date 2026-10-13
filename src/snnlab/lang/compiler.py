@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 from snnlab import _neurons as N
 from snnlab import extensions as E
+from snnlab._connectivity import resolve_autapses
 
 from ._version import __version__
 from .core import Network
@@ -373,6 +374,10 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                 )
             )
     parameter_ids = set(parameter_rows)
+    try:
+        resolve_autapses(graph)
+    except ValueError as error:
+        out.diagnostics.append(Diagnostic("error", "E117", str(error)))
     population_ids = {p["id"] for p in graph.get("populations", [])}
     consumers: set[str] = set()
     adjacency: dict[str, set[str]] = {p: set() for p in population_ids}

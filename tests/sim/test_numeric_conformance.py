@@ -138,6 +138,8 @@ def test_ping_forward_matches_preserved_pre_removal_reference(
     bundle = snn.compile(net)
     # Reconstruct the historical graph contract for the authenticated fixtures.
     bundle.graph.pop("refractory_timing")
+    for projection in bundle.graph["projections"]:
+        projection.pop("allow_autapses", None)
     bundle.graph["timebase"]["dt"]["value"] = dt_ms
     for population in bundle.graph["populations"]:
         if population["id"] in {"cell_E", "cell_I"}:
@@ -246,6 +248,8 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
     )
     bundle = snn.compile(net, training=recipe)
     bundle.graph.pop("refractory_timing")
+    for projection in bundle.graph["projections"]:
+        projection.pop("allow_autapses", None)
     for population in bundle.graph["populations"]:
         if population["id"] in {"cell_E", "cell_I"}:
             neuron = population["neuron"]

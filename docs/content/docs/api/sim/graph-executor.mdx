@@ -42,9 +42,9 @@ from snnlab.sim.execution import GraphPlan, plan_graph
 plan = plan_graph(bundle.graph)
 ```
 
-`plan_graph(graph: Mapping[str, Any]) -> GraphPlan` checks backend capabilities, timebase, projection units and delays, then prepares population ordering and projection decay. It does not initialize weights. Unsupported graph features raise `ValueError`; projection delays must be integer multiples of the graph timestep.
+`plan_graph(graph: Mapping[str, Any]) -> GraphPlan` checks backend capabilities, timebase, projection units, delays, autapse policies and shared structural masks, then prepares population ordering and projection decay. It does not initialize weights. Unsupported graph features raise `ValueError`; projection delays must be integer multiples of the graph timestep.
 
-`GraphPlan` is a frozen dataclass containing `graph`, `dt_ms`, `populations`, `projections`, `observables`, `outputs` and resolved `refractory` timing. Its nested graph data is not deeply frozen. Treat it as planning data; author networks through [snnlab.lang](/api/lang/network).
+`GraphPlan` is a frozen dataclass containing `graph`, `dt_ms`, `populations`, `projections`, `observables`, `outputs`, resolved `refractory` timing and per-projection `autapses` metadata. Its nested graph data is not deeply frozen. Treat it as planning data; author networks through [snnlab.lang](/api/lang/network).
 
 ## forward
 
@@ -91,11 +91,13 @@ weight = parameters["input_to_E.weight"]
 
 `parameter_map() -> dict[str, torch.Tensor]` returns live parameter tensors keyed by graph parameter IDs. PyTorch registration replaces periods with `__`; this method restores the graph-facing names.
 
-Projection matrices are declared as `(target, source)` in the graph and stored as `(source, target)` at runtime. Projection initialization follows its serialized `initialization_scaling` policy: normalized by default or explicitly direct. Linear operation matrices also use reversed runtime orientation and retain their declared initialization policy. Consult `model.initialization_metadata` for realized shapes, scaling and statistics.
+Projection matrices are declared as `(target, source)` in the graph and stored as `(source, target)` at runtime. Projection initialization follows its serialized `initialization_scaling` policy: normalized by default or explicitly direct. Linear operation matrices also use reversed runtime orientation and retain their declared initialization policy. Consult `model.initialization_metadata` for realized shapes, scaling, statistics and declared autapse policies. `model.autapse_metadata` reports requested/effective policy and eligible fan-in for every projection, including historical permissive defaults. New native `state_dict()` files also record and validate this policy; older files without policy metadata must be loaded with a graph that retains permissive connectivity.
 
 The tensors in `result.parameters` are detached copies. Use `model.parameter_map()` or `model.parameters()` when an optimizer needs the live parameters.
 
 ## enforce_constraints
+
+Same-population projections authored with `allow_autapses=False` mask self-connections during execution and gradient updates. Constraint enforcement also clears their stored diagonal after optimization, including optimizer momentum updates. Initially zero non-self entries remain trainable. Structural exclusion runs after value constraints and survives saving/loading. Runtime continuation rejects changes to the declared policy.
 
 ```python
 optimizer.step()

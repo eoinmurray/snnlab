@@ -26,6 +26,7 @@ from torch import nn
 
 from snnlab import _neurons as N
 from snnlab import extensions as E
+from snnlab._connectivity import resolve_autapses
 from snnlab.sim import extensions as X
 from snnlab.sim import models as M
 from snnlab.sim.bundle import load_graph_bundle, load_training_recipe
@@ -1734,6 +1735,7 @@ class GraphPlan:
     observables: tuple[Mapping[str, Any], ...]
     outputs: tuple[Mapping[str, Any], ...]
     refractory: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    autapses: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
 
 def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
@@ -1875,6 +1877,11 @@ def runtime_state_compatibility(plan: GraphPlan) -> dict[str, Any]:
     return {
         "schema": RUNTIME_STATE_SCHEMA,
         "dt_ms": plan.dt_ms,
+        **(
+            {"autapses": dict(plan.autapses)}
+            if any("allow_autapses" in row for row in plan.graph.get("projections", []))
+            else {}
+        ),
         "populations": [
             {"id": row["id"], "size": row["size"], "neuron": row["neuron"]}
             for row in plan.populations
@@ -2833,6 +2840,7 @@ class DelayBuffer:
 
 def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
     E.restore(graph)
+    autapses = resolve_autapses(graph)
     if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
         raise ValueError("unsupported voltage_sampling contract")
     if graph.get("refractory_timing") not in (
@@ -2962,6 +2970,7 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
         observables=tuple(graph.get("observables", [])),
         outputs=tuple(graph.get("outputs", [])),
         refractory=refractory,
+        autapses=autapses,
     )
 
 
@@ -2990,6 +2999,17 @@ class GraphExecutor(nn.Module):
         rows = {row["id"]: row for row in plan.graph.get("parameters", [])}
         self.weights = nn.ParameterDict()
         self.initialization_metadata: dict[str, dict[str, Any]] = {}
+        self.autapse_metadata = dict(plan.autapses)
+        self._excluded_autapse_parameters = {
+            p.parameter
+            for p in plan.projections
+            if plan.autapses[p.id]["effective"] == "excluded"
+        }
+        explicit_parameters = {
+            p["parameters"][0]
+            for p in plan.graph.get("projections", [])
+            if "allow_autapses" in p
+        }
         pop_ids = {p["id"] for p in plan.populations}
         trainable = set(trainable_parameters)
 
@@ -3008,6 +3028,8 @@ class GraphExecutor(nn.Module):
                     f"{row['id']}: invalid initialization_scaling {scaling!r}"
                 )
             scale_by_fanin = scaling == "fan_in_normalized"
+            exclude_autapses = row["id"] in self._excluded_autapse_parameters
+            eligible_fan_in = runtime_shape[0] - int(exclude_autapses)
             init = row["initializer"]
             kind = init["kind"]
             if kind == "custom_initializer":
@@ -3056,18 +3078,21 @@ class GraphExecutor(nn.Module):
                     f"{row['id']}: initial_zero_fraction must satisfy 0 <= fraction < 1"
                 )
             zeroing = init.get("zeroing", "bernoulli")
-            if zero_fraction:
+            if zero_fraction and eligible_fan_in:
                 if zeroing == "exact_k":
                     if len(runtime_shape) != 2:
                         raise ValueError(
                             f"{row['id']}: exact_k zeroing requires a matrix"
                         )
                     fan_in, fan_out = runtime_shape
-                    kept = max(1, int(round((1.0 - zero_fraction) * fan_in)))
+                    kept = max(1, int(round((1.0 - zero_fraction) * eligible_fan_in)))
                     mask = torch.zeros(runtime_shape)
                     for column in range(fan_out):
-                        mask[torch.randperm(fan_in)[:kept], column] = 1
-                    value = value * mask * (fan_in / kept)
+                        partners = torch.randperm(eligible_fan_in)[:kept]
+                        if exclude_autapses:
+                            partners = partners + (partners >= column).long()
+                        mask[partners, column] = 1
+                    value = value * mask * (eligible_fan_in / kept)
                 elif zeroing == "bernoulli":
                     value = (
                         value
@@ -3080,9 +3105,11 @@ class GraphExecutor(nn.Module):
                     )
             constraint = row.get("constraint")
             if scale_by_fanin:
-                value = value / runtime_shape[0]
+                value = value / max(1, eligible_fan_in)
             if constraint:
                 value = X.apply_constraint(value, constraint)
+            if exclude_autapses:
+                value = value.clone().fill_diagonal_(0)
             flat = value.reshape(-1)
             self.initialization_metadata[row["id"]] = {
                 "initializer": dict(init),
@@ -3099,6 +3126,12 @@ class GraphExecutor(nn.Module):
                     "max": float(flat.max()),
                 },
             }
+            if row["id"] in explicit_parameters:
+                self.initialization_metadata[row["id"]]["autapses"] = {
+                    p.id: dict(plan.autapses[p.id])
+                    for p in plan.projections
+                    if p.parameter == row["id"]
+                }
             return value
 
         def init_priority(projection: PlannedProjection) -> tuple[int, str]:
@@ -3148,6 +3181,78 @@ class GraphExecutor(nn.Module):
                 self.weights[parameter.replace(".", "__")] = nn.Parameter(
                     realised[parameter], requires_grad=parameter in trainable
                 )
+        self._autapse_gradient_hooks = []
+        self._register_autapse_gradient_hooks()
+        self.register_state_dict_pre_hook(
+            lambda module, prefix, keep_vars: module._enforce_autapses()
+        )
+        self.register_load_state_dict_post_hook(
+            lambda module, incompatible: module._restore_autapses()
+        )
+
+    def _register_autapse_gradient_hooks(self) -> None:
+        for handle in self._autapse_gradient_hooks:
+            handle.remove()
+        self._autapse_gradient_hooks = []
+        for name in self._excluded_autapse_parameters:
+            parameter = self.weights[name.replace(".", "__")]
+            if parameter.requires_grad:
+                self._autapse_gradient_hooks.append(
+                    parameter.register_hook(
+                        lambda gradient, name=name: self._mask_autapses(name, gradient)
+                    )
+                )
+
+    def _restore_autapses(self) -> None:
+        self._enforce_autapses()
+        # Native load_state_dict(assign=True) replaces parameter objects.
+        self._register_autapse_gradient_hooks()
+
+    def _mask_autapses(self, name: str, value: torch.Tensor) -> torch.Tensor:
+        if name in self._excluded_autapse_parameters:
+            return value.clone().fill_diagonal_(0)
+        return value
+
+    def _enforce_autapses(self) -> None:
+        with torch.no_grad():
+            for name in self._excluded_autapse_parameters:
+                self.weights[name.replace(".", "__")].fill_diagonal_(0)
+
+    def get_extra_state(self) -> dict[str, Any]:
+        """Include the declared connectivity contract in native checkpoints."""
+        return {"autapses": copy.deepcopy(self.autapse_metadata)}
+
+    def set_extra_state(self, state: Any) -> None:
+        if state != self.get_extra_state():
+            raise ValueError("checkpoint autapse policy does not match graph")
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        key = prefix + "_extra_state"
+        if key not in state_dict:
+            if self._excluded_autapse_parameters:
+                error_msgs.append(
+                    "checkpoint has no autapse policy; load it with its historical "
+                    "graph rather than silently changing connectivity"
+                )
+            state_dict[key] = self.get_extra_state()
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def parameter_map(self) -> dict[str, torch.Tensor]:
         return {name.replace("__", "."): value for name, value in self.weights.items()}
@@ -3160,6 +3265,7 @@ class GraphExecutor(nn.Module):
                 parameter.copy_(
                     X.apply_constraint(parameter, rows[name].get("constraint"))
                 )
+        self._enforce_autapses()
 
     def forward(
         self,
@@ -3662,6 +3768,10 @@ class GraphExecutor(nn.Module):
             if f"{p.id}.{projection_ports[p.id]}" in needed_signals
         }
 
+        effective_weights = {
+            name: self._mask_autapses(name, value)
+            for name, value in self.parameter_map().items()
+        }
         for t in range(steps):
             segments.boundary(completed_steps + t, self.plan.dt_ms)
             segments.reset(completed_steps + t, voltage)
@@ -3695,7 +3805,7 @@ class GraphExecutor(nn.Module):
                             else input_histories[source_owner][source_t]
                         )
                     drive = (
-                        source @ self.weights[projection.parameter.replace(".", "__")]
+                        source @ effective_weights[projection.parameter]
                     )
                     spec = projection_rows[projection.id]["synapse"]
                     if spec["kind"] == "custom_synapse":
@@ -4178,7 +4288,7 @@ class GraphExecutor(nn.Module):
             executor="graph",
             outputs=outputs,
             diagnostics=packed,
-            parameters={k: v.detach().clone() for k, v in self.parameter_map().items()},
+            parameters={k: v.detach().clone() for k, v in effective_weights.items()},
             final_state={
                 f"{k}.voltage": v.detach().clone() for k, v in voltage.items()
             },
@@ -4218,6 +4328,7 @@ class GraphExecutor(nn.Module):
                 "decisions": segments.records,
                 "resolved_interventions": resolved_interventions,
                 "refractory": dict(self.plan.refractory),
+                "autapses": self.autapse_metadata,
                 "inference_interventions": intervention_request
                 if interventions
                 else None,
@@ -4277,6 +4388,7 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
             "build_s": time.perf_counter() - started,
             "initialization": model.initialization_metadata,
             "refractory": dict(model.plan.refractory),
+            "autapses": model.autapse_metadata,
             "training_schema": training.get("schema") if training else None,
         },
     )
@@ -4398,6 +4510,7 @@ def simulate(
                             f"got shape={list(restored.shape)} dtype={restored.dtype}"
                         )
                     parameter.copy_(restored)
+            built.model._enforce_autapses()
             checkpoint_provenance = {
                 "format": TRAINING_CHECKPOINT_SCHEMA,
                 "path": str(checkpoint_path),
@@ -4805,6 +4918,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                         f"got shape={list(restored.shape)} dtype={restored.dtype}"
                     )
                 parameter.copy_(restored)
+        model._enforce_autapses()
         completed_updates = resumed.completed_updates
         if dataset_mode:
             if set(resumed.data_state) != {"epoch", "batch"}:
@@ -5444,12 +5558,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         if observation_spec is not None:
             gradient_measurements.add(last_gradients, parameter_map)
         optimizer.step()
-        rows = {row["id"]: row for row in graph.get("parameters", [])}
-        with torch.no_grad():
-            for name, parameter in parameter_map.items():
-                constraint = rows[name].get("constraint")
-                if constraint:
-                    parameter.copy_(X.apply_constraint(parameter, constraint))
+        model.enforce_constraints()
         absolute_update = completed_updates + update + 1
         next_data_state: dict[str, Any] = {}
         if dataset_mode:

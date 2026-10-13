@@ -13,7 +13,7 @@
     "timebase": {"type": "object"},
     "inputs": {"type": "array", "items": {"$ref": "#/$defs/named"}},
     "populations": {"type": "array", "items": {"$ref": "#/$defs/named"}},
-    "projections": {"type": "array", "items": {"$ref": "#/$defs/named"}},
+    "projections": {"type": "array", "items": {"$ref": "#/$defs/projection"}},
     "operations": {"type": "array", "items": {"$ref": "#/$defs/named"}},
     "parameters": {"type": "array", "items": {"$ref": "#/$defs/parameter"}},
     "outputs": {"type": "array", "items": {"$ref": "#/$defs/named"}}
@@ -95,6 +95,12 @@
         "package_version": [
           "package"
         ]
+      }
+    },
+    "projection": {
+      "allOf": [{"$ref": "#/$defs/named"}],
+      "properties": {
+        "allow_autapses": {"type": "boolean"}
       }
     },
     "parameter": {

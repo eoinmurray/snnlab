@@ -20,9 +20,9 @@ When `weight` is an initializer, `connect` automatically sizes and creates a par
 | `lang.Normal(mean, std)` | Compatibility alias for `LowerClampedNormal(mean, std)`. Negative draws are clamped to zero. |
 | `lang.SignedNormal(mean, std)` | Normal random samples retaining both signs, unless a constraint clamps them. |
 
-The execution seed controls random initialization. By default, the graph executor divides initialized projection weights by the source channel count (fan-in). Select `initialization_scaling="direct"` to store the initialized values without this division; see [Initialization scaling](#initialization-scaling). Runtime weights use `(source_channels, target_cells)` ordering.
+The execution seed controls random initialization. By default, the graph executor divides initialized projection weights by the eligible source channel count (fan-in). Select `initialization_scaling="direct"` to store the initialized values without this division; see [Initialization scaling](#initialization-scaling). Runtime weights use `(source_channels, target_cells)` ordering.
 
-For `LowerClampedNormal`, `initial_zero_fraction` must satisfy `0 <= fraction < 1`. `zeroing="bernoulli"` independently removes entries; `zeroing="exact_k"` keeps a fixed number of incoming entries per target cell. Both rescale retained values to compensate for initial zeroing. This specifies initial sparsity rather than a persistent connectivity constraint.
+For `LowerClampedNormal`, `initial_zero_fraction` must satisfy `0 <= fraction < 1`. `zeroing="bernoulli"` independently removes entries; `zeroing="exact_k"` keeps a fixed number of incoming entries per target cell. Both rescale retained values to compensate for initial zeroing. This specifies initial sparsity rather than a persistent connectivity constraint. For same-population projections, `connect(..., allow_autapses=False)` excludes self-connections structurally and calculates sparsity and normalization from eligible other neurons. See [Self-connections](/weights#self-connections-autapses) for exact counts, scaling and historical compatibility.
 
 ### Initialization scaling
 
@@ -30,7 +30,7 @@ For `LowerClampedNormal`, `initial_zero_fraction` must satisfy `0 <= fraction < 
 
 | Policy | Stored initial weights |
 | --- | --- |
-| `"fan_in_normalized"` | Divide initialized values by the source channel count. For four channels, `Constant(2.0)` stores 0.5 per edge. |
+| `"fan_in_normalized"` | Divide initialized values by the eligible source channel count. For four channels, `Constant(2.0)` stores 0.5 per edge. |
 | `"direct"` | Store initialized values without fan-in division. `Constant(2.0)` stores 2.0 per edge. |
 
 For lower-clamped normals, execution draws and lower-clamps first, then applies optional initial zeroing and its existing compensation, then applies the selected scaling, then the declared constraint. Direct scaling skips only the fan-in division; it does not disable zeroing compensation. Initially zero entries remain trainable unless a separate constraint forbids them.

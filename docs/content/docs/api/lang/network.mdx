@@ -106,6 +106,7 @@ net.connect(
     delay=None,
     enabled=True,
     initialization_scaling=None,
+    allow_autapses=False,
 )
 ```
 
@@ -122,9 +123,12 @@ net.connect(
 | `connection` | `str = "feedforward"` | One of `"feedforward"`, `"recurrent"`, `"feedback"`, `"modulatory"`. |
 | `delay` | `Quantity` or `None`, default `None` | Additional transmission delay, expressed using `lang.ms`. |
 | `enabled` | `bool = True` | Whether this projection participates in execution. |
+| `allow_autapses` | `bool = False` | Permit a neuron to feed its own output back to itself. Exclusion applies to same-population identity regardless of routing label; different populations retain matching-index connections. |
 | `initialization_scaling` | `str` or `None`, default `None` | `"direct"` or `"fan_in_normalized"`. Omission normalizes new weights or inherits an existing parameter policy; conflicting shared-parameter settings fail. See [Initialization scaling](/api/lang/parameters#initialization-scaling). |
 
 The connection kind describes graph routing; the target port determines excitatory, inhibitory or modulatory polarity. Feedback requires an explicit positive delay. Graph execution requires delays to be integer multiples of the network timestep. Recurrent and feedback connections from populations use at least one timestep of causal delay.
+
+Newly authored projections always serialize `allow_autapses`. The returned object exposes `projection.allow_autapses`. Exclusion is structural: forbidden diagonal entries remain ineffective during execution and are cleared after optimization and checkpoint restoration. Initially zero non-self entries remain trainable. Shared parameters requiring different exclusion masks fail compilation/planning. Historical graphs without the field retain permissive behaviour. See [Self-connections](/weights#self-connections-autapses) for initialization counts, normalization and compatibility.
 
 ## Synapses
 
