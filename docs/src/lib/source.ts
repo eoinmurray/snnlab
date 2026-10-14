@@ -3,6 +3,7 @@ import { createDevSource, type ContentModule } from './dev-source';
 import { llms, loader, type StaticSource } from 'fumadocs-core/source';
 import { structure, type StructuredData } from 'fumadocs-core/mdx-plugins';
 import path from 'node:path';
+import { sidebarLabels } from './navigation';
 
 export type PageData = CollectionEntry<'docs'>['data'] & {
   _raw: CollectionEntry<'docs'>;
@@ -34,7 +35,8 @@ export async function getSource() {
   for (const entry of metadata) {
     files.push({ type: 'meta', path: path.relative('content/docs', entry.filePath!), data: entry.data });
   }
-  return loader({ source: { files }, baseUrl: import.meta.env.BASE_URL });
+  return loader({ source: { files }, baseUrl: import.meta.env.BASE_URL,
+    pageTree: { transformers: [sidebarLabels] } });
 }
 
 export async function getDocsLlms() {

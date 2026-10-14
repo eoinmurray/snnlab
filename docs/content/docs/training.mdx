@@ -235,6 +235,16 @@ for row in history:
 
 `result.metrics["epochs"]` contains loss and accuracy measured **after each epoch on the whole training and validation split**, plus epoch 0 before learning. These are evaluations of fixed weights, not the last minibatch's loss or an average collected while weights were changing. Accuracy is the fraction of samples whose highest-scoring class matches the label.
 
+To measure training and evaluation separately, add `training_timing=True` to the
+`ExecutionSpec` above before calling `train`. Read
+`result.metrics["training_timing"]["training_s"]` for training-loop seconds and
+`result.metrics["training_timing"]["epochs"]` for per-epoch phase durations.
+The default synchronized mode measures completed GPU work at phase boundaries;
+it adds no per-forward/backward timing fences. Keep warmup, plotting and external
+checkpoint writes outside the comparison timer. Timing is off by default and does
+not change checkpoint or resume identity. See [training timing](/api/sim/execution-spec#training_timing)
+for the complete scopes and host-only enqueue timing.
+
 To select completed-epoch weights by validation cross-entropy, breaking ties with accuracy, configure your execution request before calling `train`:
 
 ```python

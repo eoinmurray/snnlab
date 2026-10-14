@@ -51,6 +51,7 @@ ExecutionSpec(
     compile_mode: Literal["default"] | None = None,
     dataset_prefetch: int = 0,
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
+    training_timing: bool = False,
 )
 ```
 
@@ -257,6 +258,64 @@ Supply `targets` or `target_bindings`, not both. Dataset snapshot labels use the
 **Type:** `Sequence[TargetArrayBinding]`. **Default:** `()`.
 
 Explicit target vectors with provenance. Each binding has required `target_id: str` and `value: torch.Tensor`, plus `source: Mapping[str, Any] = {}` from a dataclass factory. IDs, shape and integer-value rules match `targets`. Duplicate/missing/unexpected target IDs are rejected.
+
+### training_timing
+
+**Type:** `bool`. **Default:** `False`. Requires `kind="train"`.
+
+Set `training_timing=True` to return `result.metrics["training_timing"]`. The CLI
+provides `--training-timing`. Timing does not change the recipe, data order, loss,
+checkpoint identity or resume protocol. The metric is absent when disabled, and
+no timing clocks or timing fences are used.
+
+```python
+execution = ExecutionSpec(
+    kind="train", bundle=bundle_path,
+    input_bindings=(train_input,), targets={"class": train_labels},
+    validation=validation, epochs=20, batch_size=32, shuffle=True,
+    training_timing=True,
+)
+result = train(execution)
+timing = result.metrics["training_timing"]
+print(timing["total_s"], timing["training_s"])
+for row in timing["epochs"]:
+    print(row["epoch"], row["training_s"], row["validation_s"])
+```
+
+The mapping has `mode`, `scope`, `training_scope`, `total_s`, the phase fields
+below, and `epochs`. All durations are seconds. Phase totals are disjoint and sum
+to `total_s`.
+
+| Field | Scope |
+| --- | --- |
+| `setup_s` | Model construction, input/target resolution, optimizer/resume setup and scheduling before initial evaluation. |
+| `training_s` | Minibatch preparation, forward/loss/backward, optimizer updates, constraints, update bookkeeping and in-loop batch-loss checkpoint selection. Excludes epoch evaluations. |
+| `train_evaluation_s` | Fixed-weight training-split evaluations, including epoch 0 when evaluated. |
+| `validation_s` | Held-out evaluations and optional named observation probes. |
+| `checkpoint_s` | Final checkpoint construction and any requested `save_final_checkpoint` / `save_selected_checkpoint` writes. |
+| `reporting_s` | Epoch metric/observation bookkeeping, epoch-selection checkpoints and final result construction outside the other phases. |
+
+`epochs` contains phase durations for epochs evaluated or trained during this
+call. Epoch 0 has evaluation time and zero training time. Completed-epoch rows
+are numbered from 1. A resumed partial epoch reports only work performed in the
+current call; timings are not accumulated from its checkpoint. Single-batch
+`updates` mode has an empty epoch timing list and still reports phase totals.
+Initial evaluation can be skipped on mid-epoch resume. Truncated calls can have a
+training timing row for a partial epoch without a completed-epoch evaluation.
+
+With `timing_mode="synchronized"` (default), CPU wall clocks and CUDA/MPS device
+fences bracket phase/epoch transitions. There are no per-forward/backward timing
+fences. Opt-in `"enqueue"` omits timing fences and records host elapsed time;
+queued GPU work can extend beyond a phase, so those values cannot establish
+completed GPU speedups. Fences can change overlap and add overhead; disclose the
+measurement mode when comparing throughput.
+
+`total_s` starts after request validation and an initial device fence, and ends
+after in-memory result construction and a final device fence. Caller-side data
+preparation, warmup, plotting and external checkpoint/volume writes are excluded.
+Put those operations outside both comparison timers and use identical initial
+and completed-epoch evaluation schedules. Isolated forward/backward latencies
+require a separate profiler; `training_s` is not their sum alone.
 
 ### validation
 
@@ -734,7 +793,7 @@ The same keyword is accepted by `GraphExecutor`; the CLI uses `--extension-valid
 
 `dataset_prefetch=0` preserves synchronous batch preparation. Values from 1 to 8 enable bounded lookahead for built-in dataset encoders in training, validation and dataset inference. A single worker prepares CPU batches in order with the existing per-batch seeds. CUDA uses pinned CPU buffers, a transfer stream, events and consumer-stream lifetime tracking; other devices retain synchronous transfers. Custom encoders run synchronously on the caller thread because callbacks can consume global random state. Prefetch buffers are released when iteration completes or fails. These execution controls do not alter dataset identity, generated spikes or checkpoint data order. Larger lookahead increases host and device memory use; start with 2 and measure the complete workload.
 
-`timing_mode="synchronized"` brackets input resolution and completed execution with device synchronisation and reports `metrics["simulate_s"]`. This includes encoding, transfers and recording, but excludes model construction and checkpoint loading; `timing_scope` records that boundary. CPU requires no device fence. MPS uses its device synchronisation API. `timing_mode="enqueue"` omits these fences and reports `simulate_enqueue_s` instead: this is host elapsed time and may exclude queued accelerator work. Existing internal validation, recordings and other operations may still synchronise. `peak_python_bytes` measures Python allocations only, not GPU tensor memory.
+For simulation/inference, `timing_mode="synchronized"` brackets input resolution and completed execution with device synchronisation and reports `metrics["simulate_s"]`. This includes encoding, transfers and recording, but excludes model construction and checkpoint loading; `timing_scope` records that boundary. CPU requires no device fence. MPS uses its device synchronisation API. `timing_mode="enqueue"` omits these fences and reports `simulate_enqueue_s` instead: this is host elapsed time and may exclude queued accelerator work. Existing internal validation, recordings and other operations may still synchronise. `peak_python_bytes` measures Python allocations only, not GPU tensor memory.
 
 The CLI exposes `--compile-mode default`, `--dataset-prefetch N` and `--timing-mode synchronized|enqueue`. Use `--no-diagnostics` when dense diagnostics are unnecessary. Gradient reporting copies only the final update or explicitly observed gradients, metric reporting batches host reads, and batch-loss selection snapshots only improving candidates. Selection still requires its loss read; requested gradient-norm observations still have measurement overhead.
 

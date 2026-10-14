@@ -31,6 +31,9 @@ def test_training_cli_maps_controls_to_direct_fields(tmp_path):
                 "--batch-size",
                 "7",
                 "--input-shuffle",
+                "--training-timing",
+                "--timing-mode",
+                "enqueue",
                 "--save-final-checkpoint",
                 str(tmp_path / "final"),
                 "--save-selected-checkpoint",
@@ -39,6 +42,7 @@ def test_training_cli_maps_controls_to_direct_fields(tmp_path):
         )
     )
     assert (spec.epochs, spec.batch_size, spec.shuffle) == (3, 7, True)
+    assert spec.training_timing and spec.timing_mode == "enqueue"
     assert spec.save_final_checkpoint == str(tmp_path / "final")
     assert spec.save_selected_checkpoint == str(tmp_path / "selected")
     assert not set(spec.options) & {

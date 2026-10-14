@@ -34,14 +34,21 @@ Markers compose, so the Brian2 comparisons can be selected with
 `test_snntorch_conformance.py` checks current-based LIF voltage and spike
 trajectories against `snntorch.Leaky`, and compiled exponential-current networks
 against `snntorch.Synaptic`, including excitation, inhibition, batch state and
-split-run continuation. It also compares subthreshold input gradients and the
-slope-one fast-sigmoid spike derivative.
+split-run continuation. Mixed recurrent networks also check heterogeneous
+weights, separate excitatory/inhibitory decay constants, and one- and three-step
+inhibitory feedback delays across multiple timesteps and neuron parameters.
+Spike sequences must match exactly; physical voltage and current trajectories
+allow float32 rounding against the float64 reference.
+
+Gradient checks compare subthreshold input and projection-weight gradients
+through compiled synaptic networks, including both voltage and surrogate-spike
+losses. The primitive slope-one fast-sigmoid derivative is checked separately.
 
 The reference uses membrane voltage relative to rest, physically scaled current,
 immediate zero reset, and zero refractory duration. These checks do not establish
 conductance-based, refractory, reset-gradient or full training equivalence.
 Threshold equality differs between libraries and is excluded from the matched
-trajectory protocols.
+trajectory protocols; a separate test documents that boundary explicitly.
 
 Install the development dependencies with `uv sync --dev`, then run:
 

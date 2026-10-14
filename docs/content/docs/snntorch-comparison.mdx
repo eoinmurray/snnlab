@@ -1,0 +1,101 @@
+---
+title: MNIST training with snnTorch and SNNLab
+description: Matched current-based MNIST classifiers, learning curves and measured training, forward and backward timings on Modal L4.
+---
+
+We compare snnTorch and SNNLab's native `snnlab.sim` training on a matched MNIST
+classifier, measuring learning curves and execution time.
+
+## Task and architecture
+
+Both networks use **784 inputs → 1,000 spiking hidden neurons → 10 spiking
+outputs**. They train on **6,000 stratified MNIST images** and evaluate all
+**10,000 test images**: 20 epochs, batch size 128, seed 17 and 940 updates.
+Each image repeats for 25 steps with fresh state; the largest output spike count
+predicts the digit.
+
+snnTorch uses `Linear` and `snn.Synaptic`; SNNLab matches them with exponential
+currents, a custom neuron and bias inputs. Both learn 795,010 parameters.
+
+| Shared setting | Value |
+| --- | --- |
+| Synaptic decay per step, alpha | 0.9 |
+| Membrane decay per step, beta | 0.95 |
+| Spike threshold | 1, in normalized neuron units |
+| Reset | Delayed subtractive reset, detached from the gradient |
+| Surrogate gradient | snnTorch's default ATan derivative, matched in SNNLab |
+| Optimizer | Adam, learning rate 0.0005, betas (0.9, 0.999), no weight decay or gradient clipping |
+| Training objective | Batch-mean cross-entropy on output membrane voltages, summed over all 25 steps |
+
+Both share initial weights, shuffled order, float32 and deterministic arithmetic,
+with TF32 disabled. SNNLab uses fast projections, eager callbacks and **`TrainSpec`,
+`ExecutionSpec` and one `train()` call**; snnTorch uses a PyTorch loop.
+
+This adapts [snnTorch Tutorial 5](https://snntorch.readthedocs.io/en/latest/tutorials/tutorial_5.html)
+with synaptic decay and SNNLab's [training workflow](/training). The custom reset
+matches snnTorch rather than built-in `CUBA_LIF`. Preflight checks compare outputs,
+losses, gradients and an Adam update.
+
+## Training curves
+
+![Training loss and test accuracy over 20 epochs for the matched MNIST classifiers. The black solid line is snnTorch and the red dashed line is SNNLab.](/snntorch-comparison/mnist-30fabde19a1a7aa1/training-curves.png)
+
+**Figure 1.** Both networks were trained on the same 6,000 MNIST images for 20
+epochs. Panel A shows training-split cross-entropy, summed over the 25 simulation
+steps. Panel B shows spike-count classification accuracy on all 10,000 test
+images. Each point evaluates fixed weights after its epoch; the training loss is
+not a running average collected while weights change. Black solid lines denote
+snnTorch and red dashed lines denote SNNLab. The lines are unsmoothed results from
+one seed, without uncertainty bands.
+
+Final test accuracy is **85.20% for snnTorch and 80.01% for SNNLab**. This single
+seed does not establish training equivalence or a general accuracy ranking.
+Timing instrumentation left both learning histories unchanged.
+
+[PNG](/snntorch-comparison/mnist-30fabde19a1a7aa1/training-curves.png) ·
+[PDF](/snntorch-comparison/mnist-30fabde19a1a7aa1/training-curves.pdf)
+
+## Execution timings
+
+Training used **two Modal L4 GPUs concurrently**, excluding data preparation,
+warmup, disk writes, plotting and volume commits from both timers. Isolated
+passes used **one L4**, randomized interleaving, five warmups and three shared
+weight states. Their pooled medians cover 150 samples per library/operation,
+each processing **128 images × 25 steps**.
+
+| Measurement | snnTorch | SNNLab | SNNLab speed advantage |
+| --- | ---: | ---: | ---: |
+| Total workflow | 162.39 s | 148.61 s | +9.3% |
+| Workflow per epoch | 8.12 s | 7.43 s | +9.3% |
+| Training only | 59.94 s | 53.46 s | +12.1% |
+| Training per epoch | 3.00 s | 2.67 s | +12.1% |
+| Train/test evaluations, including initial | 102.42 s | 95.04 s | +7.8% |
+| Evaluations per completed epoch | 4.88 s | 4.52 s | +7.8% |
+| Isolated training forward | 27.60 ms | 21.86 ms | +26.2% |
+| Isolated backward | 14.09 ms | 14.53 ms | -3.1% |
+| Isolated inference forward | 25.75 ms | 23.64 ms | +8.9% |
+
+1. **Total workflow:** setup, training, initial/epoch evaluations and in-memory checkpoints.
+2. **Workflow per epoch:** total divided by 20, including setup and initial evaluation.
+3. **Training only:** all 940 updates: batch preparation, forward/loss, backward, optimizer and bookkeeping; excludes evaluation.
+4. **Training per epoch:** training-only time divided by 20.
+5. **Train/test evaluations, including initial:** fixed-weight evaluations before and after training epochs.
+6. **Evaluations per completed epoch:** post-epoch evaluation time divided by 20; excludes initial evaluation.
+7. **Isolated training forward:** fresh-state forward with autograd; excludes loss, backward, optimizer and transfers.
+8. **Isolated backward:** fresh-graph backpropagation; excludes forward/loss preparation, gradient clearing, optimizer and transfers.
+9. **Isolated inference forward:** fresh-state forward without autograd or transfers.
+10. **Speed advantage:** `100 × (snnTorch time / SNNLab time − 1)`. Positive means faster, negative slower; this is a speed ratio, not a time-reduction percentage.
+
+Pass medians measure the underlying models and do not sum to whole training
+cost. These speed results apply to this workload and hardware.
+
+## Data and provenance
+
+[Raw results](/snntorch-comparison/mnist-30fabde19a1a7aa1/results.json) and figures
+are pinned to `mnist-30fabde19a1a7aa1` (14 October 2026): snnTorch 1.0.0,
+PyTorch 2.10.0/CUDA 12.8, and SNNLab 0.12.1 source with unreleased timing support.
+The JSON includes histories, timings, 900 profiling samples and source hashes.
+
+[Benchmark source](https://github.com/eoinmurray/snnlab/tree/main/benchmarks/snntorch-comparison) ·
+[Training run](https://modal.com/apps/me-93863/main/ap-P6yReIInFoJqrVL5cvYYeK) ·
+[Profiling run](https://modal.com/apps/me-93863/main/ap-sQrEQUz0hAcM0eiTS7TaQT)

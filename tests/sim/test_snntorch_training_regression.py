@@ -13,7 +13,7 @@ from snnlab.sim import extensions as X
 snn = pytest.importorskip("snntorch")
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location(
-    "zero_decay_training_regression", ROOT / "benchmarks" / "zero_decay.py"
+    "zero_decay_training_regression", ROOT / "tests/sim/fixtures/zero-decay-training/benchmark.py"
 )
 benchmark = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = benchmark
@@ -140,7 +140,7 @@ def test_float32_spiking_training_matches_for_forty_clipped_adam_updates(
 
 def test_original_accuracy_gap_fails_despite_shared_checkpoint_agreement():
     """Retained full-run evidence must fail a training-equivalence assertion."""
-    report = json.loads((ROOT / "benchmarks/zero-decay/results.json").read_text())
+    report = json.loads((ROOT / "tests/sim/fixtures/zero-decay-training/results.json").read_text())
     candidate = report["candidate"]
     assert candidate["agreement"]["batch_128"]["initial"]["class_scores_exact"]
     assert candidate["agreement"]["batch_128"]["trained"]["class_scores_exact"]
@@ -153,7 +153,7 @@ def test_original_accuracy_gap_fails_despite_shared_checkpoint_agreement():
 
 @pytest.mark.parametrize("field", ["epoch_losses", "test_loss", "test_accuracy"])
 def test_training_gate_checks_each_metric_independently_of_timing(field):
-    report = json.loads((ROOT / "benchmarks/zero-decay/results.json").read_text())
+    report = json.loads((ROOT / "tests/sim/fixtures/zero-decay-training/results.json").read_text())
     pipelines = report["candidate"]["pipelines"]
     reference = pipelines["snntorch"]
     actual = {**reference, "train_s": 0.001, "test_s": 9999}

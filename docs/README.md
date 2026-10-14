@@ -17,6 +17,13 @@ The library comparison guide lives in `content/docs/comparisons.mdx`. It explain
 
 Edit Installation in `content/docs/` and keep navigation in `content/docs/meta.json`. Changelog is generated from the root `CHANGELOG.md` before development, type checks and builds; edit that source file.
 
+Installation and Quickstart stay at the top of the sidebar. Workflows opens by
+default; Model components, Results and analysis, Comparisons and API Reference
+start collapsed. The navigation folders contain only `meta.json` files and refer
+to existing pages using relative paths, preserving their URLs and generated
+content locations. Short navigation labels live in `src/lib/navigation.ts`;
+article titles remain unchanged. Keep Changelog last.
+
 During development, navigation and page rendering use Vite's current content
 files rather than a cached collection snapshot. Edits to the root Changelog, example templates, Python
 scripts, or generated PNGs rerun the corresponding sync script automatically.

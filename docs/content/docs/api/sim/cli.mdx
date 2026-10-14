@@ -270,6 +270,12 @@ The sink directory must be empty. Omit `directory` to retain selections in `reco
 
 ## GPU performance controls
 
+`train --training-timing` adds disjoint phase totals and per-epoch durations to
+`metrics.json` under `training_timing`. The default synchronized mode measures
+completed device work at phase boundaries; `--timing-mode enqueue` reports host
+latency. Timing is disabled by default. See [training timing](/api/sim/execution-spec#training_timing)
+for scopes, initial/partial epochs and checkpoint-write inclusion.
+
 `--compile-mode default` opts into compiled built-in neuron/readout kernels. The default is eager execution. `--dataset-prefetch N` enables bounded encoding/transfer lookahead (0 by default, maximum 8). `--timing-mode synchronized|enqueue` selects completed execution timing or host enqueue timing; synchronized is the default. Recording JSON accepts `"block_steps": 32` to buffer samples before transfer, with 1 preserving existing sink granularity. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls) for compatibility and measurement limits.
 
 

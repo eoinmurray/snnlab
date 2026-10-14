@@ -172,3 +172,13 @@ Dataset inference returns full concatenated sample outputs and `metrics["encodin
 Explicit [RecordingSpec selections](/api/sim/execution-spec#recording) return tensors keyed by graph signal ID in `recorded_signals`. Dense values have `(recorded_time, batch, selected_cells)` axes; sparse population spikes have `int64` rows `(absolute_step, batch, original_cell)`. Signal units and cell selections are retained in metrics. A sink consumes independent CPU blocks and leaves this mapping empty. `numpy()` continues to convert named outputs and diagnostics; convert selected recording tensors explicitly with `.numpy()` because sparse event axes differ from ordinary time-series axes.
 
 Inference metrics expose automatic `online_reductions`, remaining `retained_signal_samples`, `measurement_complete` and digest-bound `inference_retention`. An explicit measurement window retains partial accumulators/cursor in runtime state, including portable save/load. With `retain_outputs=False`, `outputs` is empty; dataset inference also avoids collecting per-sample `final_state` tensors. Exposed diagnostics remain independent and explicitly controlled.
+
+### Optional training timing
+
+When `ExecutionSpec.training_timing=True`, `result.metrics["training_timing"]`
+contains disjoint setup, training, train-evaluation, validation/probe, checkpoint
+and reporting durations, their `total_s`, the measurement mode and per-epoch phase
+rows. These are elapsed seconds for the current call, including resumed partial
+epochs. They do not change or persist into checkpoint identity. See
+[training timing](/api/sim/execution-spec#training_timing) for exact boundaries and
+the difference between synchronized device work and host-only enqueue latency.

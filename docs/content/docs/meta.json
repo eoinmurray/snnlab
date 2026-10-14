@@ -3,17 +3,10 @@
   "pages": [
     "installation",
     "quickstart",
-    "training",
-    "inference",
-    "pytorch-integration",
-    "current-lif",
-    "customisation",
-    "neurons",
-    "synapses",
-    "weights",
-    "data-formats",
-    "analysis",
-    "comparisons",
+    "workflows",
+    "model-components",
+    "results-and-analysis",
+    "library-comparisons",
     "api",
     "changelog"
   ]

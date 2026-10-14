@@ -255,3 +255,109 @@ def test_graph_training_backpropagates_through_recurrence_and_spike_budget():
         torch.testing.assert_close(disabled.outputs[name], value, rtol=0, atol=0)
     for name, value in result.gradients.items():
         torch.testing.assert_close(disabled.gradients[name], value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("mode", ["synchronized", "enqueue"])
+def test_opt_in_training_timings_partition_epochs_without_changing_updates(
+    mode, monkeypatch
+):
+    from dataclasses import replace
+
+    import snnlab.sim.execution as execution
+    from snnlab.sim.execution import ValidationSpec
+
+    bundle = _direct_train_bundle()
+    inputs = torch.zeros(3, 5, 2)
+    inputs[:, ::2, 0] = 1
+    inputs[:, 1::2, 1] = 1
+    labels = torch.arange(5) % 2
+    spec = ExecutionSpec(
+        kind="train",
+        graph=bundle.graph,
+        training=bundle.training,
+        input_bindings=(DenseArrayBinding("events", inputs),),
+        targets={"label": labels},
+        validation=ValidationSpec(
+            input_bindings=(DenseArrayBinding("events", inputs[:, :3]),),
+            targets={"label": labels[:3]},
+        ),
+        epochs=2,
+        batch_size=2,
+        shuffle=True,
+        seed=17,
+        device="cpu",
+    )
+    fences = []
+    monkeypatch.setattr(
+        execution, "_synchronize_device", lambda device: fences.append(device)
+    )
+    reference = train(spec)
+    assert not fences
+    assert "training_timing" not in reference.metrics
+    measured = train(replace(spec, training_timing=True, timing_mode=mode))
+    timing = measured.metrics["training_timing"]
+    assert timing["mode"] == mode
+    assert bool(fences) == (mode == "synchronized")
+    phases = (
+        "setup",
+        "training",
+        "train_evaluation",
+        "validation",
+        "checkpoint",
+        "reporting",
+    )
+    assert all(timing[f"{phase}_s"] >= 0 for phase in phases)
+    assert timing["total_s"] == pytest.approx(
+        sum(timing[f"{phase}_s"] for phase in phases)
+    )
+    assert [row["epoch"] for row in timing["epochs"]] == [0, 1, 2]
+    assert timing["epochs"][0]["training_s"] == 0
+    assert all(row["training_s"] > 0 for row in timing["epochs"][1:])
+    for phase in ("training", "train_evaluation", "validation"):
+        assert timing[f"{phase}_s"] == pytest.approx(
+            sum(row[f"{phase}_s"] for row in timing["epochs"])
+        )
+    assert measured.metrics["updates"] == reference.metrics["updates"]
+    assert measured.metrics["epochs"] == reference.metrics["epochs"]
+    assert measured.training_checkpoint.completed_updates == 6
+    assert (
+        measured.training_checkpoint.execution_protocol
+        == reference.training_checkpoint.execution_protocol
+    )
+    assert torch.equal(
+        measured.training_checkpoint.rng_state, reference.training_checkpoint.rng_state
+    )
+    for name, parameter in reference.parameters.items():
+        torch.testing.assert_close(measured.parameters[name], parameter, atol=0, rtol=0)
+    for name, gradient in reference.gradients.items():
+        torch.testing.assert_close(measured.gradients[name], gradient, atol=0, rtol=0)
+    for name, state in reference.optimizer_state.items():
+        for key, value in state.items():
+            torch.testing.assert_close(
+                measured.optimizer_state[name][key], value, atol=0, rtol=0
+            )
+
+
+def test_training_timing_single_batch_and_field_validation():
+    bundle = _direct_train_bundle()
+    inputs = torch.ones(3, 2, 2)
+    result = train(
+        ExecutionSpec(
+            kind="train",
+            graph=bundle.graph,
+            training=bundle.training,
+            input_bindings=(DenseArrayBinding("events", inputs),),
+            targets={"label": torch.tensor([0, 1])},
+            updates=2,
+            device="cpu",
+            training_timing=True,
+        )
+    )
+    timing = result.metrics["training_timing"]
+    assert timing["training_s"] > 0
+    assert timing["epochs"] == []
+    assert timing["train_evaluation_s"] == timing["validation_s"] == 0
+    with pytest.raises(TypeError, match="training_timing must be boolean"):
+        ExecutionSpec(kind="train", training_timing=1)
+    with pytest.raises(ValueError, match="training_timing requires"):
+        ExecutionSpec(kind="infer", training_timing=True)

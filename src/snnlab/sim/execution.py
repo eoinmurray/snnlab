@@ -314,6 +314,7 @@ class ExecutionSpec:
     compile_mode: Literal["default"] | None = None
     dataset_prefetch: int = 0
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized"
+    training_timing: bool = False
 
     def __post_init__(self):
         if self.projection_mode not in {"fast", "strict"}:
@@ -328,6 +329,10 @@ class ExecutionSpec:
             or not 0 <= self.dataset_prefetch <= 8
         ):
             raise ValueError("dataset_prefetch must be an integer from 0 to 8")
+        if not isinstance(self.training_timing, bool):
+            raise TypeError("training_timing must be boolean")
+        if self.training_timing and self.kind != "train":
+            raise ValueError("training_timing requires kind='train'")
         if self.timing_mode not in {"synchronized", "enqueue"}:
             raise ValueError("timing_mode must be synchronized or enqueue")
         if self.extension_validation not in ("strict", "structural"):
@@ -4892,6 +4897,61 @@ def _reporting_scalar(value):
     return value.double()
 
 
+class _TrainingTiming:
+    """Optional, disjoint wall phases; fences occur at phase/epoch boundaries."""
+
+    def __init__(self, spec):
+        self.enabled = spec.training_timing
+        self.mode = spec.timing_mode
+        self.device = resolve_device(spec.device) if self.enabled else None
+        self.totals = {}
+        self.epochs = {}
+        self.phase = None
+        self.epoch = None
+        self.started = None
+        if self.enabled:
+            self.switch("setup")
+
+    def switch(self, phase, epoch=None):
+        if not self.enabled:
+            return
+        if self.mode == "synchronized":
+            _synchronize_device(self.device)
+        now = time.perf_counter()
+        if self.phase is not None:
+            seconds = now - self.started
+            self.totals[self.phase] = self.totals.get(self.phase, 0.0) + seconds
+            if self.epoch is not None:
+                row = self.epochs.setdefault(self.epoch, {})
+                row[self.phase] = row.get(self.phase, 0.0) + seconds
+        self.phase, self.epoch, self.started = phase, epoch, now
+
+    def finish(self):
+        self.switch(None)
+        phases = (
+            "setup",
+            "training",
+            "train_evaluation",
+            "validation",
+            "checkpoint",
+            "reporting",
+        )
+        return {
+            "mode": self.mode,
+            "scope": "complete train call after argument validation; excludes caller preparation and persistence unless save_*_checkpoint is requested",
+            "training_scope": "minibatch preparation, forward/loss/backward, optimizer/constraints, update bookkeeping and in-loop checkpoint selection; excludes epoch evaluations",
+            "total_s": sum(self.totals.values()),
+            **{f"{phase}_s": self.totals.get(phase, 0.0) for phase in phases},
+            "epochs": [
+                {
+                    "epoch": epoch,
+                    **{f"{phase}_s": row.get(phase, 0.0) for phase in phases},
+                }
+                for epoch, row in sorted(self.epochs.items())
+            ],
+        }
+
+
 def train(spec: ExecutionSpec) -> ExecutionResult:
     if (
         spec.executor == "graph"
@@ -4953,6 +5013,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             raise ValueError(f"training {name} must be an integer >= {minimum}")
     if not isinstance(spec.shuffle, bool):
         raise TypeError("training shuffle must be boolean")
+    timing = _TrainingTiming(spec)
     sources = _split_input_bindings(spec.input_bindings)
     built = build(spec)
     assert isinstance(built.model, GraphExecutor)
@@ -5706,7 +5767,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         if validation_data is not None:
             splits["validation"] = validation_data[:2]
         for split, (inputs, targets) in splits.items():
+            timing.switch(
+                "train_evaluation" if split == "train" else "validation", epoch
+            )
             metrics = evaluate_split(inputs, targets)
+            timing.switch("reporting", epoch)
             if split == selection.split:
                 selection_metrics = metrics
             if "observation" in metrics:
@@ -5716,7 +5781,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         if observation_spec is not None:
             observations["probes"] = {}
             for name, inputs in resolved_probes.items():
+                timing.switch("validation", epoch)
                 measurement = evaluate_split(inputs, {}, probe_name=name)["observation"]
+                timing.switch("reporting", epoch)
                 observations["probes"][name] = {
                     **measurement,
                     "split": observation_spec.probes[name].split,
@@ -5798,6 +5865,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     if dataset_mode and data_state["batch"] == 0:
         record_epoch(data_state["epoch"])
 
+    timing.switch("training", scheduled[0][0] + 1 if dataset_mode else None)
     requests = (
         (indices, "train", epoch if dataset_mode else completed_updates + index, None)
         for index, (epoch, _, indices) in enumerate(scheduled)
@@ -5902,6 +5970,12 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             and next_data_state["batch"] == 0
         ):
             record_epoch(next_data_state["epoch"])
+        if dataset_mode and next_data_state["batch"] == 0:
+            if update + 1 < len(scheduled):
+                timing.switch("training", scheduled[update + 1][0] + 1)
+            else:
+                timing.switch("reporting")
+    timing.switch("reporting")
     assert final_forward is not None
     # Reporting reads are grouped after execution; selection reads remain explicit.
     reporting = {}
@@ -5916,6 +5990,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         row["components"] = {
             name: materialized[f"{index}/{name}"] for name in row["components"]
         }
+    timing.switch("checkpoint")
     completed_this_call = len(scheduled)
     final_checkpoint = checkpoint_at(
         completed_updates + completed_this_call,
@@ -5932,7 +6007,8 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             )
         save_training_checkpoint(save_selected, selected_checkpoint)
 
-    return ExecutionResult(
+    timing.switch("reporting")
+    result = ExecutionResult(
         executor="graph",
         outputs=final_forward.outputs,
         diagnostics=final_forward.diagnostics,
@@ -5975,6 +6051,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         },
     )
 
+    if timing.enabled:
+        result.metrics["training_timing"] = timing.finish()
+    return result
+
 
 def infer(spec: ExecutionSpec) -> ExecutionResult:
     return simulate(spec)
@@ -6002,6 +6082,7 @@ def execution_spec_from_args(
         compile_mode=getattr(args, "compile_mode", None),
         dataset_prefetch=getattr(args, "dataset_prefetch", 0),
         timing_mode=getattr(args, "timing_mode", "synchronized"),
+        training_timing=bool(getattr(args, "training_timing", False)),
         projection_mode=getattr(args, "projection_mode", "fast"),
         retain_parameters=getattr(args, "retain_parameters", True),
         retain_final_state=getattr(args, "retain_final_state", True),

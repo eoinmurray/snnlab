@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>SNNLab — Spike raster</title>
+  <rect width="64" height="64" rx="14" fill="#18181b"/>
+  <path d="M18 13V23M38 13V23M27 27V37M47 27V37M18 41V51M38 41V51" fill="none" stroke="#fafafa" stroke-width="5" stroke-linecap="round"/>
+</svg>

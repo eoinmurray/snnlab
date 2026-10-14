@@ -1,0 +1,12 @@
+{
+  "title": "Workflows",
+  "collapsible": true,
+  "defaultOpen": true,
+  "pages": [
+    "../training",
+    "../inference",
+    "../pytorch-integration",
+    "../current-lif",
+    "../customisation"
+  ]
+}

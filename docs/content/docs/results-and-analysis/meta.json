@@ -1,0 +1,6 @@
+{
+  "title": "Results and analysis",
+  "collapsible": true,
+  "defaultOpen": false,
+  "pages": ["../data-formats", "../analysis"]
+}

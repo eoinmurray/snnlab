@@ -3,6 +3,7 @@ import { parseFrontmatter } from '@astrojs/markdown-remark';
 import { loader, type StaticSource } from 'fumadocs-core/source';
 import { structure } from 'fumadocs-core/mdx-plugins';
 import type { PageData } from './source';
+import { sidebarLabels } from './navigation';
 
 export type ContentModule = {
   Content: Awaited<ReturnType<typeof render>>['Content'];
@@ -35,5 +36,6 @@ export function createDevSource(
       },
     } });
   }
-  return loader({ source: { files }, baseUrl });
+  return loader({ source: { files }, baseUrl,
+    pageTree: { transformers: [sidebarLabels] } });
 }

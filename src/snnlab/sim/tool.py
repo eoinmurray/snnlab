@@ -59,7 +59,12 @@ def _add_common_arguments(parser):
         "--timing-mode",
         choices=("synchronized", "enqueue"),
         default="synchronized",
-        help="Inference timing boundaries; enqueue mode reports simulate_enqueue_s.",
+        help="Timing boundaries; enqueue mode reports host latency rather than completed GPU work.",
+    )
+    parser.add_argument(
+        "--training-timing",
+        action="store_true",
+        help="Report train phase and epoch timings (synchronizes at phase boundaries by default).",
     )
     parser.add_argument(
         "--projection-mode",

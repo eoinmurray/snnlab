@@ -1,0 +1,6 @@
+{
+  "title": "Model components",
+  "collapsible": true,
+  "defaultOpen": false,
+  "pages": ["../neurons", "../synapses", "../weights"]
+}
