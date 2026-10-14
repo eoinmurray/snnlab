@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from typing import Mapping
 
@@ -11,7 +12,7 @@ from snnlab import _neurons as N
 from snnlab import extensions as E
 
 
-def checked_tensor(value, *, shape, device, dtype, name):
+def checked_tensor(value, *, shape, device, dtype, name, check_values=True):
     if not isinstance(value, torch.Tensor):
         raise TypeError(f"{name} must return a torch.Tensor")
     if (
@@ -22,12 +23,12 @@ def checked_tensor(value, *, shape, device, dtype, name):
         raise ValueError(
             f"{name} tensor must have shape={tuple(shape)}, device={device}, dtype={dtype}; got shape={tuple(value.shape)}, device={value.device}, dtype={value.dtype}"
         )
-    if not torch.isfinite(value).all():
+    if check_values and not torch.isfinite(value).all():
         raise ValueError(f"{name} tensor must be finite")
     return value
 
 
-def checked_state(value, template, name, *, required=()):
+def checked_state(value, template, name, *, required=(), check_values=True):
     if not isinstance(value, Mapping):
         raise TypeError(f"{name} must return a mapping of tensor state")
     if template is not None and set(value) != set(template):
@@ -39,7 +40,7 @@ def checked_state(value, template, name, *, required=()):
     for key, tensor in value.items():
         if not isinstance(key, str) or not key or "/" in key or "." in key:
             raise ValueError(f"{name} state keys must be simple strings")
-        if not isinstance(tensor, torch.Tensor) or not torch.isfinite(tensor).all():
+        if not isinstance(tensor, torch.Tensor):
             raise ValueError(f"{name}.{key} must be a finite tensor")
         if template is not None:
             previous = template[key]
@@ -49,16 +50,22 @@ def checked_state(value, template, name, *, required=()):
                 device=previous.device,
                 dtype=previous.dtype,
                 name=f"{name}.{key}",
+                check_values=check_values,
             )
+        elif check_values and not torch.isfinite(tensor).all():
+            raise ValueError(f"{name}.{key} must be a finite tensor")
     return dict(value)
 
 
-def spike(value, *, slope, custom=None):
+def make_spike(*, slope, custom=None, check_values=True):
+    """Resolve a surrogate and create its autograd dispatch once per executor."""
     if custom is None:
         from . import models as M
 
-        return M.fast_sigmoid_spike(value, slope)
+        return lambda value: M.fast_sigmoid_spike(value, slope)
     definition = E.resolve("surrogate", custom)
+
+    config = copy.deepcopy(custom.get("config", {}))
 
     class RegisteredSpike(torch.autograd.Function):
         @staticmethod
@@ -69,17 +76,23 @@ def spike(value, *, slope, custom=None):
         @staticmethod
         def backward(ctx, gradient):
             (x,) = ctx.saved_tensors
-            derivative = definition.function(x, custom.get("config", {}))
+            derivative = definition.function(x, config)
             checked_tensor(
                 derivative,
                 shape=x.shape,
                 device=x.device,
                 dtype=x.dtype,
                 name=definition.name,
+                check_values=check_values,
             )
             return gradient * derivative
 
-    return RegisteredSpike.apply(value)
+    return RegisteredSpike.apply
+
+
+def spike(value, *, slope, custom=None):
+    """Compatibility helper; executors retain the callable from make_spike."""
+    return make_spike(slope=slope, custom=custom)(value)
 
 
 def current_lif(

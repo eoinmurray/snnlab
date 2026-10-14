@@ -19,6 +19,7 @@ GraphExecutor(
     trainable_parameters=(),
     surrogate_slope=5.0,
     surrogate=None,
+    extension_validation="strict",
 )
 ```
 
@@ -29,6 +30,8 @@ GraphExecutor(
 | `trainable_parameters` | `Sequence[str]` | Graph parameter IDs whose tensors require gradients. The default selects none. |
 | `surrogate_slope` | `float` | Default slope for the executor's surrogate spike derivative. Neuron definitions can also specify their own slope. |
 | `surrogate` | `Mapping[str, Any]` or `None` | Serialized custom surrogate definition. Registered implementations must be imported before use. |
+
+`extension_validation` accepts `"strict"` (default) or `"structural"`. Structural mode skips custom neuron/synapse step value checks and surrogate derivative finite checks while retaining tensor contracts; initialization and restored state stay strict. Invalid values may propagate silently. See [validation policy](/api/sim/execution-spec#custom-dynamics-validation) for details. Surrogate dispatch is cached per executor; reconstruct the executor after changing its surrogate configuration.
 
 Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Selecting trainable parameters enables gradients; it does not create an optimizer or perform training.
 

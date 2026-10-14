@@ -44,6 +44,12 @@ def _add_common_arguments(parser):
         help="Graph execution device: auto, cpu, cuda, cuda:N, or mps (default: auto).",
     )
     parser.add_argument(
+        "--extension-validation",
+        choices=("strict", "structural"),
+        default="strict",
+        help="Custom dynamics/surrogate value checks: strict (default), or structural for trusted callbacks.",
+    )
+    parser.add_argument(
         "--diagnostics",
         action=argparse.BooleanOptionalAction,
         default=True,

@@ -9,6 +9,13 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-14
+
+### Changed
+
+1. Custom extension state validation scans each tensor for finiteness once, rather than twice. Graph executors resolve custom surrogate dispatch once and reuse its autograd function without changing derivative equations.
+2. Added `extension_validation="structural"` to `ExecutionSpec` and `GraphExecutor`, and `--extension-validation structural` to the CLI. This opt-in policy retains tensor type/shape/device/dtype/state-key contracts while skipping custom neuron/synapse step finite checks, binary-spike checks and custom surrogate backward finite checks. Strict diagnostics remain the default; initialization and runtime-state restoration remain strict under both policies. Build/run metrics record the policy. No zero-decay numerical semantics or persisted formats changed.
+
 ## [0.9.0] - 2026-10-13
 
 ### Added

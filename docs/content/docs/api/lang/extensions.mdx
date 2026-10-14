@@ -178,3 +178,7 @@ For arbitrary generators, temporal patterns or preprocessing, a normal Python fu
 Official outputs, exposed diagnostics and `.numpy()` work for registered signal ports. Custom dynamic state and current traces use runtime-state artifact version 2; existing conductance-only state artifacts remain version 1 and are still readable. Continuation detaches previous state, so it does not perform backpropagation across saved trajectory boundaries.
 
 The graph executor keeps `runtime_state.currents` separate from `.conductances`; registered hidden neuron/synapse state lives in `.custom_state`. Registered callbacks must not keep mutable trajectory state outside their supplied state mapping if they need reproducible continuation. GPU support depends on using device-compatible PyTorch operations in your implementation.
+
+## Runtime validation policy
+
+Custom neuron/synapse steps and surrogate derivatives use strict value validation by default. `ExecutionSpec(..., extension_validation="structural")` or the same keyword on `GraphExecutor` keeps tensor contracts but skips per-step finite and binary-spike checks and backward derivative finite checks. Use it only for callbacks whose numerical behaviour you have tested. Invalid values may propagate silently. Initialization and restored state remain strictly checked. See [ExecutionSpec](/api/sim/execution-spec) for the exact scope and CLI option.

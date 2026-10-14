@@ -262,3 +262,7 @@ python -m snnlab.sim sim --executor graph --bundle network.bundle \
 ```
 
 The sink directory must be empty. Omit `directory` to retain selections in `recordings.npz`; optional recording `window` restricts selected history. Sparse event rows contain absolute timestep, global batch and original cell indices. Use the same measurement policy with runtime-state load/save on continued invocations and a separate sink directory per invocation. Dataset inference streams batchwise using one model load; output tensors/final states are not concatenated when retention is disabled. See [measurement](/api/sim/execution-spec#measurement), [recording](/api/sim/execution-spec#recording) and [output retention](/api/sim/execution-spec#retain_outputs) for partial results, compatibility and memory limits.
+
+## Custom extension validation
+
+`--extension-validation strict` is the default. `--extension-validation structural` retains tensor contracts while skipping custom neuron/synapse step value checks and custom surrogate derivative finite checks. It avoids the host barriers from those checks on CUDA, but invalid values can propagate silently. Initialization and restored state retain strict checks. See [ExecutionSpec](/api/sim/execution-spec) for the policy's scope.

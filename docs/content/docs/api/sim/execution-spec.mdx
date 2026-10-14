@@ -43,6 +43,7 @@ ExecutionSpec(
     measurement: MeasurementWindow | None = None,
     recording: RecordingSpec | None = None,
     retain_outputs: bool = True,
+    extension_validation: Literal["strict", "structural"] = "strict",
 )
 ```
 
@@ -710,3 +711,11 @@ The built-in NPZ sink writes one compressed block file plus a JSONL manifest con
 Dataset inference uses one initialized/checkpoint-loaded model, encodes successive batches and supplies global batch offsets to the sink. With diagnostics disabled, a sink and `retain_outputs=False`, it does not concatenate named outputs, selected recordings or per-sample final states across the dataset. Input/label/order metadata and batch provenance still scale with sample count. Requesting retained outputs, dense diagnostics or in-memory recordings explicitly restores the corresponding storage cost. These controls do not claim constant-memory training through time.
 
 Recording/window/retention policy and execution coordinates bind the inference request digest. Before cache reuse, call `retention_identity(graph=graph, start_step=0, steps_count=600, batch_size=2, diagnostics=False, measurement=window, recording=recording, retain_outputs=False)` and pass the result to `validate_inference_artifacts(path, expected_retention=identity)`. Explicit `None` requires older artifacts without retention identity; omission checks internal integrity only. Full checkpoint/input expected-request verification remains a separate contract.
+
+## Custom dynamics validation
+
+`extension_validation="strict"` (the default) checks custom neuron/synapse state and spikes at every step and custom surrogate derivatives during backward. Nonfinite values and nonbinary spikes raise `ValueError`; tensor type, shape, device, dtype and state keys are always checked.
+
+Use `extension_validation="structural"` for trusted callbacks after validating their numerical behaviour with strict mode. It skips those step/backward value scans and binary-spike checks, avoiding their host scalar reads on CUDA. Invalid values can propagate silently in this mode: output or gradient checks alone cannot establish that intermediate states were valid. Initial state, restored runtime state, initializers, constraints, custom graph operations and training callbacks retain strict validation. Input validation and other execution paths may still synchronize. Build/run metrics record the policy; it is an execution setting, not a change to the saved graph or checkpoint format.
+
+The same keyword is accepted by `GraphExecutor`; the CLI uses `--extension-validation strict|structural`. Surrogate definitions and autograd dispatch are resolved once per executor. Construct a new executor after changing a registration or surrogate configuration.

@@ -305,8 +305,11 @@ class ExecutionSpec:
     measurement: MeasurementWindow | None = None
     recording: RecordingSpec | None = None
     retain_outputs: bool = True
+    extension_validation: Literal["strict", "structural"] = "strict"
 
     def __post_init__(self):
+        if self.extension_validation not in ("strict", "structural"):
+            raise ValueError("extension_validation must be strict or structural")
         if self.executor != "graph":
             raise ValueError("only the graph executor is supported")
         if self.recording is not None and not isinstance(self.recording, RecordingSpec):
@@ -2985,16 +2988,24 @@ class GraphExecutor(nn.Module):
         trainable_parameters: Sequence[str] = (),
         surrogate_slope: float = M.SURROGATE_SLOPE,
         surrogate: Mapping[str, Any] | None = None,
+        extension_validation: Literal["strict", "structural"] = "strict",
     ):
         super().__init__()
+        if extension_validation not in ("strict", "structural"):
+            raise ValueError("extension_validation must be strict or structural")
+        self.extension_validation = extension_validation
+        self._check_extension_values = extension_validation == "strict"
         self.plan = plan
         self.seed = int(seed)
         self.surrogate = (
             surrogate if (surrogate or {}).get("kind") == "custom_surrogate" else None
         )
-        if self.surrogate is not None:
-            E.resolve("surrogate", self.surrogate)
         self.surrogate_slope = float(surrogate_slope)
+        self._spike_function = X.make_spike(
+            slope=self.surrogate_slope,
+            custom=self.surrogate,
+            check_values=self._check_extension_values,
+        )
         torch.manual_seed(seed)
         rows = {row["id"]: row for row in plan.graph.get("parameters", [])}
         self.weights = nn.ParameterDict()
@@ -3804,9 +3815,7 @@ class GraphExecutor(nn.Module):
                             if source_t >= 0
                             else input_histories[source_owner][source_t]
                         )
-                    drive = (
-                        source @ effective_weights[projection.parameter]
-                    )
+                    drive = source @ effective_weights[projection.parameter]
                     spec = projection_rows[projection.id]["synapse"]
                     if spec["kind"] == "custom_synapse":
                         definition = E.resolve("synapse", spec)
@@ -3815,7 +3824,10 @@ class GraphExecutor(nn.Module):
                             previous, drive, self.plan.dt_ms, spec.get("config", {})
                         )
                         state = X.checked_state(
-                            definition.function(context), previous, definition.name
+                            definition.function(context),
+                            previous,
+                            definition.name,
+                            check_values=self._check_extension_values,
                         )
                         synapse_states[projection.id] = state
                         conductance[key] = state["value"]
@@ -3824,10 +3836,7 @@ class GraphExecutor(nn.Module):
                     incoming[projection.polarity] += conductance[key]
                 neuron = pop["neuron"]
 
-                def spike_function(value):
-                    return X.spike(
-                        value, slope=self.surrogate_slope, custom=self.surrogate
-                    )
+                spike_function = self._spike_function
 
                 if neuron["kind"] == "custom_neuron":
                     definition = E.resolve("neuron", neuron)
@@ -3846,15 +3855,23 @@ class GraphExecutor(nn.Module):
                             f"{definition.name} must return (state, spikes)"
                         )
                     state, spike_values = response
-                    state = X.checked_state(state, previous, definition.name)
+                    state = X.checked_state(
+                        state,
+                        previous,
+                        definition.name,
+                        check_values=self._check_extension_values,
+                    )
                     X.checked_tensor(
                         spike_values,
                         shape=voltage[name].shape,
                         device=device,
                         dtype=parameter_dtype,
                         name=f"{definition.name}.spikes",
+                        check_values=self._check_extension_values,
                     )
-                    if torch.any((spike_values != 0) & (spike_values != 1)):
+                    if self._check_extension_values and torch.any(
+                        (spike_values != 0) & (spike_values != 1)
+                    ):
                         raise ValueError(f"{definition.name} spikes must be binary")
                     neuron_states[name] = state
                     voltage[name], refractory[name] = (
@@ -4329,6 +4346,7 @@ class GraphExecutor(nn.Module):
                 "resolved_interventions": resolved_interventions,
                 "refractory": dict(self.plan.refractory),
                 "autapses": self.autapse_metadata,
+                "extension_validation": self.extension_validation,
                 "inference_interventions": intervention_request
                 if interventions
                 else None,
@@ -4379,6 +4397,7 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
         trainable_parameters=trainable,
         surrogate_slope=surrogate_slope,
         surrogate=surrogate,
+        extension_validation=spec.extension_validation,
     ).to(device)
     return ExecutionResult(
         executor="graph",
@@ -4389,6 +4408,7 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
             "initialization": model.initialization_metadata,
             "refractory": dict(model.plan.refractory),
             "autapses": model.autapse_metadata,
+            "extension_validation": model.extension_validation,
             "training_schema": training.get("schema") if training else None,
         },
     )
@@ -5690,6 +5710,7 @@ def execution_spec_from_args(
         seed=int(getattr(args, "seed", 0) or 0),
         device=resolve_device(getattr(args, "device", "auto")),
         diagnostics=getattr(args, "diagnostics", True),
+        extension_validation=getattr(args, "extension_validation", "strict"),
         checkpoint=(
             Path(args.load_weights) if getattr(args, "load_weights", None) else None
         ),
@@ -5728,6 +5749,7 @@ def execution_spec_from_args(
             not in {
                 "bundle",
                 "executor",
+                "extension_validation",
                 "epochs",
                 "batch_size",
                 "shuffle",
