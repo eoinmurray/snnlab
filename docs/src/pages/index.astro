@@ -13,13 +13,47 @@ const description = 'A Python library for authoring, simulating and visualising 
     <title>snnlab | Spiking neural networks in Python</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={new URL(`${base}/`, Astro.site)} />
+    <script is:inline>
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+      let preference = 'system';
+      try { preference = localStorage.getItem('theme') || 'system'; } catch {}
+
+      function applyTheme() {
+        const dark = preference === 'dark' || (preference !== 'light' && systemTheme.matches);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.classList.toggle('light', !dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        const toggle = document.querySelector('[data-theme-toggle]');
+        if (toggle) toggle.setAttribute('aria-pressed', String(dark));
+      }
+
+      applyTheme();
+      document.addEventListener('DOMContentLoaded', applyTheme);
+      systemTheme.addEventListener('change', applyTheme);
+      window.addEventListener('storage', (event) => {
+        if (event.key === 'theme' || event.key === null) {
+          preference = event.newValue || 'system';
+          applyTheme();
+        }
+      });
+      document.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element) || !event.target.closest('[data-theme-toggle]')) return;
+        preference = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+        try { localStorage.setItem('theme', preference); } catch {}
+        applyTheme();
+      });
+    </script>
   </head>
   <body class="flex min-h-svh flex-col bg-fd-background text-fd-foreground">
-    <header class="mx-auto flex w-full max-w-5xl items-center justify-between gap-6 px-6 py-4">
+    <header class="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-4 sm:gap-6 sm:px-6">
       <a href={`${base}/`} class="text-xl font-semibold tracking-tight">snnlab</a>
-      <nav aria-label="Main navigation" class="flex gap-6 text-sm">
+      <nav aria-label="Main navigation" class="flex items-center gap-3 text-sm sm:gap-6">
         <a href={`${base}/installation`} class="hover:underline">Documentation</a>
         <a href="https://github.com/eoinmurray/snnlab" class="hover:underline">GitHub</a>
+        <button type="button" data-theme-toggle aria-label="Dark mode" aria-pressed="false" class="flex size-9 shrink-0 items-center justify-center rounded-full border border-fd-border hover:bg-fd-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary">
+          <svg class="size-4 dark:hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></svg>
+          <svg class="hidden size-4 dark:block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></svg>
+        </button>
       </nav>
     </header>
     <main class="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center gap-8 px-6 py-6">
