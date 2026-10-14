@@ -21,6 +21,7 @@ GraphExecutor(
     surrogate=None,
     extension_validation="structural",
     compile_mode=None,
+    projection_mode="fast",
 )
 ```
 
@@ -34,6 +35,8 @@ GraphExecutor(
 | `compile_mode` | `None` or `"default"` | Opt-in `torch.compile` for prepared built-in neuron/readout kernels. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls). |
 
 `extension_validation` accepts `"structural"` (default) or `"strict"`. Opt into strict mode while developing custom callbacks or investigating numerical failures. Structural mode skips custom neuron/synapse step value checks and surrogate derivative finite checks while retaining tensor contracts; initialization and restored state stay strict. Invalid values may propagate silently. See [validation policy](/api/sim/execution-spec#custom-dynamics-validation) for details. Surrogate dispatch is cached per executor; reconstruct the executor after changing its surrogate configuration.
+
+`projection_mode="fast"` defaults to direct drive for built-in exactly-zero-decay projections. `"strict"` preserves historical zero multiplication and IEEE nonfinite propagation. This is independent of custom extension value validation. See [projection arithmetic and result snapshots](/api/sim/execution-spec#projection-arithmetic-and-result-snapshots) for gradients, caches and continuation compatibility.
 
 Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Selecting trainable parameters enables gradients; it does not create an optimizer or perform training.
 
@@ -64,6 +67,9 @@ result = model(
     measurement=None,
     recording=None,
     retain_outputs=True,
+    retain_parameters=True,
+    retain_final_state=True,
+    retain_runtime_state=True,
 )
 ```
 
@@ -80,6 +86,9 @@ Calling the module invokes `forward` and returns an [ExecutionResult](/api/sim/e
 | `measurement` | `MeasurementWindow` or `None` | Absolute reduction window carried across continuation. |
 | `recording` | `RecordingSpec` or `None` | Selected dense cells, sparse events or recording sinks. |
 | `retain_outputs` | `bool` | Retain named outputs by default; sinks can consume them without accumulation. |
+| `retain_parameters` | `bool` | Return independent parameter snapshots; default `True`. |
+| `retain_final_state` | `bool` | Return detached final voltages; default `True`. |
+| `retain_runtime_state` | `bool` | Return complete continuation state; default `True`. |
 
 Inputs must agree on time length and batch size and match the graph's feature dimensions and signal contracts. Direct calls consume tensors; they do not load files, encode datasets or generate Poisson stimuli. Use the execution request's input bindings for those tasks.
 

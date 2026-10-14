@@ -9,6 +9,19 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-14
+
+### Changed
+
+1. Graph execution now defaults to `projection_mode="fast"` for training, inference and direct executor calls. Built-in projections with exactly zero numerical decay use current drive directly; custom synapse callbacks and nonzero recurrences retain their equations. `"strict"` opts into the historical `previous * decay + drive` expression. Fast mode can clear stale nonfinite projection state and removes its zero backward dependency; signed-zero behavior and absent-versus-zero leaf gradients can differ. Custom extension validation remains a separate policy.
+2. Added independent public `retain_parameters`, `retain_final_state` and `retain_runtime_state` controls, with existing full snapshot defaults preserved. Fresh-batch training/evaluation omit all unused forward snapshots automatically. Returned training parameters respect retention, while mandatory optimizer checkpoints remain complete. CLI arithmetic/retention switches match the Python API and reject saving an omitted runtime snapshot.
+3. Fast arithmetic is recorded in training protocols and inference retention identity. Resuming across arithmetic modes fails explicitly; historical checkpoint protocols denote strict arithmetic. Runtime compatibility binds fast semantics for enabled built-in zero-decay projections, so their older continuation states require strict execution. Retention identities bind omitted snapshots. Persisted schemas and graph identities are unchanged. Resolves [20](https://github.com/eoinmurray/snnlab/issues/20).
+
+### Validation
+
+1. Added CPU/CUDA finite-output, trajectory, gradient, optimizer-update and continuation comparisons, nonfinite forward/backward cases, custom-synapse routing, independent snapshot controls, clone-work checks, dataset/cache retention and historical-strict checkpoint resume coverage. Added a controlled matched Synaptic/snnTorch benchmark with initial/newly-trained checkpoints, randomized synchronized timings, separate profiles and complete MNIST training/test processing. Measured results and limitations are retained under `benchmarks/`.
+2. On one Modal L4, trained batch-128 warmed steps fell from 129.36 ms strict to 111.69 ms fast. Two full MNIST epochs fell from 103.94 s to 89.40 s, or 88.01 s with output-only results. All three SNNLab runs produced identical reported losses and 77.67% test accuracy. Fixed-weight comparisons with snnTorch passed, while its independently trained run reached 83.92%; full cross-library training equivalence is not established. The isolated release suite passed 838 CPU tests (14 accelerator skips), with 76 remote checks and 20 separate CPU portability checks.
+
 ## [0.11.0] - 2026-10-14
 
 ### Changed

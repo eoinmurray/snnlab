@@ -43,6 +43,10 @@ ExecutionSpec(
     measurement: MeasurementWindow | None = None,
     recording: RecordingSpec | None = None,
     retain_outputs: bool = True,
+    retain_parameters: bool = True,
+    retain_final_state: bool = True,
+    retain_runtime_state: bool = True,
+    projection_mode: Literal["fast", "strict"] = "fast",
     extension_validation: Literal["strict", "structural"] = "structural",
     compile_mode: Literal["default"] | None = None,
     dataset_prefetch: int = 0,
@@ -735,3 +739,18 @@ The same keyword is accepted by `GraphExecutor`; the CLI uses `--extension-valid
 The CLI exposes `--compile-mode default`, `--dataset-prefetch N` and `--timing-mode synchronized|enqueue`. Use `--no-diagnostics` when dense diagnostics are unnecessary. Gradient reporting copies only the final update or explicitly observed gradients, metric reporting batches host reads, and batch-loss selection snapshots only improving candidates. Selection still requires its loss read; requested gradient-norm observations still have measurement overhead.
 
 For a complete CUDA benchmark with score/gradient checks, cold/warm timings, operator counts and allocated memory, run `uv run python benchmarks/gpu_efficiency.py --output gpu-results.json` from a repository checkout. [Benchmark source](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/gpu_efficiency.py) and [Modal runner](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/modal_gpu.py) are provided. The benchmark disables TF32 and separates profiling from timing. Measure your actual batch size, graph and recording policy before drawing throughput conclusions.
+
+
+## Projection arithmetic and result snapshots
+
+`projection_mode="fast"` is the default for all graph training, simulation, inference and direct executor calls. A built-in projection whose resolved numerical decay is exactly zero uses its current matrix-product drive directly, removing the previous-state multiplication/addition and their autograd work. This covers instantaneous leaky-integrator projections and positive exponential time constants whose decay underflows to exactly zero. Nonzero decays retain their recurrence. Delayed/recurrent routing, polarity and autapse masks are unchanged, and custom synapse callbacks always execute their declared equations.
+
+`projection_mode="strict"` preserves the historical `previous * decay + drive` expression, including IEEE nonfinite propagation through zero multiplication. Fast mode can clear a stale NaN/infinite projection state when the current drive becomes finite. NaN/infinite current drives still propagate. It also removes the zero backward edge: nonfinite upstream gradients no longer propagate through that discarded dependency, and an otherwise unused leaf can receive no gradient instead of a materialized zero. Signed-zero behavior can differ. Neither mode scans values each timestep. This arithmetic policy is independent of `extension_validation`, which continues to control custom callback value checks. The CLI exposes `--projection-mode fast|strict`.
+
+Metrics record the selected mode. Fast training protocols record `projection_mode="fast"`; absent metadata denotes historical strict arithmetic. Checkpoint resume rejects an arithmetic-policy change. Runtime-state compatibility binds fast semantics when an enabled built-in zero-decay projection is present; old states for those graphs require a strict executor. Saved graph/checkpoint/state schemas do not change. Inference retention identity also records fast mode, so preflight `retention_identity(..., projection_mode="strict")` when deliberately reusing historical strict caches.
+
+`retain_parameters`, `retain_final_state` and `retain_runtime_state` independently control returned parameter, final-voltage and complete continuation-state snapshots. All default to `True` for existing direct/inference callers. Set all three to `False` for an output-only result while preserving named outputs, gradients, diagnostics, recordings and decisions. Omitted mappings are empty and omitted runtime state is `None`; continuation requires requesting a complete runtime snapshot. These controls do not truncate autograd or suppress the internal state needed to execute the graph. The built-in training/evaluation loop automatically omits unused per-batch snapshots. Returned training parameters follow `retain_parameters`; mandatory training checkpoints remain complete. Training returns its existing optimizer checkpoint rather than a simulation runtime state.
+
+The CLI exposes `--no-retain-parameters`, `--no-retain-final-state` and `--no-retain-runtime-state`. Saving runtime state while omitting it fails explicitly. Include the same flags in `retention_identity` before cache reuse; default full snapshot identity retains its historical shape under strict arithmetic, and omitted snapshots are recorded explicitly. Dataset inference propagates these controls to each batch and retains global recording coordinates. Python `GraphExecutor` calls accept the retention flags per forward call and `projection_mode` at construction.
+
+The [zero-decay benchmark](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/zero_decay.py) compares a matched custom Synaptic classifier against snnTorch on identical inputs and weights. It measures controlled ablations at initial and newly trained weight states plus full MNIST training/test runs. [Modal runner](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/zero_decay_modal.py) uses one L4, independent profiler passes and synchronized randomized timing repetitions.

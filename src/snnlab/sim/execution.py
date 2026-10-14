@@ -306,12 +306,21 @@ class ExecutionSpec:
     measurement: MeasurementWindow | None = None
     recording: RecordingSpec | None = None
     retain_outputs: bool = True
+    retain_parameters: bool = True
+    retain_final_state: bool = True
+    retain_runtime_state: bool = True
+    projection_mode: Literal["fast", "strict"] = "fast"
     extension_validation: Literal["strict", "structural"] = "structural"
     compile_mode: Literal["default"] | None = None
     dataset_prefetch: int = 0
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized"
 
     def __post_init__(self):
+        if self.projection_mode not in {"fast", "strict"}:
+            raise ValueError("projection_mode must be fast or strict")
+        for name in ("retain_parameters", "retain_final_state", "retain_runtime_state"):
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(f"{name} must be boolean")
         if self.compile_mode not in {None, "default"}:
             raise ValueError("compile_mode must be None or default")
         if (
@@ -1793,6 +1802,10 @@ def retention_identity(
     batch_size,
     diagnostics=True,
     retain_outputs=True,
+    retain_parameters=True,
+    retain_final_state=True,
+    retain_runtime_state=True,
+    projection_mode="fast",
     measurement=None,
     recording=None,
     batch_offset=0,
@@ -1810,8 +1823,19 @@ def retention_identity(
             or (name in {"steps_count", "batch_size"} and value == 0)
         ):
             raise ValueError(f"{name} must be a valid execution coordinate")
-    if not isinstance(diagnostics, bool) or not isinstance(retain_outputs, bool):
-        raise TypeError("diagnostics and retain_outputs must be boolean")
+    if projection_mode not in {"fast", "strict"}:
+        raise ValueError("projection_mode must be fast or strict")
+    if any(
+        not isinstance(value, bool)
+        for value in (
+            diagnostics,
+            retain_outputs,
+            retain_parameters,
+            retain_final_state,
+            retain_runtime_state,
+        )
+    ):
+        raise TypeError("diagnostics and retention flags must be boolean")
     if measurement is not None:
         if not isinstance(measurement, MeasurementWindow):
             raise TypeError("measurement must be MeasurementWindow")
@@ -1832,6 +1856,18 @@ def retention_identity(
             "batch_offset": batch_offset,
         },
         "diagnostics": diagnostics,
+        **({"projection_mode": "fast"} if projection_mode == "fast" else {}),
+        **(
+            {
+                "result_snapshots": {
+                    "parameters": retain_parameters,
+                    "final_state": retain_final_state,
+                    "runtime_state": retain_runtime_state,
+                }
+            }
+            if not all((retain_parameters, retain_final_state, retain_runtime_state))
+            else {}
+        ),
     }
 
 
@@ -1887,11 +1923,28 @@ class GraphRuntimeState:
         )
 
 
-def runtime_state_compatibility(plan: GraphPlan) -> dict[str, Any]:
+def runtime_state_compatibility(
+    plan: GraphPlan, *, projection_mode="fast"
+) -> dict[str, Any]:
     """Describe state-layout and dynamical semantics, excluding parameter values."""
+    if projection_mode not in {"fast", "strict"}:
+        raise ValueError("projection_mode must be fast or strict")
     parameters = {row["id"]: row for row in plan.graph.get("parameters", [])}
+    builtin = {
+        row["id"]
+        for row in plan.graph.get("projections", [])
+        if row["synapse"]["kind"] != "custom_synapse"
+    }
     return {
         "schema": RUNTIME_STATE_SCHEMA,
+        **(
+            {"zero_decay_projection_mode": "fast"}
+            if projection_mode == "fast"
+            and any(
+                p.enabled and p.decay == 0 and p.id in builtin for p in plan.projections
+            )
+            else {}
+        ),
         "dt_ms": plan.dt_ms,
         **(
             {"autapses": dict(plan.autapses)}
@@ -1931,8 +1984,8 @@ def runtime_state_compatibility(plan: GraphPlan) -> dict[str, Any]:
     }
 
 
-def runtime_state_signature(plan: GraphPlan) -> str:
-    payload = runtime_state_compatibility(plan)
+def runtime_state_signature(plan: GraphPlan, *, projection_mode="fast") -> str:
+    payload = runtime_state_compatibility(plan, projection_mode=projection_mode)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
@@ -3003,8 +3056,12 @@ class GraphExecutor(nn.Module):
         surrogate: Mapping[str, Any] | None = None,
         extension_validation: Literal["strict", "structural"] = "structural",
         compile_mode: Literal["default"] | None = None,
+        projection_mode: Literal["fast", "strict"] = "fast",
     ):
         super().__init__()
+        if projection_mode not in {"fast", "strict"}:
+            raise ValueError("projection_mode must be fast or strict")
+        self.projection_mode = projection_mode
         if compile_mode not in {None, "default"}:
             raise ValueError("compile_mode must be None or default")
         self.compile_mode = compile_mode
@@ -3324,6 +3381,9 @@ class GraphExecutor(nn.Module):
         measurement: MeasurementWindow | None = None,
         recording: RecordingSpec | None = None,
         retain_outputs: bool = True,
+        retain_parameters: bool = True,
+        retain_final_state: bool = True,
+        retain_runtime_state: bool = True,
         batch_offset: int = 0,
     ) -> ExecutionResult:
         result, _ = self._forward(
@@ -3336,6 +3396,9 @@ class GraphExecutor(nn.Module):
             measurement=measurement,
             recording=recording,
             retain_outputs=retain_outputs,
+            retain_parameters=retain_parameters,
+            retain_final_state=retain_final_state,
+            retain_runtime_state=retain_runtime_state,
             batch_offset=batch_offset,
             automatic_reductions=True,
         )
@@ -3358,9 +3421,18 @@ class GraphExecutor(nn.Module):
         required_signals: Sequence[str] = (),
         observation_populations: Sequence[str] = (),
         retain_parameters: bool = True,
+        retain_final_state: bool = True,
+        retain_runtime_state: bool = True,
     ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
         if not isinstance(diagnostics, bool):
             raise TypeError("diagnostics must be boolean")
+        for name, value in (
+            ("retain_parameters", retain_parameters),
+            ("retain_final_state", retain_final_state),
+            ("retain_runtime_state", retain_runtime_state),
+        ):
+            if not isinstance(value, bool):
+                raise TypeError(f"{name} must be boolean")
         if not inputs:
             raise ValueError("graph execution requires at least one input tensor")
         first = next(iter(inputs.values()))
@@ -3411,8 +3483,12 @@ class GraphExecutor(nn.Module):
             )
             for row in self.plan.graph.get("inputs", [])
         }
-        expected_compatibility = runtime_state_compatibility(self.plan)
-        expected_signature = runtime_state_signature(self.plan)
+        expected_compatibility = runtime_state_compatibility(
+            self.plan, projection_mode=self.projection_mode
+        )
+        expected_signature = runtime_state_signature(
+            self.plan, projection_mode=self.projection_mode
+        )
         if runtime_state is None:
             voltage = {
                 name: (
@@ -3864,6 +3940,8 @@ class GraphExecutor(nn.Module):
                         )
                         synapse_states[projection.id] = state
                         conductance[key] = state["value"]
+                    elif self.projection_mode == "fast" and projection.decay == 0.0:
+                        conductance[key] = drive
                     else:
                         conductance[key] = conductance[key] * projection.decay + drive
                     incoming[projection.polarity] += conductance[key]
@@ -4258,51 +4336,56 @@ class GraphExecutor(nn.Module):
             if diagnostics
             else {}
         )
-        next_input_histories = {
-            name: (
-                inputs[name][-history.shape[0] :]
-                if inputs[name].shape[0] >= history.shape[0]
-                else torch.cat((history, inputs[name]), dim=0)[-history.shape[0] :]
-            )
-            .detach()
-            .clone()
-            for name, history in input_histories.items()
-        }
         segments.boundary(completed_steps + steps, self.plan.dt_ms)
-        next_runtime_state = GraphRuntimeState(
-            signature=expected_signature,
-            compatibility=expected_compatibility,
-            completed_steps=completed_steps + steps,
-            voltages={name: value.detach().clone() for name, value in voltage.items()},
-            refractory={
-                name: value.detach().clone() for name, value in refractory.items()
-            },
-            conductances={
-                p.id: conductance[(p.id, p.polarity)].detach().clone()
-                for p in self.plan.projections
-                if projection_ports[p.id] == "conductance"
-            },
-            currents={
-                p.id: conductance[(p.id, p.polarity)].detach().clone()
-                for p in self.plan.projections
-                if projection_ports[p.id] == "current"
-            },
-            population_histories={
-                name: history.export() for name, history in histories.items()
-            },
-            input_histories=next_input_histories,
-            custom_state={
-                key: value.detach().clone() for key, value in custom_state.items()
-            },
-            segment_state=segments.state(),
-            segment_counts=segments.counts,
-            reduction_state=online.state(completed_steps + steps),
-            reduction_tensors={
-                name: value.detach().clone() for name, value in online.tensors.items()
+        next_runtime_state = None
+        if retain_runtime_state:
+            next_input_histories = {
+                name: (
+                    inputs[name][-history.shape[0] :]
+                    if inputs[name].shape[0] >= history.shape[0]
+                    else torch.cat((history, inputs[name]), dim=0)[-history.shape[0] :]
+                )
+                .detach()
+                .clone()
+                for name, history in input_histories.items()
             }
-            if measurement is not None
-            else {},
-        )
+            next_runtime_state = GraphRuntimeState(
+                signature=expected_signature,
+                compatibility=expected_compatibility,
+                completed_steps=completed_steps + steps,
+                voltages={
+                    name: value.detach().clone() for name, value in voltage.items()
+                },
+                refractory={
+                    name: value.detach().clone() for name, value in refractory.items()
+                },
+                conductances={
+                    p.id: conductance[(p.id, p.polarity)].detach().clone()
+                    for p in self.plan.projections
+                    if projection_ports[p.id] == "conductance"
+                },
+                currents={
+                    p.id: conductance[(p.id, p.polarity)].detach().clone()
+                    for p in self.plan.projections
+                    if projection_ports[p.id] == "current"
+                },
+                population_histories={
+                    name: history.export() for name, history in histories.items()
+                },
+                input_histories=next_input_histories,
+                custom_state={
+                    key: value.detach().clone() for key, value in custom_state.items()
+                },
+                segment_state=segments.state(),
+                segment_counts=segments.counts,
+                reduction_state=online.state(completed_steps + steps),
+                reduction_tensors={
+                    name: value.detach().clone()
+                    for name, value in online.tensors.items()
+                }
+                if measurement is not None
+                else {},
+            )
         signal_axes = _signal_axes(self.plan.graph)
         result = ExecutionResult(
             executor="graph",
@@ -4311,9 +4394,9 @@ class GraphExecutor(nn.Module):
             parameters={k: v.detach().clone() for k, v in effective_weights.items()}
             if retain_parameters
             else {},
-            final_state={
-                f"{k}.voltage": v.detach().clone() for k, v in voltage.items()
-            },
+            final_state={f"{k}.voltage": v.detach().clone() for k, v in voltage.items()}
+            if retain_final_state
+            else {},
             runtime_state=next_runtime_state,
             metrics={
                 "recording_units": {
@@ -4340,6 +4423,10 @@ class GraphExecutor(nn.Module):
                     batch_offset=batch_offset,
                     diagnostics=diagnostics,
                     retain_outputs=retain_outputs,
+                    retain_parameters=retain_parameters,
+                    retain_final_state=retain_final_state,
+                    retain_runtime_state=retain_runtime_state,
+                    projection_mode=self.projection_mode,
                     measurement=measurement,
                     recording=recording,
                 ),
@@ -4352,6 +4439,12 @@ class GraphExecutor(nn.Module):
                 "refractory": dict(self.plan.refractory),
                 "autapses": self.autapse_metadata,
                 "extension_validation": self.extension_validation,
+                "projection_mode": self.projection_mode,
+                "result_snapshots": {
+                    "parameters": retain_parameters,
+                    "final_state": retain_final_state,
+                    "runtime_state": retain_runtime_state,
+                },
                 "inference_interventions": intervention_request
                 if interventions
                 else None,
@@ -4404,17 +4497,19 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
         surrogate=surrogate,
         extension_validation=spec.extension_validation,
         compile_mode=spec.compile_mode,
+        projection_mode=spec.projection_mode,
     ).to(device)
     return ExecutionResult(
         executor="graph",
         model=model,
-        parameters=model.parameter_map(),
+        parameters=model.parameter_map() if spec.retain_parameters else {},
         metrics={
             "build_s": time.perf_counter() - started,
             "initialization": model.initialization_metadata,
             "refractory": dict(model.plan.refractory),
             "autapses": model.autapse_metadata,
             "extension_validation": model.extension_validation,
+            "projection_mode": model.projection_mode,
             "compile_mode": model.compile_mode,
             "compiled_populations": [
                 row["id"]
@@ -4605,6 +4700,12 @@ def simulate(
             seed=spec.seed,
             protocol=spec.protocol,
         )
+    protocol = _projection_protocol(resolved_inputs.protocol, spec.projection_mode)
+    resolved_inputs = (
+        resolved_inputs.with_protocol(protocol)
+        if isinstance(resolved_inputs, DatasetProvider)
+        else ResolvedDenseInputs(resolved_inputs.tensors, protocol)
+    )
     if isinstance(resolved_inputs, DatasetProvider):
         if spec.resets or spec.decisions is not None:
             raise ValueError(
@@ -4621,6 +4722,9 @@ def simulate(
             measurement=spec.measurement,
             recording=spec.recording,
             retain_outputs=spec.retain_outputs,
+            retain_parameters=spec.retain_parameters,
+            retain_final_state=spec.retain_final_state,
+            retain_runtime_state=spec.retain_runtime_state,
             prefetch=spec.dataset_prefetch,
             runtime_state=runtime_state
             if runtime_state is not None
@@ -4639,6 +4743,9 @@ def simulate(
             measurement=spec.measurement,
             recording=spec.recording,
             retain_outputs=spec.retain_outputs,
+            retain_parameters=spec.retain_parameters,
+            retain_final_state=spec.retain_final_state,
+            retain_runtime_state=spec.retain_runtime_state,
         )
     if spec.timing_mode == "synchronized":
         _synchronize_device(device)
@@ -4690,6 +4797,17 @@ def simulate(
                 "completed_steps": result.runtime_state.completed_steps,
             }
         )
+    return result
+
+
+def _projection_protocol(protocol, mode):
+    result = dict(protocol)
+    if result.get("projection_mode", mode) != mode:
+        raise ValueError("execution protocol projection_mode does not match request")
+    if mode == "fast":
+        result["projection_mode"] = "fast"
+    else:
+        result.pop("projection_mode", None)
     return result
 
 
@@ -4863,6 +4981,12 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             targets=data.targets,
             sample_count=sample_count,
             device=device,
+        )
+        protocol = _projection_protocol(inputs.protocol, spec.projection_mode)
+        inputs = (
+            inputs.with_protocol(protocol)
+            if isinstance(inputs, DatasetProvider)
+            else ResolvedDenseInputs(inputs.tensors, protocol)
         )
         return inputs, targets, rows
 
@@ -5443,6 +5567,8 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                             observation_populations=observation_populations,
                             automatic_reductions=True,
                             retain_parameters=False,
+                            retain_final_state=False,
+                            retain_runtime_state=False,
                         )
                         if measurements is not None:
                             measurements.add(
@@ -5645,6 +5771,8 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             diagnostics=spec.diagnostics,
             required_signals=required_signals,
             retain_parameters=False,
+            retain_final_state=False,
+            retain_runtime_state=False,
         )
         loss, components = compute_loss(
             forward, signal_values, batch_targets, resolved_inputs.protocol
@@ -5769,7 +5897,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         _batch_size=final_forward._batch_size,
         parameters={
             name: value.detach().clone() for name, value in parameter_map.items()
-        },
+        }
+        if spec.retain_parameters
+        else {},
         gradients=last_gradients,
         optimizer_state=optimizer_state_by_name(),
         training_checkpoint=final_checkpoint,
@@ -5809,6 +5939,10 @@ def execution_spec_from_args(
     args: Any, *, kind: RequestKind | None = None
 ) -> ExecutionSpec:
     """Compatibility adapter: resolved CLI arguments become one typed request."""
+    if getattr(args, "save_runtime_state", None) and not getattr(
+        args, "retain_runtime_state", True
+    ):
+        raise ValueError("--save-runtime-state requires --retain-runtime-state")
     resolved_kind = kind or args.mode
     if resolved_kind == "sim":
         resolved_kind = "simulate"
@@ -5823,6 +5957,10 @@ def execution_spec_from_args(
         compile_mode=getattr(args, "compile_mode", None),
         dataset_prefetch=getattr(args, "dataset_prefetch", 0),
         timing_mode=getattr(args, "timing_mode", "synchronized"),
+        projection_mode=getattr(args, "projection_mode", "fast"),
+        retain_parameters=getattr(args, "retain_parameters", True),
+        retain_final_state=getattr(args, "retain_final_state", True),
+        retain_runtime_state=getattr(args, "retain_runtime_state", True),
         checkpoint=(
             Path(args.load_weights) if getattr(args, "load_weights", None) else None
         ),

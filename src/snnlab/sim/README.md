@@ -116,3 +116,18 @@ input-resolution/execution time as `simulate_s`. `"enqueue"` reports host time
 as `simulate_enqueue_s` and omits explicit fences. `peak_python_bytes` is Python
 memory only. See the [performance reference](../../../docs/content/docs/api/sim/execution-spec.mdx)
 and `benchmarks/gpu_efficiency.py` for verification and measured limitations.
+
+## Projection arithmetic and snapshots
+
+Graph execution defaults to `projection_mode="fast"`: built-in projections with
+exactly zero numerical decay use current drive directly. `"strict"` opts into
+historical IEEE multiplication by zero. Fast mode can recover finite drive after
+nonfinite projection state and removes its zero backward dependency. Custom
+synapse equations and nonzero recurrences remain unchanged.
+
+Direct calls accept independent `retain_parameters`, `retain_final_state` and
+`retain_runtime_state` flags, all defaulting to `True`. Fresh-batch training omits
+unused forward snapshots automatically. Request runtime state for continuation.
+Numerical mode and retention bind checkpoint/cache compatibility; historical
+zero-decay states and checkpoints use strict arithmetic explicitly. See the
+execution reference for migration and nonfinite/gradient semantics.

@@ -405,6 +405,9 @@ def simulate_dataset(
     measurement=None,
     recording=None,
     retain_outputs=True,
+    retain_parameters=True,
+    retain_final_state=True,
+    retain_runtime_state=True,
     prefetch=0,
 ):
     from snnlab.sim.execution import DenseSpikeReplay, ReplaySpikes, SparseSpikeReplay
@@ -483,6 +486,9 @@ def simulate_dataset(
             measurement=measurement,
             recording=recording,
             retain_outputs=retain_outputs,
+            retain_parameters=retain_parameters,
+            retain_final_state=retain_final_state,
+            retain_runtime_state=retain_runtime_state,
             batch_offset=start,
         )
         batches.append(metadata)

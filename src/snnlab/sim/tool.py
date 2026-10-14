@@ -62,6 +62,19 @@ def _add_common_arguments(parser):
         help="Inference timing boundaries; enqueue mode reports simulate_enqueue_s.",
     )
     parser.add_argument(
+        "--projection-mode",
+        choices=("fast", "strict"),
+        default="fast",
+        help="Fast zero-decay drive by default; strict preserves IEEE zero multiplication.",
+    )
+    for flag in ("parameters", "final-state", "runtime-state"):
+        parser.add_argument(
+            f"--retain-{flag}",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Retain the requested result snapshot (default: enabled).",
+        )
+    parser.add_argument(
         "--extension-validation",
         choices=("strict", "structural"),
         default="structural",
