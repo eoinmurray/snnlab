@@ -1,0 +1,3 @@
+Modal run: https://modal.com/apps/me-93863/main/ap-ZrlbNJZtTioUROusDw9yDZ
+matmul_bias_reference {"train_s": 138.760519464, "test_s": 6.34529594, "train_samples": 60000, "test_samples": 10000, "epochs": 2, "batch_size": 128, "epoch_losses": [1.279261403242747, 0.5599448835372925], "test_loss": 0.4711558293104172, "test_accuracy": 0.872}
+Container subsequently terminated due to preemption. The complete SNNLab counterpart was run separately.

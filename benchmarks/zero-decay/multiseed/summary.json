@@ -1,0 +1,96 @@
+{
+  "seed_count": 5,
+  "paired": [
+    {
+      "seed": 17,
+      "accuracy_percent": {
+        "snntorch": 78.48,
+        "strict_full": 79.2,
+        "fast_full": 79.2,
+        "fast_outputs": 79.2
+      },
+      "snntorch_minus_strict_pp": -0.7199999999999989,
+      "snntorch_minus_strict_test_loss": 0.02040349292755117,
+      "snnlab_modes_exact_metrics": true,
+      "snnlab_modes_exact_final_weights": true
+    },
+    {
+      "seed": 42,
+      "accuracy_percent": {
+        "snntorch": 83.91999999999999,
+        "strict_full": 77.66999999999999,
+        "fast_full": 77.66999999999999,
+        "fast_outputs": 77.66999999999999
+      },
+      "snntorch_minus_strict_pp": 6.25,
+      "snntorch_minus_strict_test_loss": -0.1593294429779053,
+      "snnlab_modes_exact_metrics": true,
+      "snnlab_modes_exact_final_weights": true
+    },
+    {
+      "seed": 123,
+      "accuracy_percent": {
+        "snntorch": 61.809999999999995,
+        "strict_full": 74.03999999999999,
+        "fast_full": 74.03999999999999,
+        "fast_outputs": 74.03999999999999
+      },
+      "snntorch_minus_strict_pp": -12.229999999999997,
+      "snntorch_minus_strict_test_loss": 0.27919431009292595,
+      "snnlab_modes_exact_metrics": true,
+      "snnlab_modes_exact_final_weights": true
+    },
+    {
+      "seed": 314,
+      "accuracy_percent": {
+        "snntorch": 79.22,
+        "strict_full": 81.94,
+        "fast_full": 81.94,
+        "fast_outputs": 81.94
+      },
+      "snntorch_minus_strict_pp": -2.719999999999999,
+      "snntorch_minus_strict_test_loss": 0.0727658344268799,
+      "snnlab_modes_exact_metrics": true,
+      "snnlab_modes_exact_final_weights": true
+    },
+    {
+      "seed": 2026,
+      "accuracy_percent": {
+        "snntorch": 79.75999999999999,
+        "strict_full": 92.10000000000001,
+        "fast_full": 92.10000000000001,
+        "fast_outputs": 92.10000000000001
+      },
+      "snntorch_minus_strict_pp": -12.340000000000018,
+      "snntorch_minus_strict_test_loss": 0.31643481734339146,
+      "snnlab_modes_exact_metrics": true,
+      "snnlab_modes_exact_final_weights": true
+    }
+  ],
+  "mean_accuracy_percent": {
+    "snntorch": 76.63799999999999,
+    "strict_full": 80.99000000000001,
+    "fast_full": 80.99000000000001,
+    "fast_outputs": 80.99000000000001
+  },
+  "sd_accuracy_percent": {
+    "snntorch": 8.554292489738703,
+    "strict_full": 6.8349030717340895,
+    "fast_full": 6.8349030717340895,
+    "fast_outputs": 6.8349030717340895
+  },
+  "paired_mean_snntorch_minus_strict_pp": -4.352000000000002,
+  "paired_sd_snntorch_minus_strict_pp": 7.970700722019368,
+  "paired_mean_approximate_95pct_t_interval_pp": [
+    -14.2489321269882,
+    5.544932126988195
+  ],
+  "paired_range_pp": [
+    -12.340000000000018,
+    6.25
+  ],
+  "snntorch_wins": 1,
+  "snnlab_wins": 4,
+  "ties": 0,
+  "limitations": "Five preselected seeds, two epochs, one architecture, one dtype/device family. The t interval assumes approximately normal paired seed differences and is exploratory. Each seed varies initialization, training order and encoding jointly; test encoding is paired within seed but differs between seeds. Concurrent timings are not speed measurements."
+}

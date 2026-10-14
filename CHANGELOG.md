@@ -6,6 +6,15 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-14
+
+### Validation
+
+1. Added a float32 spiking-classifier regression comparing scores, losses, gradients, weights and Adam moments across 40 clipped updates in strict and fast modes, on CPU and CUDA with matched backward operations. Full zero-decay benchmark runs now independently gate epoch losses, test loss and test accuracy; the retained cross-library accuracy discrepancy must fail that gate despite passing shared-checkpoint comparisons. Diagnostic artifacts are saved before rejection.
+
+2. Retained the training accuracy investigation: matching surrogate backward division and bias-gradient matrix reductions produced identical reported two-epoch losses and 87.20% accuracy for both libraries. This diagnostic intervention changes no released library arithmetic. The focused regressions passed six local CPU cases and both CUDA cases on Modal L4.
+3. Repeated the original, unmatched two-epoch MNIST comparison across five preselected seeds and all four conditions (20 completed Modal L4 trials). Mean accuracy was 76.64% for snnTorch and 80.99% for SNNLab; SNNLab scored higher in four of five seeds. All SNNLab arithmetic/snapshot variants had identical losses, accuracies and final weights per seed. The original 6.25-point SNNLab deficit did not persist consistently; the wide exploratory paired interval includes zero, so five seeds establish neither superiority nor equivalence. Raw results, analysis, figures and reproducible launchers are retained under `benchmarks/zero-decay/`. Concurrent trial durations are not performance comparisons.
+
 ## [0.12.0] - 2026-10-14
 
 ### Changed

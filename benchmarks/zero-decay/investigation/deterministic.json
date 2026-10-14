@@ -1,0 +1,2256 @@
+{
+  "snntorch": "0.9.4",
+  "torch": "2.10.0+cu128",
+  "steps": [
+    {
+      "step": 0,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 18.06216812133789,
+        "gradient_norm": 111.15525817871094
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 9.5367431640625e-07,
+          "input_weight": 2.384185791015625e-07,
+          "output_bias": 4.76837158203125e-07,
+          "output_weight": 9.5367431640625e-07
+        },
+        "max_gradient_error": 9.5367431640625e-07,
+        "max_weight_error": 1.30385160446167e-07,
+        "loss": 18.06216812133789,
+        "gradient_norm": 111.15525817871094
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 9.5367431640625e-07,
+          "input_weight": 0.0,
+          "output_bias": 4.76837158203125e-07,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 9.5367431640625e-07,
+        "max_weight_error": 1.862645149230957e-09,
+        "loss": 18.06216812133789,
+        "gradient_norm": 111.15525817871094
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 9.5367431640625e-07,
+          "input_weight": 0.0,
+          "output_bias": 4.76837158203125e-07,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 9.5367431640625e-07,
+        "max_weight_error": 1.862645149230957e-09,
+        "loss": 18.06216812133789,
+        "gradient_norm": 111.15525817871094
+      },
+      "reference_loss": 18.06216812133789
+    },
+    {
+      "step": 1,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 14.148338317871094,
+        "gradient_norm": 94.39141082763672
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 5.245208740234375e-06,
+          "input_weight": 1.6689300537109375e-06,
+          "output_bias": 4.76837158203125e-07,
+          "output_weight": 1.430511474609375e-06
+        },
+        "max_gradient_error": 5.245208740234375e-06,
+        "max_weight_error": 4.861503839492798e-07,
+        "loss": 14.148338317871094,
+        "gradient_norm": 94.39141082763672
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 6.631016731262207e-07,
+          "input_weight": 2.980232238769531e-07,
+          "output_bias": 3.814697265625e-06,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 3.814697265625e-06,
+        "max_weight_error": 9.546056389808655e-09,
+        "loss": 14.148338317871094,
+        "gradient_norm": 94.39141082763672
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 6.631016731262207e-07,
+          "input_weight": 2.980232238769531e-07,
+          "output_bias": 3.814697265625e-06,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 3.814697265625e-06,
+        "max_weight_error": 9.546056389808655e-09,
+        "loss": 14.148338317871094,
+        "gradient_norm": 94.39141082763672
+      },
+      "reference_loss": 14.148338317871094
+    },
+    {
+      "step": 2,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 6.825498580932617,
+        "gradient_norm": 94.43077087402344
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 1.271069049835205e-05,
+          "input_weight": 1.0319054126739502e-05,
+          "output_bias": 1.1444091796875e-05,
+          "output_weight": 4.76837158203125e-06
+        },
+        "max_gradient_error": 1.271069049835205e-05,
+        "max_weight_error": 4.880130290985107e-07,
+        "loss": 6.825498580932617,
+        "gradient_norm": 94.43075561523438
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 1.8328428268432617e-06,
+          "input_weight": 1.1026859283447266e-06,
+          "output_bias": 9.5367431640625e-07,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 1.8328428268432617e-06,
+        "max_weight_error": 1.30385160446167e-08,
+        "loss": 6.825498580932617,
+        "gradient_norm": 94.43077087402344
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 1.8328428268432617e-06,
+          "input_weight": 1.1026859283447266e-06,
+          "output_bias": 9.5367431640625e-07,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 1.8328428268432617e-06,
+        "max_weight_error": 1.30385160446167e-08,
+        "loss": 6.825498580932617,
+        "gradient_norm": 94.43077087402344
+      },
+      "reference_loss": 6.825498580932617
+    },
+    {
+      "step": 3,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 5.174637794494629,
+        "gradient_norm": 80.36491394042969
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 2.822279930114746e-05,
+          "input_weight": 1.4394521713256836e-05,
+          "output_bias": 1.71661376953125e-05,
+          "output_weight": 1.1444091796875e-05
+        },
+        "max_gradient_error": 2.822279930114746e-05,
+        "max_weight_error": 4.824250936508179e-07,
+        "loss": 5.174637794494629,
+        "gradient_norm": 80.36493682861328
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 4.176050424575806e-06,
+          "input_weight": 1.9818544387817383e-06,
+          "output_bias": 4.76837158203125e-07,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 4.176050424575806e-06,
+        "max_weight_error": 1.7695128917694092e-08,
+        "loss": 5.174637794494629,
+        "gradient_norm": 80.36491394042969
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 4.176050424575806e-06,
+          "input_weight": 1.9818544387817383e-06,
+          "output_bias": 4.76837158203125e-07,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 4.176050424575806e-06,
+        "max_weight_error": 1.7695128917694092e-08,
+        "loss": 5.174637794494629,
+        "gradient_norm": 80.36491394042969
+      },
+      "reference_loss": 5.174637794494629
+    },
+    {
+      "step": 4,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 2.319692850112915,
+        "gradient_norm": 15.273123741149902
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 4.926323890686035e-05,
+          "input_weight": 1.803971827030182e-05,
+          "output_bias": 7.62939453125e-06,
+          "output_weight": 5.9604644775390625e-06
+        },
+        "max_gradient_error": 4.926323890686035e-05,
+        "max_weight_error": 4.544854164123535e-07,
+        "loss": 2.319692850112915,
+        "gradient_norm": 15.273151397705078
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 1.4007091522216797e-06,
+          "input_weight": 6.044283509254456e-07,
+          "output_bias": 4.76837158203125e-07,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 1.4007091522216797e-06,
+        "max_weight_error": 2.7939677238464355e-08,
+        "loss": 2.319692850112915,
+        "gradient_norm": 15.273124694824219
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 1.4007091522216797e-06,
+          "input_weight": 6.044283509254456e-07,
+          "output_bias": 4.76837158203125e-07,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 1.4007091522216797e-06,
+        "max_weight_error": 2.7939677238464355e-08,
+        "loss": 2.319692850112915,
+        "gradient_norm": 15.273124694824219
+      },
+      "reference_loss": 2.319692850112915
+    },
+    {
+      "step": 5,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 2.0035390853881836,
+        "gradient_norm": 6.131337642669678
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 5.525350570678711e-05,
+          "input_weight": 2.8014183044433594e-05,
+          "output_bias": 2.86102294921875e-06,
+          "output_weight": 2.682209014892578e-06
+        },
+        "max_gradient_error": 5.525350570678711e-05,
+        "max_weight_error": 4.351139068603516e-06,
+        "loss": 2.0035390853881836,
+        "gradient_norm": 6.13134765625
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 4.7013163566589355e-06,
+          "input_weight": 1.6093254089355469e-06,
+          "output_bias": 4.76837158203125e-06,
+          "output_weight": 4.470348358154297e-06
+        },
+        "max_gradient_error": 4.76837158203125e-06,
+        "max_weight_error": 5.704350769519806e-08,
+        "loss": 2.0035390853881836,
+        "gradient_norm": 6.131328105926514
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 4.7013163566589355e-06,
+          "input_weight": 1.6093254089355469e-06,
+          "output_bias": 4.76837158203125e-06,
+          "output_weight": 4.470348358154297e-06
+        },
+        "max_gradient_error": 4.76837158203125e-06,
+        "max_weight_error": 5.704350769519806e-08,
+        "loss": 2.0035390853881836,
+        "gradient_norm": 6.131328105926514
+      },
+      "reference_loss": 2.0035390853881836
+    },
+    {
+      "step": 6,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 2.0124754905700684,
+        "gradient_norm": 1.6342761516571045
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 3.277137875556946e-05,
+          "input_weight": 1.3570301234722137e-05,
+          "output_bias": 6.407499313354492e-07,
+          "output_weight": 6.258487701416016e-07
+        },
+        "max_gradient_error": 3.277137875556946e-05,
+        "max_weight_error": 4.911795258522034e-06,
+        "loss": 2.0124754905700684,
+        "gradient_norm": 1.6342766284942627
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 4.337634891271591e-06,
+          "input_weight": 2.0614825189113617e-06,
+          "output_bias": 1.3113021850585938e-06,
+          "output_weight": 9.5367431640625e-07
+        },
+        "max_gradient_error": 4.337634891271591e-06,
+        "max_weight_error": 2.421438694000244e-07,
+        "loss": 2.0124754905700684,
+        "gradient_norm": 1.634273886680603
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 4.337634891271591e-06,
+          "input_weight": 2.0614825189113617e-06,
+          "output_bias": 1.3113021850585938e-06,
+          "output_weight": 9.5367431640625e-07
+        },
+        "max_gradient_error": 4.337634891271591e-06,
+        "max_weight_error": 2.421438694000244e-07,
+        "loss": 2.0124754905700684,
+        "gradient_norm": 1.634273886680603
+      },
+      "reference_loss": 2.0124754905700684
+    },
+    {
+      "step": 7,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.9432897567749023,
+        "gradient_norm": 3.9536890983581543
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.001381557434797287,
+          "input_weight": 0.0006177951581776142,
+          "output_bias": 0.00019055604934692383,
+          "output_weight": 0.00031092390418052673
+        },
+        "max_gradient_error": 0.001381557434797287,
+        "max_weight_error": 4.7338660806417465e-05,
+        "loss": 1.9432897567749023,
+        "gradient_norm": 3.953202724456787
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 2.4259090423583984e-05,
+          "input_weight": 1.0268762707710266e-05,
+          "output_bias": 3.55839729309082e-05,
+          "output_weight": 3.3527612686157227e-05
+        },
+        "max_gradient_error": 3.55839729309082e-05,
+        "max_weight_error": 3.0525261536240578e-06,
+        "loss": 1.9432897567749023,
+        "gradient_norm": 3.953814744949341
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 2.4259090423583984e-05,
+          "input_weight": 1.0268762707710266e-05,
+          "output_bias": 3.55839729309082e-05,
+          "output_weight": 3.3527612686157227e-05
+        },
+        "max_gradient_error": 3.55839729309082e-05,
+        "max_weight_error": 3.0525261536240578e-06,
+        "loss": 1.9432897567749023,
+        "gradient_norm": 3.953814744949341
+      },
+      "reference_loss": 1.9432897567749023
+    },
+    {
+      "step": 8,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 2.0449793338775635,
+        "gradient_norm": 5.121811866760254
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.002371490001678467,
+          "input_weight": 0.0010321103036403656,
+          "output_bias": 0.002226114273071289,
+          "output_weight": 0.0018291100859642029
+        },
+        "max_gradient_error": 0.002371490001678467,
+        "max_weight_error": 6.58784992992878e-05,
+        "loss": 2.0449793338775635,
+        "gradient_norm": 5.1233134269714355
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.00010827183723449707,
+          "input_weight": 4.367157816886902e-05,
+          "output_bias": 0.0003465414047241211,
+          "output_weight": 0.00029283761978149414
+        },
+        "max_gradient_error": 0.0003465414047241211,
+        "max_weight_error": 5.6603457778692245e-06,
+        "loss": 2.0449793338775635,
+        "gradient_norm": 5.122879505157471
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.00010827183723449707,
+          "input_weight": 4.367157816886902e-05,
+          "output_bias": 0.0003465414047241211,
+          "output_weight": 0.00029283761978149414
+        },
+        "max_gradient_error": 0.0003465414047241211,
+        "max_weight_error": 5.6603457778692245e-06,
+        "loss": 2.0449793338775635,
+        "gradient_norm": 5.122879505157471
+      },
+      "reference_loss": 2.0449793338775635
+    },
+    {
+      "step": 9,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.9406039714813232,
+        "gradient_norm": 1.791064739227295
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.000915229320526123,
+          "input_weight": 0.000863625667989254,
+          "output_bias": 0.0003170520067214966,
+          "output_weight": 0.0002706274390220642
+        },
+        "max_gradient_error": 0.000915229320526123,
+        "max_weight_error": 8.927658200263977e-05,
+        "loss": 1.9406039714813232,
+        "gradient_norm": 1.7903895378112793
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 8.401647210121155e-05,
+          "input_weight": 4.5025255531072617e-05,
+          "output_bias": 0.0002343691885471344,
+          "output_weight": 0.00022060424089431763
+        },
+        "max_gradient_error": 0.0002343691885471344,
+        "max_weight_error": 7.943599484860897e-06,
+        "loss": 1.9406039714813232,
+        "gradient_norm": 1.7907130718231201
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 8.401647210121155e-05,
+          "input_weight": 4.5025255531072617e-05,
+          "output_bias": 0.0002343691885471344,
+          "output_weight": 0.00022060424089431763
+        },
+        "max_gradient_error": 0.0002343691885471344,
+        "max_weight_error": 7.943599484860897e-06,
+        "loss": 1.9406039714813232,
+        "gradient_norm": 1.7907130718231201
+      },
+      "reference_loss": 1.9406039714813232
+    },
+    {
+      "step": 10,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 2.2656211853027344,
+        "gradient_norm": 16.379533767700195
+      },
+      "original": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.10426318645477295,
+          "input_weight": 0.046391017735004425,
+          "output_bias": 0.43616533279418945,
+          "output_weight": 0.4064497947692871
+        },
+        "max_gradient_error": 0.43616533279418945,
+        "max_weight_error": 0.0003213845193386078,
+        "loss": 2.2656211853027344,
+        "gradient_norm": 14.564533233642578
+      },
+      "native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.02447599172592163,
+          "input_weight": 0.01171882078051567,
+          "output_bias": 0.0404963493347168,
+          "output_weight": 0.04016590118408203
+        },
+        "max_gradient_error": 0.0404963493347168,
+        "max_weight_error": 0.0001672208309173584,
+        "loss": 2.2656211853027344,
+        "gradient_norm": 16.1937198638916
+      },
+      "fast_native_backward": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.02447599172592163,
+          "input_weight": 0.01171882078051567,
+          "output_bias": 0.0404963493347168,
+          "output_weight": 0.04016590118408203
+        },
+        "max_gradient_error": 0.0404963493347168,
+        "max_weight_error": 0.0001672208309173584,
+        "loss": 2.2656211853027344,
+        "gradient_norm": 16.1937198638916
+      },
+      "reference_loss": 2.2656211853027344
+    },
+    {
+      "step": 11,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 2.0717506408691406,
+        "gradient_norm": 8.188687324523926
+      },
+      "original": {
+        "different_scores": 8,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2904523015022278,
+          "input_weight": 0.09336711466312408,
+          "output_bias": 0.2045155167579651,
+          "output_weight": 0.3780742883682251
+        },
+        "max_gradient_error": 0.3780742883682251,
+        "max_weight_error": 0.0006094146519899368,
+        "loss": 2.0795629024505615,
+        "gradient_norm": 7.9108734130859375
+      },
+      "native_backward": {
+        "different_scores": 2,
+        "gradient_errors_by_name": {
+          "input_bias": 0.07819178700447083,
+          "input_weight": 0.032372280955314636,
+          "output_bias": 0.2922666072845459,
+          "output_weight": 0.2708616852760315
+        },
+        "max_gradient_error": 0.2922666072845459,
+        "max_weight_error": 0.00036403536796569824,
+        "loss": 2.071751117706299,
+        "gradient_norm": 9.144173622131348
+      },
+      "fast_native_backward": {
+        "different_scores": 2,
+        "gradient_errors_by_name": {
+          "input_bias": 0.07819178700447083,
+          "input_weight": 0.032372280955314636,
+          "output_bias": 0.2922666072845459,
+          "output_weight": 0.2708616852760315
+        },
+        "max_gradient_error": 0.2922666072845459,
+        "max_weight_error": 0.00036403536796569824,
+        "loss": 2.071751117706299,
+        "gradient_norm": 9.144173622131348
+      },
+      "reference_loss": 2.0717506408691406
+    },
+    {
+      "step": 12,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.8530831336975098,
+        "gradient_norm": 7.6829705238342285
+      },
+      "original": {
+        "different_scores": 27,
+        "gradient_errors_by_name": {
+          "input_bias": 0.14256182312965393,
+          "input_weight": 0.06375012546777725,
+          "output_bias": 0.23580503463745117,
+          "output_weight": 0.21566152572631836
+        },
+        "max_gradient_error": 0.23580503463745117,
+        "max_weight_error": 0.0008668508380651474,
+        "loss": 1.856795310974121,
+        "gradient_norm": 8.024529457092285
+      },
+      "native_backward": {
+        "different_scores": 10,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2319515347480774,
+          "input_weight": 0.10139824450016022,
+          "output_bias": 1.0516656637191772,
+          "output_weight": 0.7583053112030029
+        },
+        "max_gradient_error": 1.0516656637191772,
+        "max_weight_error": 0.0010073482990264893,
+        "loss": 1.8557039499282837,
+        "gradient_norm": 4.781813144683838
+      },
+      "fast_native_backward": {
+        "different_scores": 10,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2319515347480774,
+          "input_weight": 0.10139824450016022,
+          "output_bias": 1.0516656637191772,
+          "output_weight": 0.7583053112030029
+        },
+        "max_gradient_error": 1.0516656637191772,
+        "max_weight_error": 0.0010073482990264893,
+        "loss": 1.8557039499282837,
+        "gradient_norm": 4.781813144683838
+      },
+      "reference_loss": 1.8530831336975098
+    },
+    {
+      "step": 13,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.5656177997589111,
+        "gradient_norm": 3.233506202697754
+      },
+      "original": {
+        "different_scores": 34,
+        "gradient_errors_by_name": {
+          "input_bias": 0.09174223989248276,
+          "input_weight": 0.031286463141441345,
+          "output_bias": 0.3027886152267456,
+          "output_weight": 0.30150437355041504
+        },
+        "max_gradient_error": 0.3027886152267456,
+        "max_weight_error": 0.0016212910413742065,
+        "loss": 1.5594830513000488,
+        "gradient_norm": 1.7606526613235474
+      },
+      "native_backward": {
+        "different_scores": 32,
+        "gradient_errors_by_name": {
+          "input_bias": 0.1217593103647232,
+          "input_weight": 0.03742171823978424,
+          "output_bias": 0.34937533736228943,
+          "output_weight": 0.32422882318496704
+        },
+        "max_gradient_error": 0.34937533736228943,
+        "max_weight_error": 0.0018018800765275955,
+        "loss": 1.5664275884628296,
+        "gradient_norm": 3.4612772464752197
+      },
+      "fast_native_backward": {
+        "different_scores": 32,
+        "gradient_errors_by_name": {
+          "input_bias": 0.1217593103647232,
+          "input_weight": 0.03742171823978424,
+          "output_bias": 0.34937533736228943,
+          "output_weight": 0.32422882318496704
+        },
+        "max_gradient_error": 0.34937533736228943,
+        "max_weight_error": 0.0018018800765275955,
+        "loss": 1.5664275884628296,
+        "gradient_norm": 3.4612772464752197
+      },
+      "reference_loss": 1.5656177997589111
+    },
+    {
+      "step": 14,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 2.123598098754883,
+        "gradient_norm": 8.848828315734863
+      },
+      "original": {
+        "different_scores": 36,
+        "gradient_errors_by_name": {
+          "input_bias": 0.18400457501411438,
+          "input_weight": 0.05958951264619827,
+          "output_bias": 0.3287825882434845,
+          "output_weight": 0.29837754368782043
+        },
+        "max_gradient_error": 0.3287825882434845,
+        "max_weight_error": 0.0022383853793144226,
+        "loss": 2.060819625854492,
+        "gradient_norm": 7.712320327758789
+      },
+      "native_backward": {
+        "different_scores": 32,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2458731234073639,
+          "input_weight": 0.1399172693490982,
+          "output_bias": 0.7078529000282288,
+          "output_weight": 0.7619836330413818
+        },
+        "max_gradient_error": 0.7619836330413818,
+        "max_weight_error": 0.002523338422179222,
+        "loss": 2.079223394393921,
+        "gradient_norm": 9.003669738769531
+      },
+      "fast_native_backward": {
+        "different_scores": 32,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2458731234073639,
+          "input_weight": 0.1399172693490982,
+          "output_bias": 0.7078529000282288,
+          "output_weight": 0.7619836330413818
+        },
+        "max_gradient_error": 0.7619836330413818,
+        "max_weight_error": 0.002523338422179222,
+        "loss": 2.079223394393921,
+        "gradient_norm": 9.003669738769531
+      },
+      "reference_loss": 2.123598098754883
+    },
+    {
+      "step": 15,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.712556004524231,
+        "gradient_norm": 2.4749972820281982
+      },
+      "original": {
+        "different_scores": 24,
+        "gradient_errors_by_name": {
+          "input_bias": 0.13252638280391693,
+          "input_weight": 0.03125869855284691,
+          "output_bias": 0.5138684511184692,
+          "output_weight": 0.45894721150398254
+        },
+        "max_gradient_error": 0.5138684511184692,
+        "max_weight_error": 0.002502158284187317,
+        "loss": 1.7141070365905762,
+        "gradient_norm": 2.4621741771698
+      },
+      "native_backward": {
+        "different_scores": 24,
+        "gradient_errors_by_name": {
+          "input_bias": 0.12059348821640015,
+          "input_weight": 0.04591270163655281,
+          "output_bias": 0.3957071602344513,
+          "output_weight": 0.36607950925827026
+        },
+        "max_gradient_error": 0.3957071602344513,
+        "max_weight_error": 0.0033672768622636795,
+        "loss": 1.729527473449707,
+        "gradient_norm": 3.1157095432281494
+      },
+      "fast_native_backward": {
+        "different_scores": 24,
+        "gradient_errors_by_name": {
+          "input_bias": 0.12059348821640015,
+          "input_weight": 0.04591270163655281,
+          "output_bias": 0.3957071602344513,
+          "output_weight": 0.36607950925827026
+        },
+        "max_gradient_error": 0.3957071602344513,
+        "max_weight_error": 0.0033672768622636795,
+        "loss": 1.729527473449707,
+        "gradient_norm": 3.1157095432281494
+      },
+      "reference_loss": 1.712556004524231
+    },
+    {
+      "step": 16,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6997486352920532,
+        "gradient_norm": 7.267297744750977
+      },
+      "original": {
+        "different_scores": 33,
+        "gradient_errors_by_name": {
+          "input_bias": 0.25213342905044556,
+          "input_weight": 0.08456912636756897,
+          "output_bias": 1.1394578218460083,
+          "output_weight": 0.9016930460929871
+        },
+        "max_gradient_error": 1.1394578218460083,
+        "max_weight_error": 0.0034414883702993393,
+        "loss": 1.6668695211410522,
+        "gradient_norm": 4.076587677001953
+      },
+      "native_backward": {
+        "different_scores": 38,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3061690032482147,
+          "input_weight": 0.12214230000972748,
+          "output_bias": 1.22173011302948,
+          "output_weight": 0.8276298642158508
+        },
+        "max_gradient_error": 1.22173011302948,
+        "max_weight_error": 0.0036755776964128017,
+        "loss": 1.6857128143310547,
+        "gradient_norm": 5.828062534332275
+      },
+      "fast_native_backward": {
+        "different_scores": 38,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3061690032482147,
+          "input_weight": 0.12214230000972748,
+          "output_bias": 1.22173011302948,
+          "output_weight": 0.8276298642158508
+        },
+        "max_gradient_error": 1.22173011302948,
+        "max_weight_error": 0.0036755776964128017,
+        "loss": 1.6857128143310547,
+        "gradient_norm": 5.828062534332275
+      },
+      "reference_loss": 1.6997486352920532
+    },
+    {
+      "step": 17,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.935474157333374,
+        "gradient_norm": 9.909199714660645
+      },
+      "original": {
+        "different_scores": 40,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2792884111404419,
+          "input_weight": 0.08324123173952103,
+          "output_bias": 1.0813422203063965,
+          "output_weight": 0.8979347944259644
+        },
+        "max_gradient_error": 1.0813422203063965,
+        "max_weight_error": 0.0042962925508618355,
+        "loss": 1.9394996166229248,
+        "gradient_norm": 8.772773742675781
+      },
+      "native_backward": {
+        "different_scores": 47,
+        "gradient_errors_by_name": {
+          "input_bias": 0.30544257164001465,
+          "input_weight": 0.07713325321674347,
+          "output_bias": 0.6778051257133484,
+          "output_weight": 0.5762503147125244
+        },
+        "max_gradient_error": 0.6778051257133484,
+        "max_weight_error": 0.00454440712928772,
+        "loss": 1.8488914966583252,
+        "gradient_norm": 8.318103790283203
+      },
+      "fast_native_backward": {
+        "different_scores": 47,
+        "gradient_errors_by_name": {
+          "input_bias": 0.30544257164001465,
+          "input_weight": 0.07713325321674347,
+          "output_bias": 0.6778051257133484,
+          "output_weight": 0.5762503147125244
+        },
+        "max_gradient_error": 0.6778051257133484,
+        "max_weight_error": 0.00454440712928772,
+        "loss": 1.8488914966583252,
+        "gradient_norm": 8.318103790283203
+      },
+      "reference_loss": 1.935474157333374
+    },
+    {
+      "step": 18,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.7597081661224365,
+        "gradient_norm": 6.870707988739014
+      },
+      "original": {
+        "different_scores": 43,
+        "gradient_errors_by_name": {
+          "input_bias": 0.29875922203063965,
+          "input_weight": 0.07611147314310074,
+          "output_bias": 0.7091207504272461,
+          "output_weight": 0.6673038005828857
+        },
+        "max_gradient_error": 0.7091207504272461,
+        "max_weight_error": 0.004982415121048689,
+        "loss": 1.7245607376098633,
+        "gradient_norm": 6.505608081817627
+      },
+      "native_backward": {
+        "different_scores": 47,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3219844102859497,
+          "input_weight": 0.07637035101652145,
+          "output_bias": 0.7946136593818665,
+          "output_weight": 0.6700327396392822
+        },
+        "max_gradient_error": 0.7946136593818665,
+        "max_weight_error": 0.00526910275220871,
+        "loss": 1.7630276679992676,
+        "gradient_norm": 6.38829231262207
+      },
+      "fast_native_backward": {
+        "different_scores": 47,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3219844102859497,
+          "input_weight": 0.07637035101652145,
+          "output_bias": 0.7946136593818665,
+          "output_weight": 0.6700327396392822
+        },
+        "max_gradient_error": 0.7946136593818665,
+        "max_weight_error": 0.00526910275220871,
+        "loss": 1.7630276679992676,
+        "gradient_norm": 6.38829231262207
+      },
+      "reference_loss": 1.7597081661224365
+    },
+    {
+      "step": 19,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.7746820449829102,
+        "gradient_norm": 7.640343189239502
+      },
+      "original": {
+        "different_scores": 49,
+        "gradient_errors_by_name": {
+          "input_bias": 0.35090115666389465,
+          "input_weight": 0.1016809344291687,
+          "output_bias": 1.5849037170410156,
+          "output_weight": 1.3632304668426514
+        },
+        "max_gradient_error": 1.5849037170410156,
+        "max_weight_error": 0.00555475102737546,
+        "loss": 1.7181745767593384,
+        "gradient_norm": 5.527159214019775
+      },
+      "native_backward": {
+        "different_scores": 51,
+        "gradient_errors_by_name": {
+          "input_bias": 0.4088260531425476,
+          "input_weight": 0.1374415010213852,
+          "output_bias": 1.876976490020752,
+          "output_weight": 1.6015785932540894
+        },
+        "max_gradient_error": 1.876976490020752,
+        "max_weight_error": 0.005911434069275856,
+        "loss": 1.631377935409546,
+        "gradient_norm": 4.290579319000244
+      },
+      "fast_native_backward": {
+        "different_scores": 51,
+        "gradient_errors_by_name": {
+          "input_bias": 0.4088260531425476,
+          "input_weight": 0.1374415010213852,
+          "output_bias": 1.876976490020752,
+          "output_weight": 1.6015785932540894
+        },
+        "max_gradient_error": 1.876976490020752,
+        "max_weight_error": 0.005911434069275856,
+        "loss": 1.631377935409546,
+        "gradient_norm": 4.290579319000244
+      },
+      "reference_loss": 1.7746820449829102
+    },
+    {
+      "step": 20,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.4274263381958008,
+        "gradient_norm": 2.5248494148254395
+      },
+      "original": {
+        "different_scores": 49,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2770487666130066,
+          "input_weight": 0.08093900978565216,
+          "output_bias": 0.6202913522720337,
+          "output_weight": 0.6174898743629456
+        },
+        "max_gradient_error": 0.6202913522720337,
+        "max_weight_error": 0.005662284791469574,
+        "loss": 1.4867132902145386,
+        "gradient_norm": 4.964357376098633
+      },
+      "native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.18818122148513794,
+          "input_weight": 0.06394955515861511,
+          "output_bias": 0.7916187047958374,
+          "output_weight": 0.7633073329925537
+        },
+        "max_gradient_error": 0.7916187047958374,
+        "max_weight_error": 0.006083740387111902,
+        "loss": 1.445176124572754,
+        "gradient_norm": 5.260263919830322
+      },
+      "fast_native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.18818122148513794,
+          "input_weight": 0.06394955515861511,
+          "output_bias": 0.7916187047958374,
+          "output_weight": 0.7633073329925537
+        },
+        "max_gradient_error": 0.7916187047958374,
+        "max_weight_error": 0.006083740387111902,
+        "loss": 1.445176124572754,
+        "gradient_norm": 5.260263919830322
+      },
+      "reference_loss": 1.4274263381958008
+    },
+    {
+      "step": 21,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.5570732355117798,
+        "gradient_norm": 4.394298076629639
+      },
+      "original": {
+        "different_scores": 41,
+        "gradient_errors_by_name": {
+          "input_bias": 0.33474189043045044,
+          "input_weight": 0.10448270291090012,
+          "output_bias": 0.7566403150558472,
+          "output_weight": 0.7466943264007568
+        },
+        "max_gradient_error": 0.7566403150558472,
+        "max_weight_error": 0.006084278225898743,
+        "loss": 1.5384172201156616,
+        "gradient_norm": 1.9752963781356812
+      },
+      "native_backward": {
+        "different_scores": 41,
+        "gradient_errors_by_name": {
+          "input_bias": 0.20378214120864868,
+          "input_weight": 0.0809008777141571,
+          "output_bias": 0.7159210443496704,
+          "output_weight": 0.6921882033348083
+        },
+        "max_gradient_error": 0.7159210443496704,
+        "max_weight_error": 0.006315287202596664,
+        "loss": 1.6318432092666626,
+        "gradient_norm": 2.1798312664031982
+      },
+      "fast_native_backward": {
+        "different_scores": 41,
+        "gradient_errors_by_name": {
+          "input_bias": 0.20378214120864868,
+          "input_weight": 0.0809008777141571,
+          "output_bias": 0.7159210443496704,
+          "output_weight": 0.6921882033348083
+        },
+        "max_gradient_error": 0.7159210443496704,
+        "max_weight_error": 0.006315287202596664,
+        "loss": 1.6318432092666626,
+        "gradient_norm": 2.1798312664031982
+      },
+      "reference_loss": 1.5570732355117798
+    },
+    {
+      "step": 22,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6028025150299072,
+        "gradient_norm": 2.7237319946289062
+      },
+      "original": {
+        "different_scores": 43,
+        "gradient_errors_by_name": {
+          "input_bias": 0.21632236242294312,
+          "input_weight": 0.07690324634313583,
+          "output_bias": 0.48633265495300293,
+          "output_weight": 0.4520525634288788
+        },
+        "max_gradient_error": 0.48633265495300293,
+        "max_weight_error": 0.006982302293181419,
+        "loss": 1.6251811981201172,
+        "gradient_norm": 5.285752773284912
+      },
+      "native_backward": {
+        "different_scores": 40,
+        "gradient_errors_by_name": {
+          "input_bias": 0.18579480051994324,
+          "input_weight": 0.06206875294446945,
+          "output_bias": 0.33949151635169983,
+          "output_weight": 0.33116641640663147
+        },
+        "max_gradient_error": 0.33949151635169983,
+        "max_weight_error": 0.007288794964551926,
+        "loss": 1.709977626800537,
+        "gradient_norm": 2.581754446029663
+      },
+      "fast_native_backward": {
+        "different_scores": 40,
+        "gradient_errors_by_name": {
+          "input_bias": 0.18579480051994324,
+          "input_weight": 0.06206875294446945,
+          "output_bias": 0.33949151635169983,
+          "output_weight": 0.33116641640663147
+        },
+        "max_gradient_error": 0.33949151635169983,
+        "max_weight_error": 0.007288794964551926,
+        "loss": 1.709977626800537,
+        "gradient_norm": 2.581754446029663
+      },
+      "reference_loss": 1.6028025150299072
+    },
+    {
+      "step": 23,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6463556289672852,
+        "gradient_norm": 3.8290445804595947
+      },
+      "original": {
+        "different_scores": 40,
+        "gradient_errors_by_name": {
+          "input_bias": 0.1589154601097107,
+          "input_weight": 0.07655465602874756,
+          "output_bias": 0.6369637846946716,
+          "output_weight": 0.6319921612739563
+        },
+        "max_gradient_error": 0.6369637846946716,
+        "max_weight_error": 0.007799452170729637,
+        "loss": 1.6119464635849,
+        "gradient_norm": 2.840487241744995
+      },
+      "native_backward": {
+        "different_scores": 39,
+        "gradient_errors_by_name": {
+          "input_bias": 0.15761899948120117,
+          "input_weight": 0.07726828753948212,
+          "output_bias": 0.6582562327384949,
+          "output_weight": 0.6433049440383911
+        },
+        "max_gradient_error": 0.6582562327384949,
+        "max_weight_error": 0.007220301777124405,
+        "loss": 1.6884779930114746,
+        "gradient_norm": 1.5865905284881592
+      },
+      "fast_native_backward": {
+        "different_scores": 39,
+        "gradient_errors_by_name": {
+          "input_bias": 0.15761899948120117,
+          "input_weight": 0.07726828753948212,
+          "output_bias": 0.6582562327384949,
+          "output_weight": 0.6433049440383911
+        },
+        "max_gradient_error": 0.6582562327384949,
+        "max_weight_error": 0.007220301777124405,
+        "loss": 1.6884779930114746,
+        "gradient_norm": 1.5865905284881592
+      },
+      "reference_loss": 1.6463556289672852
+    },
+    {
+      "step": 24,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6970369815826416,
+        "gradient_norm": 6.265791416168213
+      },
+      "original": {
+        "different_scores": 43,
+        "gradient_errors_by_name": {
+          "input_bias": 0.27693885564804077,
+          "input_weight": 0.10563749074935913,
+          "output_bias": 1.0404683351516724,
+          "output_weight": 1.024053692817688
+        },
+        "max_gradient_error": 1.0404683351516724,
+        "max_weight_error": 0.008543716743588448,
+        "loss": 1.6674010753631592,
+        "gradient_norm": 10.017060279846191
+      },
+      "native_backward": {
+        "different_scores": 43,
+        "gradient_errors_by_name": {
+          "input_bias": 0.44826555252075195,
+          "input_weight": 0.12934574484825134,
+          "output_bias": 1.3715626001358032,
+          "output_weight": 1.3058185577392578
+        },
+        "max_gradient_error": 1.3715626001358032,
+        "max_weight_error": 0.007822809740900993,
+        "loss": 1.6070964336395264,
+        "gradient_norm": 1.6587315797805786
+      },
+      "fast_native_backward": {
+        "different_scores": 43,
+        "gradient_errors_by_name": {
+          "input_bias": 0.44826555252075195,
+          "input_weight": 0.12934574484825134,
+          "output_bias": 1.3715626001358032,
+          "output_weight": 1.3058185577392578
+        },
+        "max_gradient_error": 1.3715626001358032,
+        "max_weight_error": 0.007822809740900993,
+        "loss": 1.6070964336395264,
+        "gradient_norm": 1.6587315797805786
+      },
+      "reference_loss": 1.6970369815826416
+    },
+    {
+      "step": 25,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6450011730194092,
+        "gradient_norm": 2.73801851272583
+      },
+      "original": {
+        "different_scores": 49,
+        "gradient_errors_by_name": {
+          "input_bias": 0.16311456263065338,
+          "input_weight": 0.061309169977903366,
+          "output_bias": 0.8497370481491089,
+          "output_weight": 0.7022771835327148
+        },
+        "max_gradient_error": 0.8497370481491089,
+        "max_weight_error": 0.009221509099006653,
+        "loss": 1.7488433122634888,
+        "gradient_norm": 4.691938877105713
+      },
+      "native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.1670432984828949,
+          "input_weight": 0.07833395153284073,
+          "output_bias": 0.45541703701019287,
+          "output_weight": 0.3800209164619446
+        },
+        "max_gradient_error": 0.45541703701019287,
+        "max_weight_error": 0.008706050924956799,
+        "loss": 1.566339373588562,
+        "gradient_norm": 2.942702054977417
+      },
+      "fast_native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.1670432984828949,
+          "input_weight": 0.07833395153284073,
+          "output_bias": 0.45541703701019287,
+          "output_weight": 0.3800209164619446
+        },
+        "max_gradient_error": 0.45541703701019287,
+        "max_weight_error": 0.008706050924956799,
+        "loss": 1.566339373588562,
+        "gradient_norm": 2.942702054977417
+      },
+      "reference_loss": 1.6450011730194092
+    },
+    {
+      "step": 26,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6246440410614014,
+        "gradient_norm": 3.4750945568084717
+      },
+      "original": {
+        "different_scores": 40,
+        "gradient_errors_by_name": {
+          "input_bias": 0.16457611322402954,
+          "input_weight": 0.08687825500965118,
+          "output_bias": 0.39266419410705566,
+          "output_weight": 0.4336121082305908
+        },
+        "max_gradient_error": 0.4336121082305908,
+        "max_weight_error": 0.009800465777516365,
+        "loss": 1.6249502897262573,
+        "gradient_norm": 5.1128387451171875
+      },
+      "native_backward": {
+        "different_scores": 47,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3818058967590332,
+          "input_weight": 0.15192562341690063,
+          "output_bias": 1.7899227142333984,
+          "output_weight": 1.7619028091430664
+        },
+        "max_gradient_error": 1.7899227142333984,
+        "max_weight_error": 0.009025312028825283,
+        "loss": 1.7211415767669678,
+        "gradient_norm": 9.284423828125
+      },
+      "fast_native_backward": {
+        "different_scores": 47,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3818058967590332,
+          "input_weight": 0.15192562341690063,
+          "output_bias": 1.7899227142333984,
+          "output_weight": 1.7619028091430664
+        },
+        "max_gradient_error": 1.7899227142333984,
+        "max_weight_error": 0.009025312028825283,
+        "loss": 1.7211415767669678,
+        "gradient_norm": 9.284423828125
+      },
+      "reference_loss": 1.6246440410614014
+    },
+    {
+      "step": 27,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.5439069271087646,
+        "gradient_norm": 3.613050937652588
+      },
+      "original": {
+        "different_scores": 47,
+        "gradient_errors_by_name": {
+          "input_bias": 0.19728724658489227,
+          "input_weight": 0.06104070693254471,
+          "output_bias": 0.5606812238693237,
+          "output_weight": 0.5501686334609985
+        },
+        "max_gradient_error": 0.5606812238693237,
+        "max_weight_error": 0.010327748954296112,
+        "loss": 1.5407707691192627,
+        "gradient_norm": 1.8459279537200928
+      },
+      "native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.36205315589904785,
+          "input_weight": 0.1611703783273697,
+          "output_bias": 1.142455816268921,
+          "output_weight": 0.9988176822662354
+        },
+        "max_gradient_error": 1.142455816268921,
+        "max_weight_error": 0.009586473926901817,
+        "loss": 1.56388521194458,
+        "gradient_norm": 4.812619209289551
+      },
+      "fast_native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.36205315589904785,
+          "input_weight": 0.1611703783273697,
+          "output_bias": 1.142455816268921,
+          "output_weight": 0.9988176822662354
+        },
+        "max_gradient_error": 1.142455816268921,
+        "max_weight_error": 0.009586473926901817,
+        "loss": 1.56388521194458,
+        "gradient_norm": 4.812619209289551
+      },
+      "reference_loss": 1.5439069271087646
+    },
+    {
+      "step": 28,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6343955993652344,
+        "gradient_norm": 2.9610443115234375
+      },
+      "original": {
+        "different_scores": 44,
+        "gradient_errors_by_name": {
+          "input_bias": 0.40457871556282043,
+          "input_weight": 0.10443829745054245,
+          "output_bias": 1.6771128177642822,
+          "output_weight": 1.5938878059387207
+        },
+        "max_gradient_error": 1.6771128177642822,
+        "max_weight_error": 0.010801989585161209,
+        "loss": 1.7726483345031738,
+        "gradient_norm": 7.197958946228027
+      },
+      "native_backward": {
+        "different_scores": 44,
+        "gradient_errors_by_name": {
+          "input_bias": 0.13009801506996155,
+          "input_weight": 0.03792222589254379,
+          "output_bias": 0.3409351110458374,
+          "output_weight": 0.31035158038139343
+        },
+        "max_gradient_error": 0.3409351110458374,
+        "max_weight_error": 0.010036606341600418,
+        "loss": 1.5837693214416504,
+        "gradient_norm": 1.5871425867080688
+      },
+      "fast_native_backward": {
+        "different_scores": 44,
+        "gradient_errors_by_name": {
+          "input_bias": 0.13009801506996155,
+          "input_weight": 0.03792222589254379,
+          "output_bias": 0.3409351110458374,
+          "output_weight": 0.31035158038139343
+        },
+        "max_gradient_error": 0.3409351110458374,
+        "max_weight_error": 0.010036606341600418,
+        "loss": 1.5837693214416504,
+        "gradient_norm": 1.5871425867080688
+      },
+      "reference_loss": 1.6343955993652344
+    },
+    {
+      "step": 29,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.5674188137054443,
+        "gradient_norm": 2.476341724395752
+      },
+      "original": {
+        "different_scores": 50,
+        "gradient_errors_by_name": {
+          "input_bias": 0.10591737180948257,
+          "input_weight": 0.0430300235748291,
+          "output_bias": 0.29484105110168457,
+          "output_weight": 0.2468564510345459
+        },
+        "max_gradient_error": 0.29484105110168457,
+        "max_weight_error": 0.011228831484913826,
+        "loss": 1.715608835220337,
+        "gradient_norm": 2.9909210205078125
+      },
+      "native_backward": {
+        "different_scores": 55,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3405067026615143,
+          "input_weight": 0.14260706305503845,
+          "output_bias": 1.948395848274231,
+          "output_weight": 1.6313624382019043
+        },
+        "max_gradient_error": 1.948395848274231,
+        "max_weight_error": 0.010439284145832062,
+        "loss": 1.5352927446365356,
+        "gradient_norm": 6.693871974945068
+      },
+      "fast_native_backward": {
+        "different_scores": 55,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3405067026615143,
+          "input_weight": 0.14260706305503845,
+          "output_bias": 1.948395848274231,
+          "output_weight": 1.6313624382019043
+        },
+        "max_gradient_error": 1.948395848274231,
+        "max_weight_error": 0.010439284145832062,
+        "loss": 1.5352927446365356,
+        "gradient_norm": 6.693871974945068
+      },
+      "reference_loss": 1.5674188137054443
+    },
+    {
+      "step": 30,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.8054101467132568,
+        "gradient_norm": 6.771276950836182
+      },
+      "original": {
+        "different_scores": 53,
+        "gradient_errors_by_name": {
+          "input_bias": 0.5840246081352234,
+          "input_weight": 0.18803244829177856,
+          "output_bias": 2.377102851867676,
+          "output_weight": 2.300377368927002
+        },
+        "max_gradient_error": 2.377102851867676,
+        "max_weight_error": 0.011360574513673782,
+        "loss": 1.780942678451538,
+        "gradient_norm": 15.933219909667969
+      },
+      "native_backward": {
+        "different_scores": 62,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3257611393928528,
+          "input_weight": 0.12159907817840576,
+          "output_bias": 1.375478744506836,
+          "output_weight": 1.1758087873458862
+        },
+        "max_gradient_error": 1.375478744506836,
+        "max_weight_error": 0.010807359591126442,
+        "loss": 1.7626583576202393,
+        "gradient_norm": 8.125401496887207
+      },
+      "fast_native_backward": {
+        "different_scores": 62,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3257611393928528,
+          "input_weight": 0.12159907817840576,
+          "output_bias": 1.375478744506836,
+          "output_weight": 1.1758087873458862
+        },
+        "max_gradient_error": 1.375478744506836,
+        "max_weight_error": 0.010807359591126442,
+        "loss": 1.7626583576202393,
+        "gradient_norm": 8.125401496887207
+      },
+      "reference_loss": 1.8054101467132568
+    },
+    {
+      "step": 31,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.4243123531341553,
+        "gradient_norm": 2.0568158626556396
+      },
+      "original": {
+        "different_scores": 56,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0825442522764206,
+          "input_weight": 0.0315999872982502,
+          "output_bias": 0.15992620587348938,
+          "output_weight": 0.20641112327575684
+        },
+        "max_gradient_error": 0.20641112327575684,
+        "max_weight_error": 0.011951026506721973,
+        "loss": 1.4758504629135132,
+        "gradient_norm": 2.2527801990509033
+      },
+      "native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.19262748956680298,
+          "input_weight": 0.0662422701716423,
+          "output_bias": 0.7505204677581787,
+          "output_weight": 0.7290906310081482
+        },
+        "max_gradient_error": 0.7505204677581787,
+        "max_weight_error": 0.011141285300254822,
+        "loss": 1.4848546981811523,
+        "gradient_norm": 2.7213895320892334
+      },
+      "fast_native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.19262748956680298,
+          "input_weight": 0.0662422701716423,
+          "output_bias": 0.7505204677581787,
+          "output_weight": 0.7290906310081482
+        },
+        "max_gradient_error": 0.7505204677581787,
+        "max_weight_error": 0.011141285300254822,
+        "loss": 1.4848546981811523,
+        "gradient_norm": 2.7213895320892334
+      },
+      "reference_loss": 1.4243123531341553
+    },
+    {
+      "step": 32,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.7431995868682861,
+        "gradient_norm": 4.717322826385498
+      },
+      "original": {
+        "different_scores": 55,
+        "gradient_errors_by_name": {
+          "input_bias": 0.27336886525154114,
+          "input_weight": 0.08988624811172485,
+          "output_bias": 0.7592907547950745,
+          "output_weight": 0.8347043395042419
+        },
+        "max_gradient_error": 0.8347043395042419,
+        "max_weight_error": 0.012594102881848812,
+        "loss": 1.646925926208496,
+        "gradient_norm": 5.933896064758301
+      },
+      "native_backward": {
+        "different_scores": 51,
+        "gradient_errors_by_name": {
+          "input_bias": 0.17046242952346802,
+          "input_weight": 0.08685822784900665,
+          "output_bias": 0.44798743724823,
+          "output_weight": 0.33188626170158386
+        },
+        "max_gradient_error": 0.44798743724823,
+        "max_weight_error": 0.01165193784981966,
+        "loss": 1.9218956232070923,
+        "gradient_norm": 3.9852242469787598
+      },
+      "fast_native_backward": {
+        "different_scores": 51,
+        "gradient_errors_by_name": {
+          "input_bias": 0.17046242952346802,
+          "input_weight": 0.08685822784900665,
+          "output_bias": 0.44798743724823,
+          "output_weight": 0.33188626170158386
+        },
+        "max_gradient_error": 0.44798743724823,
+        "max_weight_error": 0.01165193784981966,
+        "loss": 1.9218956232070923,
+        "gradient_norm": 3.9852242469787598
+      },
+      "reference_loss": 1.7431995868682861
+    },
+    {
+      "step": 33,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.7991650104522705,
+        "gradient_norm": 13.577248573303223
+      },
+      "original": {
+        "different_scores": 56,
+        "gradient_errors_by_name": {
+          "input_bias": 0.4539853036403656,
+          "input_weight": 0.1268032342195511,
+          "output_bias": 0.5522341728210449,
+          "output_weight": 1.1731622219085693
+        },
+        "max_gradient_error": 1.1731622219085693,
+        "max_weight_error": 0.013181961141526699,
+        "loss": 2.0063860416412354,
+        "gradient_norm": 15.98173999786377
+      },
+      "native_backward": {
+        "different_scores": 51,
+        "gradient_errors_by_name": {
+          "input_bias": 0.6814681887626648,
+          "input_weight": 0.15875035524368286,
+          "output_bias": 3.6528730392456055,
+          "output_weight": 3.3494696617126465
+        },
+        "max_gradient_error": 3.6528730392456055,
+        "max_weight_error": 0.01194610632956028,
+        "loss": 1.591577172279358,
+        "gradient_norm": 2.410435676574707
+      },
+      "fast_native_backward": {
+        "different_scores": 51,
+        "gradient_errors_by_name": {
+          "input_bias": 0.6814681887626648,
+          "input_weight": 0.15875035524368286,
+          "output_bias": 3.6528730392456055,
+          "output_weight": 3.3494696617126465
+        },
+        "max_gradient_error": 3.6528730392456055,
+        "max_weight_error": 0.01194610632956028,
+        "loss": 1.591577172279358,
+        "gradient_norm": 2.410435676574707
+      },
+      "reference_loss": 1.7991650104522705
+    },
+    {
+      "step": 34,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.9273681640625,
+        "gradient_norm": 12.3502779006958
+      },
+      "original": {
+        "different_scores": 51,
+        "gradient_errors_by_name": {
+          "input_bias": 0.6419289112091064,
+          "input_weight": 0.19364620745182037,
+          "output_bias": 3.226165533065796,
+          "output_weight": 2.896646022796631
+        },
+        "max_gradient_error": 3.226165533065796,
+        "max_weight_error": 0.013801134191453457,
+        "loss": 1.6302003860473633,
+        "gradient_norm": 4.778701305389404
+      },
+      "native_backward": {
+        "different_scores": 45,
+        "gradient_errors_by_name": {
+          "input_bias": 0.4898569583892822,
+          "input_weight": 0.16443927586078644,
+          "output_bias": 2.1811118125915527,
+          "output_weight": 2.1031036376953125
+        },
+        "max_gradient_error": 2.1811118125915527,
+        "max_weight_error": 0.012565594166517258,
+        "loss": 1.8588072061538696,
+        "gradient_norm": 5.195662498474121
+      },
+      "fast_native_backward": {
+        "different_scores": 45,
+        "gradient_errors_by_name": {
+          "input_bias": 0.4898569583892822,
+          "input_weight": 0.16443927586078644,
+          "output_bias": 2.1811118125915527,
+          "output_weight": 2.1031036376953125
+        },
+        "max_gradient_error": 2.1811118125915527,
+        "max_weight_error": 0.012565594166517258,
+        "loss": 1.8588072061538696,
+        "gradient_norm": 5.195662498474121
+      },
+      "reference_loss": 1.9273681640625
+    },
+    {
+      "step": 35,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.8526928424835205,
+        "gradient_norm": 10.42281436920166
+      },
+      "original": {
+        "different_scores": 59,
+        "gradient_errors_by_name": {
+          "input_bias": 0.5375131368637085,
+          "input_weight": 0.16946634650230408,
+          "output_bias": 1.6868873834609985,
+          "output_weight": 1.6306449174880981
+        },
+        "max_gradient_error": 1.6868873834609985,
+        "max_weight_error": 0.014291584491729736,
+        "loss": 1.5679221153259277,
+        "gradient_norm": 2.7318363189697266
+      },
+      "native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2779010236263275,
+          "input_weight": 0.09259074181318283,
+          "output_bias": 1.2526954412460327,
+          "output_weight": 1.1094492673873901
+        },
+        "max_gradient_error": 1.2526954412460327,
+        "max_weight_error": 0.013016734272241592,
+        "loss": 1.687718152999878,
+        "gradient_norm": 9.832364082336426
+      },
+      "fast_native_backward": {
+        "different_scores": 52,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2779010236263275,
+          "input_weight": 0.09259074181318283,
+          "output_bias": 1.2526954412460327,
+          "output_weight": 1.1094492673873901
+        },
+        "max_gradient_error": 1.2526954412460327,
+        "max_weight_error": 0.013016734272241592,
+        "loss": 1.687718152999878,
+        "gradient_norm": 9.832364082336426
+      },
+      "reference_loss": 1.8526928424835205
+    },
+    {
+      "step": 36,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6333551406860352,
+        "gradient_norm": 3.040046215057373
+      },
+      "original": {
+        "different_scores": 46,
+        "gradient_errors_by_name": {
+          "input_bias": 0.1326550841331482,
+          "input_weight": 0.06412029266357422,
+          "output_bias": 0.3112534284591675,
+          "output_weight": 0.5078847408294678
+        },
+        "max_gradient_error": 0.5078847408294678,
+        "max_weight_error": 0.014474383555352688,
+        "loss": 1.714803695678711,
+        "gradient_norm": 3.215017080307007
+      },
+      "native_backward": {
+        "different_scores": 42,
+        "gradient_errors_by_name": {
+          "input_bias": 0.14577800035476685,
+          "input_weight": 0.057187967002391815,
+          "output_bias": 0.3454562723636627,
+          "output_weight": 0.3563968241214752
+        },
+        "max_gradient_error": 0.3563968241214752,
+        "max_weight_error": 0.013551728799939156,
+        "loss": 1.7147376537322998,
+        "gradient_norm": 3.065335273742676
+      },
+      "fast_native_backward": {
+        "different_scores": 42,
+        "gradient_errors_by_name": {
+          "input_bias": 0.14577800035476685,
+          "input_weight": 0.057187967002391815,
+          "output_bias": 0.3454562723636627,
+          "output_weight": 0.3563968241214752
+        },
+        "max_gradient_error": 0.3563968241214752,
+        "max_weight_error": 0.013551728799939156,
+        "loss": 1.7147376537322998,
+        "gradient_norm": 3.065335273742676
+      },
+      "reference_loss": 1.6333551406860352
+    },
+    {
+      "step": 37,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.4480584859848022,
+        "gradient_norm": 4.946084022521973
+      },
+      "original": {
+        "different_scores": 51,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3907729685306549,
+          "input_weight": 0.1711556315422058,
+          "output_bias": 1.0229594707489014,
+          "output_weight": 0.9877159595489502
+        },
+        "max_gradient_error": 1.0229594707489014,
+        "max_weight_error": 0.015131860971450806,
+        "loss": 1.5198652744293213,
+        "gradient_norm": 3.0806033611297607
+      },
+      "native_backward": {
+        "different_scores": 50,
+        "gradient_errors_by_name": {
+          "input_bias": 0.39058718085289,
+          "input_weight": 0.15428487956523895,
+          "output_bias": 1.1070064306259155,
+          "output_weight": 1.0055468082427979
+        },
+        "max_gradient_error": 1.1070064306259155,
+        "max_weight_error": 0.014248516410589218,
+        "loss": 1.5189000368118286,
+        "gradient_norm": 3.182481527328491
+      },
+      "fast_native_backward": {
+        "different_scores": 50,
+        "gradient_errors_by_name": {
+          "input_bias": 0.39058718085289,
+          "input_weight": 0.15428487956523895,
+          "output_bias": 1.1070064306259155,
+          "output_weight": 1.0055468082427979
+        },
+        "max_gradient_error": 1.1070064306259155,
+        "max_weight_error": 0.014248516410589218,
+        "loss": 1.5189000368118286,
+        "gradient_norm": 3.182481527328491
+      },
+      "reference_loss": 1.4480584859848022
+    },
+    {
+      "step": 38,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.6865136623382568,
+        "gradient_norm": 2.3210620880126953
+      },
+      "original": {
+        "different_scores": 41,
+        "gradient_errors_by_name": {
+          "input_bias": 0.2084966003894806,
+          "input_weight": 0.06824290752410889,
+          "output_bias": 0.701024055480957,
+          "output_weight": 0.6334472894668579
+        },
+        "max_gradient_error": 0.701024055480957,
+        "max_weight_error": 0.015927933156490326,
+        "loss": 1.77360200881958,
+        "gradient_norm": 3.201728105545044
+      },
+      "native_backward": {
+        "different_scores": 43,
+        "gradient_errors_by_name": {
+          "input_bias": 0.19198016822338104,
+          "input_weight": 0.06898048520088196,
+          "output_bias": 0.6243938207626343,
+          "output_weight": 0.5468260049819946
+        },
+        "max_gradient_error": 0.6243938207626343,
+        "max_weight_error": 0.015096422284841537,
+        "loss": 1.7008016109466553,
+        "gradient_norm": 2.336676597595215
+      },
+      "fast_native_backward": {
+        "different_scores": 43,
+        "gradient_errors_by_name": {
+          "input_bias": 0.19198016822338104,
+          "input_weight": 0.06898048520088196,
+          "output_bias": 0.6243938207626343,
+          "output_weight": 0.5468260049819946
+        },
+        "max_gradient_error": 0.6243938207626343,
+        "max_weight_error": 0.015096422284841537,
+        "loss": 1.7008016109466553,
+        "gradient_norm": 2.336676597595215
+      },
+      "reference_loss": 1.6865136623382568
+    },
+    {
+      "step": 39,
+      "reference_twin": {
+        "different_scores": 0,
+        "gradient_errors_by_name": {
+          "input_bias": 0.0,
+          "input_weight": 0.0,
+          "output_bias": 0.0,
+          "output_weight": 0.0
+        },
+        "max_gradient_error": 0.0,
+        "max_weight_error": 0.0,
+        "loss": 1.5945287942886353,
+        "gradient_norm": 1.732694149017334
+      },
+      "original": {
+        "different_scores": 42,
+        "gradient_errors_by_name": {
+          "input_bias": 0.266523540019989,
+          "input_weight": 0.08756337314844131,
+          "output_bias": 0.8190911412239075,
+          "output_weight": 0.7731602191925049
+        },
+        "max_gradient_error": 0.8190911412239075,
+        "max_weight_error": 0.016651321202516556,
+        "loss": 1.6101094484329224,
+        "gradient_norm": 4.496690273284912
+      },
+      "native_backward": {
+        "different_scores": 39,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3273048996925354,
+          "input_weight": 0.10493888705968857,
+          "output_bias": 0.7041069865226746,
+          "output_weight": 0.6898820996284485
+        },
+        "max_gradient_error": 0.7041069865226746,
+        "max_weight_error": 0.015892496332526207,
+        "loss": 1.6259082555770874,
+        "gradient_norm": 3.9608676433563232
+      },
+      "fast_native_backward": {
+        "different_scores": 39,
+        "gradient_errors_by_name": {
+          "input_bias": 0.3273048996925354,
+          "input_weight": 0.10493888705968857,
+          "output_bias": 0.7041069865226746,
+          "output_weight": 0.6898820996284485
+        },
+        "max_gradient_error": 0.7041069865226746,
+        "max_weight_error": 0.015892496332526207,
+        "loss": 1.6259082555770874,
+        "gradient_norm": 3.9608676433563232
+      },
+      "reference_loss": 1.5945287942886353
+    }
+  ],
+  "first_score_difference": {
+    "original": 11,
+    "native_backward": 11,
+    "fast_native_backward": 11
+  },
+  "first_weight_difference": {
+    "original": 0,
+    "native_backward": 0,
+    "fast_native_backward": 0
+  }
+}

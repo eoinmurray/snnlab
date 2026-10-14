@@ -9,6 +9,10 @@ float32 and disabled TF32. The 0.11.0 baseline is commit
 
 ## Protocol
 
+Full runs now require independent training agreement in addition to shared-checkpoint agreement. Epoch losses and test loss must agree within `atol=1e-5, rtol=1e-5`; test accuracy must agree within 0.1 percentage point. Timings are excluded. The benchmark saves its diagnostic report and arrays before raising an error for failed agreement. The original retained 83.92% versus 77.67% result fails this gate; the regression asserts that it cannot be certified by the passing checkpoint checks. Reference-checkpoint-only runs do not assert independent training agreement because they do not train independently.
+
+The focused regression in `tests/sim/test_snntorch_training_regression.py` separately runs 40 float32 clipped Adam updates with matched bias and surrogate backward operations, checking every gradient, updated parameter, Adam moment, class score and loss on CPU/CUDA. This diagnostic control intentionally matches operations; it does not certify the original unmatched benchmark. See [the investigation](investigation/README.md) for the numerical differences and the complete matched training result.
+
 1. A matched 784 → 256 → 10 classifier uses 50 timesteps, synaptic decay 0.8,
    membrane decay 0.9, threshold 1, previous-membrane detached subtractive reset
    and the snnTorch fast-sigmoid derivative with slope 25. Four separate weight/bias

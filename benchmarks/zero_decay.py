@@ -214,6 +214,31 @@ def sync():
         torch.cuda.synchronize()
 
 
+def assert_training_agreement(pipelines):
+    """Gate independent training separately from shared-checkpoint agreement.
+
+    Timings are excluded. Losses must agree to 1e-5 absolute/relative and
+    accuracy to one tenth of a percentage point. Failed runs retain their
+    diagnostic artifacts rather than silently certifying training parity.
+    """
+    reference = pipelines["snntorch"]
+    for name, actual in pipelines.items():
+        if name == "snntorch":
+            continue
+        for field in ("train_samples", "test_samples", "epochs", "batch_size"):
+            if actual[field] != reference[field]:
+                raise AssertionError(f"training agreement: {name}/{field} differs")
+        for field in ("epoch_losses", "test_loss", "test_accuracy"):
+            np.testing.assert_allclose(
+                actual[field],
+                reference[field],
+                atol=0.001 if field == "test_accuracy" else 1e-5,
+                rtol=0 if field == "test_accuracy" else 1e-5,
+                equal_nan=False,
+                err_msg=f"independent training agreement: {name}/{field}",
+            )
+
+
 def operation(model, events, labels, kind, optimizer):
     if kind == "forward":
         with torch.no_grad():
@@ -514,6 +539,8 @@ def main():
     )
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(args.output.read_text())
+    if pipelines:
+        assert_training_agreement(pipelines)
 
 
 if __name__ == "__main__":
