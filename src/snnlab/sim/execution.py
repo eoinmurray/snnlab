@@ -305,7 +305,7 @@ class ExecutionSpec:
     measurement: MeasurementWindow | None = None
     recording: RecordingSpec | None = None
     retain_outputs: bool = True
-    extension_validation: Literal["strict", "structural"] = "strict"
+    extension_validation: Literal["strict", "structural"] = "structural"
 
     def __post_init__(self):
         if self.extension_validation not in ("strict", "structural"):
@@ -2988,7 +2988,7 @@ class GraphExecutor(nn.Module):
         trainable_parameters: Sequence[str] = (),
         surrogate_slope: float = M.SURROGATE_SLOPE,
         surrogate: Mapping[str, Any] | None = None,
-        extension_validation: Literal["strict", "structural"] = "strict",
+        extension_validation: Literal["strict", "structural"] = "structural",
     ):
         super().__init__()
         if extension_validation not in ("strict", "structural"):
@@ -5710,7 +5710,7 @@ def execution_spec_from_args(
         seed=int(getattr(args, "seed", 0) or 0),
         device=resolve_device(getattr(args, "device", "auto")),
         diagnostics=getattr(args, "diagnostics", True),
-        extension_validation=getattr(args, "extension_validation", "strict"),
+        extension_validation=getattr(args, "extension_validation", "structural"),
         checkpoint=(
             Path(args.load_weights) if getattr(args, "load_weights", None) else None
         ),

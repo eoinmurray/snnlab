@@ -78,6 +78,7 @@ def test_strict_rejects_invalid_callback_values(bad):
     model = GraphExecutor(
         plan_graph(lang.compile(net).graph),
         trainable_parameters=(projection.weight.id,),
+        extension_validation="strict",
         surrogate=recipe.CustomSurrogate("test.invalid/v1").json()
         if bad == "derivative"
         else None,
@@ -178,7 +179,6 @@ def test_execution_spec_policy_propagates_and_is_recorded():
         ExecutionSpec(
             kind="build",
             graph=lang.compile(net).graph,
-            extension_validation="structural",
         )
     )
     assert (
@@ -248,10 +248,38 @@ def test_cli_policy_maps_to_execution_spec(mode):
         execution_spec_from_args(
             parse_args([mode, "--device", "cpu"])
         ).extension_validation
-        == "strict"
+        == "structural"
     )
     spec = execution_spec_from_args(
-        parse_args([mode, "--device", "cpu", "--extension-validation", "structural"])
+        parse_args([mode, "--device", "cpu", "--extension-validation", "strict"])
     )
-    assert spec.extension_validation == "structural"
+    assert spec.extension_validation == "strict"
     assert "extension_validation" not in spec.options
+
+
+def test_default_executor_skips_step_value_scans():
+    net, *_ = custom_network()
+    model = GraphExecutor(plan_graph(lang.compile(net).graph))
+    assert model.extension_validation == "structural"
+    counts = []
+    for steps in (1, 10):
+        with torch.profiler.profile() as profile:
+            result = model({"inputs": torch.ones(steps, 2, 1)})
+        assert result.metrics["extension_validation"] == "structural"
+        counts.append(
+            sum(
+                row.count
+                for row in profile.key_averages()
+                if row.key == "aten::isfinite"
+            )
+        )
+    assert counts[0] == counts[1]
+
+
+def test_legacy_argument_namespace_uses_structural_default():
+    from types import SimpleNamespace
+
+    from snnlab.sim.execution import execution_spec_from_args
+
+    spec = execution_spec_from_args(SimpleNamespace(mode="sim", device="cpu"))
+    assert spec.extension_validation == "structural"

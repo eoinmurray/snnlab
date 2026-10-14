@@ -6,6 +6,12 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-14
+
+### Changed
+
+1. Structural custom-extension validation is now the default for `ExecutionSpec`, `GraphExecutor` and the CLI. Tensor type, shape, device, dtype and state-key checks remain enforced; initialization and restored runtime state remain strict. Per-step finite-value/binary-spike checks and custom-surrogate derivative finite checks require explicit `extension_validation="strict"` or `--extension-validation strict`. This changes the default introduced in 0.10.0: invalid callback values can propagate silently unless strict diagnostics are enabled. Saved formats and numerical equations are unchanged.
+
 ## [0.10.0] - 2026-10-14
 
 ### Changed

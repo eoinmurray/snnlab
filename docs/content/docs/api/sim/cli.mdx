@@ -265,4 +265,4 @@ The sink directory must be empty. Omit `directory` to retain selections in `reco
 
 ## Custom extension validation
 
-`--extension-validation strict` is the default. `--extension-validation structural` retains tensor contracts while skipping custom neuron/synapse step value checks and custom surrogate derivative finite checks. It avoids the host barriers from those checks on CUDA, but invalid values can propagate silently. Initialization and restored state retain strict checks. See [ExecutionSpec](/api/sim/execution-spec) for the policy's scope.
+`--extension-validation structural` is the default. Use `--extension-validation strict` while developing custom callbacks or investigating numerical failures. Structural mode retains tensor contracts while skipping custom neuron/synapse step value checks and custom surrogate derivative finite checks. It avoids the host barriers from those checks on CUDA, but invalid values can propagate silently. Initialization and restored state retain strict checks. See [ExecutionSpec](/api/sim/execution-spec) for the policy's scope.

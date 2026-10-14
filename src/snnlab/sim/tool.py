@@ -46,8 +46,8 @@ def _add_common_arguments(parser):
     parser.add_argument(
         "--extension-validation",
         choices=("strict", "structural"),
-        default="strict",
-        help="Custom dynamics/surrogate value checks: strict (default), or structural for trusted callbacks.",
+        default="structural",
+        help="Custom dynamics/surrogate validation: structural (default), or strict for finite-value and binary-spike diagnostics.",
     )
     parser.add_argument(
         "--diagnostics",
