@@ -18,7 +18,7 @@ from dataclasses import dataclass, field, replace
 from numbers import Integral
 from pathlib import Path
 from types import EllipsisType
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Callable, Literal, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -119,6 +119,18 @@ from snnlab.sim.streaming import (
 )
 from snnlab.sim.streaming import (
     SignalRecording as SignalRecording,
+)
+from snnlab.sim.training_policies import (
+    Batching as Batching,
+)
+from snnlab.sim.training_policies import (
+    EpochReport as EpochReport,
+)
+from snnlab.sim.training_policies import (
+    FrozenValues,
+)
+from snnlab.sim.training_policies import (
+    TrainingMetrics as TrainingMetrics,
 )
 
 ExecutorName = Literal["graph"]
@@ -289,6 +301,9 @@ class ExecutionSpec:
     epochs: int = 0
     batch_size: int | None = None
     shuffle: bool = False
+    batching: Batching | None = None
+    metrics: TrainingMetrics | None = None
+    on_epoch_end: Callable[[EpochReport], None] | None = None
     updates: int | None = None
     save_final_checkpoint: str | Path | None = None
     save_selected_checkpoint: str | Path | None = None
@@ -458,6 +473,7 @@ class TrainingCheckpoint:
     selection_contract: Mapping[str, Any] | None = None
     selection_record: Mapping[str, Any] | None = None
     best_checkpoint: TrainingCheckpoint | None = None
+    reporting_state: Mapping[str, Any] | None = None
 
 
 GRAPH_CAPABILITIES_V1 = {
@@ -2631,10 +2647,14 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
     }
     manifest = {
         "schema": TRAINING_CHECKPOINT_SCHEMA,
-        "schema_version": 4
-        if checkpoint.selection_contract is not None
-        and checkpoint.selection_contract["policy"]["mode"] == "epoch_metrics"
-        else (3 if checkpoint.observation_state is not None else 2),
+        "schema_version": 5
+        if checkpoint.reporting_state is not None
+        else (
+            4
+            if checkpoint.selection_contract is not None
+            and checkpoint.selection_contract["policy"]["mode"] == "epoch_metrics"
+            else (3 if checkpoint.observation_state is not None else 2)
+        ),
         "backend": "tools/snnsim.graph-training/v1",
         "rng_backend": checkpoint.rng_backend,
         "accelerator_rng_devices": sorted(checkpoint.accelerator_rng_states),
@@ -2647,6 +2667,8 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
         "data_state": checkpoint.data_state,
         "selection_metadata": selection_metadata,
         "selection_metadata_digest": _json_digest(selection_metadata),
+        "reporting_state": checkpoint.reporting_state,
+        "reporting_state_digest": _json_digest(checkpoint.reporting_state),
         "observation_state": checkpoint.observation_state,
         "observation_state_digest": _json_digest(checkpoint.observation_state),
         "optimizer_scalars": optimizer_scalars,
@@ -2674,7 +2696,7 @@ def load_training_checkpoint(
     manifest = json.loads((root / "manifest.json").read_text())
     if manifest.get("schema") != TRAINING_CHECKPOINT_SCHEMA or manifest.get(
         "schema_version"
-    ) not in {1, 2, 3, 4}:
+    ) not in {1, 2, 3, 4, 5}:
         raise ValueError(
             f"unsupported training-checkpoint schema: {manifest.get('schema')}"
         )
@@ -2731,7 +2753,7 @@ def load_training_checkpoint(
     schema_version = int(manifest["schema_version"])
     rng_backend = manifest.get("rng_backend", "cpu")
     declared_devices = set(manifest.get("accelerator_rng_devices", []))
-    if schema_version in {2, 3, 4}:
+    if schema_version in {2, 3, 4, 5}:
         if rng_backend not in {"cpu", "cuda", "mps"}:
             raise ValueError(
                 f"training checkpoint has unsupported RNG backend {rng_backend!r}"
@@ -2760,6 +2782,13 @@ def load_training_checkpoint(
             raise ValueError(
                 "MPS training checkpoint requires exactly the mps RNG state"
             )
+    reporting_state = manifest.get("reporting_state")
+    if schema_version == 5 and reporting_state is None:
+        raise ValueError("training checkpoint is missing reporting state")
+    if "reporting_state" in manifest and manifest.get(
+        "reporting_state_digest"
+    ) != _json_digest(reporting_state):
+        raise ValueError("training checkpoint reporting state digest mismatch")
     observation_state = manifest.get("observation_state")
     if schema_version == 3 and observation_state is None:
         raise ValueError("audited training checkpoint is missing observation history")
@@ -2808,6 +2837,7 @@ def load_training_checkpoint(
         accelerator_rng_states=accelerator_rng_states,
         data_state=manifest.get("data_state", {}),
         observation_state=observation_state,
+        reporting_state=reporting_state,
     )
 
 
@@ -4996,6 +5026,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         "save_final_checkpoint",
         "save_selected_checkpoint",
         "checkpoint_selection",
+        "metrics",
+        "batching",
+        "on_epoch_end",
     }
     if moved_options:
         raise ValueError(
@@ -5013,6 +5046,28 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             raise ValueError(f"training {name} must be an integer >= {minimum}")
     if not isinstance(spec.shuffle, bool):
         raise TypeError("training shuffle must be boolean")
+    metric_policy = spec.metrics or TrainingMetrics()
+    if not isinstance(metric_policy, TrainingMetrics):
+        raise TypeError("metrics must be TrainingMetrics")
+    if spec.batching is not None and not isinstance(spec.batching, Batching):
+        raise TypeError("batching must be Batching")
+    if spec.batching is not None and spec.shuffle and spec.batching.order != "shuffle":
+        raise ValueError("shuffle=True conflicts with batching order")
+    if spec.on_epoch_end is not None and not callable(spec.on_epoch_end):
+        raise TypeError("on_epoch_end must be callable")
+    if spec.epochs <= 0 and (
+        spec.metrics is not None
+        or spec.batching is not None
+        or spec.on_epoch_end is not None
+    ):
+        raise ValueError(
+            "training policies and epoch callbacks require positive epochs"
+        )
+    persist_reporting = (
+        spec.metrics is not None
+        or spec.batching is not None
+        or spec.on_epoch_end is not None
+    )
     timing = _TrainingTiming(spec)
     sources = _split_input_bindings(spec.input_bindings)
     built = build(spec)
@@ -5101,8 +5156,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     validation_data = (
         resolve_data(spec.validation) if spec.validation is not None else None
     )
-    selection = (
-        spec.checkpoint_selection or CheckpointSelection.legacy_training_batch_loss()
+    selection = spec.checkpoint_selection or (
+        CheckpointSelection.legacy_training_batch_loss()
+        if metric_policy.update_history
+        else CheckpointSelection.disabled()
     )
     if not isinstance(selection, CheckpointSelection):
         raise TypeError("checkpoint_selection must be a CheckpointSelection")
@@ -5110,6 +5167,29 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         training, epochs=dataset_epochs, has_validation=validation_data is not None
     )
     epoch_selection = selection.mode == "epoch_metrics"
+    update_selection = selection.mode == "legacy_training_batch_loss"
+    if selection.mode == "none" and spec.save_selected_checkpoint is not None:
+        raise ValueError("save_selected_checkpoint requires checkpoint selection")
+    if epoch_selection:
+        if (selection.split == "train" and metric_policy.train != "evaluate") or (
+            selection.split == "validation" and metric_policy.validation != "epoch"
+        ):
+            raise ValueError(
+                "checkpoint selection requires enabled fixed-weight split evaluation"
+            )
+        if selection.include_initial and selection.split not in metric_policy.initial:
+            raise ValueError(
+                "initial checkpoint selection requires initial split metrics"
+            )
+    if spec.observations is not None and (
+        spec.observations.population_rates or spec.observations.output_activity
+    ):
+        if metric_policy.train != "evaluate" or (
+            validation_data is not None and metric_policy.validation != "epoch"
+        ):
+            raise ValueError(
+                "split activity observations require enabled split evaluation; use separate probes for online training"
+            )
     batch_size = (
         spec.batch_size
         if spec.batch_size is not None
@@ -5162,8 +5242,20 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             },
         }
     )
-    batches_per_epoch = math.ceil(dataset_size / batch_size)
-    shuffle = spec.shuffle
+    batching = spec.batching or Batching(
+        order="shuffle" if spec.shuffle else "sequential"
+    )
+    batch_sizes = batching.sizes(dataset_size, batch_size)
+    batches_per_epoch = len(batch_sizes)
+    stratify_labels = None
+    if batching.order == "stratified":
+        if batching.stratify_by not in resolved_targets:
+            raise ValueError("stratify_by must name a training target")
+        stratify_labels = resolved_targets[batching.stratify_by].detach().cpu()
+        batching.indices(
+            dataset_size, batch_size, seed=spec.seed, labels=stratify_labels
+        )
+    shuffle = batching.order == "shuffle"
     protocol = {**resolved_inputs.protocol, "targets": target_rows}
     if dataset_mode:
         protocol = {
@@ -5177,9 +5269,27 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             "training_iteration": {
                 "schema": "tools/snnsim.dataset-iteration/v1",
                 "epochs": dataset_epochs,
-                "drop_last": False,
+                "drop_last": batching.remainder == "drop",
                 "order_seed": int(spec.seed),
             },
+        }
+    if spec.metrics is not None:
+        protocol["training_metrics"] = metric_policy.to_dict()
+    if spec.batching is not None:
+        protocol["training_iteration"]["batching"] = {
+            **batching.to_dict(),
+            "algorithm": "fractional_class_positions_seeded_ties/v1"
+            if batching.order == "stratified"
+            else batching.order,
+            "batches_per_epoch": batches_per_epoch,
+            "batch_sizes": batch_sizes,
+            "examples_per_epoch": sum(batch_sizes),
+            "dropped_per_epoch": dataset_size - sum(batch_sizes),
+            "stratification_labels_sha256": hashlib.sha256(
+                stratify_labels.contiguous().numpy().tobytes()
+            ).hexdigest()
+            if stratify_labels is not None
+            else None,
         }
     resolved_inputs = (
         resolved_inputs.with_protocol(protocol)
@@ -5305,9 +5415,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     updates = int(
         updates_option
         if updates_option is not None
-        else (
-            dataset_epochs * math.ceil(dataset_size / batch_size) if dataset_mode else 1
-        )
+        else (dataset_epochs * batches_per_epoch if dataset_mode else 1)
     )
     if updates <= 0:
         raise ValueError("graph training updates must be positive")
@@ -5339,6 +5447,36 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         if observation_saved is not None
         else None,
     )
+    reporting_saved = resumed.reporting_state if resumed is not None else None
+    if reporting_saved is not None:
+        epoch_history = copy.deepcopy(reporting_saved["history"])
+        persist_reporting = True
+    elif resumed is not None and spec.metrics is not None:
+        raise ValueError("checkpoint has no reporting state for requested metrics")
+    online_sums = {
+        name: torch.as_tensor(
+            value,
+            device=device,
+            dtype=torch.float64
+            if torch.device(device).type != "mps"
+            else torch.float32,
+        )
+        for name, value in (reporting_saved or {}).get("online_sums", {}).items()
+    }
+    online_count = (reporting_saved or {}).get("online_count", 0)
+    executed_updates = 0
+    examples_consumed = (reporting_saved or {}).get(
+        "examples",
+        data_state.get("epoch", 0) * sum(batch_sizes)
+        + sum(batch_sizes[: data_state.get("batch", 0)]),
+    )
+    epoch_examples = (reporting_saved or {}).get(
+        "epoch_examples", sum(batch_sizes[: data_state.get("batch", 0)])
+    )
+    epoch_updates = (reporting_saved or {}).get(
+        "epoch_updates", data_state.get("batch", 0)
+    )
+    last_loss = None
     history = []
     last_gradients: dict[str, torch.Tensor] = {}
     final_forward: ExecutionResult | None = None
@@ -5358,6 +5496,66 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             }
             for name, value in sorted(tensors.items())
         }
+
+    reporting_contract = None
+    if persist_reporting:
+        bind_data = spec.metrics is not None or spec.batching is not None
+        reporting_contract = {
+            "metrics": metric_policy.to_dict(),
+            "train_inputs": evaluation_tensor_identity(resolved_inputs) if bind_data else resolved_inputs.protocol,
+            "train_targets": evaluation_tensor_identity(resolved_targets) if bind_data else list(target_rows),
+            "validation": None
+            if validation_data is None or metric_policy.validation == "none"
+            else {
+                "protocol": validation_data[0].protocol,
+                "inputs": evaluation_tensor_identity(validation_data[0]) if bind_data else validation_data[0].protocol,
+                "targets": evaluation_tensor_identity(validation_data[1]) if bind_data else list(validation_data[2]),
+            },
+        }
+    if reporting_saved is not None:
+        if reporting_saved.get("contract") != reporting_contract:
+            raise ValueError(
+                "checkpoint reporting metric/data identity does not match request"
+            )
+        expected_partial = sum(batch_sizes[: data_state["batch"]])
+        if (
+            examples_consumed
+            != data_state["epoch"] * sum(batch_sizes) + expected_partial
+            or epoch_examples != expected_partial
+            or epoch_updates != data_state["batch"]
+            or online_count
+            != (expected_partial if metric_policy.train == "online" else 0)
+            or completed_updates
+            != data_state["epoch"] * batches_per_epoch + data_state["batch"]
+            or not epoch_history
+            or [row.get("epoch") for row in epoch_history]
+            != list(range(epoch_history[0]["epoch"], data_state["epoch"] + 1))
+        ):
+            raise ValueError("checkpoint reporting coordinates do not match schedule")
+        if online_count:
+            expected_keys = (
+                {"loss"}
+                | {
+                    f"component/objective[{i}]"
+                    for i in range(len(training.get("objectives", [])))
+                }
+                | {
+                    f"component/regularizer[{i}]"
+                    for i in range(len(training.get("regularizers", [])))
+                }
+                | {
+                    f"{prefix}/objective[{i}]"
+                    for i, objective in enumerate(training.get("objectives", []))
+                    if X.classification(objective)
+                    for prefix in ("ce", "correct")
+                }
+            )
+            if set(online_sums) != expected_keys:
+                raise ValueError(
+                    "checkpoint online metric accumulator keys do not match recipe"
+                )
+        elif online_sums:
+            raise ValueError("checkpoint contains online sums without examples")
 
     selection_contract = {
         "policy": selection.to_dict(),
@@ -5497,6 +5695,17 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             rng_backend=rng_backend,
             accelerator_rng_states=accelerator_rng_states,
             data_state=dict(next_data_state),
+            reporting_state={
+                "contract": reporting_contract,
+                "history": copy.deepcopy(epoch_history),
+                "online_sums": _host_metrics(online_sums),
+                "online_count": online_count,
+                "examples": examples_consumed,
+                "epoch_examples": epoch_examples,
+                "epoch_updates": epoch_updates,
+            }
+            if persist_reporting
+            else None,
             observation_state=copy.deepcopy(
                 {
                     "contract": observation_contract,
@@ -5687,7 +5896,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                         )
                         count = end - start
                         for i, objective in enumerate(training.get("objectives", [])):
-                            if objective["kind"] == "cross_entropy":
+                            if X.classification(objective):
                                 prediction = forward.outputs[
                                     output_ids[objective["prediction"]]
                                 ]
@@ -5754,18 +5963,52 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             metrics["encoding_draws"] = list(draws)
         return metrics
 
-    def record_epoch(epoch):
-        nonlocal gradient_measurements, selected_checkpoint
-        if observation_spec is not None and any(
+    def record_epoch(epoch, *, emit=True):
+        nonlocal \
+            gradient_measurements, \
+            selected_checkpoint, \
+            online_sums, \
+            online_count, \
+            epoch_examples, \
+            epoch_updates
+        if (observation_spec is not None or persist_reporting) and any(
             row["epoch"] == epoch for row in epoch_history
         ):
             return
+        timing.switch("reporting", epoch)
         row = {"epoch": epoch}
         observations = {}
         selection_metrics = None
-        splits = {"train": (resolved_inputs, resolved_targets)}
-        if validation_data is not None:
+        splits = {}
+        if metric_policy.train == "evaluate" and (
+            epoch > 0 or "train" in metric_policy.initial
+        ):
+            splits["train"] = (resolved_inputs, resolved_targets)
+        if (
+            validation_data is not None
+            and metric_policy.validation == "epoch"
+            and (epoch > 0 or "validation" in metric_policy.initial)
+        ):
             splits["validation"] = validation_data[:2]
+        if metric_policy.train == "online" and epoch > 0:
+            packed = _host_metrics(online_sums)
+            online = {"loss": packed["loss"] / online_count}
+            for group, prefix in (
+                ("components", "component/"),
+                ("cross_entropies", "ce/"),
+                ("accuracies", "correct/"),
+            ):
+                online[group] = {
+                    name.removeprefix(prefix): value / online_count
+                    for name, value in packed.items()
+                    if name.startswith(prefix)
+                }
+            if len(online["accuracies"]) == 1:
+                online["accuracy"] = next(iter(online["accuracies"].values()))
+            row.update({f"train_{key}": value for key, value in online.items()})
+            row["train_measurement"] = "online_pre_update"
+            row["train_examples"] = online_count
+            online_sums, online_count = {}, 0
         for split, (inputs, targets) in splits.items():
             timing.switch(
                 "train_evaluation" if split == "train" else "validation", epoch
@@ -5778,6 +6021,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 observations[split] = metrics.pop("observation")
                 observations[split]["split"] = split
             row.update({f"{split}_{key}": value for key, value in metrics.items()})
+            if spec.metrics is not None:
+                row[f"{split}_measurement"] = "fixed_weight_evaluation"
+                row[f"{split}_examples"] = dataset_sample_count(inputs) * (
+                    len(inputs.draw_seeds) if isinstance(inputs, DatasetProvider) else 1
+                )
         if observation_spec is not None:
             observations["probes"] = {}
             for name, inputs in resolved_probes.items():
@@ -5807,13 +6055,26 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             row.update(
                 {
                     "observations": observations,
-                    "update": completed_updates + len(history),
+                    "update": completed_updates + executed_updates,
                     "phase": "initial" if epoch == 0 else "completed_epoch",
                 }
             )
             gradient_measurements = GradientMeasurements(
                 observation_spec.gradient_norms
             )
+        if persist_reporting:
+            row.update(
+                {
+                    "phase": "initial" if epoch == 0 else "completed_epoch",
+                    "update": completed_updates + executed_updates,
+                    "examples": examples_consumed,
+                    "epoch_examples": epoch_examples,
+                    "epoch_updates": epoch_updates,
+                }
+            )
+            if epoch > 0:
+                row["dropped_examples"] = dataset_size - sum(batch_sizes)
+        epoch_examples, epoch_updates = 0, 0
         epoch_history.append(row)
         if epoch_selection and (epoch > 0 or selection.include_initial):
             values = selection.scores(selection_metrics)
@@ -5824,7 +6085,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             )
             if selection.better(values, previous):
                 candidate = checkpoint_at(
-                    completed_updates + len(history), None, {"epoch": epoch, "batch": 0}
+                    completed_updates + executed_updates,
+                    None,
+                    {"epoch": epoch, "batch": 0},
                 )
                 selected_checkpoint = replace(
                     candidate,
@@ -5838,20 +6101,57 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                     },
                 )
 
+        if emit and spec.on_epoch_end is not None and epoch > 0:
+            timing.switch("reporting", epoch)
+            epoch_timing = None
+            if timing.enabled:
+                values = timing.epochs.get(epoch, {})
+                epoch_timing = {
+                    "mode": timing.mode,
+                    "total_s": sum(values.values()),
+                    **{
+                        f"{phase}_s": values.get(phase, 0.0)
+                        for phase in (
+                            "training",
+                            "train_evaluation",
+                            "validation",
+                            "checkpoint",
+                            "reporting",
+                        )
+                    },
+                }
+                row["timing"] = epoch_timing
+
+            def split_snapshot(split):
+                values = {
+                    key.removeprefix(f"{split}_"): value
+                    for key, value in row.items()
+                    if key.startswith(f"{split}_")
+                }
+                return FrozenValues(values) if values else None
+
+            report = EpochReport(
+                epoch,
+                dataset_epochs,
+                completed_updates + executed_updates,
+                examples_consumed,
+                split_snapshot("train"),
+                split_snapshot("validation"),
+                FrozenValues(row["observations"]) if "observations" in row else None,
+                FrozenValues(epoch_timing) if epoch_timing is not None else None,
+            )
+            with evaluation_rng():
+                spec.on_epoch_end(report)
+
     scheduled: list[tuple[int, int, torch.Tensor]] = []
     if dataset_mode:
         for epoch in range(data_state["epoch"], dataset_epochs):
-            generator = torch.Generator(device="cpu").manual_seed(spec.seed + epoch)
-            order = (
-                torch.randperm(dataset_size, generator=generator)
-                if shuffle
-                else torch.arange(dataset_size)
+            batches = batching.indices(
+                dataset_size, batch_size, seed=spec.seed + epoch, labels=stratify_labels
             )
             first_batch = data_state["batch"] if epoch == data_state["epoch"] else 0
             for batch in range(first_batch, batches_per_epoch):
-                scheduled.append(
-                    (epoch, batch, order[batch * batch_size : (batch + 1) * batch_size])
-                )
+                scheduled.append((epoch, batch, batches[batch]))
         scheduled = scheduled[:updates]
         if not scheduled:
             raise ValueError(
@@ -5863,7 +6163,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         ]
 
     if dataset_mode and data_state["batch"] == 0:
-        record_epoch(data_state["epoch"])
+        record_epoch(data_state["epoch"], emit=False)
 
     timing.switch("training", scheduled[0][0] + 1 if dataset_mode else None)
     requests = (
@@ -5890,6 +6190,40 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         loss, components = compute_loss(
             forward, signal_values, batch_targets, resolved_inputs.protocol
         )
+        if metric_policy.train == "online":
+            count = len(sample_indices)
+            values = {
+                "loss": loss.detach() * count,
+                **{
+                    f"component/{name}": value.detach() * count
+                    for name, value in components.items()
+                },
+            }
+            with torch.no_grad():
+                for index, objective in enumerate(training.get("objectives", [])):
+                    if X.classification(objective):
+                        prediction = forward.outputs[
+                            output_ids[objective["prediction"]]
+                        ].detach()
+                        target = batch_targets[objective["target"]].long()
+                        values[f"ce/objective[{index}]"] = (
+                            torch.nn.functional.cross_entropy(
+                                prediction, target, reduction="sum"
+                            )
+                        )
+                        values[f"correct/objective[{index}]"] = (
+                            prediction.argmax(-1) == target
+                        ).sum()
+                for name, value in values.items():
+                    value = value.to(
+                        dtype=torch.float64
+                        if torch.device(device).type != "mps"
+                        else torch.float32
+                    )
+                    if name not in online_sums:
+                        online_sums[name] = torch.zeros_like(value)
+                    online_sums[name].add_(value)
+            online_count += count
         loss.backward()
         gradient_names = (
             set(parameter_map)
@@ -5915,35 +6249,48 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             gradient_measurements.add(before_clip, parameter_map)
         optimizer.step()
         model.enforce_constraints()
-        absolute_update = completed_updates + update + 1
+        executed_updates = update + 1
+        examples_consumed += len(sample_indices)
+        epoch_examples += len(sample_indices)
+        epoch_updates += 1
+        absolute_update = completed_updates + executed_updates
         next_data_state: dict[str, Any] = {}
         if dataset_mode:
             next_data_state = {"epoch": epoch, "batch": batch + 1}
             if next_data_state["batch"] == batches_per_epoch:
                 next_data_state = {"epoch": epoch + 1, "batch": 0}
-        loss_value = loss.detach().clone() if epoch_selection else float(loss.detach())
-        history.append(
-            {
-                "update": absolute_update,
-                **(
-                    {"encoding": encoding_metadata}
-                    if isinstance(resolved_inputs, DatasetProvider)
-                    else {}
-                ),
-                **({"epoch": epoch + 1, "batch": batch + 1} if dataset_mode else {}),
-                "loss": loss_value,
-                "components": {
-                    name: value.detach().clone() for name, value in components.items()
-                },
-            }
+        last_loss = loss.detach()
+        loss_value = (
+            float(loss.detach())
+            if update_selection
+            else (loss.detach().clone() if metric_policy.update_history else None)
         )
+        if metric_policy.update_history:
+            history.append(
+                {
+                    "update": absolute_update,
+                    **(
+                        {"encoding": encoding_metadata}
+                        if isinstance(resolved_inputs, DatasetProvider)
+                        else {}
+                    ),
+                    **(
+                        {"epoch": epoch + 1, "batch": batch + 1} if dataset_mode else {}
+                    ),
+                    "loss": loss_value,
+                    "components": {
+                        name: value.detach().clone()
+                        for name, value in components.items()
+                    },
+                }
+            )
         if (
-            (observation_spec is not None or epoch_selection)
+            (observation_spec is not None or epoch_selection or persist_reporting)
             and dataset_mode
             and next_data_state["batch"] == 0
         ):
             record_epoch(next_data_state["epoch"])
-        if not epoch_selection:
+        if update_selection:
             if selected_checkpoint is None or loss_value < float(
                 selected_checkpoint.selected_loss
             ):
@@ -5965,6 +6312,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         final_forward = forward
         if (
             observation_spec is None
+            and not persist_reporting
             and not epoch_selection
             and dataset_mode
             and next_data_state["batch"] == 0
@@ -5994,7 +6342,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     completed_this_call = len(scheduled)
     final_checkpoint = checkpoint_at(
         completed_updates + completed_this_call,
-        history[-1]["loss"],
+        float(last_loss),
         next_data_state,
     )
     final_checkpoint = replace(final_checkpoint, best_checkpoint=selected_checkpoint)

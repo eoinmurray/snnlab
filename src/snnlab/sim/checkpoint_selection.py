@@ -4,6 +4,8 @@ import math
 from dataclasses import asdict, dataclass
 from typing import Literal, Mapping, Sequence
 
+from snnlab.sim.extensions import classification
+
 
 @dataclass(frozen=True)
 class SelectionMetric:
@@ -19,13 +21,21 @@ class CheckpointSelection:
     metric: SelectionMetric = SelectionMetric("cross_entropy")
     tie_break: Sequence[SelectionMetric] = ()
     include_initial: bool = False
-    mode: Literal["epoch_metrics", "legacy_training_batch_loss"] = "epoch_metrics"
+    mode: Literal["epoch_metrics", "legacy_training_batch_loss", "none"] = (
+        "epoch_metrics"
+    )
 
     @classmethod
     def legacy_training_batch_loss(cls):
         return cls(mode="legacy_training_batch_loss")
 
+    @classmethod
+    def disabled(cls):
+        return cls(mode="none")
+
     def to_dict(self):
+        if self.mode == "none":
+            return {"mode": "none"}
         if self.mode == "legacy_training_batch_loss":
             return {
                 "mode": self.mode,
@@ -42,6 +52,8 @@ class CheckpointSelection:
     @classmethod
     def from_dict(cls, value: Mapping):
         value = dict(value)
+        if value == {"mode": "none"}:
+            return cls.disabled()
         if value.get("mode") == "legacy_training_batch_loss":
             legacy = cls.legacy_training_batch_loss()
             if any(legacy.to_dict().get(key) != item for key, item in value.items()):
@@ -57,6 +69,10 @@ class CheckpointSelection:
         return cls(**value)
 
     def validate(self, training, *, epochs, has_validation):
+        if self.mode == "none":
+            if asdict(self) != asdict(self.disabled()):
+                raise ValueError("disabled selection does not accept metric settings")
+            return
         if self.mode == "legacy_training_batch_loss":
             if asdict(self) != asdict(self.legacy_training_batch_loss()):
                 raise ValueError(
@@ -91,9 +107,9 @@ class CheckpointSelection:
                 or not 0 <= index < len(training.get("objectives", ()))
             ):
                 raise ValueError("checkpoint selection objective index is invalid")
-            if training["objectives"][index]["kind"] != "cross_entropy":
+            if not classification(training["objectives"][index]):
                 raise ValueError(
-                    "checkpoint selection requires a cross_entropy objective"
+                    "checkpoint selection requires a classification objective"
                 )
             identity = (metric.kind, index)
             if identity in seen:

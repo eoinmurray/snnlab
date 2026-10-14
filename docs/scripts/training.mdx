@@ -217,3 +217,30 @@ With the supplied seeds, both accuracies rise from 50% at epoch 0 to 100% after 
 The held-out validation curve measures this synthetic task, not generalization to real neural recordings. A gap between training and validation accuracy indicates that training performance alone overstates performance on unseen samples.
 
 Change `EPOCHS`, `INPUT_LEARNING_RATE` or `READOUT_LEARNING_RATE`, rerun, and compare the curves while keeping the data seeds fixed.
+
+## Online metrics, stratified batches and progress
+
+This separate native example uses synthetic 700-channel, 20-class rate inputs with unequal class counts. It demonstrates the measurement and scheduling APIs, rather than SHD classification accuracy. Its default 200-example schedule uses 64/64/72 batches, with every training example included once per epoch.
+
+![Native training readout network](/native-training/network.png)
+
+Download [progress.py](/native-training/progress.py) and [progress_objectives.py](/native-training/progress_objectives.py) into the same directory. The second file makes the optional custom objective importable for saved bundles. Graphviz is needed for the diagram.
+
+```sh
+python progress.py --output /tmp/native-training
+python progress.py --output /tmp/native-weighted --equal-class-loss
+```
+
+The script prints natural class counts and a report after each completed epoch: online train accuracy, held-out validation accuracy, global update/example counts and measured seconds. It saves a partial checkpoint after the first update, resumes the same schedule, then writes final and validation-selected checkpoints plus `results.json`. Online training has no epoch-zero measurement and no extra training evaluation. The optional equal-class objective uses only training counts; unweighted classification CE is retained separately. Synthetic accuracy does not establish performance on real SHD.
+
+For a larger SHD-shaped scheduling demonstration, add `--samples 8156 --batch-size 256 --steps 1000 --device cuda`. This needs an available CUDA device and substantial runtime; sample counts and rates here remain synthetic. The [ExecutionSpec reference](/api/sim/execution-spec#metrics) specifies aggregation, RNG, conflict, timing and resume rules.
+
+```python
+{{PROGRESS_SCRIPT}}
+```
+
+The importable optional loss is:
+
+```python
+{{PROGRESS_OBJECTIVES}}
+```

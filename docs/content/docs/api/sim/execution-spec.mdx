@@ -26,6 +26,9 @@ ExecutionSpec(
     epochs: int = 0,
     batch_size: int | None = None,
     shuffle: bool = False,
+    batching: Batching | None = None,
+    metrics: TrainingMetrics | None = None,
+    on_epoch_end: Callable[[EpochReport], None] | None = None,
     updates: int | None = None,
     save_final_checkpoint: str | Path | None = None,
     save_selected_checkpoint: str | Path | None = None,
@@ -344,7 +347,7 @@ history = result.metrics["epochs"]
 
 `ValidationSpec` is a frozen dataclass with `input_bindings: Sequence[InputBinding] = ()`, `targets: Mapping[str, torch.Tensor] = {}`, `target_bindings: Sequence[TargetArrayBinding] = ()`, `protocol: Mapping[str, Any] = {}`, and `encoding_seeds: Sequence[int] = ()`. Defaults use independent factories. It uses the same [input binding rules](/api/sim/execution-spec#input_bindings) and target validation as training, including dataset snapshots with a `target_id`. Supply `targets` or `target_bindings`, not both; snapshot labels must not be combined with either.
 
-Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can be changed on resume when observations and epoch checkpoint selection are disabled. Audits require the same validation identity; epoch selection also verifies the resolved evaluation inputs and labels by content digest.
+Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can be changed on resume when observations, retained reporting policies and epoch checkpoint selection are disabled. Audits require the same validation identity; epoch selection also verifies the resolved evaluation inputs and labels by content digest.
 
 For stochastic dataset validation, `encoding_seeds=(101, 103)` requests explicit repeatable draw sets; omission uses the encoder seed for one fixed draw. Each draw evaluates all selected samples in bounded batches, and loss/components/accuracies are sample-weighted across all draws. Epoch rows report `validation_encoding_draws`; observations count each draw's presentations. Encoding seeds require a stochastic dataset encoder, must be distinct non-negative integers, and are bound into validation/selection/audit identity.
 
@@ -411,6 +414,73 @@ A resumed dataset schedule starts at the checkpoint's next coordinates and is tr
 Dataset bindings automatically use one epoch when `epochs=0` and a maximum default batch size of 32 when `batch_size=None`.
 
 The previous training keys in `options` are no longer accepted by graph `train`; move them to the constructor fields. Inference-specific mappings remain under `options`.
+
+### metrics
+
+Import `TrainingMetrics` from `snnlab.sim.execution`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it preserves full train/validation evaluation at initialization and every completed epoch, and update history.
+
+```python
+metrics=TrainingMetrics(
+    train="online", validation="epoch",
+    initial=("validation",), update_history=False,
+)
+```
+
+| Field | Values and semantics |
+| --- | --- |
+| `train` | `"evaluate"` (default): full training split at fixed current weights. `"online"`: reuse each pre-update minibatch's scores. `"none"`: no training metrics. |
+| `validation` | `"epoch"` (default): evaluate supplied held-out data after each completed epoch. `"none"`: no validation evaluation. |
+| `initial` | Unique split names; default `("train", "validation")`. Requesting initial train requires `train="evaluate"`; requesting initial validation requires `validation="epoch"`. An absent ValidationSpec produces absent validation metrics. |
+| `update_history` | Boolean, default `True`. `False` returns an empty update history and omits per-update loss/component retention. |
+
+Online metrics accumulate detached objective/regularizer loss sums, unweighted classification cross-entropy sums and correct counts on-device. They transfer at completed epochs or explicitly saved checkpoint boundaries, without another training forward or retained autograd graph. Loss is the example-weighted mean of minibatch mean objectives (including objective weights and regularizers). For custom classification losses this is the custom objective's minibatch aggregation, which may differ from a full-dataset class-normalized objective. Reported cross-entropy always uses ordinary unweighted per-example CE, separately from that custom objective. Accuracy weights actual examples, including unequal tails.
+
+Initial online training metrics are absent. Rows label online results `train_measurement="online_pre_update"` and evaluated results `*_measurement="fixed_weight_evaluation"`, with presentation counts in `*_examples`. Online values describe changing weights throughout an epoch.
+
+`update_history=False` also disables **implicit** historical update-loss checkpoint selection. Set an explicit validation `CheckpointSelection()` to retain a winner without update loss reads, or explicitly request `CheckpointSelection.legacy_training_batch_loss()` to preserve update selection and its host scalar decisions. `CheckpointSelection.disabled()` disables selection independently of history. Saving a selected checkpoint requires an enabled selection policy. Selection by epoch metrics requires fixed-weight evaluation of its split; online train metrics cannot silently stand in for evaluated train metrics. `include_initial=True` also requires that initial split measurement. Split activity observations require their normal evaluations; parameter/gradient observations and separately declared probes remain available.
+
+Explicit metrics, batching or callbacks retain contiguous available epoch history and partial online sums in authenticated training checkpoint schema version 5. Resume requires the same measurement policy and protocol identities, restores partial sums and next coordinates, and emits only newly completed epochs. Explicit metric or batching policies additionally bind input/target contents; callback-only reporting uses existing protocol metadata without transferring input tensors. Older checkpoint versions still load under their original contracts. Changing measurement or schedule policy rejects resume.
+
+### batching
+
+Import `Batching` from `snnlab.sim.execution`. Omitting it preserves the existing `shuffle` flag and kept tail.
+
+```python
+batching=Batching(
+    order="stratified", stratify_by="class",
+    remainder="merge_small", min_batch_size=20,
+)
+```
+
+`order` is `"sequential"`, `"shuffle"` or `"stratified"`. Sequential preserves input order; shuffle retains the historical CPU `randperm` path. Stratification requires a named training target with one nonnegative integer label per example. Only represented labels form queues; missing classes and scarce classes never create samples. Each sorted class queue is shuffled with a private CPU generator seeded by `ExecutionSpec.seed + zero_based_epoch`. Its examples get fractional positions `(j + 0.5) / class_count`, where `j` is the zero-based queue index. Queues merge by increasing position; a seeded permutation supplies random tie order before stable sorting. The generator is separate from training/encoding RNG streams. Natural unequal class counts remain unchanged; no validation labels are used.
+
+With explicit batching, `shuffle=False` is neutral; `shuffle=True` is allowed only with `order="shuffle"`. Contradictory settings raise an error. `stratify_by` requires stratified order.
+
+| Remainder | Coverage |
+| --- | --- |
+| `"keep"` (default) | Retain every example once, including a smaller final batch. |
+| `"drop"` | Explicitly omit the short final batch; fail if that would drop the entire dataset. |
+| `"merge_small"` | Merge a tail strictly smaller than `min_batch_size` into the preceding batch. With no preceding batch, keep the small dataset. |
+
+`min_batch_size` is required only for `merge_small`, and must be a positive integer no larger than `batch_size`. It is a tail threshold, not a class quota. For 200 examples, batch size 64 and threshold 20, batch sizes are 64/64/72. A merged final batch may exceed the nominal size. The policy does not impose any objective weighting.
+
+Resolved schedule metadata lives at `result.metrics["execution_protocol"]["training_iteration"]["batching"]`, including algorithm, label digest, actual batch sizes, examples/batches per epoch and dropped examples. Epoch rows record actual `epoch_examples`, `epoch_updates`, `dropped_examples`, cumulative `examples` and absolute `update`. Encoding requests use the actual ordered indices and batch sizes. Checkpoint coordinates, update limits and epoch boundaries use the resolved schedule.
+
+### on_epoch_end
+
+Optional callable receiving an immutable `EpochReport`, once after each **newly completed** epoch's requested measurements and observations. Epoch-zero evaluation remains in history and does not invoke the hook. The hook receives no model or optimizer references; merely enabling it adds no evaluations or unrequested observations.
+
+```python
+from snnlab.sim.execution import EpochReport
+
+def report_epoch(report: EpochReport) -> None:
+    print(report.epoch, report.total_epochs, report.train.accuracy,
+          report.validation.accuracy, flush=True)
+```
+
+`report.epoch`, `total_epochs`, `updates` and `examples` are global counters. `train`, `validation`, `observations` and `timing` are recursively immutable host mappings supporting both key and attribute access. Unavailable split metrics, observations or disabled timing are `None`. Split values equal the corresponding retained epoch row. Python, NumPy, CPU and available accelerator RNG states are preserved around the callback, including on failure. Exceptions propagate; optimizer updates are not automatically retried.
+
+With `training_timing=True`, `report.timing` contains wall seconds, `mode` and `total_s` through the report snapshot. It uses the configured synchronized/enqueue interpretation. It excludes the callback's own duration; the complete call's existing `reporting_s` includes callback overhead. After mid-epoch resume, timing describes work in this invocation, while metric sums and counters cover the full epoch. No guaranteed ETA is calculated. See the [runnable native example](/training#online-metrics-stratified-batches-and-progress).
 
 ## Randomness and device
 

@@ -18,3 +18,5 @@ temp/
 /examples/pytorch/metrics.json
 
 examples/customisation/network.bundle/
+
+/examples/native-training/artifacts/

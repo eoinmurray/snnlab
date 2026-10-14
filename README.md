@@ -24,6 +24,8 @@ The simulator executes authored graph bundles. Legacy Config/COBANet execution,
 flag-built networks and config replay have been removed; see the
 [CLI reference](docs/content/docs/api/sim/cli.mdx) for current inputs and controls.
 
+Native training also supports online minibatch metrics, validation-only epoch evaluation, stratified schedules with configurable tails, and immutable epoch progress callbacks. See `examples/native-training/progress.py` for partial checkpoint resume and final/selected checkpoints, and the [execution policies](docs/content/docs/api/sim/execution-spec.mdx) for measurement and RNG contracts.
+
 ## Simulator commands
 
 ```sh

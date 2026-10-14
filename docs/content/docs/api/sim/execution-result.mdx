@@ -42,14 +42,16 @@ In dataset iteration mode (`epochs > 0`), `train` evaluates the complete trainin
 | `train_loss`, `validation_loss` | Sample-weighted mean total loss, including weighted objectives and regularizers. Validation fields appear only when validation data is supplied. |
 | `train_accuracy`, `validation_accuracy` | Fraction correctly classified, from 0 to 1. Present when the recipe has exactly one classification objective (cross entropy or a custom objective registered with `classification=True`). |
 | `train_components`, `validation_components` | Sample-weighted means by `objective[i]` and `regularizer[i]`. |
-| `train_cross_entropies`, `validation_cross_entropies` | Unweighted cross-entropy by built-in `objective[i]`, excluding regularizers. |
+| `train_cross_entropies`, `validation_cross_entropies` | Unweighted cross-entropy by classification `objective[i]`, including registered custom classification objectives, excluding regularizers. |
 | `train_accuracies`, `validation_accuracies` | Accuracy by `objective[i]`, including recipes with multiple objectives. |
 
 Each evaluation uses fixed weights and minibatches bounded by `batch_size`. The final smaller batch is weighted by its actual sample count. Training samples are not shuffled during evaluation. `result.metrics["updates"]` retains the separate per-update losses measured before each optimizer step.
 
-Resuming at an epoch boundary evaluates that starting boundary and subsequent completed epochs. Resuming partway through an epoch reports only subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. With observations disabled, the returned history covers this invocation and previous history is not stored in the checkpoint. With observations enabled, history is retained and resumed as described below. Full-batch update mode without positive epochs returns an empty epoch history.
+Resuming at an epoch boundary evaluates that starting boundary and subsequent completed epochs. Resuming partway through an epoch reports only subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. With observations and explicit reporting policies disabled, the returned history covers this invocation and previous history is not stored in the checkpoint. With observations enabled, history is retained and resumed as described below. Full-batch update mode without positive epochs returns an empty epoch history.
 
 Epoch evaluations do not replace the final update's returned outputs or diagnostics. Explicit `checkpoint_selection` can select these evaluated states; otherwise selection retains historical update-loss behavior. Validation does not perform early stopping. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
+
+Explicit [TrainingMetrics, Batching and epoch callbacks](/api/sim/execution-spec#metrics) extend these defaults. Online train metrics reuse pre-update scores; missing split fields are absent, not zero. `*_measurement` distinguishes online from fixed-weight measurements; `*_examples` counts contributing presentations. With these reporting policies enabled, `phase`, absolute `update`, cumulative `examples`, actual `epoch_updates`/`epoch_examples`, and `dropped_examples` accompany available metrics. Completed history and partial online accumulators survive checkpoint resume without duplicate rows. `update_history=False` returns `updates=[]` independently of explicit checkpoint selection. Callback timing snapshots appear in the corresponding row's `timing` mapping when enabled, while full call timing includes callback overhead.
 
 ## Checkpoint selection
 

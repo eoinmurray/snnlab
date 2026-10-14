@@ -14,6 +14,8 @@ function section(start: string, end: string, indent = true) {
 }
 const replacements: Record<string, string> = {
   SCRIPT: script.trimEnd(),
+  PROGRESS_SCRIPT: readFileSync(new URL("../../examples/native-training/progress.py", import.meta.url), "utf8").trimEnd(),
+  PROGRESS_OBJECTIVES: readFileSync(new URL("../../examples/native-training/progress_objectives.py", import.meta.url), "utf8").trimEnd(),
   DATASET: `def make_dataset${section('def make_dataset', '\ndef main', false)}`,
   SETUP: section('# 1. Create the network.', '# 2. Define inputs'),
   INPUTS: section('# 2. Define inputs, labelled datasets and bindings.', '# 3. Define the excitatory'),
@@ -32,4 +34,10 @@ writeFileSync(new URL('../content/docs/training.mdx', import.meta.url),
 mkdirSync(publicDir, { recursive: true });
 for (const name of ['training.py', 'training.png', 'network.png']) {
   copyFileSync(new URL(name, example), new URL(name, publicDir));
+}
+
+const progressDir = new URL("../public/native-training/", import.meta.url);
+mkdirSync(progressDir, { recursive: true });
+for (const name of ["progress.py", "progress_objectives.py", "network.png"]) {
+  copyFileSync(new URL(`../../examples/native-training/${name}`, import.meta.url), new URL(name, progressDir));
 }

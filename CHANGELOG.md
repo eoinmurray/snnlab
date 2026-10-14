@@ -6,6 +6,19 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-14
+
+### Added
+
+1. Typed execution measurement policies support pre-update online training metrics, validation-only evaluation, independently disabled update history and explicit disabled checkpoint selection. Classification metrics preserve example weighting and report custom objective loss separately from ordinary CE. Default measurement and selection behaviour is retained.
+2. Typed sequential, shuffled and class-stratified schedules support kept, dropped and merged short tails. Natural class counts remain unchanged; actual batch sizes, consumption, drops and schedule provenance are recorded and used for epoch/checkpoint coordinates.
+3. Immutable epoch callbacks reuse finalized host measurements and named observations, preserve reporting RNG streams, propagate exceptions and expose optional wall timing. New reporting policies use authenticated checkpoint schema 5 to retain available histories and partial online sums; older checkpoint schemas remain readable. Added a runnable synthetic SHD-shaped native example with partial resume, progress, final/selected checkpoints and optional importable equal-class objective.
+
+
+### Validation
+
+1. The broad local suite passed 954 tests (23 accelerator skips). The final policy suite passed 59 checks (two CUDA skips), including forward reuse, sample coverage, objective/CE aggregation, exact partial resume/prefetch, optimizer/RNG non-interference, immutable callbacks and unchanged callback transfer counts. Lint, documentation type checks, root and GitHub Pages builds, source/wheel builds and a wheel-based custom-loss/resume example passed. CUDA execution was unavailable locally.
+
 ## [0.13.0] - 2026-10-14
 
 ### Added
