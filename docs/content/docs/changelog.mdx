@@ -9,6 +9,20 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-14
+
+### Changed
+
+1. Training snapshots batch-loss selection candidates only when they improve. Internal training/evaluation forwards omit unused parameter snapshots, gradients are copied only for the final result or requested observations, and component/evaluation reporting batches host reads. Final and selected checkpoints, optimizer/RNG resume, data order and pre-clipping gradient reporting retain their contracts. Batch-loss selection and requested gradient-norm observations still require host decisions/measurements. Resolves [14](https://github.com/eoinmurray/snnlab/issues/14) and [15](https://github.com/eoinmurray/snnlab/issues/15).
+2. Added opt-in `compile_mode` to graph executors, execution requests and the CLI. Prepared built-in neuron/readout kernels support `torch.compile`; projection products, graph scheduling and custom callbacks remain eager. Custom surrogates retain eager neuron dispatch. Compilation warmup, new-shape variants and fused floating-point differences must be assessed for each workload. Resolves [17](https://github.com/eoinmurray/snnlab/issues/17).
+3. Added bounded `dataset_prefetch` for built-in CPU dataset encoders in training, evaluation and inference, with CUDA pinned transfers, event/stream ownership and caller-thread fallback for custom encoders. Existing CPU random streams, batch order, metadata and resumed updates are preserved. Default 0 retains synchronous preparation. Resolves [16](https://github.com/eoinmurray/snnlab/issues/16).
+4. Added `RecordingSpec.block_steps` and recording JSON support for bounded timestep blocks. Event extraction runs on transferred CPU blocks; partial blocks flush at call completion. Default 1 preserves sink granularity and historical retention identities. Larger blocks opt into grouped callbacks and higher bounded device memory use. Resolves [18](https://github.com/eoinmurray/snnlab/issues/18).
+5. Inference `timing_mode="synchronized"` now reports completed input-resolution/execution time as `simulate_s`, excluding build/checkpoint loading. Opt-in `"enqueue"` omits timing fences and reports `simulate_enqueue_s`. Timing mode/scope are explicit; `peak_python_bytes` remains Python-only allocation memory. Resolves [19](https://github.com/eoinmurray/snnlab/issues/19).
+
+### Validation
+
+1. Added CPU and CUDA checks for all six built-in spiking models, compiled outputs/gradients/optimizer updates, recurrent delays and continuation, deterministic prefetch/resume, selected dense/event recording blocks, discarded checkpoint candidates and timing boundaries. Added reproducible CUDA and Modal benchmark scripts, a baseline comparison against 0.10.1, and recorded target-GPU results under `benchmarks/`. Warm throughput, cold compiler cost and allocated memory are reported separately; reduced copy/synchronisation counts do not imply an eager full-training speedup.
+
 ## [0.10.1] - 2026-10-14
 
 ### Changed

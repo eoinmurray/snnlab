@@ -266,3 +266,8 @@ The sink directory must be empty. Omit `directory` to retain selections in `reco
 ## Custom extension validation
 
 `--extension-validation structural` is the default. Use `--extension-validation strict` while developing custom callbacks or investigating numerical failures. Structural mode retains tensor contracts while skipping custom neuron/synapse step value checks and custom surrogate derivative finite checks. It avoids the host barriers from those checks on CUDA, but invalid values can propagate silently. Initialization and restored state retain strict checks. See [ExecutionSpec](/api/sim/execution-spec) for the policy's scope.
+
+
+## GPU performance controls
+
+`--compile-mode default` opts into compiled built-in neuron/readout kernels. The default is eager execution. `--dataset-prefetch N` enables bounded encoding/transfer lookahead (0 by default, maximum 8). `--timing-mode synchronized|enqueue` selects completed execution timing or host enqueue timing; synchronized is the default. Recording JSON accepts `"block_steps": 32` to buffer samples before transfer, with 1 preserving existing sink granularity. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls) for compatibility and measurement limits.

@@ -98,10 +98,11 @@ class RecordingSpec:
     window: MeasurementWindow | None = None
     sink: Callable[[RecordingBlock], None] | None = None
     sink_id: str | None = None
+    block_steps: int = 1
 
     @classmethod
     def from_dict(cls, value):
-        if set(value) - {"signals", "window", "directory"}:
+        if set(value) - {"signals", "window", "directory", "block_steps"}:
             raise ValueError("invalid recording fields")
         rows = tuple(SignalRecording(**row) for row in value.get("signals", ()))
         sink = NPZRecordingSink(value["directory"]) if "directory" in value else None
@@ -112,6 +113,7 @@ class RecordingSpec:
             else None,
             sink,
             sink.identity if sink else None,
+            value.get("block_steps", 1),
         )
 
 
@@ -120,6 +122,8 @@ def recording_identity(recording, *, axes):
         return None
     if not isinstance(recording, RecordingSpec):
         raise TypeError("recording must be RecordingSpec")
+    if type(recording.block_steps) is not int or recording.block_steps < 1:
+        raise ValueError("recording block_steps must be a positive integer")
     if recording.window:
         recording.window.validate()
     if recording.sink is not None and (
@@ -166,6 +170,9 @@ def recording_identity(recording, *, axes):
         ],
         "window": asdict(recording.window) if recording.window else None,
         "sink_id": recording.sink_id,
+        **(
+            {"block_steps": recording.block_steps} if recording.block_steps != 1 else {}
+        ),
     }
 
 
@@ -226,6 +233,7 @@ class Recorder:
         self.start, self.end, self.dt_ms = start, start + steps, dt_ms
         self.batch_offset = batch_offset
         self.blocks = {}
+        self.pending = {}
         self.rows = {}
         if spec:
             self.rows = {row.signal: row for row in spec.signals}
@@ -247,52 +255,64 @@ class Recorder:
                 tuple(range(value.shape[1])) if row.cells is None else tuple(row.cells)
             )
             value = value[:, list(cells)]
-            if row.kind == "spike_events":
-                indices = value.nonzero()
-                original = torch.tensor(cells, device=value.device, dtype=torch.int64)
-                payload = torch.stack(
-                    (
-                        torch.full_like(indices[:, 0], step),
-                        indices[:, 0] + self.batch_offset,
-                        original[indices[:, 1]],
-                    ),
-                    dim=1,
-                ).cpu()
-            else:
-                payload = value.unsqueeze(0).cpu().clone()
-            if self.spec.sink:
-                self.send(
-                    RecordingBlock(
-                        name,
-                        row.kind,
-                        payload,
-                        step,
-                        step + 1,
-                        self.dt_ms,
-                        self.batch_offset,
-                        cells,
-                        self.units.get(name),
-                    )
-                )
-            else:
-                self.blocks.setdefault(name, []).append(payload)
+            self.queue(name, row.kind, value, step, cells)
 
-    def output_step(self, name, value, step):
-        if self.spec and self.spec.sink:
+    def queue(self, name, kind, value, step, cells=None):
+        # Snapshots are necessary because later steps and user sinks may mutate
+        # their inputs. Event extraction happens on a CPU block, outside the loop.
+        self.pending.setdefault(name, []).append(
+            (step, value.detach().clone(), kind, cells)
+        )
+        if len(self.pending[name]) >= self.spec.block_steps:
+            self.flush(name)
+
+    def flush(self, name):
+        rows = self.pending.pop(name, [])
+        if not rows:
+            return
+        start, _, kind, cells = rows[0]
+        end = rows[-1][0] + 1
+        host = torch.stack([value for _, value, _, _ in rows]).cpu()
+        if kind == "spike_events":
+            indices = host.nonzero()
+            original = torch.tensor(cells, dtype=torch.int64)
+            payload = torch.stack(
+                (
+                    indices[:, 0] + start,
+                    indices[:, 1] + self.batch_offset,
+                    original[indices[:, 2]],
+                ),
+                dim=1,
+            )
+        else:
+            payload = host
+        if self.spec.sink:
             self.send(
                 RecordingBlock(
                     name,
-                    "output",
-                    value.detach().unsqueeze(0).cpu().clone(),
-                    step,
-                    step + 1,
+                    kind,
+                    payload,
+                    start,
+                    end,
                     self.dt_ms,
                     self.batch_offset,
-                    unit=self.units.get(name),
+                    cells,
+                    self.units.get(name),
                 )
             )
+        else:
+            self.blocks.setdefault(name, []).append(payload)
+
+    def flush_all(self):
+        for name in tuple(self.pending):
+            self.flush(name)
+
+    def output_step(self, name, value, step):
+        if self.spec and self.spec.sink:
+            self.queue(name, "output", value, step)
 
     def output(self, name, value, measurement=None):
+        self.flush_all()
         if self.spec and self.spec.sink:
             self.send(
                 RecordingBlock(
@@ -313,6 +333,7 @@ class Recorder:
             )
 
     def finish(self, batch_size):
+        self.flush_all()
         return (
             {
                 name: torch.cat(self.blocks[name])

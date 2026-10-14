@@ -118,15 +118,17 @@ class ActivityMeasurements:
 
     def add(self, counts):
         for name, value in counts.items():
-            self.counts[name] = (
-                self.counts.get(name, torch.zeros(value.shape[1], dtype=torch.float64))
-                + value.sum(dim=0).double().cpu()
-            )
-            self.silent[name] = self.silent.get(name, 0) + int(
-                (value.sum(dim=1) == 0).sum()
-            )
+            self.counts[name] = self.counts.get(
+                name,
+                torch.zeros(value.shape[1], dtype=torch.int64, device=value.device),
+            ) + value.sum(dim=0)
+            self.silent[name] = self.silent.get(name, 0) + (value.sum(dim=1) == 0).sum()
 
     def finish(self):
+        self.counts = {
+            name: value.cpu().double() for name, value in self.counts.items()
+        }
+        self.silent = {name: int(value) for name, value in self.silent.items()}
         rates = {
             name: float(self.counts[name].sum())
             / (self.sample_count * self.populations[name]["size"] * self.duration_s)

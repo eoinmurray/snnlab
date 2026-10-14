@@ -97,3 +97,22 @@ python -m snnlab.sim sim --help
 
 The installed `snnsim` command provides the same CLI. See the
 [CLI reference](../../../docs/content/docs/api/sim/cli.mdx).
+
+## GPU performance controls
+
+`ExecutionSpec` and `GraphExecutor` accept `compile_mode=None` (eager),
+`"default"`. Built-in neuron/readout kernels compile;
+Python scheduling and custom callbacks remain eager. Compiler warmup and
+floating-point fusion must be assessed for the intended workload.
+
+`ExecutionSpec(dataset_prefetch=2)` overlaps built-in CPU dataset encoding and
+CUDA transfers through a bounded queue; the default is 0. CPU seeds and batch
+order remain unchanged. Custom encoders retain caller-thread execution.
+`RecordingSpec(block_steps=32)` groups selected samples before CPU transfers;
+the default is 1 for existing sinks. Partial blocks flush at call completion.
+
+Inference defaults to `timing_mode="synchronized"`, reporting completed
+input-resolution/execution time as `simulate_s`. `"enqueue"` reports host time
+as `simulate_enqueue_s` and omits explicit fences. `peak_python_bytes` is Python
+memory only. See the [performance reference](../../../docs/content/docs/api/sim/execution-spec.mdx)
+and `benchmarks/gpu_efficiency.py` for verification and measured limitations.

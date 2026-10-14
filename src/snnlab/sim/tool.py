@@ -44,6 +44,24 @@ def _add_common_arguments(parser):
         help="Graph execution device: auto, cpu, cuda, cuda:N, or mps (default: auto).",
     )
     parser.add_argument(
+        "--compile-mode",
+        choices=("default",),
+        default=None,
+        help="Opt-in torch.compile for built-in neuron kernels; callbacks remain eager.",
+    )
+    parser.add_argument(
+        "--dataset-prefetch",
+        type=int,
+        default=0,
+        help="Encoded batch lookahead (0 disables, maximum 8); CUDA uses pinned transfers.",
+    )
+    parser.add_argument(
+        "--timing-mode",
+        choices=("synchronized", "enqueue"),
+        default="synchronized",
+        help="Inference timing boundaries; enqueue mode reports simulate_enqueue_s.",
+    )
+    parser.add_argument(
         "--extension-validation",
         choices=("strict", "structural"),
         default="structural",

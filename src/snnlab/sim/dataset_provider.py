@@ -8,6 +8,8 @@ import json
 import shutil
 import tempfile
 import zipfile
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import replace
 from numbers import Integral
@@ -212,6 +214,15 @@ class DatasetProvider:
         )
 
     def batch(self, indices, *, phase="evaluation", epoch=0, draw_seed=None):
+        result, metadata = self._batch(
+            indices, phase=phase, epoch=epoch, draw_seed=draw_seed
+        )
+        self.last_batch = metadata
+        return result
+
+    def _batch(
+        self, indices, *, phase="evaluation", epoch=0, draw_seed=None, device=None
+    ):
         from snnlab.sim.execution import resolve_dataset_snapshot_binding
 
         local = np.asarray(indices, dtype=np.int64)
@@ -232,7 +243,7 @@ class DatasetProvider:
             resolved, _ = resolve_dataset_snapshot_binding(
                 self.graph,
                 self.binding,
-                device=self.device,
+                device=self.device if device is None else device,
                 execution_seed=self.execution_seed,
                 _snapshot=self.snapshot,
                 _indices=absolute,
@@ -244,7 +255,7 @@ class DatasetProvider:
             raise ValueError(
                 "dataset encoder must preserve presentation duration across batches"
             )
-        self.last_batch = {
+        metadata = {
             "phase": phase,
             "epoch": epoch,
             "sample_indices": absolute.tolist(),
@@ -253,7 +264,7 @@ class DatasetProvider:
             "spike_encoding_seed": spike_seed,
             "encoder": resolved.protocol["dataset_binding"]["encoder"],
         }
-        return resolved
+        return resolved, metadata
 
     def with_protocol(self, protocol):
         self.protocol = protocol
@@ -287,6 +298,102 @@ def batch_tensors(inputs, indices, *, phase="evaluation", epoch=0, draw_seed=Non
     }
 
 
+def iter_batches(inputs, requests, *, prefetch=0):
+    """Yield (request, tensors, encoding metadata), with bounded CPU/CUDA lookahead.
+
+    Requests are (indices, phase, epoch, draw_seed). Custom encoders stay on the
+    caller thread because callbacks may consume process-global RNG state.
+    """
+    _integer("prefetch", prefetch)
+    if (
+        not isinstance(inputs, DatasetProvider)
+        or not prefetch
+        or inputs.binding.encoder.kind == "custom"
+    ):
+        for request in requests:
+            indices, phase, epoch, draw_seed = request
+            tensors = batch_tensors(
+                inputs, indices, phase=phase, epoch=epoch, draw_seed=draw_seed
+            )
+            yield (
+                request,
+                tensors,
+                copy.deepcopy(inputs.last_batch)
+                if isinstance(inputs, DatasetProvider)
+                else None,
+            )
+        return
+
+    device = torch.device(inputs.device)
+    stream = torch.cuda.Stream(device=device) if device.type == "cuda" else None
+    pending = deque()
+    staged = deque()
+    requests = iter(requests)
+
+    def prepare(request):
+        indices, phase, epoch, draw_seed = request
+        resolved, metadata = inputs._batch(
+            indices, phase=phase, epoch=epoch, draw_seed=draw_seed, device="cpu"
+        )
+        tensors = resolved.tensors
+        if stream is not None:
+            tensors = {name: value.pin_memory() for name, value in tensors.items()}
+        return tensors, metadata
+
+    def submit(pool):
+        try:
+            request = next(requests)
+        except StopIteration:
+            return False
+        pending.append((request, pool.submit(prepare, request)))
+        return True
+
+    def stage(pool):
+        request, future = pending.popleft()
+        host, metadata = future.result()
+        if stream is not None:
+            with torch.cuda.stream(stream):
+                tensors = {
+                    name: value.to(device, non_blocking=True)
+                    for name, value in host.items()
+                }
+                event = torch.cuda.Event()
+                event.record(stream)
+        else:
+            tensors = {name: value.to(device) for name, value in host.items()}
+            event = None
+        staged.append((request, tensors, metadata, host, event))
+        submit(pool)
+
+    # One worker preserves deterministic preparation order; queue length bounds
+    # the number of encoded CPU and device batches owned by this iterator.
+    with ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="snnlab-encoding"
+    ) as pool:
+        try:
+            for _ in range(prefetch):
+                if not submit(pool):
+                    break
+            while pending or staged:
+                while pending and len(staged) < prefetch:
+                    stage(pool)
+                request, tensors, metadata, host, event = staged.popleft()
+                if event is not None:
+                    current = torch.cuda.current_stream(device)
+                    current.wait_event(event)
+                    for tensor in tensors.values():
+                        tensor.record_stream(current)
+                yield request, tensors, metadata
+                # Pinned source lifetime must extend through the asynchronous copy.
+                if event is not None:
+                    event.synchronize()
+        finally:
+            for _, future in pending:
+                future.cancel()
+            if stream is not None:
+                stream.synchronize()
+
+
 def simulate_dataset(
     model,
     provider,
@@ -298,6 +405,7 @@ def simulate_dataset(
     measurement=None,
     recording=None,
     retain_outputs=True,
+    prefetch=0,
 ):
     from snnlab.sim.execution import DenseSpikeReplay, ReplaySpikes, SparseSpikeReplay
     from snnlab.sim.interventions import prepare_interventions
@@ -324,8 +432,20 @@ def simulate_dataset(
     )
     batches = []
     result = None
-    for start in range(0, provider.sample_count, batch_size):
-        end = min(start + batch_size, provider.sample_count)
+    requests = (
+        (
+            torch.arange(start, min(start + batch_size, provider.sample_count)),
+            "inference",
+            0,
+            None,
+        )
+        for start in range(0, provider.sample_count, batch_size)
+    )
+    for request, encoded, metadata in iter_batches(
+        provider, requests, prefetch=prefetch
+    ):
+        indices = request[0]
+        start, end = int(indices[0]), int(indices[-1]) + 1
         active = []
         for intervention in interventions:
             if isinstance(intervention, ReplaySpikes):
@@ -355,9 +475,8 @@ def simulate_dataset(
                 active.append(replace(intervention, replay=replay))
             else:
                 active.append(intervention)
-        encoded = provider.batch(torch.arange(start, end), phase="inference")
         result = model(
-            encoded.tensors,
+            encoded,
             diagnostics=diagnostics,
             interventions=tuple(active),
             runtime_state=runtime_state,
@@ -366,7 +485,7 @@ def simulate_dataset(
             retain_outputs=retain_outputs,
             batch_offset=start,
         )
-        batches.append(copy.deepcopy(provider.last_batch))
+        batches.append(metadata)
         for target, values in (
             (collected_outputs, result.outputs),
             (collected_diagnostics, result.diagnostics),
