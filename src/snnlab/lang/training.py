@@ -80,9 +80,17 @@ def AdamW(**config: Any) -> Optimizer:
     return Optimizer("adamw", config)
 
 
-def FastSigmoid(*, slope: float = 1.0) -> Spec:
-    """Fast-sigmoid surrogate used by the collection's spike backward pass."""
-    return Spec("fast_sigmoid", {"slope": slope})
+def FastSigmoid(
+    *, slope: float = 1.0, gradient_scale: float = 1.0, threshold_inclusive: bool = True
+) -> Spec:
+    """Hard spikes with derivative scale * slope / (1 + slope * abs(v))**2."""
+    config = {"slope": slope}
+    # Preserve the serialized identity of existing recipes using defaults.
+    if gradient_scale != 1.0 or isinstance(gradient_scale, bool):
+        config["gradient_scale"] = gradient_scale
+    if threshold_inclusive is not True:
+        config["threshold_inclusive"] = threshold_inclusive
+    return Spec("fast_sigmoid", config)
 
 
 def CustomObjective(

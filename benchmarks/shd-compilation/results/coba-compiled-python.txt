@@ -1,0 +1,51 @@
+         127980 function calls (127586 primitive calls) in 0.267 seconds
+
+   Ordered by: internal time
+   List reduced from 336 to 45 due to restriction <45>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.066    0.066    0.117    0.117 {method 'run_backward' of 'torch._C._EngineBase' objects}
+        1    0.051    0.051    0.153    0.153 /workspace/src/snnlab/sim/execution.py:3441(_forward)
+      899    0.011    0.000    0.011    0.000 {built-in method torch.zeros_like}
+      384    0.011    0.000    0.087    0.000 /usr/local/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py:904(compile_wrapper)
+      896    0.011    0.000    0.011    0.000 {_launch_kernel}
+     2301    0.006    0.000    0.006    0.000 {built-in method torch._C._dynamo.guards._empty_strided_cuda}
+      384    0.006    0.000    0.048    0.000 {built-in method apply}
+      384    0.005    0.000    0.042    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py:2116(forward)
+      896    0.005    0.000    0.025    0.000 /usr/local/lib/python3.12/site-packages/torch/_inductor/runtime/triton_heuristics.py:1338(run)
+      384    0.005    0.000    0.015    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py:1604(_backward_prologue_functional)
+ 1152/768    0.004    0.000    0.082    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/utils.py:124(call_func_at_runtime_with_args)
+     1538    0.004    0.000    0.094    0.000 /usr/local/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py:1165(_fn)
+      384    0.003    0.000    0.061    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py:313(runtime_wrapper)
+      896    0.003    0.000    0.014    0.000 /usr/local/lib/python3.12/site-packages/torch/_inductor/runtime/static_cuda_launcher.py:229(run)
+     3200    0.003    0.000    0.003    0.000 {built-in method torch._C._dynamo.guards.assert_size_stride}
+    14810    0.002    0.000    0.002    0.000 {built-in method builtins.isinstance}
+      768    0.002    0.000    0.055    0.000 /usr/local/lib/python3.12/site-packages/torch/_inductor/output_code.py:611(__call__)
+      640    0.002    0.000    0.005    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py:1968(process_runtime_tangent)
+      384    0.002    0.000    0.032    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py:2366(_backward_impl)
+      127    0.002    0.000    0.008    0.000 /tmp/torchinductor_root/az/cazwh6d75mxuxj4qnjn64usdubny4w4hq7drpf4avdg35v4gvof2.py:265(call)
+      384    0.002    0.000    0.050    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py:2274(backward)
+      768    0.002    0.000    0.003    0.000 /usr/local/lib/python3.12/site-packages/torch/_inductor/utils.py:3244(copy_misaligned_inputs)
+     7688    0.002    0.000    0.002    0.000 {built-in method torch._C._dynamo.eval_frame.set_eval_frame}
+     9607    0.001    0.000    0.001    0.000 {built-in method builtins.len}
+      768    0.001    0.000    0.052    0.000 /usr/local/lib/python3.12/site-packages/torch/_inductor/utils.py:3216(run)
+      384    0.001    0.000    0.052    0.000 /usr/local/lib/python3.12/site-packages/torch/autograd/function.py:567(apply)
+     3609    0.001    0.000    0.001    0.000 {built-in method builtins.getattr}
+      384    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/site-packages/torch/utils/_config_module.py:734(change)
+      384    0.001    0.000    0.051    0.000 /usr/local/lib/python3.12/site-packages/torch/autograd/function.py:302(apply)
+      896    0.001    0.000    0.002    0.000 /usr/local/lib/python3.12/site-packages/triton/runtime/_allocation.py:29(set_allocator)
+      769    0.001    0.000    0.001    0.000 {built-in method torch._C._cuda_exchangeDevice}
+      768    0.001    0.000    0.002    0.000 /usr/local/lib/python3.12/site-packages/torch/__init__.py:1690(_check_with)
+      768    0.001    0.000    0.001    0.000 {built-in method torch._C._cuda_setDevice}
+      896    0.001    0.000    0.001    0.000 {method 'set' of '_contextvars.ContextVar' objects}
+      768    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/utils.py:48(strict_zip)
+      896    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/site-packages/torch/utils/_python_dispatch.py:287(_get_current_dispatch_mode_stack)
+      384    0.001    0.000    0.002    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/utils.py:32(unwrap_dead_wrappers)
+     1664    0.001    0.000    0.002    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/utils.py:34(<genexpr>)
+     1920    0.001    0.000    0.001    0.000 {method 'data_ptr' of 'torch._C.TensorBase' objects}
+      769    0.001    0.000    0.005    0.000 /usr/local/lib/python3.12/site-packages/torch/_compile.py:42(inner)
+      384    0.001    0.000    0.062    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/aot_autograd.py:1143(forward)
+      768    0.001    0.000    0.002    0.000 /usr/local/lib/python3.12/site-packages/torch/cuda/__init__.py:572(set_device)
+      127    0.001    0.000    0.006    0.000 /tmp/torchinductor_root/23/c232wquw4yko4aggsaxq44vp5fhwms5b2he4f2hgi7vutlvt3reo.py:93(call)
+      384    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/site-packages/torch/utils/_config_module.py:369(__getattr__)
+      768    0.001    0.000    0.002    0.000 /usr/local/lib/python3.12/site-packages/torch/cuda/__init__.py:529(__enter__)

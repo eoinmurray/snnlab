@@ -1,0 +1,51 @@
+         21762 function calls (21744 primitive calls) in 0.334 seconds
+
+   Ordered by: internal time
+   List reduced from 529 to 45 due to restriction <45>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.140    0.140    0.160    0.160 {method 'run_backward' of 'torch._C._EngineBase' objects}
+      256    0.041    0.000    0.101    0.000 /workspace/src/snnlab/sim/models.py:133(lif_step_expeuler)
+        4    0.027    0.007    0.101    0.025 {method 'poll' of 'select.epoll' objects}
+        1    0.016    0.016    0.062    0.062 /workspace/src/snnlab/sim/execution.py:3441(_forward)
+     1027    0.009    0.000    0.009    0.000 {built-in method torch.zeros_like}
+      256    0.009    0.000    0.019    0.000 /workspace/src/snnlab/sim/models.py:48(backward)
+      768    0.008    0.000    0.014    0.000 /usr/local/lib/python3.12/site-packages/torch/_tensor.py:1118(__rdiv__)
+      768    0.007    0.000    0.007    0.000 {method 'reciprocal' of 'torch._C.TensorBase' objects}
+      512    0.007    0.000    0.007    0.000 {built-in method torch.where}
+      512    0.006    0.000    0.006    0.000 {method 'float' of 'torch._C.TensorBase' objects}
+      514    0.006    0.000    0.006    0.000 {method 'clamp' of 'torch._C.TensorBase' objects}
+      512    0.005    0.000    0.005    0.000 {built-in method torch.full_like}
+      256    0.005    0.000    0.019    0.000 /workspace/src/snnlab/sim/kernels.py:75(<lambda>)
+      128    0.005    0.000    0.006    0.000 /workspace/src/snnlab/sim/kernels.py:48(step)
+      512    0.005    0.000    0.005    0.000 {method 'bool' of 'torch._C.TensorBase' objects}
+      256    0.004    0.000    0.007    0.000 /workspace/src/snnlab/sim/models.py:40(forward)
+      256    0.003    0.000    0.003    0.000 {built-in method torch.rsub}
+      256    0.003    0.000    0.003    0.000 {method 'abs' of 'torch._C.TensorBase' objects}
+      256    0.003    0.000    0.010    0.000 {built-in method apply}
+      256    0.003    0.000    0.003    0.000 {method 'pow' of 'torch._C.TensorBase' objects}
+      256    0.003    0.000    0.003    0.000 {built-in method torch.exp}
+      256    0.002    0.000    0.103    0.000 /workspace/src/snnlab/sim/kernels.py:60(step)
+        4    0.002    0.000    0.105    0.026 /usr/local/lib/python3.12/asyncio/base_events.py:1922(_run_once)
+        1    0.002    0.002    0.002    0.002 {built-in method torch._C._group_tensors_by_device_and_dtype}
+     1280    0.002    0.000    0.022    0.000 /usr/local/lib/python3.12/site-packages/torch/_tensor.py:40(wrapped)
+      256    0.001    0.000    0.013    0.000 /usr/local/lib/python3.12/site-packages/torch/autograd/function.py:567(apply)
+      256    0.001    0.000    0.020    0.000 /usr/local/lib/python3.12/site-packages/torch/autograd/function.py:302(apply)
+      256    0.001    0.000    0.002    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/utils.py:32(unwrap_dead_wrappers)
+     1280    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/site-packages/torch/_functorch/utils.py:34(<genexpr>)
+      587    0.000    0.000    0.000    0.000 {method 'append' of 'list' objects}
+      384    0.000    0.000    0.001    0.000 /workspace/src/snnlab/sim/execution.py:2899(push)
+     1405    0.000    0.000    0.000    0.000 {method 'get' of 'dict' objects}
+      384    0.000    0.000    0.000    0.000 /workspace/src/snnlab/sim/execution.py:3702(intervene)
+      256    0.000    0.000    0.014    0.000 /workspace/src/snnlab/sim/models.py:55(fast_sigmoid_spike)
+1241/1239    0.000    0.000    0.000    0.000 {built-in method builtins.isinstance}
+        1    0.000    0.000    0.063    0.063 /workspace/src/snnlab/sim/execution.py:3406(forward)
+     1280    0.000    0.000    0.000    0.000 {built-in method torch._C._has_torch_function}
+      257    0.000    0.000    0.000    0.000 {built-in method torch._C._are_functorch_transforms_active}
+      256    0.000    0.000    0.000    0.000 {built-in method torch._C._functorch.unwrap_if_dead}
+        2    0.000    0.000    0.000    0.000 {built-in method torch._ops.profiler._record_function_enter_new}
+      256    0.000    0.000    0.003    0.000 /usr/local/lib/python3.12/site-packages/torch/_tensor.py:1114(__rsub__)
+        3    0.000    0.000    0.000    0.000 {method 'send' of '_socket.socket' objects}
+      411    0.000    0.000    0.000    0.000 {method 'partition' of 'str' objects}
+        2    0.000    0.000    0.000    0.000 {built-in method torch.full}
+      256    0.000    0.000    0.014    0.000 /workspace/src/snnlab/sim/extensions.py:67(<lambda>)

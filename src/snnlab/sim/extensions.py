@@ -57,12 +57,16 @@ def checked_state(value, template, name, *, required=(), check_values=True):
     return dict(value)
 
 
-def make_spike(*, slope, custom=None, check_values=True):
+def make_spike(
+    *, slope, custom=None, check_values=True, gradient_scale=1.0, threshold_inclusive=True
+):
     """Resolve a surrogate and create its autograd dispatch once per executor."""
     if custom is None:
         from . import models as M
 
-        return lambda value: M.fast_sigmoid_spike(value, slope)
+        return lambda value: M.fast_sigmoid_spike(
+            value, slope, gradient_scale, threshold_inclusive
+        )
     definition = E.resolve("surrogate", custom)
 
     config = copy.deepcopy(custom.get("config", {}))

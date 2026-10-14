@@ -6,6 +6,17 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-14
+
+### Added
+
+1. `training.FastSigmoid` now accepts independent `gradient_scale` and `threshold_inclusive` settings. Training bundles and direct executors preserve the complete configuration, allowing the SHD derivative with slope `100/15`, scale `1/100` and strict threshold comparison to use compiled built-in neuron kernels. Non-default scales use an exact hard forward with an explicit tensor-only backward, avoiding CUDA fusion residuals from a scaled detach proxy. Exclusive built-in thresholds bind runtime-state compatibility; resolved surrogate and compilation settings appear in execution metrics. Defaults retain historical forward/backward arithmetic and serialized recipe identity; registered derivatives still execute eagerly.
+2. Added a synthetic SHD-shaped COBA/delayed-PING profiling harness and Modal H100 launcher under `benchmarks/shd-compilation/`. It separates cold updates, warmed forward/backward/update timings, allocated GPU memory and CPU/CUDA profiles across batches 32, 256 and 8. On one H100, batch-256 synthetic 1,000-step updates measured 2.718 → 1.716 s for registered-to-compiled COBA and 5.582 → 3.242 s for registered-to-compiled delayed PING, with higher cold costs. Raw samples, profiles and limits are retained alongside the harness. This prepares timestep fusion; no timestep-block path or general speedup is established.
+
+### Validation
+
+1. The final focused local suite passed 115 tests (15 CUDA-dependent skips). The H100 regression suite passed 51 checks, including actual CUDA compilation, exact binary spikes, trajectories, gradients, Adam state and runtime continuation. Small spiking COBA/PING probes passed at `atol=rtol=2e-5`; full 1,000-step training-trajectory equivalence is not established. Lint, documentation type checks and both root/GitHub Pages builds passed. The remaining timestep-fusion work is tracked in [22](https://github.com/eoinmurray/snnlab/issues/22); the configurable-surrogate and profiling portion of [21](https://github.com/eoinmurray/snnlab/issues/21) is complete.
+
 ## [0.12.1] - 2026-10-14
 
 ### Validation

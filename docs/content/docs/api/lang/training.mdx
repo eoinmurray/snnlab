@@ -87,10 +87,29 @@ class Optimizer:
 ### FastSigmoid
 
 ```python
-def FastSigmoid(*, slope: float = 1.0) -> Spec: ...
+def FastSigmoid(
+    *, slope: float = 1.0, gradient_scale: float = 1.0,
+    threshold_inclusive: bool = True,
+) -> Spec: ...
 ```
 
-`AdamW` stores keyword configuration for the runtime optimizer, such as `weight_decay=0.0`. Group learning rates come from `ParameterGroup`. `FastSigmoid` stores a positive slope; forward spikes remain threshold events and the surrogate supplies their backward derivative. It does not replace the forward signal with a sigmoid. Built-in graph training applies the compiled surrogate slope; an external [GraphExecutor](/api/sim/pytorch) must receive it explicitly.
+`AdamW` stores keyword configuration for the runtime optimizer, such as `weight_decay=0.0`. Group learning rates come from `ParameterGroup`.
+
+`FastSigmoid` supplies a hard threshold event in the forward pass and this backward derivative:
+
+$$D(v) = \frac{a s}{(1+s|v|)^2}.$$
+
+Here $v$ is voltage relative to threshold, $s$ is the positive finite `slope` in inverse voltage units, and $a$ is the nonnegative finite, dimensionless `gradient_scale`. The default $a=1$ preserves the existing derivative. `threshold_inclusive=True` fires at $v \geq 0$; `False` fires at $v > 0$, matching the registered custom-surrogate convention. These settings change neither voltage gradient damping nor reset equations.
+
+For the SHD paper derivative with a 15 mV threshold-to-rest gap and dimensionless steepness 100, use:
+
+```python
+surrogate = training.FastSigmoid(
+    slope=100 / 15, gradient_scale=1 / 100, threshold_inclusive=False,
+)
+```
+
+This is a configuration of the existing fast-sigmoid derivative. Choose the threshold convention to match your original model. Both extra fields serialize through the training recipe and its resolved gradient contract; omitted fields in historical recipes mean scale 1 and inclusive threshold. Default authoring retains the historical serialized recipe identity. Runtime states from the exclusive built-in threshold carry that forward policy; continuing them with an inclusive built-in executor, or vice versa, fails explicitly. Gradient amplitude and slope affect the backward pass, so they do not change forward-state compatibility. Build and forward metrics report the resolved surrogate and compilation policy. Built-in training applies the complete configuration automatically. For an external [GraphExecutor](/api/sim/graph-executor), pass `surrogate=bundle.training["surrogate"]`. This built-in remains eligible for `compile_mode="default"`; registered custom derivatives retain eager dispatch and validation, even when written using tensor operations.
 
 ## Regularizers
 

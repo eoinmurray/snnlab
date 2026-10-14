@@ -31,16 +31,16 @@ GraphExecutor(
 | `seed` | `int` | Seeds parameter initialization. Construction calls `torch.manual_seed`, affecting the global PyTorch RNG. |
 | `trainable_parameters` | `Sequence[str]` | Graph parameter IDs whose tensors require gradients. The default selects none. |
 | `surrogate_slope` | `float` | Default slope for the executor's surrogate spike derivative. Neuron definitions can also specify their own slope. |
-| `surrogate` | `Mapping[str, Any]` or `None` | Serialized custom surrogate definition. Registered implementations must be imported before use. |
+| `surrogate` | `Mapping[str, Any]` or `None` | Serialized `FastSigmoid` or custom surrogate configuration. Built-in settings override `surrogate_slope`; registered implementations must be imported before use. |
 | `compile_mode` | `None` or `"default"` | Opt-in `torch.compile` for prepared built-in neuron/readout kernels. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls). |
 
-`extension_validation` accepts `"structural"` (default) or `"strict"`. Opt into strict mode while developing custom callbacks or investigating numerical failures. Structural mode skips custom neuron/synapse step value checks and surrogate derivative finite checks while retaining tensor contracts; initialization and restored state stay strict. Invalid values may propagate silently. See [validation policy](/api/sim/execution-spec#custom-dynamics-validation) for details. Surrogate dispatch is cached per executor; reconstruct the executor after changing its surrogate configuration.
+`extension_validation` accepts `"structural"` (default) or `"strict"`. Opt into strict mode while developing custom callbacks or investigating numerical failures. Structural mode skips custom neuron/synapse step value checks and surrogate derivative finite checks while retaining tensor contracts; initialization and restored state stay strict. Invalid values may propagate silently. See [validation policy](/api/sim/execution-spec#custom-dynamics-validation) for details. Surrogate dispatch is cached per executor; reconstruct the executor after changing its surrogate configuration. Resolved surrogate settings and `compile_mode` appear in build and forward metrics. Non-default built-in threshold conventions bind runtime-state compatibility; changing between inclusive and exclusive built-in thresholds rejects continuation. Default and registered-callback state identities retain their historical convention.
 
 `projection_mode="fast"` defaults to direct drive for built-in exactly-zero-decay projections. `"strict"` preserves historical zero multiplication and IEEE nonfinite propagation. This is independent of custom extension value validation. See [projection arithmetic and result snapshots](/api/sim/execution-spec#projection-arithmetic-and-result-snapshots) for gradients, caches and continuation compatibility.
 
 Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Selecting trainable parameters enables gradients; it does not create an optimizer or perform training.
 
-When using a compiled training recipe, pass its `resolved_parameters.trainable`, surrogate slope and custom surrogate configuration explicitly, or let `build(ExecutionSpec(...))` configure the executor.
+When using a compiled training recipe, pass its `resolved_parameters.trainable` and complete `surrogate` configuration explicitly, or let `build(ExecutionSpec(...))` configure the executor.
 
 ## plan_graph and GraphPlan
 

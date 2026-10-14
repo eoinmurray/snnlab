@@ -1924,9 +1924,11 @@ class GraphRuntimeState:
 
 
 def runtime_state_compatibility(
-    plan: GraphPlan, *, projection_mode="fast"
+    plan: GraphPlan, *, projection_mode="fast", threshold_inclusive=True
 ) -> dict[str, Any]:
     """Describe state-layout and dynamical semantics, excluding parameter values."""
+    if not isinstance(threshold_inclusive, bool):
+        raise ValueError("threshold_inclusive must be boolean")
     if projection_mode not in {"fast", "strict"}:
         raise ValueError("projection_mode must be fast or strict")
     parameters = {row["id"]: row for row in plan.graph.get("parameters", [])}
@@ -1937,6 +1939,7 @@ def runtime_state_compatibility(
     }
     return {
         "schema": RUNTIME_STATE_SCHEMA,
+        **({"builtin_spike_threshold_inclusive": False} if not threshold_inclusive else {}),
         **(
             {"zero_decay_projection_mode": "fast"}
             if projection_mode == "fast"
@@ -1984,8 +1987,8 @@ def runtime_state_compatibility(
     }
 
 
-def runtime_state_signature(plan: GraphPlan, *, projection_mode="fast") -> str:
-    payload = runtime_state_compatibility(plan, projection_mode=projection_mode)
+def runtime_state_signature(plan: GraphPlan, *, projection_mode="fast", threshold_inclusive=True) -> str:
+    payload = runtime_state_compatibility(plan, projection_mode=projection_mode, threshold_inclusive=threshold_inclusive)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
@@ -3074,9 +3077,46 @@ class GraphExecutor(nn.Module):
         self.surrogate = (
             surrogate if (surrogate or {}).get("kind") == "custom_surrogate" else None
         )
-        self.surrogate_slope = float(surrogate_slope)
+        builtin = surrogate or {}
+        if builtin and builtin.get("kind") not in {"fast_sigmoid", "custom_surrogate"}:
+            raise ValueError("unsupported surrogate kind")
+        self.surrogate_slope = (
+            builtin.get("slope", surrogate_slope)
+            if self.surrogate is None else surrogate_slope
+        )
+        self.surrogate_gradient_scale = (
+            builtin.get("gradient_scale", 1.0) if self.surrogate is None else 1.0
+        )
+        self.surrogate_threshold_inclusive = (
+            builtin.get("threshold_inclusive", True) if self.surrogate is None else True
+        )
+        for name, value, positive in (
+            ("slope", self.surrogate_slope, True),
+            ("gradient_scale", self.surrogate_gradient_scale, False),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or (value <= 0 if positive else value < 0)
+            ):
+                domain = "positive" if positive else "nonnegative"
+                raise ValueError(f"surrogate {name} must be finite and {domain}")
+        if not isinstance(self.surrogate_threshold_inclusive, bool):
+            raise ValueError("surrogate threshold_inclusive must be boolean")
+        self.surrogate_slope = float(self.surrogate_slope)
+        self.surrogate_config = (
+            copy.deepcopy(self.surrogate) if self.surrogate is not None else {
+                "kind": "fast_sigmoid",
+                "slope": self.surrogate_slope,
+                "gradient_scale": self.surrogate_gradient_scale,
+                "threshold_inclusive": self.surrogate_threshold_inclusive,
+            }
+        )
         self._spike_function = X.make_spike(
             slope=self.surrogate_slope,
+            gradient_scale=self.surrogate_gradient_scale,
+            threshold_inclusive=self.surrogate_threshold_inclusive,
             custom=self.surrogate,
             check_values=self._check_extension_values,
         )
@@ -3484,10 +3524,12 @@ class GraphExecutor(nn.Module):
             for row in self.plan.graph.get("inputs", [])
         }
         expected_compatibility = runtime_state_compatibility(
-            self.plan, projection_mode=self.projection_mode
+            self.plan, projection_mode=self.projection_mode,
+            threshold_inclusive=self.surrogate_threshold_inclusive if self.surrogate is None else True,
         )
         expected_signature = runtime_state_signature(
-            self.plan, projection_mode=self.projection_mode
+            self.plan, projection_mode=self.projection_mode,
+            threshold_inclusive=self.surrogate_threshold_inclusive if self.surrogate is None else True,
         )
         if runtime_state is None:
             voltage = {
@@ -4440,6 +4482,8 @@ class GraphExecutor(nn.Module):
                 "autapses": self.autapse_metadata,
                 "extension_validation": self.extension_validation,
                 "projection_mode": self.projection_mode,
+                "compile_mode": self.compile_mode,
+                "surrogate": copy.deepcopy(self.surrogate_config),
                 "result_snapshots": {
                     "parameters": retain_parameters,
                     "final_state": retain_final_state,
@@ -4511,6 +4555,7 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
             "extension_validation": model.extension_validation,
             "projection_mode": model.projection_mode,
             "compile_mode": model.compile_mode,
+            "surrogate": copy.deepcopy(model.surrogate_config),
             "compiled_populations": [
                 row["id"]
                 for row in model.plan.populations

@@ -887,6 +887,21 @@ def validate_training(
                     "fast-sigmoid surrogate slope must be positive and finite",
                 )
             )
+        if surrogate.get("kind") == "fast_sigmoid":
+            scale = surrogate.get("gradient_scale", 1.0)
+            if (
+                not isinstance(scale, (int, float))
+                or isinstance(scale, bool)
+                or not math.isfinite(scale)
+                or scale < 0
+            ):
+                result.diagnostics.append(
+                    Diagnostic("error", "E416", "fast-sigmoid gradient_scale must be nonnegative and finite")
+                )
+            if not isinstance(surrogate.get("threshold_inclusive", True), bool):
+                result.diagnostics.append(
+                    Diagnostic("error", "E416", "fast-sigmoid threshold_inclusive must be boolean")
+                )
     expected_gradients = {
         "surrogate": surrogate,
         "voltage_gradient_dampening": {

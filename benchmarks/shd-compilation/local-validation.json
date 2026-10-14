@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-14",
+  "torch": "2.14.1",
+  "device": "cpu",
+  "focused_suite": {
+    "passed": 115,
+    "skipped_cuda_cases": 15
+  },
+  "actual_compiler_probes": {
+    "graphs": [
+      "coba",
+      "ping"
+    ],
+    "steps": 33,
+    "split_at": 13,
+    "atol": 2e-05,
+    "rtol": 2e-05,
+    "passed": true
+  },
+  "gpu_execution": "completed: timed H100 workload and final source CUDA checks",
+  "gpu_speedup_established": true,
+  "timestep_blocks_implemented": false,
+  "gpu_speedup_scope": "one H100, synthetic SHD-shaped COBA/PING workloads; three warmed samples per mode/batch",
+  "final_cuda_checks_passed": 51
+}

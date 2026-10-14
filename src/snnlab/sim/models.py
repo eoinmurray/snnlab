@@ -34,21 +34,41 @@ ref_steps_E = refractory_steps(ref_ms_E, dt)
 ref_steps_I = refractory_steps(ref_ms_I, dt)
 
 
-def fast_sigmoid_spike(u, slope):
+class _ScaledFastSigmoid(torch.autograd.Function):
+    """Keep hard spikes exact when the compiler fuses scaled proxy arithmetic."""
+
+    @staticmethod
+    def forward(ctx, u, slope, gradient_scale, threshold_inclusive):
+        ctx.save_for_backward(u)
+        ctx.slope = slope
+        ctx.gradient_scale = gradient_scale
+        hard = ((u >= 0) if threshold_inclusive else (u > 0)).float()
+        return hard.double() if u.dtype == torch.float64 else hard
+
+    @staticmethod
+    def backward(ctx, gradient):
+        (u,) = ctx.saved_tensors
+        derivative = ctx.gradient_scale * ctx.slope / (1 + ctx.slope * u.abs()) ** 2
+        return gradient * derivative, None, None, None
+
+
+def fast_sigmoid_spike(u, slope, gradient_scale=1.0, threshold_inclusive=True):
     """Fast-sigmoid surrogate spike.
 
-    Forward: Heaviside(u). Backward gradient: slope / (1 + slope·|u|)^2 —
-    equivalent to the snntorch FastSigmoid surrogate that the library path
-    uses, so slope=1 is a pure update-rule comparison against snntorch-library,
-    not a surrogate comparison.
+    Forward: u >= 0 (or u > 0 when threshold_inclusive=False).
+    Backward: gradient_scale * slope / (1 + slope·|u|)^2.
 
-    Implementation is a detach-style straight-through estimator: the forward
+    Unit scale retains the historical detach-style estimator: the forward
     value is the hard step, but the gradient flows through the smooth proxy
-    p(u) = slope·u / (1 + slope·|u|), whose derivative is exactly the
-    fast-sigmoid kernel. Pure tensor ops — torch.compile-friendly with no
-    custom autograd.Function graph break.
+    p(u) = gradient_scale·slope·u / (1 + slope·|u|), whose derivative is the
+    fast-sigmoid kernel. Other scales use a tensor-only autograd function
+    captured by torch.compile, with an exact hard forward. A scaled detach
+    proxy can acquire tiny nonzero forward residuals under CUDA fusion, which
+    would spuriously trigger refractory handling.
     """
-    hard = (u >= 0).float()
+    if gradient_scale != 1.0:
+        return _ScaledFastSigmoid.apply(u, slope, gradient_scale, threshold_inclusive)
+    hard = ((u >= 0) if threshold_inclusive else (u > 0)).float()
     proxy = slope * u / (1.0 + slope * u.abs())
     # Parenthesise so (proxy - proxy.detach()) collapses to bitwise zero
     # in the forward pass; otherwise (hard + proxy) then - proxy.detach()
