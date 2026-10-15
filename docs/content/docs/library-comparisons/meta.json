@@ -1,6 +1,0 @@
-{
-  "title": "Comparisons",
-  "collapsible": true,
-  "defaultOpen": false,
-  "pages": ["../comparisons", "../snntorch-comparison"]
-}

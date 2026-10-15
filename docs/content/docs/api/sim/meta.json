@@ -4,6 +4,7 @@
     "graph-executor",
     "execution-spec",
     "execution-result",
+    "tracing",
     "pytorch",
     "cli"
   ],

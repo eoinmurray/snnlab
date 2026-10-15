@@ -1,5 +1,5 @@
 {
-  "title": "Workflows",
+  "title": "Examples",
   "collapsible": true,
   "defaultOpen": true,
   "pages": [
@@ -7,6 +7,6 @@
     "../inference",
     "../pytorch-integration",
     "../current-lif",
-    "../customisation"
+    "../custom-neurons-and-synapses"
   ]
 }

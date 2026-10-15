@@ -1,9 +1,10 @@
 import type { Item } from 'fumadocs-core/page-tree';
 
 const sidebarTitles: Record<string, string> = {
-  'data-formats.mdx': 'Output data',
-  'comparisons.mdx': 'Library comparison',
-  'snntorch-comparison.mdx': 'MNIST with snnTorch',
+  'data-formats.mdx': 'Output Data',
+  'comparisons.mdx': 'Comparison with Other SNN Libraries',
+  'snntorch-comparison.mdx': 'MNIST: SNNLab vs snnTorch',
+  'shd-benchmark.mdx': 'SHD Benchmark',
 };
 
 export const sidebarLabels = {

@@ -189,7 +189,7 @@ Use `lang.LeakyIntegrator(tau=20 * lang.ms)` with `spiking=False` when a continu
 
 Time constants, capacitance and AdEx slope factor must be positive. All values must be finite. Adaptation increments, ALIF initial offset and AdEx coupling `a_us` must be non-negative; AdEx initial current can be negative. Every batch item and neuron has independent state. Saved `runtime_state` includes adaptation, so a resumed simulation preserves it. A parameter checkpoint holds weights; it is separate from simulation state.
 
-Spikes use the configured surrogate derivative during [training](/training). Adaptation remains in the computation graph, allowing gradients to propagate through its history; biological neuron settings are graph configuration, not trainable weight tensors. Use [Customisation](/customisation) and [Extensions](/api/lang/extensions) to define additional dynamics.
+Spikes use the configured surrogate derivative during [training](/training). Adaptation remains in the computation graph, allowing gradients to propagate through its history; biological neuron settings are graph configuration, not trainable weight tensors. Use [Customisation](/custom-neurons-and-synapses) and [Extensions](/api/lang/extensions) to define additional dynamics.
 
 ## Runnable comparison
 

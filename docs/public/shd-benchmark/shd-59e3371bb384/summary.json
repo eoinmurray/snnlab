@@ -1,0 +1,13 @@
+{
+  "kind": "SHD",
+  "completed_updates": 290,
+  "wall_s": 832.345777192,
+  "wall_scope": "data preparation, graph authoring, native train call and result verification; excludes process/Modal startup",
+  "peak_cuda_allocated_bytes": 3270738432,
+  "peak_cuda_reserved_bytes": 4171235328,
+  "memory_scope": "native training including validation/checkpointing and final parameter verification; allocator reserved pool may predate reset",
+  "diagnostic_trace": {
+    "directory": "tracing",
+    "status": "complete"
+  }
+}

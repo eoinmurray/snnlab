@@ -131,3 +131,14 @@ unused forward snapshots automatically. Request runtime state for continuation.
 Numerical mode and retention bind checkpoint/cache compatibility; historical
 zero-decay states and checkpoints use strict arithmetic explicitly. See the
 execution reference for migration and nonfinite/gradient semantics.
+
+## Optional training tracing
+
+Pass `tracing=TraceSpec(output=Path("new-trace-directory"), mode="both")` to
+`ExecutionSpec(kind="train", ...)`. Import `TraceSpec` from `snnlab.sim.tracing`.
+Modes `off`, `monitor`, `profile` and `both` support bounded selected-update
+measurements, detached activity/sparsity, phase timing, memory and PyTorch
+CPU/CUDA timelines. Tracing is disabled by default and does not change checkpoint
+identity. Hardware counters unavailable from PyTorch remain explicitly unavailable.
+See [Tracing](../../../docs/content/docs/api/sim/tracing.mdx) and the
+[SHD benchmark](../../../benchmarks/shd/README.md) for scope and CLI controls.

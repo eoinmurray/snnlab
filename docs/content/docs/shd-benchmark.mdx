@@ -1,0 +1,95 @@
+---
+title: "SHD: Learning, Sparsity and Timings"
+description: Training curves, configuration and measured timings for a ten-epoch COBA network on NVIDIA H100.
+---
+
+This benchmark trains a feedforward conductance-based network on
+[Spiking Heidelberg Digits](https://zenkelab.org/resources/spiking-heidelberg-datasets-shd/)
+using `snnlab.lang` and native `snnlab.sim.execution.train()`. It runs **10 epochs
+at batch size 256** on one NVIDIA H100, reaching **45.96% validation accuracy**.
+The official test set is untouched; this is a fixed performance workload, not a
+convergence study.
+
+Results use one seed and are pinned to `shd-59e3371bb384` (15 October 2026).
+
+![Training and validation cross-entropy and accuracy across ten epochs.](/shd-benchmark/shd-59e3371bb384/learning.png)
+
+**Training curves.** Left: ordinary example-mean cross-entropy. Right: accuracy.
+Black lines aggregate pre-update training batches while weights change; red dashed
+lines evaluate validation at fixed epoch-end weights. Epoch zero is validation
+only. Points are unsmoothed single-run measurements. The optimized loss weights
+represented classes equally, unlike the plotted example-weighted loss.
+
+**Network and training configuration**
+
+| Setting | Value |
+| --- | --- |
+| Architecture | 700 inputs → 128 E1 → 128 E2 → 20 non-spiking leaky readouts |
+| Connectivity | Dense feedforward projections; no recurrent or inhibitory populations |
+| Hidden neurons | COBA LIF; membrane time constant 20 ms; capacitance 1 nF; leak 0.05 µS |
+| Rest / reset / threshold | −65 / −65 / −50 mV; zero refractory period |
+| Synapses | AMPA, 10 ms decay; readout projection decay 10 ms |
+| Readout | Leaky integrator, 20 ms; mean voltage; fixed score gain 20 |
+| Score normalization | E2 mean firing rate; 20 Hz reference, 1 Hz floor |
+| Hidden-weight initialization | Lower-clamped normal, mean 0.09, SD 0.009; fan-in normalized |
+| Initial input / interlayer zeros | 95% / 90%; no permanent sparsity mask |
+| Weight constraints | Input and interlayer weights nonnegative |
+| Readout initialization | Column-centered normal, SD 0.1; direct scaling |
+| Input encoding | Floor-bin events with binary OR; discard events at or after 1 s |
+| Input corruption | Insertion 1.6 Hz/channel; occupied-bin deletion probability 0.0008 |
+| Simulation | 1,000 steps at 1 ms; fresh state per utterance |
+| Data split | 7,340 train / 816 validation; per-class 10% holdout of official training data |
+| Split / corruption policy | Utterance-disjoint, not speaker-disjoint; validation corruption fixed |
+| Epochs / batch size / seed | 10 / 256 / 42; retain final batch of 172 |
+| Optimizer updates | 29 per epoch; 290 total |
+| Objective | Cross-entropy averaged within represented classes, then across classes |
+| Optimizer | Adam; betas (0.9, 0.999); no weight decay |
+| Input / interlayer / readout learning rates | 0.000005 / 0.00002 / 0.01; score gain frozen |
+| Surrogate | Fast sigmoid; slope 100/15 per mV; gradient scale 0.01 |
+| Gradient clipping / rate regularization | None / none |
+| Evaluation / checkpoint | Initial and epoch-end validation; retain final epoch |
+| Precision | float32; TF32 disabled; highest matmul precision; deterministic algorithms disabled |
+| Execution | Compiled built-in neuron kernels; Python scheduling |
+| Hardware | NVIDIA H100 80GB HBM3; four requested CPU cores; 16 GiB host RAM |
+| Software | SNNLab 0.14.0 with unreleased tracing; Python 3.12.10; PyTorch 2.10.0+cu128 |
+
+**Measured Timings**
+
+| Measurement | Baseline | Diagnostic |
+| --- | ---: | ---: |
+| Training time | 678.27 s | — |
+| Validation time | 81.36 s | — |
+| Native train-call time | 766.12 s | — |
+| Broader workflow time | 832.35 s | — |
+| Training throughput | 108.22 examples/s | — |
+| Mean update time | 2.339 s | — |
+| Mean training epoch, epochs 2–10 | 67.19 s | — |
+| Batch preparation, median | — | 1.487 s |
+| Forward, median | — | 1.567 s |
+| Backward, median | — | 1.121 s |
+| Loss, median | — | 0.709 ms |
+| Adam and constraints, median | — | 1.013 ms |
+| Peak allocated / reserved CUDA memory | 3.05 / 3.88 GiB | 3.40 / 5.22 GiB |
+| Host-to-device copy rate | — | 9.51 GB/s |
+| Kernel / kernel-and-copy coverage | — | 0.471 / 0.697 s of 12.593 s |
+| Average process CPU activity | — | 1.20 cores |
+
+1. **Baseline:** the full ten-epoch training run with tracing disabled. This column reports normal training performance, including validation where specified.
+2. **Diagnostic:** a separate training call starting from fresh seeded weights. It skips five updates, then captures batches 6–8 with activity monitoring and PyTorch Profiler. These measurements describe instrumented early training, not the final checkpoint. Instrumentation adds overhead, so the two columns are not a direct speed comparison.
+
+**Table legend**
+
+1. **Training time:** all updates, including batch preparation, forward/loss, backward, Adam, constraints and bookkeeping. Excludes validation.
+2. **Validation time:** initial validation plus ten complete epoch-end evaluations.
+3. **Native train-call time:** setup, training, validation, checkpointing and reporting. **Broader workflow time** also includes data acquisition/preparation, graph authoring and result verification. Both exclude Modal startup, final volume commit and the separate diagnostic call.
+4. **Training throughput:** 73,400 training presentations divided by training time. **Mean update time** divides that time by 290; it includes cold work and smaller final batches. **Mean training epoch** averages epochs 2–10.
+5. **Diagnostic phase medians:** host enqueue durations across three captured updates, not isolated device times. **Batch preparation** includes encoding and input transfer; these nested operations are not added again.
+6. **Peak allocated / reserved CUDA memory:** memory occupied by PyTorch tensors / capacity held by its allocator. Baseline peaks cover the native call; diagnostic peaks cover the instrumented window. They exclude external allocations and are not total GPU memory use. GiB means binary gigabytes.
+7. **Host-to-device copy rate:** 2.1504 GB transferred divided by 0.2260 s of summed copy durations. GB means decimal gigabytes. This is not device DRAM bandwidth or evidence of bandwidth saturation; each dense input batch alone is 716.8 MB.
+8. **Kernel / kernel-and-copy coverage:** union of actual CUDA event intervals within the diagnostic window, excluding annotation spans. These durations are timeline coverage, not SM utilization, occupancy or arithmetic efficiency.
+9. **Average process CPU activity:** process CPU seconds divided by capture wall seconds, including threads. It is not normalized to the four requested cores.
+
+Sparse spikes coexist with dense sampled gradients and no entirely zero weight
+tiles. These results motivate measuring encoding and dispatch costs, but do not
+yet establish a need for custom kernels or xDSL. Device DRAM bandwidth, SM
+utilization, occupancy and power were not measured.

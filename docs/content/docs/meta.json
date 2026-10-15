@@ -6,7 +6,8 @@
     "workflows",
     "model-components",
     "results-and-analysis",
-    "library-comparisons",
+    "benchmark",
+    "comparisons",
     "api",
     "changelog"
   ]

@@ -14,6 +14,7 @@ import os
 import tempfile
 import time
 import tracemalloc
+from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from numbers import Integral
 from pathlib import Path
@@ -120,6 +121,7 @@ from snnlab.sim.streaming import (
 from snnlab.sim.streaming import (
     SignalRecording as SignalRecording,
 )
+from snnlab.sim.tracing import TraceSession, TraceSpec, current_trace
 from snnlab.sim.training_policies import (
     Batching as Batching,
 )
@@ -330,8 +332,14 @@ class ExecutionSpec:
     dataset_prefetch: int = 0
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized"
     training_timing: bool = False
+    tracing: TraceSpec | None = None
 
     def __post_init__(self):
+        if self.tracing is not None:
+            if not isinstance(self.tracing, TraceSpec):
+                raise TypeError("tracing must be a TraceSpec")
+            if self.kind != "train":
+                raise ValueError("tracing currently requires kind='train'")
         if self.projection_mode not in {"fast", "strict"}:
             raise ValueError("projection_mode must be fast or strict")
         for name in ("retain_parameters", "retain_final_state", "retain_runtime_state"):
@@ -803,7 +811,9 @@ def resolve_dense_array_bindings(
             )
         if signal_type != "mask":
             value = value.float()
-        value = value.to(device)
+        trace = current_trace()
+        with trace.region("transfer") if trace is not None else nullcontext():
+            value = value.to(device)
         resolved[input_id] = value
         rows.append(
             {
@@ -1570,14 +1580,16 @@ def resolve_dataset_snapshot_binding(
     elif encoder.kind == "custom":
         spec_row = {"definition": encoder.definition, "config": dict(encoder.config)}
         definition = E.resolve("encoder", spec_row)
-        spikes = definition.function(
-            arrays,
-            selected,
-            dt_ms=dt_ms,
-            channels=channels,
-            config=encoder.config,
-            seed=encoder.seed if _spike_seed is None else _spike_seed,
-        )
+        trace = current_trace()
+        with trace.region("encoding") if trace is not None else nullcontext():
+            spikes = definition.function(
+                arrays,
+                selected,
+                dt_ms=dt_ms,
+                channels=channels,
+                config=encoder.config,
+                seed=encoder.seed if _spike_seed is None else _spike_seed,
+            )
         if (
             not isinstance(spikes, torch.Tensor)
             or spikes.ndim != 3
@@ -1960,7 +1972,11 @@ def runtime_state_compatibility(
     }
     return {
         "schema": RUNTIME_STATE_SCHEMA,
-        **({"builtin_spike_threshold_inclusive": False} if not threshold_inclusive else {}),
+        **(
+            {"builtin_spike_threshold_inclusive": False}
+            if not threshold_inclusive
+            else {}
+        ),
         **(
             {"zero_decay_projection_mode": "fast"}
             if projection_mode == "fast"
@@ -2008,8 +2024,12 @@ def runtime_state_compatibility(
     }
 
 
-def runtime_state_signature(plan: GraphPlan, *, projection_mode="fast", threshold_inclusive=True) -> str:
-    payload = runtime_state_compatibility(plan, projection_mode=projection_mode, threshold_inclusive=threshold_inclusive)
+def runtime_state_signature(
+    plan: GraphPlan, *, projection_mode="fast", threshold_inclusive=True
+) -> str:
+    payload = runtime_state_compatibility(
+        plan, projection_mode=projection_mode, threshold_inclusive=threshold_inclusive
+    )
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
@@ -3117,7 +3137,8 @@ class GraphExecutor(nn.Module):
             raise ValueError("unsupported surrogate kind")
         self.surrogate_slope = (
             builtin.get("slope", surrogate_slope)
-            if self.surrogate is None else surrogate_slope
+            if self.surrogate is None
+            else surrogate_slope
         )
         self.surrogate_gradient_scale = (
             builtin.get("gradient_scale", 1.0) if self.surrogate is None else 1.0
@@ -3141,7 +3162,9 @@ class GraphExecutor(nn.Module):
             raise ValueError("surrogate threshold_inclusive must be boolean")
         self.surrogate_slope = float(self.surrogate_slope)
         self.surrogate_config = (
-            copy.deepcopy(self.surrogate) if self.surrogate is not None else {
+            copy.deepcopy(self.surrogate)
+            if self.surrogate is not None
+            else {
                 "kind": "fast_sigmoid",
                 "slope": self.surrogate_slope,
                 "gradient_scale": self.surrogate_gradient_scale,
@@ -3499,6 +3522,9 @@ class GraphExecutor(nn.Module):
         retain_final_state: bool = True,
         retain_runtime_state: bool = True,
     ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
+        trace = current_trace()
+        if trace is not None and not trace.active:
+            trace = None
         if not isinstance(diagnostics, bool):
             raise TypeError("diagnostics must be boolean")
         for name, value in (
@@ -3559,12 +3585,18 @@ class GraphExecutor(nn.Module):
             for row in self.plan.graph.get("inputs", [])
         }
         expected_compatibility = runtime_state_compatibility(
-            self.plan, projection_mode=self.projection_mode,
-            threshold_inclusive=self.surrogate_threshold_inclusive if self.surrogate is None else True,
+            self.plan,
+            projection_mode=self.projection_mode,
+            threshold_inclusive=self.surrogate_threshold_inclusive
+            if self.surrogate is None
+            else True,
         )
         expected_signature = runtime_state_signature(
-            self.plan, projection_mode=self.projection_mode,
-            threshold_inclusive=self.surrogate_threshold_inclusive if self.surrogate is None else True,
+            self.plan,
+            projection_mode=self.projection_mode,
+            threshold_inclusive=self.surrogate_threshold_inclusive
+            if self.surrogate is None
+            else True,
         )
         if runtime_state is None:
             voltage = {
@@ -4001,7 +4033,11 @@ class GraphExecutor(nn.Module):
                             if source_t >= 0
                             else input_histories[source_owner][source_t]
                         )
-                    drive = source @ effective_weights[projection.parameter]
+                    if trace is None:
+                        drive = source @ effective_weights[projection.parameter]
+                    else:
+                        with trace.detail(f"projection/{projection.id}"):
+                            drive = source @ effective_weights[projection.parameter]
                     spec = projection_rows[projection.id]["synapse"]
                     if spec["kind"] == "custom_synapse":
                         definition = E.resolve("synapse", spec)
@@ -4184,6 +4220,8 @@ class GraphExecutor(nn.Module):
                     recorder.output_step(
                         output_id, step_signals[signal], completed_steps + t
                     )
+            if trace is not None:
+                trace.observe_spikes(new_spikes)
             spikes = new_spikes
             segments.observe(spikes)
             for name in observation_counts:
@@ -4983,6 +5021,19 @@ class _TrainingTiming:
 
 
 def train(spec: ExecutionSpec) -> ExecutionResult:
+    """Execute native training, optionally collecting bounded diagnostic traces."""
+    trace = current_trace()
+    if trace is not None:
+        if getattr(trace, "training_started", False):
+            raise ValueError("nested training during tracing is not supported")
+        trace.training_started = True
+    if spec.tracing is not None and spec.tracing.mode != "off":
+        if trace is not None:
+            raise ValueError("nested traced training is not supported")
+        with TraceSession(spec.tracing, resolve_device(spec.device)) as session:
+            result = train(replace(spec, tracing=None))
+        result.metrics["tracing"] = session.summary
+        return result
     if (
         spec.executor == "graph"
         and isinstance(spec.epochs, Integral)
@@ -5073,6 +5124,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     built = build(spec)
     assert isinstance(built.model, GraphExecutor)
     model = built.model
+    trace = current_trace()
+    if trace is not None:
+        trace.bind(model)
     graph = model.plan.graph
     training = spec.training
     if training is None and spec.bundle is not None:
@@ -5502,14 +5556,22 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         bind_data = spec.metrics is not None or spec.batching is not None
         reporting_contract = {
             "metrics": metric_policy.to_dict(),
-            "train_inputs": evaluation_tensor_identity(resolved_inputs) if bind_data else resolved_inputs.protocol,
-            "train_targets": evaluation_tensor_identity(resolved_targets) if bind_data else list(target_rows),
+            "train_inputs": evaluation_tensor_identity(resolved_inputs)
+            if bind_data
+            else resolved_inputs.protocol,
+            "train_targets": evaluation_tensor_identity(resolved_targets)
+            if bind_data
+            else list(target_rows),
             "validation": None
             if validation_data is None or metric_policy.validation == "none"
             else {
                 "protocol": validation_data[0].protocol,
-                "inputs": evaluation_tensor_identity(validation_data[0]) if bind_data else validation_data[0].protocol,
-                "targets": evaluation_tensor_identity(validation_data[1]) if bind_data else list(validation_data[2]),
+                "inputs": evaluation_tensor_identity(validation_data[0])
+                if bind_data
+                else validation_data[0].protocol,
+                "targets": evaluation_tensor_identity(validation_data[1])
+                if bind_data
+                else list(validation_data[2]),
             },
         }
     if reporting_saved is not None:
@@ -6170,26 +6232,40 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         (indices, "train", epoch if dataset_mode else completed_updates + index, None)
         for index, (epoch, _, indices) in enumerate(scheduled)
     )
-    for update, (_, batch_inputs, encoding_metadata) in enumerate(
+    batches = iter(
         iter_batches(resolved_inputs, requests, prefetch=spec.dataset_prefetch)
-    ):
+    )
+    for update in range(len(scheduled)):
+        if trace is not None:
+            trace.begin_update(
+                update,
+                scheduled[update][0] + 1,
+                scheduled[update][1] + 1,
+                parameter_map,
+            )
+        with trace.region("batch_prepare_wait") if trace is not None else nullcontext():
+            _, batch_inputs, encoding_metadata = next(batches)
+        if trace is not None:
+            trace.observe_inputs(batch_inputs)
         epoch, batch, sample_indices = scheduled[update]
         optimizer.zero_grad(set_to_none=True)
         batch_targets = {
             name: value.index_select(0, sample_indices.to(value.device))
             for name, value in resolved_targets.items()
         }
-        forward, signal_values = model._forward(
-            batch_inputs,
-            diagnostics=spec.diagnostics,
-            required_signals=required_signals,
-            retain_parameters=False,
-            retain_final_state=False,
-            retain_runtime_state=False,
-        )
-        loss, components = compute_loss(
-            forward, signal_values, batch_targets, resolved_inputs.protocol
-        )
+        with trace.region("forward") if trace is not None else nullcontext():
+            forward, signal_values = model._forward(
+                batch_inputs,
+                diagnostics=spec.diagnostics,
+                required_signals=required_signals,
+                retain_parameters=False,
+                retain_final_state=False,
+                retain_runtime_state=False,
+            )
+        with trace.region("loss") if trace is not None else nullcontext():
+            loss, components = compute_loss(
+                forward, signal_values, batch_targets, resolved_inputs.protocol
+            )
         if metric_policy.train == "online":
             count = len(sample_indices)
             values = {
@@ -6224,7 +6300,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                         online_sums[name] = torch.zeros_like(value)
                     online_sums[name].add_(value)
             online_count += count
-        loss.backward()
+        with trace.region("backward") if trace is not None else nullcontext():
+            loss.backward()
+        if trace is not None:
+            trace.observe_gradients(parameter_map)
         gradient_names = (
             set(parameter_map)
             if update == len(scheduled) - 1
@@ -6247,8 +6326,15 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             )
         if observation_spec is not None:
             gradient_measurements.add(before_clip, parameter_map)
-        optimizer.step()
-        model.enforce_constraints()
+        with (
+            trace.region("optimizer_constraints")
+            if trace is not None
+            else nullcontext()
+        ):
+            optimizer.step()
+            model.enforce_constraints()
+        if trace is not None:
+            trace.end_update(parameter_map, last=update + 1 == len(scheduled))
         executed_updates = update + 1
         examples_consumed += len(sample_indices)
         epoch_examples += len(sample_indices)
@@ -6323,6 +6409,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 timing.switch("training", scheduled[update + 1][0] + 1)
             else:
                 timing.switch("reporting")
+    batches.close()
     timing.switch("reporting")
     assert final_forward is not None
     # Reporting reads are grouped after execution; selection reads remain explicit.

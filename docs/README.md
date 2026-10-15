@@ -17,12 +17,12 @@ The library comparison guide lives in `content/docs/comparisons.mdx`. It explain
 
 Edit Installation in `content/docs/` and keep navigation in `content/docs/meta.json`. Changelog is generated from the root `CHANGELOG.md` before development, type checks and builds; edit that source file.
 
-Installation and Quickstart stay at the top of the sidebar. Workflows opens by
-default; Model components, Results and analysis, Comparisons and API Reference
-start collapsed. The navigation folders contain only `meta.json` files and refer
+Installation and Quickstart stay at the top of the sidebar. Examples opens by
+default; Model Components, Results and Analysis, Benchmarks and API Reference
+start collapsed. Comparison with Other SNN Libraries is a top-level page. The navigation folders contain only `meta.json` files and refer
 to existing pages using relative paths, preserving their URLs and generated
 content locations. Short navigation labels live in `src/lib/navigation.ts`;
-article titles remain unchanged. Keep Changelog last.
+sidebar labels and article titles use title case, preserving API and library names. Keep Changelog last.
 
 During development, navigation and page rendering use Vite's current content
 files rather than a cached collection snapshot. Edits to the root Changelog, example templates, Python
@@ -74,3 +74,9 @@ Input declarations live in Network; binding types and compatibility rules live i
 Current-based LIF follows PyTorch Integration and demonstrates built-in current neurons and synapses. `scripts/sync-current-lif.ts` publishes its script and figures from `../examples/current-lif/`.
 
 Customisation follows Current-based LIF and demonstrates current-based LIF neurons, adaptive dynamics and a custom initializer supplied by an external importable `custom_neurons.py` module. `scripts/sync-customisation.ts` publishes both Python files and figures; run `../examples/customisation/customisation.py` to regenerate outputs, then add `--simulate` to load the saved bundle in a fresh process without registration or rebuilding.
+
+The SHD workload report is authored in `content/docs/shd-benchmark.mdx`. Its four
+figures and raw/derived downloads are pinned to `shd-59e3371bb384`; regenerate with
+`../benchmarks/shd/plot.py` before running `scripts/sync-shd.ts`. The sync script
+verifies artifact, renderer and recipe hashes and runs before development/checks/builds.
+It does not download the raw trace, run training or silently choose another run.

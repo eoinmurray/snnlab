@@ -1,0 +1,9 @@
+parameter,phase,elements,nonzero,nonzero_blocks,blocks,zero_fraction,zero_block_fraction
+E1_to_E2.weight,before_window,16384,10406,64,64,0.3648681640625,0.0
+input_to_E1.weight,before_window,89600,53874,352,352,0.39872767857142855,0.0
+readout_projection.weight,before_window,2560,2560,16,16,0.0,0.0
+score_gain.weight,before_window,400,20,2,4,0.95,0.5
+E1_to_E2.weight,after_window,16384,9836,64,64,0.399658203125,0.0
+input_to_E1.weight,after_window,89600,51155,352,352,0.42907366071428577,0.0
+readout_projection.weight,after_window,2560,2560,16,16,0.0,0.0
+score_gain.weight,after_window,400,20,2,4,0.95,0.5

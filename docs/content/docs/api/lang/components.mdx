@@ -44,7 +44,7 @@ All displayed settings are applied. `initial_voltage_mv=None` starts at `resting
 
 All built-in LIF, ALIF and AdEx constructors accept only `refractory` as a non-negative finite ms quantity. `refractory_steps` and `refractory_policy` are unsupported authoring arguments. Newly compiled graphs use `refractory_timing="following_steps"`; archived graphs retain their historical scheduling. See [Refractory durations](/neurons#refractory-durations) for exact-grid examples, timing metadata and the COBA compatibility boundary.
 
-Connect current neurons with `ExponentialCurrent` or a compatible registered current synapse. A conductance/current mismatch fails compilation or planning. See [Customisation](/customisation) for a comparison with custom adaptive dynamics.
+Connect current neurons with `ExponentialCurrent` or a compatible registered current synapse. A conductance/current mismatch fails compilation or planning. See [Customisation](/custom-neurons-and-synapses) for a comparison with custom adaptive dynamics.
 
 ### ALIF and AdEx
 

@@ -1,5 +1,5 @@
 ---
-title: Comparing SNN libraries
+title: Comparison with Other SNN Libraries
 description: How SNNLab's declarative network language and experimental workflow compare with SpikingJelly, snnTorch, Brian 2, NEST and Norse.
 ---
 
@@ -110,7 +110,7 @@ Choose snnTorch for a direct route from conventional PyTorch training to spiking
 
 The distinction is what the languages describe. Brian's equations express the dynamics themselves; `snnlab.lang` expresses a circuit assembled from model specifications, with named signals and optional training recipes. SNNLab then executes the graph as a differentiable PyTorch module, allowing surrogate-gradient learning through its supported spiking dynamics.
 
-Choose Brian when developing new equations or controlling numerical integration is the main task. Choose SNNLab when its built-in dynamics suit the experiment and you want an integrated authoring-to-training workflow. SNNLab supports [custom Python extensions](/customisation), but `lang` is not a general equation parser or a replacement for Brian's modelling language.
+Choose Brian when developing new equations or controlling numerical integration is the main task. Choose SNNLab when its built-in dynamics suit the experiment and you want an integrated authoring-to-training workflow. SNNLab supports [custom Python extensions](/custom-neurons-and-synapses), but `lang` is not a general equation parser or a replacement for Brian's modelling language.
 
 ## NEST
 

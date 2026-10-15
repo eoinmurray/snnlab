@@ -1,0 +1,152 @@
+---
+title: Tracing
+description: Optional bounded activity monitoring and PyTorch CPU/CUDA profiling for native training.
+---
+
+`TraceSpec` adds diagnostics to native `train()` calls. Import it from
+`snnlab.sim.tracing` and pass it as `ExecutionSpec.tracing`. Tracing defaults to
+`None`; disabled tracing opens no profiler, samples no activity and adds no
+measurement clocks or device fences. It does not change the graph/training
+recipe or checkpoint compatibility identity.
+
+```python
+from pathlib import Path
+from snnlab.sim.execution import ExecutionSpec, train
+from snnlab.sim.tracing import TraceSpec
+
+result = train(ExecutionSpec(
+    kind="train",
+    bundle=Path("network.bundle"),
+    # Supply input_bindings, targets and normal training settings here.
+    tracing=TraceSpec(
+        output=Path("artifacts/run-001/tracing"),
+        mode="both",
+        skip_updates=1,
+        active_updates=3,
+    ),
+))
+summary = result.metrics["tracing"]
+```
+
+Use a separate diagnostic call for profiling rather than treating its timings as
+a baseline with tracing disabled. The SHD benchmark provides this separation through
+its CLI flags. The small code example above shows API placement; normal input,
+target and training settings are still required.
+
+## Modes and capture window
+
+| Mode | Measurements |
+| --- | --- |
+| `off` | Same as omitted tracing; no output directory is created. |
+| `monitor` | Detached input/spike/weight/gradient sparsity, boundary memory samples, host phase timings, current-stream CUDA event timings and process CPU activity. |
+| `profile` | CPU operators, optional CUDA operators/kernels, allocation attribution, formula-estimated FLOPs and Chrome timeline; no activity reductions or boundary memory monitoring. |
+| `both` | Monitoring and profiling in the same diagnostic capture. |
+
+`skip_updates` is the number of training updates to skip **in the current call**,
+including when resuming. It defaults to 1. `active_updates` is the maximum number
+of consecutive training updates to capture, default 3. Counts exclude validation
+batches. A short run reports `truncated`; a window beyond the end reports `empty`.
+An exception reports `failed` and is propagated after cleanup. Completed capture
+reports `complete`. An existing output directory is rejected rather than overwritten.
+
+Activity statistics cover selected training updates only. The raw profile and
+capture wall time span the first selected batch preparation through the last
+selected optimiser/constraint phase. If that window crosses an epoch boundary,
+intervening evaluations are also present in the raw profile and wall time. For
+isolated training diagnostics, use `validation=None` and no initial evaluations,
+as the SHD CLI does. Start-of-window compilation can still be present: skipping
+one update is not proof that every shape has warmed up.
+
+Tracing currently supports native graph training. Inference and simulation
+requests reject `tracing`. Nested native training during a traced call is rejected.
+
+## Configuration
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `output` | Required | New directory for reports. |
+| `mode` | `"monitor"` | `off`, `monitor`, `profile` or `both`. |
+| `skip_updates` | `1` | Nonnegative update count before capture. |
+| `active_updates` | `3` | Positive capture limit. |
+| `block_size` | `16` | Square weight tile size for zero-block statistics. |
+| `record_shapes` | `True` | Profiler input-shape attribution. |
+| `profile_memory` | `True` | Profiler allocation attribution. |
+| `with_stack` | `False` | Profiler stack collection, with additional overhead. |
+| `detailed_labels` | `True` | Projection matrix-product and prepared neuron-call labels in profile mode. |
+
+Detailed labels surround calls outside prepared compiled neuron kernels. They do
+not insert labels into the compiled tensor function. Their per-timestep host cost
+can be substantial; disable them for a coarser diagnostic comparison. Registered
+custom neuron callbacks are visible inside `forward` but do not have prepared
+neuron labels.
+
+## Measurements and limits
+
+1. **Timing:** `phases.csv` records `batch_prepare_wait`, `forward`, `loss`,
+   `backward` and `optimizer_constraints`. Registered dataset encoders additionally
+   expose `encoding`; dense input binding exposes `transfer` around its `.to()`.
+   Batch preparation includes queue waiting and work performed while advancing
+   the iterator. Background prefetch encoding/transfers are visible where the
+   profiler supports them, but are not isolated worker-phase timers. Host fields
+   are enqueue durations. Captured example counts and instrumented examples/second
+   are reported separately from baseline throughput. CUDA events measure elapsed time on the caller's current
+   stream, including stream waits; they are not sums of kernel execution time.
+   Nested regions overlap and must not be added together. Capture wall time excludes
+   profiler startup and final report export; native diagnostic training timings
+   likewise exclude trace export performed after training returns.
+2. **Activity:** nonzero density, mean/per-neuron firing rates, silent
+   example-timestep fractions and globally silent timestep fractions. Inputs
+   currently require `[time, batch, channels]`; populations are spiking populations
+   only. Counts are detached device reductions, transferred after the window.
+   No complete spike history is retained. Monitoring still introduces kernels,
+   temporary tensors and extra memory traffic.
+3. **Weights and gradients:** exact numerical zeros, not approximate small values.
+   Weights are sampled before/after the window; gradients after backward and before
+   clipping. Frozen parameters are listed in weight reports. Zero-padded edge
+   tiles count as partial blocks in block-zero fractions. Sparsity does not imply
+   that dense PyTorch arithmetic skips zeros.
+4. **Memory:** allocated/reserved CUDA bytes at boundaries and CUDA allocator
+   peaks reset at capture start. These include live allocations from before the
+   window. The process RSS high-water mark covers the process lifetime, not just
+   this request; it is unavailable on platforms without `resource`. Profiler
+   operator memory columns describe allocation/deallocation attribution, not
+   exclusive tensor ownership or exact saved-backward-tensor storage. CUDA allocator
+   measurements exclude external allocations, CUDA context storage and other processes.
+5. **CPU/GPU activity:** process CPU seconds divided by capture wall seconds
+   yields average CPU cores used, including threads. This is not normalized by
+   reserved Modal CPUs. Captured GPU kernel interval unions, maximum internal
+   kernel gaps and kernel/copy coverage describe timeline activity, not SM
+   throughput, occupancy or achieved arithmetic efficiency. Concurrent intervals
+   are merged before measuring coverage.
+6. **Bandwidth and FLOPs:** memcpy bytes divided by memcpy duration are reported
+   only when Kineto exports byte counts. They describe those copies, not device
+   DRAM traffic. FLOPs are PyTorch formula estimates for supported operators,
+   not hardware counters. Unsupported operator FLOPs and missing byte counts remain `null`.
+7. **Unavailable counters:** DRAM bandwidth, SM utilization, occupancy, cache
+   hit rates, power and exact saved-backward-tensor storage are explicitly marked
+   unavailable. There is no Nsight/NVML dependency or inferred bandwidth from
+   tensor shapes. CPU profiling works without CUDA; MPS has host/operator
+   measurements but no CUDA activity or allocator statistics.
+
+Profiler instrumentation can perturb execution and retain tensor references.
+Compare baseline and diagnostic runs, and separate cold compilation from warmed
+work. A faster profile alone is not sufficient evidence of a workload speedup.
+
+## Artifacts
+
+1. `summary.json`: schema `snnlab.tracing/v1`, configuration, runtime/device,
+   capture coordinates, status, measurement scopes, availability and measurements.
+2. `phases.csv`, `activity.csv`, `weights.csv`, `gradients.csv`, `memory.csv`:
+   tabular monitoring results. Uncollected tables are empty.
+3. `operators.csv` and `copies.csv`: profiled operator count, CPU/device timing, allocation
+   attribution, input shapes and estimated FLOPs; copy rows include available byte counts and derived transfer rates.
+4. `trace.json`: standard Chrome/Kineto trace, viewable with a compatible timeline
+   viewer. Produced only when profiling actually captures updates. Trace files
+   can be large even for short SNN sequences.
+
+The result's `metrics["tracing"]` contains the same summary. The native
+[`training_timing`](/api/sim/execution-spec#training_timing) policy remains useful
+for whole-call and epoch phases, including setup, validation and checkpointing.
+
+Backend references: [PyTorch Profiler](https://docs.pytorch.org/docs/2.10/profiler.html)
+and [profiler recipe](https://docs.pytorch.org/tutorials/recipes/recipes/profiler_recipe.html).

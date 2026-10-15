@@ -1,0 +1,26 @@
+{
+  "run_id": "shd-59e3371bb384",
+  "source_sha256": {
+    "cloud.json": "8b66a55578cbfa0a61bb097580a2c11a312b6bb2956366dd9776d182862cb044",
+    "configuration.json": "c80e53383eda4e5885016ec091e6bc0536c3e96a21c445a6a4ddfc86d043d3ec",
+    "diagnostic_metrics.json": "f3c868fb110c3ad2a5646103c8bf469845bd52672ecfe704ea95cfc35a1faf53",
+    "metrics.json": "ea1f7169ff4389595a99e9cf64158e8e004d99068a171b6f9ff7ba32d7fa2aff",
+    "summary.json": "cea9c6cc7e0392a1d4dc0349bcae9d9f02a3b7a77ed9e29a731746ba912d4eb8",
+    "timeline-excerpt.json": "ad14c4bd33fccae44664cafc9e5bfa47adb8725d7866d337cbd531b5d06d0659",
+    "timing.json": "317ae187accb34d5ead68b4c8c5bff4b927e76a9e90da58a93723729c8423bd5",
+    "tracing/activity.csv": "2b1d7ab6c5a517d20ee2f986907a03e965040b4437f79a09e003b8ccdadc3021",
+    "tracing/copies.csv": "25b0d6a30de75bbcec9c9feddfd85a9b4a362203a321479bcb9be7bbabef148f",
+    "tracing/gradients.csv": "bbaaeeb0877e5a6fbee21d5be00e8cedcac6a4c99ede6a778733eef3dc4e8cdd",
+    "tracing/memory.csv": "e7cccdddfe21828b0e8bd06375b8930d34e7ff31738ff44ae6bd3051723e4a4e",
+    "tracing/operators.csv": "c45b06fb0d11d7b3dcf86ef49f166b6bd3a9e12c6a457fa90269da5f1bb4769f",
+    "tracing/phases.csv": "7535207ef07a645a703f582062c1237e11dfd58403c8ba6121ba968a3c2476d4",
+    "tracing/summary.json": "72c5877664b3aece2724eede901058d4ecb45dc6b9576c83269427804154791b",
+    "tracing/weights.csv": "bb5b21486928929a558af763c42f0aecfb750bb17a6b5a869113b278457d834f"
+  },
+  "renderer_sha256": "686b6e53d894ebf4ce20c7cacd01627b3fb8119649af27988b44fbcbf9899c64",
+  "figures": {
+    "learning.png": "68d3e23f618af2b701bc1bbe333bcf594a430dbe20e2ab0cfe2d555bd273f6a6",
+    "learning.pdf": "badb93fda353f11184c97609fb979e7212e43cecbbf1888204a10746fc4b5331",
+    "learning.svg": "f16c8f1bb76b824ea0f9f08b9be5dd3f3d65eb3a602191dc71e4c921b52575c2"
+  }
+}

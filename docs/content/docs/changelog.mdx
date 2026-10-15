@@ -9,6 +9,21 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+### Added
+
+1. Optional `snnlab.sim.tracing.TraceSpec` on native training requests supports `off`, `monitor`, `profile` and `both` modes over bounded update windows. Monitoring reports detached input/population activity, numerical weight/gradient sparsity, block sparsity, phase enqueue/current-stream timings, boundary CUDA memory and process CPU/RSS measurements. PyTorch Profiler adds operator/allocation tables and Chrome traces, with estimated FLOPs, kernel interval coverage and copy bandwidth where Kineto exports bytes. Hardware counters outside the backend remain explicitly unavailable; tracing is excluded from checkpoint identity.
+2. Added `benchmarks/shd` with the calibrated feedforward COBA Lang recipe, batch 256, ten epochs and native `snnlab.sim.execution.train()`, verified SHD acquisition/splitting, final checkpoints, timings and a Modal H100 launcher. CLI tracing controls run a separate bounded diagnostic after baseline training; profiler overhead is excluded from baseline reports. Tracing documentation defines metric scopes, overlap, instrumentation overhead and unsupported counters.
+
+3. Added a run-pinned SHD workload report with learning, baseline epoch timing, sparsity and diagnostic timeline figures, protocol/results/operator/observability tables and downloadable retained data. A streaming trace extractor distinguishes actual CUDA kernels from annotation spans; publication checks source, figure and recipe hashes. Baseline measurements remain separate from the instrumented early-training capture.
+
+### Changed
+
+1. SHD's Python Modal launcher now submits a single durable `.spawn()` call inside `app.run(detach=True)` and immediately saves its run/call IDs. The cloud worker writes its own completion manifest and commits artifacts independently of the client. A separate volume-only collection command downloads reports later without starting GPU work; the explicit Modal CLI path is documented with `--detach`.
+
+### Validation
+
+1. The CPU tracing/SHD acceptance suite passed 24 tests with one CUDA skip, covering exact unchanged weights, gradients, Adam/RNG state and resume, known sparsity counts, interval unions, empty/truncated windows, exception cleanup, portable bundles and separation of baseline/diagnostic calls. The broader local simulation suite passed 860 tests with 22 skips and two deselections. CUDA tracing has not been executed locally. Documentation type checks and root/base-path static builds passed.
+
 ## [0.14.0] - 2026-10-14
 
 ### Added

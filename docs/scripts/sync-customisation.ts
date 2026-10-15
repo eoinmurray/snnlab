@@ -20,7 +20,7 @@ const replacements: Record<string, string> = {
   NETWORK: section('# 3. Define a stimulus with custom tensors: quiet, then sustained activity.', '# 5. Compile and execute', true),
   EXECUTION: section('# 5. Compile and execute: the bundle stores names/config, not Python code.', '# 6. Plot the same stimulus', true),
 };
-writeFileSync(new URL('../content/docs/customisation.mdx', import.meta.url),
+writeFileSync(new URL('../content/docs/custom-neurons-and-synapses.mdx', import.meta.url),
   template.replace(/\{\{(\w+)\}\}/g, (_, name) => {
     if (!(name in replacements)) throw new Error(`Unknown Customisation placeholder: ${name}`);
     return replacements[name];

@@ -1,0 +1,10 @@
+update_index,epoch,batch,examples,steps,parameter,elements,nonzero,zero_fraction
+5,1,6,256,1000,E1_to_E2.weight,16384,16384,0.0
+5,1,6,256,1000,input_to_E1.weight,89600,89600,0.0
+5,1,6,256,1000,readout_projection.weight,2560,2560,0.0
+6,1,7,256,1000,E1_to_E2.weight,16384,16384,0.0
+6,1,7,256,1000,input_to_E1.weight,89600,89600,0.0
+6,1,7,256,1000,readout_projection.weight,2560,2560,0.0
+7,1,8,256,1000,E1_to_E2.weight,16384,16384,0.0
+7,1,8,256,1000,input_to_E1.weight,89600,89600,0.0
+7,1,8,256,1000,readout_projection.weight,2560,2560,0.0

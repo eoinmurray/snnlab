@@ -1,0 +1,6 @@
+{
+  "title": "Benchmarks",
+  "collapsible": true,
+  "defaultOpen": false,
+  "pages": ["../shd-benchmark", "../snntorch-comparison"]
+}

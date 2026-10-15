@@ -1,0 +1,515 @@
+operator,calls,cpu_total_us,self_cpu_us,device_total_us,self_device_us,self_cpu_memory_bytes,self_device_memory_bytes,estimated_flops,flops_status,input_shapes
+aten::detach,9,80.69000000094627,23.109000002175605,0,0,0,0,,unavailable,"[[128, 128]]"
+detach,9,57.580999998770665,57.580999998770665,0,0,0,0,,unavailable,"[[128, 128]]"
+aten::count_nonzero,5,3073.7469999999553,143.40999999920268,41.312000000440094,0.0,0,-81920,,unavailable,"[[128, 128], []]"
+aten::ne,7,2551.291000001512,2008.5630000024812,9.599999999434203,8.255999999434152,0,114688,,unavailable,"[[128, 128], []]"
+Activity Buffer Request,23,17152.80299999891,17152.80299999891,31.741999997250787,31.741999997250787,0,0,,unavailable,[]
+cudaLaunchKernel,165545,692372.605999892,688581.8259998925,533.2739999988662,0.0,0,0,,unavailable,[]
+"void at::native::vectorized_elementwise_kernel<4, at::native::AUnaryFunctor<float, float, bool, at::native::(anonymous namespace)::CompareEqFunctor<float> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<float, float, bool, at::native::(anonymous namespace)::CompareEqFunctor<float> >, std::array<char*, 2ul>)",18040,0,0,23305.393999980344,23305.393999980344,0,0,,unavailable,[]
+aten::sum,5,413.5579999995234,133.47899999993342,33.95200000018667,19.584000000387732,0,-652800,,unavailable,"[[128, 128], [], [], []]"
+aten::as_strided,12052,5830.999000026577,5830.999000026577,0,0,0,0,,unavailable,"[[], [], [], []]"
+aten::to,8,235.22700000170607,18.983000001020628,14.36799999979894,0.0,0,0,,unavailable,"[[128, 128], [], [], [], []]"
+aten::_to_copy,5,216.24400000068545,60.49799999964989,14.36799999979894,0.0,0,0,,unavailable,"[[128, 128], [], [], [], [], [], []]"
+aten::empty_strided,39105,122639.90299996818,122054.23799996814,0,0,36,9813621248,,unavailable,"[[], [], [], [], [], []]"
+aten::copy_,11,305.9100000020858,133.31200000134004,21.21599999957516,21.21599999957516,0,0,,unavailable,"[[128, 128], [128, 128], []]"
+"void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",18040,0,0,38767.47800002276,38767.47800002276,0,0,,unavailable,[]
+"void at::native::reduce_kernel<512, 1, at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4> >(at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4>)",6037,0,0,12359.00500003904,12359.00500003904,0,0,,unavailable,[]
+aten::pad,2,235.5310000009813,31.93100000045888,2.1439999998656276,0.0,0,0,,unavailable,"[[128, 128], [], [], []]"
+aten::constant_pad_nd,2,203.6000000005224,27.773000001863693,2.1439999998656276,0.0,0,0,,unavailable,"[[128, 128], [], []]"
+aten::clone,3,206.82999999915046,24.04499999651307,3.3599999998805288,0.0,0,0,,unavailable,"[[128, 128], []]"
+cudaMemcpyAsync,28,226774.1789999957,226774.1789999957,0,0,0,0,,unavailable,[]
+Memcpy DtoD (Device -> Device),16,0,0,18.36899999984962,18.36899999984962,0,0,,unavailable,[]
+[memory],114,0.0,0.0,0,0,0,-1078080512,,unavailable,[]
+aten::reshape,2,34.72600000125385,8.207000001759297,0,0,0,0,,unavailable,"[[128, 128], []]"
+aten::view,2,26.518999999494554,26.518999999494554,0,0,0,0,,unavailable,"[[128, 128], []]"
+aten::any,2,97.85199999965698,63.13000000031025,5.632000001503911,5.632000001503911,0,2048,,unavailable,"[[8, 16, 8, 16], [], []]"
+aten::as_strided,2,4.7970000006425835,4.7970000006425835,0,0,0,0,,unavailable,"[[8, 16, 8], [], [], []]"
+"void at::native::reduce_kernel<512, 1, at::native::ReduceOp<bool, at::native::func_wrapper_t<bool, at::native::or_kernel_cuda(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(bool, bool)#1}>, unsigned int, bool, 4, 4> >(at::native::ReduceOp<bool, at::native::func_wrapper_t<bool, at::native::or_kernel_cuda(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(bool, bool)#1}>, unsigned int, bool, 4, 4>)",8,0,0,21.310999999692285,21.310999999692285,0,0,,unavailable,[]
+aten::any,2,212.18399999938993,23.432000000255357,12.417000000714324,8.70500000071479,0,1024,,unavailable,"[[8, 16, 8], [], []]"
+aten::as_strided,2,1.2540000002991292,1.2540000002991292,0,0,0,0,,unavailable,"[[8, 8], [], [], []]"
+Lazy Function Loading,5,403.6420000001126,403.6420000001126,528.634999999831,528.634999999831,0,0,,unavailable,[]
+"void at::native::reduce_kernel<128, 4, at::native::ReduceOp<bool, at::native::func_wrapper_t<bool, at::native::or_kernel_cuda(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(bool, bool)#1}>, unsigned int, bool, 4, 4> >(at::native::ReduceOp<bool, at::native::func_wrapper_t<bool, at::native::or_kernel_cuda(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(bool, bool)#1}>, unsigned int, bool, 4, 4>)",4,0,0,15.61700000129349,15.61700000129349,0,0,,unavailable,[]
+aten::sum,2,110.22199999913573,42.73399999864341,7.26400000038484,4.3199999993885285,0,0,,unavailable,"[[8, 8], []]"
+aten::to,2,52.537999999764,4.763000000268221,2.9440000009963114,0.0,0,0,,unavailable,"[[8, 8], [], [], [], []]"
+aten::_to_copy,2,47.774999999495776,13.075999998396583,2.9440000009963114,0.0,0,0,,unavailable,"[[8, 8], [], [], [], [], [], []]"
+aten::copy_,2,25.691000000340864,10.691000000071654,2.9440000009963114,2.9440000009963114,0,0,,unavailable,"[[8, 8], [8, 8], []]"
+aten::detach,9,29.028000000871543,11.362000000768603,0,0,0,0,,unavailable,"[[700, 128]]"
+detach,9,17.66600000010294,17.66600000010294,0,0,0,0,,unavailable,"[[700, 128]]"
+aten::count_nonzero,5,1641.3219999977264,41.07699999671968,77.11700000072597,0.0,0,-448000,,unavailable,"[[700, 128], []]"
+aten::ne,7,1453.2609999996057,1413.6809999986508,9.56800000032672,9.56800000032672,0,627200,,unavailable,"[[700, 128], []]"
+aten::sum,5,170.20200000032855,46.68299999927331,70.10899999972753,55.581999999747495,0,-3581440,,unavailable,"[[700, 128], [], [], []]"
+aten::to,8,98.1350000025559,5.715000002823217,14.526999999980035,0.0,0,0,,unavailable,"[[700, 128], [], [], [], []]"
+aten::_to_copy,5,92.41999999973268,16.92899999480869,14.526999999980035,0.0,0,0,,unavailable,"[[700, 128], [], [], [], [], [], []]"
+aten::copy_,11,111.1460000015577,32.71699999889461,21.823999999192893,21.823999999192893,0,0,,unavailable,"[[700, 128], [700, 128], []]"
+aten::pad,2,223.42999999861422,4.1749999997337,5.2800000002243905,0.0,0,0,,unavailable,"[[700, 128], [], [], []]"
+aten::constant_pad_nd,2,219.25499999888052,56.52099999919665,5.2800000002243905,0.0,0,0,,unavailable,"[[700, 128], [], []]"
+aten::empty,87,456.6300000013871,456.6300000013871,0,0,60,5220864,,unavailable,"[[], [], [], [], [], []]"
+aten::fill_,2,76.58700000014869,26.462999999344902,3.0720000006986083,2.1120000006994815,0,0,,unavailable,"[[704, 128], []]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<bool>, std::array<char*, 1ul> >(int, at::native::FillFunctor<bool>, std::array<char*, 1ul>)",6,0,0,6.240000001114822,6.240000001114822,0,0,,unavailable,[]
+aten::narrow,2,36.09599999844795,25.325999997316103,0,0,0,0,,unavailable,"[[704, 128], [], [], []]"
+aten::slice,2,10.770000001131848,8.899000000492379,0,0,0,0,,unavailable,"[[704, 128], [], [], [], []]"
+aten::as_strided,2,1.8710000006394694,1.8710000006394694,0,0,0,0,,unavailable,"[[704, 128], [], [], []]"
+aten::reshape,2,11.354999999733991,3.6640000008810603,0,0,0,0,,unavailable,"[[704, 128], []]"
+aten::view,2,7.690999998852931,7.690999998852931,0,0,0,0,,unavailable,"[[704, 128], []]"
+aten::any,2,34.71000000101412,21.486000001656066,6.239999998764688,6.239999998764688,0,11264,,unavailable,"[[44, 16, 8, 16], [], []]"
+aten::as_strided,2,3.5319999998064304,3.5319999998064304,0,0,0,0,,unavailable,"[[44, 16, 8], [], [], []]"
+aten::any,2,27.295999999998457,16.15200000023833,6.912000000578701,6.912000000578701,0,1024,,unavailable,"[[44, 16, 8], [], []]"
+aten::as_strided,2,0.8989999996992992,0.8989999996992992,0,0,0,0,,unavailable,"[[44, 8], [], [], []]"
+aten::sum,2,63.5089999991651,22.172999996484577,8.80099999977756,4.481000000731001,0,-5120,,unavailable,"[[44, 8], []]"
+aten::to,2,31.616000000074564,2.2299999996903352,4.3199999990465585,0.0,0,0,,unavailable,"[[44, 8], [], [], [], []]"
+aten::_to_copy,2,29.38600000038423,8.083999999071239,4.3199999990465585,0.0,0,0,,unavailable,"[[44, 8], [], [], [], [], [], []]"
+aten::copy_,2,14.868000000536995,5.838000001280307,4.3199999990465585,4.3199999990465585,0,0,,unavailable,"[[44, 8], [44, 8], []]"
+aten::detach,9,66.33999999643129,10.797999996022554,0,0,0,0,,unavailable,"[[128, 20]]"
+detach,9,55.542000000408734,55.542000000408734,0,0,0,0,,unavailable,"[[128, 20]]"
+aten::count_nonzero,5,2288.45400000018,1362.987000000885,30.815000002090528,0.0,0,-12800,,unavailable,"[[128, 20], []]"
+aten::ne,7,106.92699999928664,77.65299999491617,9.15200000400364,9.15200000400364,0,17920,,unavailable,"[[128, 20], []]"
+aten::sum,5,838.113000000827,52.04100000339895,24.286999998937972,12.31999999756954,0,-99840,,unavailable,"[[128, 20], [], [], []]"
+aten::to,5,761.2320000017498,4.548000000813772,11.967000001368433,0.0,0,0,,unavailable,"[[128, 20], [], [], [], []]"
+aten::_to_copy,5,756.6840000009361,21.857999999101594,11.967000001368433,0.0,0,0,,unavailable,"[[128, 20], [], [], [], [], [], []]"
+aten::copy_,11,138.5850000029386,46.21000000201457,20.415000003271416,18.0150000032736,0,0,,unavailable,"[[128, 20], [128, 20], []]"
+aten::pad,2,121.27399999906265,3.1949999974858656,9.184000000233937,0.0,0,0,,unavailable,"[[128, 20], [], [], []]"
+aten::constant_pad_nd,2,118.07900000157679,9.222000001649576,9.184000000233937,0.0,0,0,,unavailable,"[[128, 20], [], []]"
+aten::fill_,2,14.26499999940279,5.247999999803142,1.8559999993740348,1.8559999993740348,0,0,,unavailable,"[[128, 32], []]"
+aten::narrow,2,9.667999999328458,3.6719999985980394,0,0,0,0,,unavailable,"[[128, 32], [], [], []]"
+aten::slice,2,5.996000000730419,3.499999999807187,0,0,0,0,,unavailable,"[[128, 32], [], [], [], []]"
+aten::as_strided,2,2.4960000009232317,2.4960000009232317,0,0,0,0,,unavailable,"[[128, 32], [], [], []]"
+"void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#11}::operator()() const::{lambda(bool)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#11}::operator()() const::{lambda(bool)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#11}::operator()() const::{lambda(bool)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#11}::operator()() const::{lambda(bool)#1} const&)::{lambda(int)#1})",4,0,0,8.991000001115026,8.991000001115026,0,0,,unavailable,[]
+aten::reshape,2,6.515999999432097,2.946999999894615,0,0,0,0,,unavailable,"[[128, 32], []]"
+aten::view,2,3.568999999537482,3.568999999537482,0,0,0,0,,unavailable,"[[128, 32], []]"
+aten::any,2,28.540000000000873,17.39599999965867,4.703999999539519,4.703999999539519,0,1024,,unavailable,"[[8, 16, 2, 16], [], []]"
+aten::as_strided,2,1.0220000001936569,1.0220000001936569,0,0,0,0,,unavailable,"[[8, 16, 2], [], [], []]"
+aten::any,2,117.92899999894144,16.9659999988653,8.00100000060047,5.633000000598258,0,1024,,unavailable,"[[8, 16, 2], [], []]"
+aten::as_strided,2,3.5740000007463095,3.5740000007463095,0,0,0,0,,unavailable,"[[8, 2], [], [], []]"
+"void at::native::reduce_kernel<256, 2, at::native::ReduceOp<bool, at::native::func_wrapper_t<bool, at::native::or_kernel_cuda(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(bool, bool)#1}>, unsigned int, bool, 4, 4> >(at::native::ReduceOp<bool, at::native::func_wrapper_t<bool, at::native::or_kernel_cuda(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(bool, bool)#1}>, unsigned int, bool, 4, 4>)",4,0,0,11.009000000092783,11.009000000092783,0,0,,unavailable,[]
+aten::sum,2,64.86999999889667,21.615999999245105,7.488000000532338,4.160000000072614,0,0,,unavailable,"[[8, 2], []]"
+aten::to,2,33.23300000053496,4.052000001323904,3.328000000459724,0.0,0,0,,unavailable,"[[8, 2], [], [], [], []]"
+aten::_to_copy,2,29.180999999211053,5.367000001537235,3.328000000459724,0.0,0,0,,unavailable,"[[8, 2], [], [], [], [], [], []]"
+aten::copy_,2,15.432999999000458,6.24399999887828,3.328000000459724,3.328000000459724,0,0,,unavailable,"[[8, 2], [8, 2], []]"
+aten::detach,2,4.303000000028987,2.395999999538617,0,0,0,0,,unavailable,"[[20, 20]]"
+detach,2,1.9070000004903704,1.9070000004903704,0,0,0,0,,unavailable,"[[20, 20]]"
+aten::count_nonzero,2,88.58200000067154,11.458000000489847,12.321000000909407,0.0,0,-1024,,unavailable,"[[20, 20], []]"
+aten::ne,4,40.36600000126782,23.703000001252803,5.856999999643449,5.856999999643449,0,2048,,unavailable,"[[20, 20], []]"
+aten::sum,2,56.806999999018444,15.378999998541985,9.088000000254397,4.128000000073371,0,-6144,,unavailable,"[[20, 20], [], [], []]"
+aten::to,2,31.614999998717394,1.9339999991789227,4.960000000181026,0.0,0,0,,unavailable,"[[20, 20], [], [], [], []]"
+aten::_to_copy,2,29.68099999953847,9.603999998776999,4.960000000181026,0.0,0,0,,unavailable,"[[20, 20], [], [], [], [], [], []]"
+aten::copy_,7,32.30400000031295,13.388000001075852,9.023000000433967,9.023000000433967,0,0,,unavailable,"[[20, 20], [20, 20], []]"
+aten::pad,2,61.683999999761,2.5800000003109744,6.335000001294247,0.0,0,0,,unavailable,"[[20, 20], [], [], []]"
+aten::constant_pad_nd,2,59.103999999450025,9.911999996340455,6.335000001294247,0.0,0,0,,unavailable,"[[20, 20], [], []]"
+aten::fill_,2,12.873000001145556,4.743999999820517,2.272000001041306,2.272000001041306,0,0,,unavailable,"[[32, 32], []]"
+aten::narrow,2,8.304000000593078,3.064000002024841,0,0,0,0,,unavailable,"[[32, 32], [], [], []]"
+aten::slice,2,5.239999998568237,4.316999998463871,0,0,0,0,,unavailable,"[[32, 32], [], [], [], []]"
+aten::as_strided,2,0.9230000001043663,0.9230000001043663,0,0,0,0,,unavailable,"[[32, 32], [], [], []]"
+aten::narrow,2,5.972000001089327,1.9240000010759104,0,0,0,0,,unavailable,"[[20, 32], [], [], []]"
+aten::slice,2,4.048000000013417,2.8579999996836705,0,0,0,0,,unavailable,"[[20, 32], [], [], [], []]"
+aten::as_strided,2,1.1900000003297464,1.1900000003297464,0,0,0,0,,unavailable,"[[20, 32], [], [], []]"
+aten::reshape,2,7.638999999897351,4.632000000761764,0,0,0,0,,unavailable,"[[32, 32], []]"
+aten::view,2,3.006999999135587,3.006999999135587,0,0,0,0,,unavailable,"[[32, 32], []]"
+aten::any,2,23.903000000686006,14.427000000327098,4.734999999884167,4.734999999884167,0,1024,,unavailable,"[[2, 16, 2, 16], [], []]"
+aten::as_strided,2,0.6820000011794036,0.6820000011794036,0,0,0,0,,unavailable,"[[2, 16, 2], [], [], []]"
+aten::any,2,26.18899999995483,14.509000000864035,5.375999999494525,5.375999999494525,0,1024,,unavailable,"[[2, 16, 2], [], []]"
+aten::as_strided,2,2.9179999997613777,2.9179999997613777,0,0,0,0,,unavailable,"[[2, 2], [], [], []]"
+aten::sum,2,58.68499999980486,17.431000000535278,6.9119999998947605,4.191999999729887,0,0,,unavailable,"[[2, 2], []]"
+aten::to,2,29.871000000268396,2.7620000017450366,2.720000000164873,0.0,0,0,,unavailable,"[[2, 2], [], [], [], []]"
+aten::_to_copy,2,27.10899999852336,6.983999998541549,2.720000000164873,0.0,0,0,,unavailable,"[[2, 2], [], [], [], [], [], []]"
+aten::copy_,2,15.118999999998778,5.802999999403255,2.720000000164873,2.720000000164873,0,0,,unavailable,"[[2, 2], [2, 2], []]"
+cudaStreamIsCapturing,58,59.9170000014783,59.9170000014783,15.263999999733642,15.263999999733642,0,0,,unavailable,[]
+cudaEventRecordWithFlags,42,232.5259999998998,232.5259999998998,6.527999999932945,6.527999999932945,0,0,,unavailable,[]
+snnlab::batch_prepare_wait,3,4446232.903,24024.743000000482,226051.32999999914,0.0,-2150400006,0,,unavailable,[]
+aten::detach,3,17.08800000091651,8.600000000125874,0,0,0,0,,unavailable,[[256]]
+detach,3,8.488000000790635,8.488000000790635,0,0,0,0,,unavailable,[[256]]
+aten::to,9,4490.641000000527,15.034000000916421,2.9119999997783452,0.0,0,0,,unavailable,"[[256], [], [], [], [], [], [], []]"
+aten::resolve_conj,3,3.4069999999628635,3.4069999999628635,0,0,0,0,,unavailable,[[256]]
+aten::resolve_neg,3,2.4640000009530922,2.4640000009530922,0,0,0,0,,unavailable,[[256]]
+snnlab::encoding,3,3282635.7469999995,3282610.692,0,0,0,0,,unavailable,[]
+aten::lift_fresh,3,25.054999999934807,25.054999999934807,0,0,0,0,,unavailable,"[[1000, 256, 700]]"
+aten::isfinite,3,485063.7679999992,3503.161000000313,0,0,-3225600000,0,,unavailable,"[[1000, 256, 700]]"
+aten::abs,3,158866.42399999872,102.61399999959394,0,0,0,0,,unavailable,"[[1000, 256, 700]]"
+aten::abs,3,158734.57099999976,158734.57099999976,0,0,2150400000,0,,unavailable,"[[1000, 256, 700], [0]]"
+aten::ne,6,136247.09300000174,136024.4930000028,864.6339999998454,864.6339999998454,537599988,537600000,,unavailable,"[[1000, 256, 700], []]"
+aten::to,6024,78616.4439999673,6905.2369999396615,8620.354000024498,0.0,0,0,,unavailable,"[[], [], [], [], []]"
+aten::_to_copy,6021,71711.20700002764,16818.008000080474,8620.354000024498,0.0,0,0,,unavailable,"[[], [], [], [], [], [], []]"
+aten::copy_,6024,39733.59699999448,17405.96699997224,8623.458000024315,8621.986000024248,0,0,,unavailable,"[[], [], []]"
+aten::eq,3,135232.62800000026,135232.62800000026,0,0,537600000,0,,unavailable,"[[1000, 256, 700], [1000, 256, 700]]"
+aten::mul,3,51503.44399999967,51503.44399999967,0,0,537600000,0,537600000,estimated,"[[1000, 256, 700], [1000, 256, 700]]"
+aten::all,6,117087.38599999971,116828.93099999824,0,0,-18,0,,unavailable,"[[1000, 256, 700]]"
+aten::fill_,6,15.068999999435619,15.068999999435619,0,0,0,0,,unavailable,"[[1, 1, 1], []]"
+aten::unsqueeze,6,52.75000000046566,39.398999999277294,0,0,0,0,,unavailable,"[[1, 1, 1], []]"
+aten::as_strided,6,13.351000001188368,13.351000001188368,0,0,0,0,,unavailable,"[[1, 1, 1], [], [], []]"
+aten::copy_,6,82.44199999887496,82.44199999887496,0,0,0,0,,unavailable,"[[4, 1, 1, 1], [1, 1, 1, 1], []]"
+aten::select,6,51.561000001383945,47.04300000006333,0,0,0,0,,unavailable,"[[4, 1, 1, 1], [], []]"
+aten::as_strided,6,4.518000001320615,4.518000001320615,0,0,0,0,,unavailable,"[[4, 1, 1, 1], [], [], []]"
+aten::is_nonzero,12,281.99199999962,45.241999997990206,16.319999998435378,0.0,0,0,,unavailable,[[]]
+aten::item,30,277.10699999774806,69.11399999423884,16.319999998435378,0.0,0,0,,unavailable,[[]]
+aten::_local_scalar_dense,30,207.99300000350922,96.47200000472367,16.319999998435378,16.319999998435378,0,0,,unavailable,[[]]
+aten::eq,12,265964.2229999993,265711.96100000036,1702.478000000352,1702.478000000352,1075199976,1075200000,,unavailable,"[[1000, 256, 700], []]"
+aten::__or__,3,44075.930999998935,39.26399999903515,0,0,0,0,,unavailable,"[[1000, 256, 700], [1000, 256, 700]]"
+aten::bitwise_or,3,44036.6669999999,44036.6669999999,0,0,537600000,0,,unavailable,"[[1000, 256, 700], [1000, 256, 700]]"
+aten::to,6,822.1710000003222,13.831000000005588,1868.4320000002626,0.0,0,0,,unavailable,"[[1000, 256, 700], [], [], [], []]"
+snnlab::transfer,3,227211.70099999988,477.45300000021234,226034.46599999955,0.0,0,0,,unavailable,[]
+aten::to,3,226734.24799999967,14.63200000114739,226034.46599999955,0.0,0,0,,unavailable,"[[1000, 256, 700], [], [], [], [], [], [], []]"
+aten::_to_copy,6,227527.95599999884,151.61199999926612,227902.8979999998,0.0,0,0,,unavailable,"[[1000, 256, 700], [], [], [], [], [], []]"
+aten::copy_,6,226664.09199999808,153.39499999932013,227902.8979999998,227902.8979999998,0,0,,unavailable,"[[1000, 256, 700], [1000, 256, 700], []]"
+Memcpy HtoD (Pageable -> Device),6,0,0,226037.37799999933,226037.37799999933,0,0,,unavailable,[]
+snnlab::transfer,3,0,0,226034.46599999955,226034.46599999955,0,0,,unavailable,[]
+cudaStreamSynchronize,12,4453.451999999816,4453.451999999816,0,0,0,0,,unavailable,[]
+aten::lift_fresh,3,15.022999999579042,15.022999999579042,0,0,0,0,,unavailable,[[256]]
+aten::to,3,3.488999999826774,3.488999999826774,0,0,0,0,,unavailable,"[[256], [], [], [], [], []]"
+aten::detach,3,39.36199999973178,14.48600000073202,0,0,0,0,,unavailable,"[[1000, 256, 700]]"
+detach,3,24.87599999899976,24.87599999899976,0,0,0,0,,unavailable,"[[1000, 256, 700]]"
+aten::count_nonzero,3,4503.230999999447,54.82199999783188,4810.614000000525,0.0,0,-537600000,,unavailable,"[[1000, 256, 700], []]"
+aten::sum,3,4159.427000000142,3124.8439999995753,3945.98000000068,1558.3530000005849,0,-4303339008,,unavailable,"[[1000, 256, 700], [], [], []]"
+aten::as_strided,3,13.371999998576939,13.371999998576939,0,0,0,0,,unavailable,"[[700], [], [], []]"
+cudaMalloc,1,585.2409999999218,585.2409999999218,0,0,0,0,,unavailable,[]
+cudaMemsetAsync,6,53.96199999982491,53.96199999982491,0,0,0,0,,unavailable,[]
+Memset (Device),6,0,0,5.7900000009685755,5.7900000009685755,0,0,,unavailable,[]
+"void at::native::reduce_kernel<128, 4, at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4> >(at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4>)",6003,0,0,45978.3659999473,45978.3659999473,0,0,,unavailable,[]
+aten::all,6,146.5960000010673,87.34500000020489,892.7619999989402,892.7619999989402,0,1536000,,unavailable,"[[1000, 256, 700], [], []]"
+aten::as_strided,6,9.626000000163913,9.626000000163913,0,0,0,0,,unavailable,"[[1000, 256], [], [], []]"
+aten::sum,3,168.92500000074506,67.98500000033528,31.712000002153218,19.808000002987683,0,-6142464,,unavailable,"[[1000, 256], []]"
+aten::to,3,67.18500000122003,5.175000000512227,11.903999999165535,0.0,0,0,,unavailable,"[[1000, 256], [], [], [], []]"
+aten::_to_copy,3,62.010000000707805,15.034000001614913,11.903999999165535,0.0,0,0,,unavailable,"[[1000, 256], [], [], [], [], [], []]"
+aten::copy_,3,31.665000000037253,15.352000000420958,11.903999999165535,11.903999999165535,0,0,,unavailable,"[[1000, 256], [1000, 256], []]"
+aten::all,3,33.55200000014156,21.716999999713153,9.631999999051914,9.631999999051914,0,3072,,unavailable,"[[1000, 256], [], []]"
+aten::as_strided,3,1.456000000005588,1.456000000005588,0,0,0,0,,unavailable,"[[1000], [], [], []]"
+aten::sum,3,114.02800000202842,44.1400000017602,16.095999999670312,7.199999999487773,0,-23040,,unavailable,"[[1000], []]"
+aten::to,3,55.467999999644235,3.0650000006426126,8.89600000018254,0.0,0,0,,unavailable,"[[1000], [], [], [], []]"
+aten::_to_copy,3,52.40299999900162,10.581999999471009,8.89600000018254,0.0,0,0,,unavailable,"[[1000], [], [], [], [], [], []]"
+aten::copy_,3,22.35700000007637,10.042000001762062,8.89600000018254,8.89600000018254,0,0,,unavailable,"[[1000], [1000], []]"
+aten::zeros_like,1,26.83599999989383,5.208999999798834,1.119999999878928,0.0,0,0,,unavailable,"[[700], [], [], [], [], []]"
+aten::empty_like,1,6.468000000109896,4.05600000009872,0,0,0,0,,unavailable,"[[700], [], [], [], [], []]"
+aten::zero_,1,15.158999999985099,3.075999999884516,1.119999999878928,0.0,0,0,,unavailable,[[700]]
+aten::fill_,1,12.083000000100583,6.384000000078231,1.119999999878928,1.119999999878928,0,0,,unavailable,"[[700], []]"
+aten::zeros_like,6,79.22699999972247,9.9789999993518,5.887000000104308,0.0,0,0,,unavailable,"[[], [], [], [], [], []]"
+aten::empty_like,9,45.43800000124611,13.809000002220273,0,0,0,0,,unavailable,"[[], [], [], [], [], []]"
+aten::zero_,12,125.97800000337884,19.834000002825633,11.806000002194196,0.0,0,0,,unavailable,[[]]
+aten::fill_,18,154.01799999945797,65.60800000163727,17.725000000558794,17.725000000558794,0,0,,unavailable,"[[], []]"
+aten::add_,3,64.78899999940768,43.260000000474975,5.951999999815598,5.951999999815598,0,0,,unavailable,"[[700], [700], []]"
+aten::add_,12027,73291.76599995303,31811.19599999627,14893.445000041975,14891.014000042109,0,0,,unavailable,"[[], [], []]"
+Optimizer.zero_grad#Adam.zero_grad,3,200.73200000007637,200.73200000007637,0,0,0,-1302528,,unavailable,[]
+aten::_to_copy,6006,79651.70000004396,16798.574000074528,11628.58900000574,0.0,0,0,,unavailable,"[[256], [], [], [], [], [], []]"
+aten::copy_,6006,46929.82199997152,19247.720999948913,11628.58900000574,11626.8280000058,0,0,,unavailable,"[[256], [256], []]"
+"void at::native::reduce_kernel<512, 1, at::native::ReduceOp<bool, at::native::func_wrapper_t<bool, at::native::and_kernel_cuda(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(bool, bool)#1}>, unsigned int, bool, 4, 4> >(at::native::ReduceOp<bool, at::native::func_wrapper_t<bool, at::native::and_kernel_cuda(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(bool, bool)#1}>, unsigned int, bool, 4, 4>)",12012,0,0,47886.02799998084,47886.02799998084,0,0,,unavailable,[]
+"void at::native::vectorized_elementwise_kernel<2, at::native::FillFunctor<long>, std::array<char*, 1ul> >(int, at::native::FillFunctor<long>, std::array<char*, 1ul>)",18,0,0,17.91800000052899,17.91800000052899,0,0,,unavailable,[]
+"void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)",18009,0,0,22474.68199994508,22474.68199994508,0,0,,unavailable,[]
+aten::index_select,3,243.57000000122935,90.23500000219792,9.24800000153482,0.0,0,0,,unavailable,"[[7340], [], [256]]"
+aten::resize_,12,47.81200000131503,47.81200000131503,0,0,0,72192,,unavailable,"[[0], [], []]"
+aten::view,6,13.33599999989383,13.33599999989383,0,0,0,0,,unavailable,"[[256], []]"
+aten::expand,3,18.33500000089407,15.115000000456348,0,0,0,0,,unavailable,"[[256], [], []]"
+aten::as_strided,6012,3249.4540000576526,3249.4540000576526,0,0,0,0,,unavailable,"[[256], [], [], []]"
+aten::gather,3,95.12399999937043,61.18599999858998,9.24800000153482,9.24800000153482,0,0,,unavailable,"[[7340], [], [256], [], [256]]"
+aten::as_strided,3,3.731999999843538,3.731999999843538,0,0,0,0,,unavailable,"[[7340], [], [], []]"
+"void at::native::_scatter_gather_elementwise_kernel<128, 8, at::native::_cuda_scatter_gather_internal_kernel<false, at::native::OpaqueType<8>, long>::operator()<at::native::TensorAssign>(at::TensorIterator&, long, long, long, at::native::TensorAssign const&)::{lambda(int)#1}>(int, at::native::_cuda_scatter_gather_internal_kernel<false, at::native::OpaqueType<8>, long>::operator()<at::native::TensorAssign>(at::TensorIterator&, long, long, long, at::native::TensorAssign const&)::{lambda(int)#1})",3,0,0,9.24800000153482,9.24800000153482,0,0,,unavailable,[]
+snnlab::forward,3,4710118.989,666197.2590001477,304947.16399996215,0.0,47992,-6993192960,,unavailable,[]
+aten::full,6,163.69300000322983,32.589000003179535,5.856000000378117,0.0,0,0,,unavailable,"[[], [], [], [], [], []]"
+aten::fill_,12036,82805.34399995627,33373.58199993009,11641.812999934424,11641.812999934424,0,0,,unavailable,"[[256, 128], []]"
+snnlab::forward,3,0,0,4703124.774000002,4703124.774000002,0,0,,unavailable,[]
+"void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*, 1ul>)",21063,0,0,20149.756999866804,20149.756999866804,0,0,,unavailable,[]
+aten::zeros,42,863.082999995444,143.8739999870304,40.44700000458397,0.0,0,0,,unavailable,"[[], [], [], [], []]"
+aten::zero_,9018,88334.98599998117,14671.011999973794,8502.025999933481,0.0,0,0,,unavailable,"[[256, 20]]"
+aten::fill_,9018,73663.97400000738,30993.20800004527,8502.025999933481,8499.145999934524,0,0,,unavailable,"[[256, 20], []]"
+aten::zero_,12030,101289.7429998815,18565.04999992554,11635.956999934046,0.0,0,0,,unavailable,"[[256, 128]]"
+aten::zeros_like,12006,184154.62900000648,25371.829000120983,11612.78899993049,0.0,0,-131072,,unavailable,"[[256, 128], [], [], [], [], []]"
+aten::empty_like,12006,57710.81600000779,19428.434000015026,0,0,0,0,,unavailable,"[[256, 128], [], [], [], [], []]"
+aten::zeros_like,9003,157468.33500004397,19679.105000077747,8487.785999933723,0.0,0,0,,unavailable,"[[256, 20], [], [], [], [], []]"
+aten::empty_like,9003,49598.51799998502,15368.991999978432,0,0,0,0,,unavailable,"[[256, 20], [], [], [], [], []]"
+aten::select,3000,18392.52800002345,16069.74199998565,0,0,0,0,,unavailable,"[[1000, 256, 700], [], []]"
+aten::as_strided,3000,2322.7860000377987,2322.7860000377987,0,0,0,0,,unavailable,"[[1000, 256, 700], [], [], []]"
+snnlab::projection/input_to_E1,3000,205263.08499996434,66662.17200000794,25094.85800000094,0.0,0,0,,unavailable,[]
+aten::matmul,3000,138600.9129999564,13543.403999949573,25094.85800000094,0.0,0,0,,unavailable,"[[256, 700], [700, 128]]"
+aten::mm,3000,125057.50900000683,95769.983000017,25094.85800000094,25086.538000001572,0,393216000,137625600000,estimated,"[[256, 700], [700, 128]]"
+cudaDeviceGetAttribute,15006,8544.87299994682,8544.87299994682,0,0,0,0,,unavailable,[]
+cuLaunchKernel,36006,200057.53100004885,198168.61100004893,8.3199999993667,0.0,0,0,,unavailable,[]
+snnlab::projection/input_to_E1,3000,0,0,38118.137000030605,38118.137000030605,0,0,,unavailable,[]
+void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_nn_align1>(cutlass_80_simt_sgemm_64x64_8x5_nn_align1::Params),6003,0,0,29256.982000012184,29256.982000012184,0,0,,unavailable,[]
+"void cublasLt::splitKreduce_kernel<32, 16, int, float, float, float, float, false, float, float, float, true, false, false>(cublasLt::cublasSplitKParams<float>, float const*, float const*, float*, float*, float const*, float const*, float const*, float const*, float*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",15006,0,0,27306.267999956384,27306.267999956384,0,0,,unavailable,[]
+aten::mul,11994,188789.63900001743,131034.88000007858,14030.72300005937,14029.60300006019,0,1572077568,393019392,estimated,"[[256, 128], []]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::AUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",12012,0,0,14050.81900005648,14050.81900005648,0,0,,unavailable,[]
+aten::add,9000,111558.19100003364,74260.346000097,11093.244999982184,11091.996999982046,0,1179648000,294912000,estimated,"[[256, 128], [256, 128], []]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul>)",38985,0,0,48617.379000090994,48617.379000090994,0,0,,unavailable,[]
+aten::add_,11994,136554.87900005654,82147.8570000839,14639.48800009396,14639.48800009396,0,0,,unavailable,"[[256, 128], [256, 128], []]"
+snnlab::neuron/E1,3000,673627.6329999878,94795.67299996247,4450.308000005549,0.0,0,0,,unavailable,[]
+TorchDynamo Cache Lookup,9000,130698.28400009172,130698.28400009172,0,0,0,0,,unavailable,[]
+Torch-Compiled Region: 3/0,3,1123.9620000000577,242.25999999791384,4.864000000525266,0.0,0,0,,unavailable,[]
+Pregraph bytecode,9000,19289.820999988122,19289.820999988122,0,0,0,0,,unavailable,[]
+AOTDispatcher Runtime Wrapper Prologue,9000,58861.51700000465,58861.51700000465,0,0,0,0,,unavailable,[]
+CompiledFunction,6000,758508.0650000062,225190.87600003416,9005.129000053741,0.0,0,0,,unavailable,"[[256, 128], [256, 128], [256, 128], [256, 128]]"
+## Call CompiledFxGraph fl32acflasm7r7r7g4yonykklqmwlwfrkomg2cfo5xd3voqadxat ##,6000,533317.1889999721,388210.9570000246,9005.129000053741,0.0,0,3538944000,,unavailable,[]
+triton_poi_fused__to_copy_add_bitwise_not_bitwise_or_clamp_div_eq_exp_full_like_gt_mul_reciprocal_rsub_sub_where_0,6000,145106.23199994746,109522.55499994894,9005.129000053741,9003.594000053592,0,0,,unavailable,"[[256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], []]"
+triton_poi_fused__to_copy_add_bitwise_not_bitwise_or_clamp_div_eq_exp_full_like_gt_mul_reciprocal_rsub_sub_where_0,6000,0,0,9003.594000053592,9003.594000053592,0,0,,unavailable,[]
+## Call CompiledFxGraph fl32acflasm7r7r7g4yonykklqmwlwfrkomg2cfo5xd3voqadxat ##,6000,0,0,9003.594000053592,9003.594000053592,0,0,,unavailable,[]
+snnlab::projection/E1_to_E2,3000,181924.18900004495,53282.76200004411,15157.302000023192,0.0,0,-393216000,,unavailable,[]
+aten::matmul,3000,128641.42700000084,13692.903999970527,15157.302000023192,0.0,0,0,,unavailable,"[[256, 128], [128, 128]]"
+aten::mm,6000,201991.45300003793,167658.60000010324,29952.81300005759,29952.81300005759,0,786432000,50331648000,estimated,"[[256, 128], [128, 128]]"
+cudaLaunchKernelExC,9000,54396.35799996392,53009.87699996331,0,0,0,0,,unavailable,[]
+sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize32x32x8_stage3_warpsize1x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas,3000,0,0,15157.302000023192,15157.302000023192,0,0,,unavailable,[]
+snnlab::projection/E1_to_E2,3000,0,0,15157.302000023192,15157.302000023192,0,0,,unavailable,[]
+snnlab::neuron/E2,3000,609439.9489999244,84978.7089998892,4554.821000048192,0.0,0,0,,unavailable,[]
+Torch-Compiled Region: 4/0,3,700.7199999992736,123.84599999990314,4.60700000054203,0.0,0,0,,unavailable,[]
+snnlab::projection/readout_projection,3000,174430.8790000172,51986.32100000768,15529.327999995789,0.0,0,-393216000,,unavailable,[]
+aten::matmul,3000,122444.5580000095,14022.153000029502,15529.327999995789,0.0,0,0,,unavailable,"[[256, 128], [128, 20]]"
+aten::mm,3000,108422.40499998,78970.8419999876,15529.327999995789,15529.327999995789,0,61440000,3932160000,estimated,"[[256, 128], [128, 20]]"
+snnlab::projection/readout_projection,3000,0,0,22793.307000002824,22793.307000002824,0,0,,unavailable,[]
+aten::add_,3000,40845.44600002444,28256.22000005585,3641.9260000125505,3641.9260000125505,0,0,,unavailable,"[[256, 20], [256, 20], []]"
+snnlab::neuron/readout,3000,557530.5630000276,80285.84300002991,6202.2119999935385,0.0,0,0,,unavailable,[]
+Torch-Compiled Region: 5/0,3,664.2729999998119,115.79000000096858,6.366999998455867,0.0,0,0,,unavailable,[]
+CompiledFunction,3000,347930.6259999897,84372.17399997101,6202.2119999935385,0.0,0,0,,unavailable,"[[256, 20], [256, 20]]"
+## Call CompiledFxGraph flpjhuq756xiscgktycjstdqh6gfbbqpg547m7shzrxkrs7futxc ##,3000,263558.4520000187,179866.750999999,6202.2119999935385,0.0,0,122880000,,unavailable,[]
+triton_poi_fused_add_mul_0,3000,52998.11199999042,36819.82599999593,3464.9480000191834,3464.9480000191834,0,0,,unavailable,"[[256, 20], [256, 20], [256, 20], []]"
+## Call CompiledFxGraph flpjhuq756xiscgktycjstdqh6gfbbqpg547m7shzrxkrs7futxc ##,3000,0,0,82717.08500002092,82717.08500002092,0,0,,unavailable,[]
+triton_poi_fused_add_mul_0,3000,0,0,3464.9480000191834,3464.9480000191834,0,0,,unavailable,[]
+triton_poi_fused_zeros_like_1,3000,30693.589000029257,17005.107000031276,2737.263999974355,2736.367999974638,0,0,,unavailable,"[[256, 20], []]"
+triton_poi_fused_zeros_like_1,3000,0,0,2736.367999974638,2736.367999974638,0,0,,unavailable,[]
+aten::add,5997,81315.39799999492,53665.64100000635,7757.222000020789,7757.222000020789,0,122818560,30704640,estimated,"[[256, 20], [256, 20], []]"
+aten::detach,6000,17410.84200000274,7875.866000005277,0,0,0,0,,unavailable,"[[256, 128]]"
+detach,6000,9534.975999997463,9534.975999997463,0,0,0,0,,unavailable,"[[256, 128]]"
+aten::count_nonzero,6000,310878.33900006604,39883.857000191,68179.21899996279,0.0,0,-196608000,,unavailable,"[[256, 128], []]"
+aten::ne,6000,79204.38099993416,54180.26999987918,7158.959000025876,7158.959000025876,0,196608000,,unavailable,"[[256, 128], []]"
+aten::sum,6000,191790.10099994089,64776.03599990532,61020.25999993691,44422.89099994651,0,-1566720000,,unavailable,"[[256, 128], [], [], []]"
+aten::as_strided,6000,5705.2210000169,5705.2210000169,0,0,0,0,,unavailable,"[[128], [], [], []]"
+aten::to,6000,96907.71300002933,8311.221000031801,16597.3689999904,0.0,0,0,,unavailable,"[[256, 128], [], [], [], []]"
+aten::_to_copy,6000,88596.49199999752,19058.228999936488,16597.3689999904,0.0,0,0,,unavailable,"[[256, 128], [], [], [], [], [], []]"
+aten::copy_,6000,52676.578000049805,24962.187000003643,16597.3689999904,16588.920999990543,0,0,,unavailable,"[[256, 128], [256, 128], []]"
+aten::eq,12000,115800.87499989965,72835.38199995924,13540.280999950599,13539.160999950487,0,393216000,,unavailable,"[[256, 128], []]"
+aten::all,6000,80282.60499990801,51901.21499984991,14600.977000013692,14596.145000014221,0,3071488,,unavailable,"[[256, 128], [], []]"
+aten::sum,6006,171262.9450000117,63792.293000015896,23850.9570000486,12225.280000042636,0,-9219072,,unavailable,"[[256], []]"
+aten::to,6009,81553.62799997698,6377.534999932628,11625.677000005962,0.0,0,0,,unavailable,"[[256], [], [], [], []]"
+aten::all,6000,67627.11599995056,43285.356999984244,32379.424999968847,32379.424999968847,0,3072000,,unavailable,"[[256, 128]]"
+aten::zeros_like,2,28.59099999978207,3.6509999996051192,1.9199999999254942,0.0,0,0,,unavailable,"[[128], [], [], [], [], []]"
+aten::empty_like,2,8.993999999947846,3.127000000094995,0,0,0,0,,unavailable,"[[128], [], [], [], [], []]"
+aten::zero_,2,15.946000000229105,2.9080000002868474,1.9199999999254942,0.0,0,0,,unavailable,[[128]]
+aten::fill_,2,13.037999999942258,6.121000000042841,1.9199999999254942,1.9199999999254942,0,0,,unavailable,"[[128], []]"
+aten::add_,6000,46725.25499998522,25043.270999984117,7594.484999905806,7594.484999905806,0,0,,unavailable,"[[128], [128], []]"
+Torch-Compiled Region: 3/1,2997,521559.6719999816,96535.79800003115,4445.444000005024,0.0,0,0,,unavailable,[]
+Torch-Compiled Region: 4/1,2997,473771.620999994,87821.39499994623,4550.21400004765,0.0,0,0,,unavailable,[]
+Torch-Compiled Region: 5/1,2997,452019.38799999165,80360.5690000006,6195.844999995083,0.0,0,0,,unavailable,[]
+Buffer Flush,25,1666.131000000285,1650.7890000001062,13.662999998312443,13.662999998312443,8,1098752,,unavailable,[]
+aten::stack,9,4477.863000000361,3105.302000003867,718.1680000000633,0.0,0,0,,unavailable,"[[], []]"
+aten::cat,9,1354.6239999989048,1038.7030000016093,718.1680000000633,718.1680000000633,0,847872000,,unavailable,"[[], []]"
+"void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 1, 128, 1, 16, 4>(char*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",72,0,0,718.1680000000633,718.1680000000633,0,0,,unavailable,[]
+aten::view,6,15.020999999251217,15.020999999251217,0,0,0,0,,unavailable,"[[256000, 128], []]"
+aten::view,3,2.9159999983385205,2.9159999983385205,0,0,0,0,,unavailable,"[[256000, 20], []]"
+aten::sum,12,208.96500000124797,148.6969999964349,631.4169999994338,631.4169999994338,0,1572864,,unavailable,"[[1000, 256, 128], [], [], []]"
+aten::as_strided,6015,12909.653000002261,12909.653000002261,0,0,0,0,,unavailable,"[[256, 128], [], [], []]"
+"void at::native::reduce_kernel<128, 4, at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4>)",12,0,0,631.4169999994338,631.4169999994338,0,0,,unavailable,[]
+aten::mean,3,63.98300000000745,44.7679999996908,104.8960000006482,104.8960000006482,0,61440,,unavailable,"[[1000, 256, 20], [], [], []]"
+aten::as_strided,6,2.944999999832362,2.944999999832362,0,0,0,0,,unavailable,"[[256, 20], [], [], []]"
+aten::matmul,3,178.07799999974668,22.04700000025332,14.976000000722706,0.0,0,0,,unavailable,"[[256, 20], [20, 20]]"
+aten::mm,6,311.5420000003651,218.52299999585375,31.552000002469867,31.552000002469867,0,122880,1228800,estimated,"[[256, 20], [20, 20]]"
+aten::mean,3,52.23400000156835,36.221000000834465,7.16700000083074,7.16700000083074,0,3072,,unavailable,"[[256, 128], [], [], []]"
+aten::div,6,96.89600000204518,64.98199999937788,7.518999998923391,7.518999998923391,0,6144,,unavailable,"[[256, 1], []]"
+"void at::native::reduce_kernel<128, 4, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4>)",3,0,0,104.8960000006482,104.8960000006482,0,0,,unavailable,[]
+aten::mul,6,80.20799999963492,44.89700000034645,7.104999997653067,7.104999997653067,0,122880,30720,estimated,"[[256, 20], []]"
+aten::clamp_min,3,61.74400000087917,41.92900000186637,4.128999999258667,4.128999999258667,0,3072,,unavailable,"[[256, 1], []]"
+"void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4>)",3,0,0,7.16700000083074,7.16700000083074,0,0,,unavailable,[]
+"void at::native::vectorized_elementwise_kernel<4, at::native::BUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",6,0,0,7.518999998923391,7.518999998923391,0,0,,unavailable,[]
+"void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",9,0,0,12.671999998856336,12.671999998856336,0,0,,unavailable,[]
+aten::div,12,119.49900000123307,70.33100000256673,20.00000000372529,20.00000000372529,0,245760,,unavailable,"[[256, 20], [256, 1]]"
+"void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> > const&)::{lambda(int)#1})",15,0,0,24.480000005103648,24.480000005103648,0,0,,unavailable,[]
+aten::isfinite,3,338.52399999881163,48.24699999764562,14.688999997451901,0.0,0,-92160,,unavailable,"[[256, 20]]"
+aten::abs,3,103.35800000047311,24.963999999221414,3.839999998919666,0.0,0,0,,unavailable,"[[256, 20]]"
+aten::abs,3,66.57200000062585,33.187000000849366,3.839999998919666,3.839999998919666,0,0,,unavailable,"[[256, 20], [0]]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::AbsFunctor<float>, std::array<char*, 2ul> >(int, at::native::AbsFunctor<float>, std::array<char*, 2ul>)",6,0,0,7.23200000077486,7.23200000077486,0,0,,unavailable,[]
+aten::ne,3,102.86600000131875,90.34800000023097,3.617000000551343,3.617000000551343,0,15360,,unavailable,"[[256, 20], []]"
+aten::eq,3,44.4789999993518,29.937000000383705,3.520999998319894,3.520999998319894,0,15360,,unavailable,"[[256, 20], [256, 20]]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<float, float, bool, at::native::(anonymous namespace)::CompareEqFunctor<float> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<float, float, bool, at::native::(anonymous namespace)::CompareEqFunctor<float> >, std::array<char*, 3ul>)",6,0,0,7.071999996434897,7.071999996434897,0,0,,unavailable,[]
+aten::mul,6,93.11800000071526,44.15800000075251,7.3269999995827675,7.3269999995827675,0,76800,30720,estimated,"[[256, 20], [256, 20]]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<bool, bool, bool, at::native::binary_internal::MulFunctor<bool> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<bool, bool, bool, at::native::binary_internal::MulFunctor<bool> >, std::array<char*, 3ul>)",6,0,0,7.58299999916926,7.58299999916926,0,0,,unavailable,[]
+aten::all,3,44.14200000045821,29.19499999890104,8.063999999780208,8.063999999780208,0,1536,,unavailable,"[[256, 20]]"
+Memcpy DtoH (Device -> Pinned),6,0,0,16.319999998435378,16.319999998435378,0,0,,unavailable,[]
+snnlab::loss,3,2005.8720000009052,598.0370000042021,99.12699999613687,0.0,24,-22016,,unavailable,[]
+snnlab::loss,3,0,0,1718.288000000175,1718.288000000175,0,0,,unavailable,[]
+aten::cross_entropy_loss,6,370.7410000008531,38.68299999926239,32.25499999988824,0.0,0,-61440,,unavailable,"[[256, 20], [256], [], [], [], []]"
+aten::log_softmax,6,146.48300000000745,26.849999998230487,8.895999999251217,0.0,0,0,,unavailable,"[[256, 20], [], []]"
+aten::to,6,2.1660000015981495,2.1660000015981495,0,0,0,0,,unavailable,"[[256, 20], [], [], [], [], [], [], []]"
+aten::_log_softmax,6,117.46700000017881,81.2040000022389,8.895999999251217,8.895999999251217,0,122880,,unavailable,"[[256, 20], [], []]"
+"void (anonymous namespace)::softmax_warp_forward<float, float, float, 5, true, false>(float*, float const*, int, int, int, bool const*, int, bool)",6,0,0,8.895999999251217,8.895999999251217,0,0,,unavailable,[]
+aten::nll_loss_nd,6,185.57500000158325,16.674000001512468,23.359000000637025,0.0,0,0,,unavailable,"[[256, 20], [256], [], [], []]"
+aten::nll_loss,6,168.90100000007078,17.29500000178814,23.359000000637025,0.0,0,-1536,,unavailable,"[[256, 20], [256], [], [], []]"
+aten::nll_loss_forward,6,151.60599999828264,87.23799999710172,23.359000000637025,20.38399999914691,0,7680,,unavailable,"[[256, 20], [256], [], [], []]"
+"void at::native::(anonymous namespace)::nll_loss_forward_no_reduce_cuda_kernel<float, long>(long, torch::headeronly::detail::GenericPackedTensorAccessor<torch::headeronly::detail::TensorAccessor<c10::ArrayRef<long>, float, 1ul, torch::headeronly::DefaultPtrTraits, long>, at::detail::IndexBoundsCheck<2ul, long>, float, 2ul, torch::headeronly::DefaultPtrTraits, long>, long const*, float*, float const*, long, long)",3,0,0,5.37599999923259,5.37599999923259,0,0,,unavailable,[]
+aten::zero_,3,21.261000000406057,4.360999999102205,2.974999999627471,0.0,0,0,,unavailable,[[20]]
+aten::fill_,3,16.90000000130385,6.725000001024455,2.974999999627471,2.974999999627471,0,0,,unavailable,"[[20], []]"
+aten::ones_like,3,43.65100000053644,10.236999998800457,2.9759999983944,0.0,0,0,,unavailable,"[[256], [], [], [], [], []]"
+aten::empty_like,3,17.053000001702458,5.950000001117587,0,0,0,0,,unavailable,"[[256], [], [], [], [], []]"
+aten::fill_,3,16.361000000033528,5.712000000290573,2.9759999983944,2.9759999983944,0,0,,unavailable,"[[256], []]"
+aten::scatter_add_,3,90.45600000023842,64.48399999924004,6.4960000002756715,6.4960000002756715,0,0,,unavailable,"[[20], [], [256], [256]]"
+aten::as_strided,6,6.127999999560416,6.127999999560416,0,0,0,0,,unavailable,"[[20], [], [], []]"
+"void at::native::_scatter_gather_elementwise_kernel<128, 8, at::native::_cuda_scatter_gather_internal_kernel<true, float, long>::operator()<at::native::ReduceAdd>(at::TensorIterator&, long, long, long, at::native::ReduceAdd const&)::{lambda(int)#1}>(int, at::native::_cuda_scatter_gather_internal_kernel<true, float, long>::operator()<at::native::ReduceAdd>(at::TensorIterator&, long, long, long, at::native::ReduceAdd const&)::{lambda(int)#1})",3,0,0,6.4960000002756715,6.4960000002756715,0,0,,unavailable,[]
+aten::index,3,103.33799999952316,73.40899999951944,6.814999999478459,6.814999999478459,0,3072,,unavailable,"[[20], []]"
+aten::reshape,3,9.498999999370426,6.177999998442829,0,0,0,0,,unavailable,"[[256], []]"
+"void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<4> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<4> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<4> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<4> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",3,0,0,6.814999999478459,6.814999999478459,0,0,,unavailable,[]
+aten::div,6,82.86199999880046,52.48099999781698,8.960000002756715,8.960000002756715,0,6144,,unavailable,"[[256], [256]]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> >, std::array<char*, 3ul>)",3,0,0,4.480000001378357,4.480000001378357,0,0,,unavailable,[]
+"void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4>)",6,0,0,13.248000000603497,13.248000000603497,0,0,,unavailable,[]
+aten::gt,3,64.74100000038743,47.09300000080839,3.7439999994821846,3.7439999994821846,0,1536,,unavailable,"[[20], []]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::compare_scalar_kernel<float>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, float)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::compare_scalar_kernel<float>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, float)::{lambda(float)#1}, std::array<char*, 2ul>)",6,0,0,7.487999999895692,7.487999999895692,0,0,,unavailable,[]
+aten::sum,3,143.97300000069663,79.1460000006482,12.092999999877065,7.261999999638647,0,0,,unavailable,"[[20], []]"
+aten::to,3,53.398000000976026,3.943000000435859,4.831000000238419,0.0,0,0,,unavailable,"[[20], [], [], [], []]"
+aten::_to_copy,3,49.45500000054017,12.313999998383224,4.831000000238419,0.0,0,0,,unavailable,"[[20], [], [], [], [], [], []]"
+aten::copy_,3,29.31400000071153,15.515000000130385,4.831000000238419,4.831000000238419,0,0,,unavailable,"[[20], [20], []]"
+aten::div,6,75.84599999990314,42.631999999750406,10.785999997053295,10.785999997053295,0,3072,,unavailable,"[[], []]"
+"void at::native::unrolled_elementwise_kernel<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> >, std::array<char*, 3ul>, 4, TrivialOffsetCalculator<2, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<2>, at::native::memory::StoreWithCast<1> >(int, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> >, std::array<char*, 3ul>, TrivialOffsetCalculator<2, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<2>, at::native::memory::StoreWithCast<1>)",6,0,0,10.785999997053295,10.785999997053295,0,0,,unavailable,[]
+aten::isfinite,3,200.06099999975413,32.066999996546656,14.52699999930337,0.0,0,-4096,,unavailable,[[]]
+aten::abs,3,70.52499999990687,16.24500000011176,3.3920000018551946,0.0,0,0,,unavailable,[[]]
+aten::abs,3,48.10300000011921,21.02600000007078,3.3920000018551946,3.3920000018551946,0,0,,unavailable,"[[], [0]]"
+aten::ne,3,32.985000000335276,21.190000000409782,3.7119999998249114,3.7119999998249114,0,1536,,unavailable,"[[], []]"
+aten::eq,3,30.71800000173971,18.279000002425164,3.550999998115003,3.550999998115003,0,1536,,unavailable,"[[], []]"
+aten::mul,15,225.91100000264123,132.63500000117347,17.982999998144805,17.982999998144805,0,7680,15,estimated,"[[], []]"
+aten::all,3,80.59399999957532,20.410999999847263,3.1039999998174608,0.0,0,1536,,unavailable,[[]]
+aten::view_as,3,7.392000001855195,5.177000002004206,0,0,0,0,,unavailable,"[[], []]"
+aten::view,3,2.2149999998509884,2.2149999998509884,0,0,0,0,,unavailable,"[[], []]"
+aten::add,3,33.37499999953434,22.437000000383705,3.6139999995939434,3.6139999995939434,0,1536,3,estimated,"[[], [], []]"
+aten::detach,8,25.804999996442348,12.261999995913357,0,0,0,0,,unavailable,[[]]
+detach,8,13.543000000528991,13.543000000528991,0,0,0,0,,unavailable,[[]]
+aten::detach,3,4.533000000752509,2.5000000004656613,0,0,0,0,,unavailable,"[[256, 20]]"
+detach,3,2.0330000002868474,2.0330000002868474,0,0,0,0,,unavailable,"[[256, 20]]"
+aten::resize_,3,1.1379999993368983,1.1379999993368983,0,0,0,0,,unavailable,"[[], [], []]"
+"void at::native::(anonymous namespace)::nll_loss_forward_reduce_cuda_kernel_2d<float, float, long>(float*, float*, float const*, long const*, float const*, bool, long, long, long, long)",3,0,0,15.007999999914318,15.007999999914318,0,0,,unavailable,[]
+aten::argmax,3,69.53499999968335,48.842000000178814,12.481000000145286,12.481000000145286,0,6144,,unavailable,"[[256, 20], [], []]"
+"void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4> >(at::native::ReduceOp<float, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4>)",3,0,0,12.481000000145286,12.481000000145286,0,0,,unavailable,[]
+aten::eq,3,37.286999999545515,22.373999999836087,4.1609999989159405,4.1609999989159405,0,1536,,unavailable,"[[256], [256]]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<long, long, bool, at::native::(anonymous namespace)::CompareEqFunctor<long> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<long, long, bool, at::native::(anonymous namespace)::CompareEqFunctor<long> >, std::array<char*, 3ul>)",3,0,0,4.1609999989159405,4.1609999989159405,0,0,,unavailable,[]
+"void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#6}::operator()() const::{lambda(double)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#6}::operator()() const::{lambda(double)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",12,0,0,17.438000000081956,17.438000000081956,0,0,,unavailable,[]
+"void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<double>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<double>, std::array<char*, 3ul>)",12,0,0,16.76900000264868,16.76900000264868,0,0,,unavailable,[]
+snnlab::backward,3,3354220.8880000003,3343894.7110000015,2.9440000001341105,0.0,-48024,-3538181632,,unavailable,[]
+aten::ones_like,3,58.62700000125915,19.224000001326203,2.9440000001341105,0.0,0,0,,unavailable,"[[], [], [], [], [], []]"
+snnlab::backward,3,0,0,2.9440000001341105,2.9440000001341105,0,0,,unavailable,[]
+autograd::engine::evaluate_function: AddBackward0,15003,190979.50099994102,107564.9989998159,7337.901000009384,0.0,0,-785645568,,unavailable,[]
+AddBackward0,3,13.604000000748783,13.604000000748783,0,0,0,0,,unavailable,[[]]
+autograd::engine::evaluate_function: MulBackward0,6000,151392.2420000215,32553.41700002039,7270.716000045184,0.0,-48000,-61440,,unavailable,[]
+MulBackward0,3,120.73899999959394,22.242999999318272,3.806999999564141,0.0,0,0,,unavailable,[[]]
+autograd::engine::evaluate_function: DivBackward0,12,453.7040000013076,82.61599999945611,41.82700000051409,0.0,-24,-198144,,unavailable,[]
+DivBackward0,3,44.11500000022352,8.425000000745058,5.281999999191612,0.0,0,0,,unavailable,[[]]
+autograd::engine::evaluate_function: SumBackward0,3,55.49300000164658,9.601000002585351,0,0,0,0,,unavailable,[]
+SumBackward0,3,45.89199999906123,14.700000000186265,0,0,0,0,,unavailable,[[]]
+aten::expand,3,31.191999998874962,26.02399999834597,0,0,0,0,,unavailable,"[[], [], []]"
+DivBackward0,3,41.596999999601394,4.163999999407679,4.480000001378357,0.0,0,0,,unavailable,[[256]]
+autograd::engine::evaluate_function: NllLossBackward0,3,126.7550000003539,18.492000000551343,7.582999998703599,0.0,0,-4608,,unavailable,[]
+NllLossBackward0,3,108.26299999980256,19.512999998405576,7.582999998703599,0.0,0,0,,unavailable,[[256]]
+aten::nll_loss_backward,3,88.75000000139698,39.35100000165403,7.582999998703599,4.70299999974668,0,61440,,unavailable,"[[256], [256, 20], [256], [], [], [], []]"
+"void at::native::(anonymous namespace)::nll_loss_backward_no_reduce_cuda_kernel<float, long>(int, long const*, torch::headeronly::detail::GenericPackedTensorAccessor<torch::headeronly::detail::TensorAccessor<c10::ArrayRef<long>, float const, 0ul, torch::headeronly::DefaultPtrTraits, long>, at::detail::IndexBoundsCheck<1ul, long>, float const, 1ul, torch::headeronly::DefaultPtrTraits, long>, torch::headeronly::detail::GenericPackedTensorAccessor<torch::headeronly::detail::TensorAccessor<c10::ArrayRef<long>, float, 1ul, torch::headeronly::DefaultPtrTraits, long>, at::detail::IndexBoundsCheck<2ul, long>, float, 2ul, torch::headeronly::DefaultPtrTraits, long>, float const*, long, long)",3,0,0,4.70299999974668,4.70299999974668,0,0,,unavailable,[]
+autograd::engine::evaluate_function: LogSoftmaxBackward0,3,73.11300000036135,11.825000000186265,4.12900000018999,0.0,0,-122880,,unavailable,[]
+LogSoftmaxBackward0,3,61.28800000017509,16.865000000223517,4.12900000018999,0.0,0,0,,unavailable,"[[256, 20]]"
+aten::_log_softmax_backward_data,3,44.42299999995157,28.83299999963492,4.12900000018999,4.12900000018999,0,61440,,unavailable,"[[256, 20], [256, 20], [], []]"
+"void (anonymous namespace)::softmax_warp_backward<float, float, float, 5, true, false>(float*, float const*, float const*, int, int, int, bool const*)",3,0,0,4.12900000018999,4.12900000018999,0,0,,unavailable,[]
+DivBackward0,3,209.32299999985844,34.95499999681488,21.664000002667308,0.0,0,-184320,,unavailable,"[[256, 20]]"
+aten::neg,3,49.743000000715256,30.54100000159815,3.6480000005103648,3.6480000005103648,0,61440,,unavailable,"[[256, 20]]"
+"void at::native::vectorized_elementwise_kernel<4, at::native::neg_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::neg_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",3,0,0,3.6480000005103648,3.6480000005103648,0,0,,unavailable,[]
+"void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul>)",3,0,0,3.615999999921769,3.615999999921769,0,0,,unavailable,[]
+aten::sum,3,43.894000000320375,29.70299999974668,6.847999998368323,6.847999998368323,0,3072,,unavailable,"[[256, 20], [], [], []]"
+autograd::engine::evaluate_function: ClampMinBackward0,3,217.8239999995567,15.54700000025332,12.253999997861683,0.0,0,-6144,,unavailable,[]
+ClampMinBackward0,3,202.27699999930337,25.539999997243285,12.253999997861683,0.0,0,-3072,,unavailable,"[[256, 1]]"
+aten::scalar_tensor,3,46.821000000461936,13.924000001512468,2.974999998230487,0.0,0,0,,unavailable,"[[], [], [], [], []]"
+aten::ge,3,48.014000000432134,34.34099999861792,3.7440000004135072,3.7440000004135072,0,1536,,unavailable,"[[256, 1], []]"
+aten::where,3,81.90200000116602,49.178000001236796,5.534999999217689,5.534999999217689,0,0,,unavailable,"[[256, 1], [256, 1], []]"
+"void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#11}::operator()() const::{lambda(bool, float, float)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#11}::operator()() const::{lambda(bool, float, float)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#11}::operator()() const::{lambda(bool, float, float)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#11}::operator()() const::{lambda(bool, float, float)#1} const&)::{lambda(int)#1})",3,0,0,5.534999999217689,5.534999999217689,0,0,,unavailable,[]
+MulBackward0,3,34.81499999994412,7.72099999897182,3.4559999988414347,0.0,0,0,,unavailable,"[[256, 20]]"
+DivBackward0,3,32.159000001847744,3.8940000012516975,3.55299999890849,0.0,0,0,,unavailable,"[[256, 1]]"
+autograd::engine::evaluate_function: MeanBackward1,6,1864.8619999997318,26.59699999773875,45.34200000204146,0.0,0,-64512,,unavailable,[]
+MeanBackward1,3,78.05600000079721,13.537000000942498,4.863000001292676,0.0,0,0,,unavailable,"[[256, 1]]"
+aten::expand,3,14.201000000350177,9.382999999914318,0,0,0,0,,unavailable,"[[256, 1], [], []]"
+aten::as_strided,3,4.818000000435859,4.818000000435859,0,0,0,0,,unavailable,"[[256, 1], [], [], []]"
+aten::div,3,50.317999999504536,33.76699999952689,4.863000001292676,4.863000001292676,0,393216,,unavailable,"[[256, 128], []]"
+"void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",6,0,0,45.34200000204146,45.34200000204146,0,0,,unavailable,[]
+autograd::engine::evaluate_function: MmBackward0,9003,994335.4039999093,144000.23099990515,123726.84899997013,0.0,0,-3329200128,,unavailable,[]
+MmBackward0,3003,287905.2729999693,42033.063999972306,54774.60399998585,0.0,0,0,,unavailable,"[[256, 20]]"
+aten::t,3,25.2370000006631,14.527999999932945,0,0,0,0,,unavailable,"[[20, 20]]"
+aten::transpose,3,10.709000000730157,8.794000001158565,0,0,0,0,,unavailable,"[[20, 20], [], []]"
+aten::as_strided,3,1.9149999995715916,1.9149999995715916,0,0,0,0,,unavailable,"[[20, 20], [], [], []]"
+void cutlass::Kernel2<cutlass_80_simt_sgemm_32x128_8x5_tn_align1>(cutlass_80_simt_sgemm_32x128_8x5_tn_align1::Params),3,0,0,10.976000000722706,10.976000000722706,0,0,,unavailable,[]
+MeanBackward1,3,1760.2090000011958,18.837000001221895,40.47900000074878,0.0,-8,0,,unavailable,"[[256, 20]]"
+aten::unsqueeze,3,21.21500000031665,19.111000000033528,0,0,0,0,,unavailable,"[[256, 20], []]"
+aten::expand,3,1662.8050000001676,1658.4659999995492,0,0,0,0,,unavailable,"[[1, 256, 20], [], []]"
+aten::as_strided,3,4.339000000618398,4.339000000618398,0,0,0,0,,unavailable,"[[1, 256, 20], [], [], []]"
+aten::div,3,57.351999999489635,39.71499999938533,40.47900000074878,40.47900000074878,8,61440000,,unavailable,"[[1000, 256, 20], []]"
+autograd::engine::evaluate_function: SumBackward1,3,36.18600000021979,8.301999999210238,0,0,0,0,,unavailable,[]
+SumBackward1,3,27.884000001009554,9.503000002354383,0,0,0,0,,unavailable,"[[256, 128]]"
+aten::unsqueeze,3,9.201000000350177,7.2969999997876585,0,0,0,0,,unavailable,"[[256, 128], []]"
+aten::expand,3,9.179999998304993,7.537999997846782,0,0,0,0,,unavailable,"[[1, 256, 128], [], []]"
+aten::as_strided,3,1.6420000004582107,1.6420000004582107,0,0,0,0,,unavailable,"[[1, 256, 128], [], [], []]"
+autograd::engine::evaluate_function: StackBackward0,6,55315.38099999959,16929.69199999934,0,0,0,0,,unavailable,[]
+StackBackward0,3,15222.393000000156,5981.301000014413,0,0,0,0,,unavailable,"[[1000, 256, 20]]"
+aten::select,3000,9241.091999985743,7219.473999998998,0,0,0,0,,unavailable,"[[1000, 256, 20], [], []]"
+aten::as_strided,3000,2021.6179999867454,2021.6179999867454,0,0,0,0,,unavailable,"[[1000, 256, 20], [], [], []]"
+StackBackward0,3,23163.29600000009,7953.393000008073,0,0,0,0,,unavailable,"[[1000, 256, 128]]"
+aten::select,3000,15209.902999992017,12080.48199997656,0,0,0,0,,unavailable,"[[1000, 256, 128], [], []]"
+aten::as_strided,3000,3129.4210000154562,3129.4210000154562,0,0,0,0,,unavailable,"[[1000, 256, 128], [], [], []]"
+autograd::engine::evaluate_function: CompiledFunctionBackward,9000,1708215.0839999355,134596.57699981332,20220.99500002479,0.0,0,-1756274688,,unavailable,[]
+CompiledFunctionBackward,3000,448374.63900004234,153408.40500006638,3500.35000005411,0.0,0,0,,unavailable,"[[256, 20], []]"
+## Call CompiledFxGraph fdbg3zbct5bfuazujqfnljw4nblx3ls3xrilcex56dn6lsv2q4e7 ##,2997,294720.386999974,237003.4269999643,3496.7660000552423,0.0,0,122757120,,unavailable,[]
+triton_poi_fused_mul_0,2997,57716.96000000974,39016.72400001902,3496.7660000552423,3496.7660000552423,0,0,,unavailable,"[[256, 20], [256, 20], [256, 20], []]"
+triton_poi_fused_mul_0,3000,0,0,3500.35000005411,3500.35000005411,0,0,,unavailable,[]
+## Call CompiledFxGraph fdbg3zbct5bfuazujqfnljw4nblx3ls3xrilcex56dn6lsv2q4e7 ##,2997,0,0,3496.7660000552423,3496.7660000552423,0,0,,unavailable,[]
+AddBackward0,3000,2840.3260000147857,2840.3260000147857,0,0,0,0,,unavailable,"[[256, 20]]"
+aten::t,6000,52874.00999997696,20296.000999988522,0,0,0,0,,unavailable,"[[256, 128]]"
+aten::transpose,6000,32578.008999988437,19677.501999990083,0,0,0,0,,unavailable,"[[256, 128], [], []]"
+aten::mm,3000,101269.27600001357,82611.08499998366,31352.649999989197,31352.649999989197,0,30720000,3932160000,estimated,"[[128, 256], [256, 20]]"
+sm80_xmma_gemm_f32f32_f32f32_f32_nt_n_tilesize32x32x8_stage3_warpsize1x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas,3000,0,0,31352.649999989197,31352.649999989197,0,0,,unavailable,[]
+aten::t,3000,24395.9310000143,7347.649000036996,0,0,0,0,,unavailable,"[[128, 20]]"
+aten::transpose,3000,17048.281999977306,8454.100999994203,0,0,0,0,,unavailable,"[[128, 20], [], []]"
+aten::as_strided,3000,8594.180999983102,8594.180999983102,0,0,0,0,,unavailable,"[[128, 20], [], [], []]"
+aten::mm,3000,96916.90899999673,63468.71900000516,23405.377999994904,23405.377999994904,0,393216000,3932160000,estimated,"[[256, 20], [20, 128]]"
+void cutlass::Kernel2<cutlass_80_simt_sgemm_128x128_8x4_tn_align1>(cutlass_80_simt_sgemm_128x128_8x4_tn_align1::Params),3000,0,0,17903.62300000619,17903.62300000619,0,0,,unavailable,[]
+CompiledFunctionBackward,6,1909.3800000012852,655.6190000018105,18.59199999924749,0.0,0,-786432,,unavailable,"[[], [256, 128], []]"
+## Call CompiledFxGraph f5ka5d3fmy2ng2rbcfdagzppwbxlklvfbl2kzb24orcs5r3cuixf ##,5994,735097.8920000354,583258.874000073,12506.020999949425,0.0,0,-1178468352,,unavailable,[]
+triton_poi_fused__to_copy_abs_add_clamp_div_exp_ge_mul_neg_pow_reciprocal_rsub_scalar_tensor_sub_where_0,5994,151839.01799996244,111503.80599993654,12506.020999949425,12506.020999949425,0,0,,unavailable,"[[256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], []]"
+triton_poi_fused__to_copy_abs_add_clamp_div_exp_ge_mul_neg_pow_reciprocal_rsub_scalar_tensor_sub_where_0,6000,0,0,12518.595999949612,12518.595999949612,0,0,,unavailable,[]
+## Call CompiledFxGraph f5ka5d3fmy2ng2rbcfdagzppwbxlklvfbl2kzb24orcs5r3cuixf ##,5994,0,0,12506.020999949425,12506.020999949425,0,0,,unavailable,[]
+AddBackward0,12000,10015.966000071261,10015.966000071261,0,0,0,0,,unavailable,"[[256, 128]]"
+MulBackward0,5994,118683.27100000158,27277.352999994066,7263.4530000467785,0.0,0,0,,unavailable,"[[256, 128]]"
+MmBackward0,6000,443297.972999983,64360.73099987302,53790.945000026375,0.0,0,0,,unavailable,"[[256, 128]]"
+aten::mm,3000,105028.52700002026,74616.12900000019,18682.215000004508,18682.215000004508,0,196608000,25165824000,estimated,"[[128, 256], [256, 128]]"
+void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_nt_align1>(cutlass_80_simt_sgemm_64x64_8x5_nt_align1::Params),6000,0,0,28574.893000011332,28574.893000011332,0,0,,unavailable,[]
+aten::t,3000,27142.807999998797,7373.630999980029,0,0,0,0,,unavailable,"[[128, 128]]"
+aten::transpose,3000,19769.177000018768,9418.223000057042,0,0,0,0,,unavailable,"[[128, 128], [], []]"
+aten::as_strided,3000,10350.953999961726,10350.953999961726,0,0,0,0,,unavailable,"[[128, 128], [], [], []]"
+sm80_xmma_gemm_f32f32_f32f32_f32_tn_n_tilesize32x32x8_stage3_warpsize1x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas,3000,0,0,14800.407000035048,14800.407000035048,0,0,,unavailable,[]
+aten::t,3000,30341.59700004803,11300.280000078492,0,0,0,0,,unavailable,"[[256, 700]]"
+aten::transpose,3000,19041.31699996954,10201.764999961015,0,0,0,0,,unavailable,"[[256, 700], [], []]"
+aten::as_strided,3000,8839.552000008523,8839.552000008523,0,0,0,0,,unavailable,"[[256, 700], [], [], []]"
+aten::mm,3000,99616.71500002919,68079.5719999969,20313.218999987468,20313.218999987468,0,1075200000,137625600000,estimated,"[[700, 256], [256, 128]]"
+aten::add_,2997,24084.55700005172,11651.973000053316,3906.173000009265,3906.173000009265,0,0,,unavailable,"[[128, 20], [128, 20], []]"
+CompiledFunctionBackward,5994,1080470.7080000765,345646.31600003876,12505.82799995225,0.0,0,0,,unavailable,"[[256, 128], [256, 128], []]"
+aten::add_,2997,27927.592000013217,13951.412999970373,3638.4069999814965,3638.4069999814965,0,0,,unavailable,"[[128, 128], [128, 128], []]"
+aten::add_,2997,26140.582999973092,12059.702999944799,3937.336999991443,3937.336999991443,0,0,,unavailable,"[[700, 128], [700, 128], []]"
+## Call CompiledFxGraph fgjzz7jpeld6rat6kdsvr6lcx6hfkjkhpaq6h5j7coojdaiotmbs ##,3,245.8470000019297,176.89700000174344,3.5839999988675117,0.0,0,61440,,unavailable,[]
+triton_poi_fused_mul_0,3,68.95000000018626,35.085000002756715,3.5839999988675117,3.5839999988675117,0,0,,unavailable,"[[256, 20], [256, 20], []]"
+## Call CompiledFxGraph fgjzz7jpeld6rat6kdsvr6lcx6hfkjkhpaq6h5j7coojdaiotmbs ##,3,0,0,3.5839999988675117,3.5839999988675117,0,0,,unavailable,[]
+autograd::engine::evaluate_function: torch::autograd::AccumulateGrad,9,178.68800000008196,40.502999995835125,0,0,0,0,,unavailable,[]
+torch::autograd::AccumulateGrad,3,78.86000000033528,22.679000000469387,0,0,0,0,,unavailable,"[[128, 20]]"
+## Call CompiledFxGraph fosxznnuq77f6bagnizmaaww4jeztu53c5hbdfgh5nkn7tls2nvc ##,6,727.1030000029132,561.7480000033975,12.575000000186265,0.0,0,-1966080,,unavailable,[]
+triton_poi_fused__to_copy_abs_add_clamp_div_exp_ge_mul_neg_pow_reciprocal_rsub_scalar_tensor_sub_where_0,6,165.3549999995157,116.675999998115,12.575000000186265,12.575000000186265,0,0,,unavailable,"[[256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], [256, 128], []]"
+## Call CompiledFxGraph fosxznnuq77f6bagnizmaaww4jeztu53c5hbdfgh5nkn7tls2nvc ##,6,0,0,12.575000000186265,12.575000000186265,0,0,,unavailable,[]
+torch::autograd::AccumulateGrad,3,42.33900000154972,8.520000002346933,0,0,0,0,,unavailable,"[[128, 128]]"
+torch::autograd::AccumulateGrad,3,16.986000002361834,8.638000001199543,0,0,0,0,,unavailable,"[[700, 128]]"
+snnlab::optimizer_constraints,3,3273.3940000003204,310.9389999974519,397.17999999877065,0.0,0,-1271808,,unavailable,[]
+Optimizer.step#Adam.step,3,2755.878000001423,1250.2150000100955,381.3720000004396,0.0,-36,-1302528,,unavailable,[]
+aten::to,9,4.593000003136694,4.593000003136694,0,0,0,0,,unavailable,"[[], [], [], [], [], []]"
+aten::lift_fresh,9,3.7000000001862645,3.7000000001862645,0,0,0,0,,unavailable,[[]]
+aten::detach_,9,16.91600000113249,9.686000003479421,0,0,0,0,,unavailable,[[]]
+detach_,9,7.229999997653067,7.229999997653067,0,0,0,0,,unavailable,[[]]
+aten::_foreach_add_,9,105.37299999780953,54.81999999657273,0,0,0,0,,unavailable,"[[], [], []]"
+aten::_foreach_lerp_,9,130.56599999498576,68.61499999649823,68.4789999993518,68.4789999993518,0,0,,unavailable,"[[], [], []]"
+Optimizer.step#Adam.step,3,0,0,2028.8459999999031,2028.8459999999031,0,0,,unavailable,[]
+"void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(anonymous namespace)::TensorListMetadata<2>, at::native::(anonymous namespace)::TernaryOpScalarFunctor<float, 2, 2, 0>, at::native::LerpFunctor<float>, float>(at::native::(anonymous namespace)::TensorListMetadata<2>, at::native::(anonymous namespace)::TernaryOpScalarFunctor<float, 2, 2, 0>, at::native::LerpFunctor<float>, float)",9,0,0,68.4789999993518,68.4789999993518,0,0,,unavailable,[]
+aten::_foreach_mul_,9,124.99400000181049,71.19800000451505,64.82999999821186,64.82999999821186,0,0,,unavailable,"[[], []]"
+aten::result_type,15,4.104000001214445,4.104000001214445,0,0,0,0,,unavailable,"[[700, 128], []]"
+"void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(anonymous namespace)::TensorListMetadata<1>, at::native::(anonymous namespace)::BinaryOpScalarFunctor<float, 1, 1, 0>, std::multiplies<float>, float>(at::native::(anonymous namespace)::TensorListMetadata<1>, at::native::(anonymous namespace)::BinaryOpScalarFunctor<float, 1, 1, 0>, std::multiplies<float>, float)",9,0,0,64.82999999821186,64.82999999821186,0,0,,unavailable,[]
+aten::_foreach_addcmul_,9,111.37399999983609,63.644999999552965,40.31900000292808,40.31900000292808,0,0,,unavailable,"[[], [], [], []]"
+"void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(anonymous namespace)::TensorListMetadata<3>, at::native::(anonymous namespace)::PointwiseOpScalarFunctor<float, 3, 3, 0>, std::multiplies<float>, float>(at::native::(anonymous namespace)::TensorListMetadata<3>, at::native::(anonymous namespace)::PointwiseOpScalarFunctor<float, 3, 3, 0>, std::multiplies<float>, float)",9,0,0,40.31900000292808,40.31900000292808,0,0,,unavailable,[]
+aten::_foreach_sqrt,9,607.4529999997467,70.17499999981374,52.6399999987334,52.6399999987334,0,0,,unavailable,[[]]
+"void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(anonymous namespace)::TensorListMetadata<2>, at::native::(anonymous namespace)::UnaryOpFunctor<float, 2, 1, 1>, at::native::Sqrt<float> >(at::native::(anonymous namespace)::TensorListMetadata<2>, at::native::(anonymous namespace)::UnaryOpFunctor<float, 2, 1, 1>, at::native::Sqrt<float>)",9,0,0,52.6399999987334,52.6399999987334,0,0,,unavailable,[]
+aten::_foreach_div_,9,135.16099999751896,56.08099999651313,52.41700000036508,52.41700000036508,0,0,,unavailable,"[[], []]"
+"void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(anonymous namespace)::TensorListScalarListMetadata<float, 1>, at::native::(anonymous namespace)::BinaryOpScalarListFunctor<float, 1, 1, 0>, std::divides<float> >(at::native::(anonymous namespace)::TensorListScalarListMetadata<float, 1>, at::native::(anonymous namespace)::BinaryOpScalarListFunctor<float, 1, 1, 0>, std::divides<float>)",9,0,0,52.41700000036508,52.41700000036508,0,0,,unavailable,[]
+aten::_foreach_add_,9,94.04399999789894,43.81699999887496,35.55100000090897,35.55100000090897,0,0,,unavailable,"[[], []]"
+"void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(anonymous namespace)::TensorListMetadata<1>, at::native::(anonymous namespace)::BinaryOpScalarFunctor<float, 1, 1, 0>, std::plus<float>, float>(at::native::(anonymous namespace)::TensorListMetadata<1>, at::native::(anonymous namespace)::BinaryOpScalarFunctor<float, 1, 1, 0>, std::plus<float>, float)",9,0,0,35.55100000090897,35.55100000090897,0,0,,unavailable,[]
+aten::_foreach_addcdiv_,9,104.87500000372529,55.57500000204891,67.1359999999404,67.1359999999404,0,0,,unavailable,"[[], [], [], []]"
+"void at::native::(anonymous namespace)::multi_tensor_apply_kernel<at::native::(anonymous namespace)::TensorListScalarListMetadata<float, 3>, at::native::(anonymous namespace)::PointwiseOpScalarListFunctor<float, 3, 3, 0>, std::divides<float> >(at::native::(anonymous namespace)::TensorListScalarListMetadata<float, 3>, at::native::(anonymous namespace)::PointwiseOpScalarListFunctor<float, 3, 3, 0>, std::divides<float>)",9,0,0,67.1359999999404,67.1359999999404,0,0,,unavailable,[]
+aten::result_type,15,2.680999997071922,2.680999997071922,0,0,0,0,,unavailable,"[[128, 128], []]"
+aten::result_type,15,2.8460000045597553,2.8460000045597553,0,0,0,0,,unavailable,"[[128, 20], []]"
+aten::clamp,3,78.27000000048429,54.17799999937415,3.935999999754131,3.935999999754131,0,196608,,unavailable,"[[128, 128], [], []]"
+snnlab::optimizer_constraints,3,0,0,171.4229999994859,171.4229999994859,0,0,,unavailable,[]
+aten::clamp,3,36.18500000052154,16.634000001475215,4.606999999843538,4.606999999843538,0,1075200,,unavailable,"[[700, 128], [], []]"
+aten::clone,1,14.78099999949336,2.7109999991953373,1.3120000008493662,0.0,0,0,,unavailable,"[[700, 128], []]"
+aten::clone,1,12.221999999135733,1.9649999998509884,1.1200000010430813,0.0,0,0,,unavailable,"[[128, 20], []]"
+cudaDeviceSynchronize,2,12.274000000208616,12.274000000208616,0,0,0,0,,unavailable,[]

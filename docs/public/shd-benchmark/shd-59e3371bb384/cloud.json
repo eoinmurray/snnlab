@@ -1,0 +1,25 @@
+{
+  "volume": "snnlab-shd",
+  "run_id": "shd-59e3371bb384",
+  "directory": "runs/shd-59e3371bb384",
+  "checkpoint": "runs/shd-59e3371bb384/final.checkpoint",
+  "snapshot": "runs/shd-59e3371bb384/spikes.npz",
+  "call_id": "fc-01M4ZHJ5SZFJQ4SK4N7DA1SWA1",
+  "status": "complete",
+  "report_files": [
+    "configuration.json",
+    "metrics.json",
+    "timing.json",
+    "summary.json",
+    "diagnostic_metrics.json",
+    "tracing/activity.csv",
+    "tracing/copies.csv",
+    "tracing/gradients.csv",
+    "tracing/memory.csv",
+    "tracing/operators.csv",
+    "tracing/phases.csv",
+    "tracing/summary.json",
+    "tracing/weights.csv"
+  ],
+  "trace": "runs/shd-59e3371bb384/tracing/trace.json"
+}

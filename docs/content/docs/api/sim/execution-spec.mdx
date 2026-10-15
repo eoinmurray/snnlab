@@ -55,6 +55,7 @@ ExecutionSpec(
     dataset_prefetch: int = 0,
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
     training_timing: bool = False,
+    tracing: TraceSpec | None = None,
 )
 ```
 
@@ -883,3 +884,13 @@ Metrics record the selected mode. Fast training protocols record `projection_mod
 The CLI exposes `--no-retain-parameters`, `--no-retain-final-state` and `--no-retain-runtime-state`. Saving runtime state while omitting it fails explicitly. Include the same flags in `retention_identity` before cache reuse; default full snapshot identity retains its historical shape under strict arithmetic, and omitted snapshots are recorded explicitly. Dataset inference propagates these controls to each batch and retains global recording coordinates. Python `GraphExecutor` calls accept the retention flags per forward call and `projection_mode` at construction.
 
 The [zero-decay benchmark](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/zero_decay.py) compares a matched custom Synaptic classifier against snnTorch on identical inputs and weights. It measures controlled ablations at initial and newly trained weight states plus full MNIST training/test runs. [Modal runner](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/zero_decay_modal.py) uses one L4, independent profiler passes and synchronized randomized timing repetitions.
+
+### tracing
+
+**Type:** `snnlab.sim.tracing.TraceSpec | None`. **Default:** `None`.
+
+Optional bounded native-training monitoring and PyTorch CPU/CUDA profiling.
+Modes are `off`, `monitor`, `profile` and `both`. Configuration, CLI examples,
+measurement scopes and unavailable counters are documented in [Tracing](/api/sim/tracing).
+Tracing is diagnostic and does not enter graph, training or checkpoint identity.
+Use separate baseline and diagnostic calls when measuring performance.

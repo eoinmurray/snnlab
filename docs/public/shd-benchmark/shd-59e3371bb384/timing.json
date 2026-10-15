@@ -1,0 +1,113 @@
+{
+  "mode": "synchronized",
+  "scope": "complete train call after argument validation; excludes caller preparation and persistence unless save_*_checkpoint is requested",
+  "training_scope": "minibatch preparation, forward/loss/backward, optimizer/constraints, update bookkeeping and in-loop checkpoint selection; excludes epoch evaluations",
+  "total_s": 766.120720068,
+  "setup_s": 6.2345113109999915,
+  "training_s": 678.273314468,
+  "train_evaluation_s": 0.0,
+  "validation_s": 81.35544842599998,
+  "checkpoint_s": 0.08880500700001903,
+  "reporting_s": 0.16864085600002454,
+  "epochs": [
+    {
+      "epoch": 0,
+      "setup_s": 0.0,
+      "training_s": 0.0,
+      "train_evaluation_s": 0.0,
+      "validation_s": 11.676106903000004,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.009602720999993153
+    },
+    {
+      "epoch": 1,
+      "setup_s": 0.0,
+      "training_s": 73.59344213199999,
+      "train_evaluation_s": 0.0,
+      "validation_s": 6.996324523999988,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.018286027000016247
+    },
+    {
+      "epoch": 2,
+      "setup_s": 0.0,
+      "training_s": 67.48600518400002,
+      "train_evaluation_s": 0.0,
+      "validation_s": 7.071725133000001,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.01855764099997259
+    },
+    {
+      "epoch": 3,
+      "setup_s": 0.0,
+      "training_s": 68.828138212,
+      "train_evaluation_s": 0.0,
+      "validation_s": 6.901610669000036,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.013562036999985594
+    },
+    {
+      "epoch": 4,
+      "setup_s": 0.0,
+      "training_s": 67.07724774600001,
+      "train_evaluation_s": 0.0,
+      "validation_s": 7.257178844000009,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.01834503599997106
+    },
+    {
+      "epoch": 5,
+      "setup_s": 0.0,
+      "training_s": 67.54988329899999,
+      "train_evaluation_s": 0.0,
+      "validation_s": 6.877872192999973,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.01470572600004516
+    },
+    {
+      "epoch": 6,
+      "setup_s": 0.0,
+      "training_s": 66.34541796599996,
+      "train_evaluation_s": 0.0,
+      "validation_s": 6.988625823000007,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.01612182799999573
+    },
+    {
+      "epoch": 7,
+      "setup_s": 0.0,
+      "training_s": 66.99223069700008,
+      "train_evaluation_s": 0.0,
+      "validation_s": 6.984011038999938,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.014196088000062446
+    },
+    {
+      "epoch": 8,
+      "setup_s": 0.0,
+      "training_s": 67.52049410699999,
+      "train_evaluation_s": 0.0,
+      "validation_s": 7.048233949000064,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.013877318999902855
+    },
+    {
+      "epoch": 9,
+      "setup_s": 0.0,
+      "training_s": 66.56729476099997,
+      "train_evaluation_s": 0.0,
+      "validation_s": 6.716286086999958,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.016570109000099364
+    },
+    {
+      "epoch": 10,
+      "setup_s": 0.0,
+      "training_s": 66.31316036399994,
+      "train_evaluation_s": 0.0,
+      "validation_s": 6.837473262000003,
+      "checkpoint_s": 0.0,
+      "reporting_s": 0.01452716699998291
+    }
+  ]
+}
