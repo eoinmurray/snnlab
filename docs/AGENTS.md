@@ -8,6 +8,8 @@ Use `getSource()` to construct navigation from the current content collections w
 
 ## Local verification
 
+The first Examples page is Defining Networks (`/snnlang`), containing two parts: Feedforward Network and Recurrent Circuit. Each part follows intro, complete code, diagram order. Edit `scripts/snnlang.mdx` and `../examples/snnlang/{feedforward,recurrent}.py`; `scripts/sync-snnlang.ts` publishes the page, scripts and diagrams. Run both Python scripts after topology changes. Use expanded view for the recurrent circuit so the layer groups and inhibitory feedback remain visible.
+
 Only change code and inspect generated output files. Do not restart the development server; rely on hot reload. Do not use computer or browser tools, screenshots of the site, or HTTP requests to check the site. Anomancer checks the site personally; automated site checks take too long. Type checks, builds, script execution and viewing generated PNGs or other output files are permitted.
 
 Quickstart is generated before development, type checks and builds from `scripts/quickstart.mdx` and `../examples/quickstart/quickstart.py` by `scripts/sync-quickstart.ts`. Run the Python script to regenerate the PNG beside it after changing the simulation or plotting. Do not edit generated copies in `content/docs` or `public/quickstart`.

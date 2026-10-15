@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const docsDir = fileURLToPath(new URL('../', import.meta.url));
 const repoDir = path.dirname(docsDir);
 const examples = new Map([
+  ['snnlang', 'snnlang'],
   ['quickstart', 'quickstart'], ['training', 'training'],
   ['pytorch', 'pytorch'], ['inference', 'inference'],
   ['current-lif', 'current-lif'], ['customisation', 'customisation'],
@@ -14,7 +15,7 @@ export function syncScriptFor(file) {
   const absolute = path.resolve(file);
   if (absolute === path.join(repoDir, 'CHANGELOG.md')) return 'sync-changelog.ts';
   const relative = path.relative(docsDir, absolute).split(path.sep).join('/');
-  const template = /^scripts\/(quickstart|training|pytorch-integration|inference|current-lif|customisation)\.mdx$/.exec(relative);
+  const template = /^scripts\/(quickstart|training|pytorch-integration|inference|current-lif|customisation|snnlang)\.mdx$/.exec(relative);
   if (template) return `sync-${template[1] === 'pytorch-integration' ? 'pytorch' : template[1]}.ts`;
   const generator = /^scripts\/(sync-[\w-]+\.ts)$/.exec(relative);
   if (generator && ['sync-changelog.ts', ...[...examples.values()].map(name => `sync-${name}.ts`)].includes(generator[1])) {

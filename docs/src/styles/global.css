@@ -13,3 +13,16 @@ html > body[data-scroll-locked] {
 
 body { font-family: ui-sans-serif, system-ui, sans-serif; }
 .katex-display { overflow-x: auto; overflow-y: hidden; padding-block: 0.5rem; }
+
+/* Show complete code blocks and wrap long lines within the article. */
+figure.shiki > [role="region"] {
+  max-height: none;
+  overflow: visible;
+}
+
+figure.shiki pre {
+  width: 100%;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

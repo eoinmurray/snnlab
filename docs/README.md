@@ -59,6 +59,8 @@ The existing Worker at the separate hostname `ssnlab.eoinmurray.info` is deploye
 
 `astro.config.mjs` configures remark-math and rehype-katex. Commit `bun.lock`; `.astro/`, `out/`, and `node_modules/` are generated and ignored.
 
+The first Examples page, Defining Networks (`/snnlang`), covers SNNLang authoring and rendering in two parts: Feedforward Network and Recurrent Circuit. Its source template is `scripts/snnlang.mdx`, with runnable scripts and generated diagrams in `../examples/snnlang/`. Run both Python scripts after topology changes; `scripts/sync-snnlang.ts` publishes the page, complete code, diagrams and downloads before development, checks and builds. Each part follows intro, code, diagram order.
+
 Quickstart prose lives in `scripts/quickstart.mdx`; its script and generated PNGs live in `../examples/quickstart/`. Run the Python script after changing it. `scripts/sync-quickstart.ts` publishes the complete script and copies its images and download before development, checks and builds.
 
 Quickstart, Training and Inference are generated from their source templates in `scripts/` and Python examples in `../examples/`. Run the corresponding example script to regenerate plots, then use the Bun check/build commands to synchronize downloadable scripts and figures.

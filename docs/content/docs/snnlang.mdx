@@ -1,0 +1,135 @@
+---
+title: Defining Networks
+description: Define and draw feedforward and recurrent spiking networks with SNNLang.
+---
+
+Use `snnlab.lang` to describe a network and `snnlab.viz` to render its diagram. Start with the basic API, then add grouped layers and inhibitory feedback. Both examples compile and draw the architecture without simulating or training it.
+
+Rendering diagrams requires Graphviz's `dot` executable on your PATH (`brew install graphviz` on macOS).
+
+Compiled networks can stay in memory or be saved for later. The execution functions `simulate`, `infer` and `train` accept an [ExecutionSpec](/api/sim/execution-spec): use `graph=bundle.graph` to pass the compiled graph directly, or save it with `bundle.write("network.bundle")` and use `bundle=Path("network.bundle")`. A saved bundle is a directory containing the graph, manifest and any training recipe. For in-memory training, also pass `training=bundle.training` when the bundle includes a recipe; inputs and other execution settings belong in the request.
+
+## 1. Feedforward Network
+
+Define a network, compile it and draw it with `snnlab.lang` and `snnlab.viz`. Sixteen spike input channels feed 32 hidden neurons, which feed eight output neurons. Both populations use conductance-based leaky integrate-and-fire (`COBA_LIF`) neurons and excitatory AMPA synapses. This example introduces the basic authoring API without running a simulation.
+
+### Code
+
+`input` declares the incoming signal's shape and units; `population` defines each layer; `connect` joins them through named projections. The weight initializer and nonnegative constraint describe the excitatory weights, and `output` names the spikes to return when the network is executed. `compile` validates the description and creates a bundle; `diagram` derives its structure and `render_diagram` saves the image.
+
+Run `uv run python examples/snnlang/feedforward.py` from the repository root. The script saves `feedforward.png` beside itself. [Download feedforward.py](/snnlang/feedforward.py).
+
+```python title="examples/snnlang/feedforward.py"
+"""Define a feedforward network and render its diagram. Requires Graphviz."""
+
+from pathlib import Path
+
+from snnlab import lang, viz
+
+net = lang.Network("feedforward", dt=0.1 * lang.ms)
+inputs = net.input(
+    "inputs", shape=("time", "batch", 16), signal_type="spikes", unit="spike"
+)
+hidden = net.population(
+    "hidden", size=32, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms)
+)
+output = net.population(
+    "output", size=8, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms)
+)
+
+net.connect(
+    inputs, hidden.excitatory, name="input_to_hidden",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=lang.Uniform(0.1, 0.5), constraint=lang.NonNegative(),
+)
+net.connect(
+    hidden.spikes, output.excitatory, name="hidden_to_output",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=lang.Uniform(0.1, 0.5), constraint=lang.NonNegative(),
+)
+net.output("spikes", output.spikes)
+
+bundle = lang.compile(net)
+viz.render_diagram(
+    lang.diagram(bundle, view="expanded"),
+    Path(__file__).with_suffix(".png"), scale=2,
+)
+```
+
+### Diagram
+
+![Sixteen input channels connect through AMPA synapses to 32 hidden COBA-LIF neurons, then eight output COBA-LIF neurons and a named spike output.](/snnlang/feedforward.png)
+
+Each population is one box; the arrows show projections between populations, rather than individual synapses. Projection weight matrices are sized automatically from their source and target populations. The final box is the named output signal. This is a structural diagram, not a plot of simulated activity.
+
+## 2. Recurrent Circuit
+
+Build on the first example with two layers, each containing an excitatory population and a local inhibitory population. Thirty-two input channels drive Layer 1 (64 excitatory and 16 inhibitory neurons), whose excitatory population feeds Layer 2 (32 excitatory and eight inhibitory neurons). Within each layer, excitation recruits inhibition, which feeds back onto the excitatory population. The network output is Layer 2's excitatory spikes.
+
+### Code
+
+A short loop declares both layers, and `net.group` keeps each layer's populations and local projections together. AMPA projections target `.excitatory`; GABA projections target `.inhibitory`. Both use nonnegative weights: the target port determines their excitatory or inhibitory effect. Local connections are marked as recurrent or feedback and have an explicit delay. The two remaining projections define the forward path from the input through both layers.
+
+Run `uv run python examples/snnlang/recurrent.py` from the repository root. The script saves `recurrent.png` beside itself. [Download recurrent.py](/snnlang/recurrent.py).
+
+```python title="examples/snnlang/recurrent.py"
+"""Define two layers with local inhibitory feedback and draw them. Requires Graphviz."""
+
+from pathlib import Path
+
+from snnlab import lang, viz
+
+net = lang.Network("two_layer", dt=0.1 * lang.ms)
+inputs = net.input(
+    "inputs", shape=("time", "batch", 32), signal_type="spikes", unit="spike"
+)
+
+layers = []
+for name, e_size, i_size in [("layer_1", 64, 16), ("layer_2", 32, 8)]:
+    with net.group(name):
+        e = net.population(
+            f"{name}_E", size=e_size,
+            neuron=lang.COBA_LIF(tau_mem=20 * lang.ms),
+        )
+        i = net.population(
+            f"{name}_I", size=i_size,
+            neuron=lang.COBA_LIF(tau_mem=5 * lang.ms),
+        )
+        net.connect(
+            e.spikes, i.excitatory, name=f"{name}_E_to_I",
+            synapse=lang.AMPA(tau=2 * lang.ms),
+            weight=lang.Uniform(0.1, 0.5), constraint=lang.NonNegative(),
+            connection="recurrent", delay=0.1 * lang.ms,
+        )
+        net.connect(
+            i.spikes, e.inhibitory, name=f"{name}_I_to_E",
+            synapse=lang.GABA(tau=9 * lang.ms),
+            weight=lang.Uniform(0.5, 1.0), constraint=lang.NonNegative(),
+            connection="feedback", delay=0.1 * lang.ms,
+        )
+    layers.append(e)
+
+net.connect(
+    inputs, layers[0].excitatory, name="input_to_layer_1",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=lang.Uniform(0.1, 0.5), constraint=lang.NonNegative(),
+)
+net.connect(
+    layers[0].spikes, layers[1].excitatory, name="layer_1_to_layer_2",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=lang.Uniform(0.1, 0.5), constraint=lang.NonNegative(),
+)
+net.output("spikes", layers[1].spikes)
+
+bundle = lang.compile(net)
+viz.render_diagram(
+    lang.diagram(bundle, view="expanded"),
+    Path(__file__).with_suffix(".png"), scale=2,
+)
+```
+
+### Diagram
+
+![Thirty-two spike input channels drive two grouped layers. Each layer contains excitatory and inhibitory COBA-LIF populations joined by AMPA excitation and GABA feedback. Layer 1 excites Layer 2, whose excitatory spikes form the output.](/snnlang/recurrent.png)
+
+`view="expanded"` shows all four populations inside their layer groups, including the local feedback loops. The circuit contains six projections: two within each layer, one input projection and one between layers. Compilation and rendering describe the architecture; they do not establish its stability or activity. The neuron and weight parameters here illustrate authoring rather than a tuned dynamical regime.
