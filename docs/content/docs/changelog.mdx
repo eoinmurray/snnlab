@@ -9,6 +9,8 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-15
+
 ### Added
 
 1. Projection weight modulation through `Network.connect(modulation=...)`, with `ConstantGain`, `StepGain`, `RampGain`, `SineGain`, `PiecewiseGain` and portable `CustomGain` timing callbacks. Nonnegative scalar gains scale new input at arrival time before synaptic filtering; baseline weights retain gradients, constraints and connectivity masks. Shared weights support independent projection schedules.
