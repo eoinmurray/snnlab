@@ -190,3 +190,12 @@ the difference between synchronized device work and host-only enqueue latency.
 `training_checkpoint` and `selected_checkpoint` are [TrainingCheckpoint](/api/sim/training-checkpoints) objects. `runtime_state` is [GraphRuntimeState](/api/sim/runtime-state), and selected recording sink callbacks receive [RecordingBlock](/api/sim/recording-measurement) objects. Persist a result through [write_inference_artifacts](/api/sim/inference-artifacts); `.numpy()` converts plotting arrays without saving any files.
 
 `recorded_signals` and `decisions` use per-instance factories, so separately constructed results do not share their empty mappings/lists. Their returned contents are mutable caller-owned containers.
+
+## Captured run snapshots
+
+`snapshots: dict[str, RunSnapshot]` maps `"start"` and/or `"end"` to captured
+metadata and independent CPU parameter copies when `ExecutionSpec.snapshot` is
+enabled. It is empty by default. Capture works even with
+`retain_parameters=False`; `SnapshotSpec.parameters` controls snapshot arrays.
+Use `write_run_snapshot(path, result.snapshots["start"])` to export another copy.
+See [Run Snapshots](/api/sim/run-snapshots).

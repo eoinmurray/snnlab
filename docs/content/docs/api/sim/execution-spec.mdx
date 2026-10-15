@@ -14,6 +14,7 @@ from snnlab.sim import ExecutionSpec
 
 ExecutionSpec(
     kind: Literal["build", "simulate", "train", "infer"],
+    snapshot: str | Path | SnapshotSpec | None = None,
     executor: Literal["graph"] = "graph",
     bundle: Path | None = None,
     graph: Mapping[str, Any] | None = None,
@@ -962,3 +963,13 @@ def resolve_dataset_snapshot_binding(
 ```
 
 Returns `(resolved_inputs, target_bindings)` for one digest-identified snapshot. The graph must have exactly the binding's named `(time, batch, channels)` input. Snapshot format, encoder, source selection and label validation follow the dataset rules above. Parameters beginning with `_` are internal batch-provider hooks; applications should leave them at defaults. This low-level function encodes the selected snapshot together; request-managed encoding batches it as needed.
+
+## Run snapshots
+
+Set `snapshot="runs/example"` to export the effective network, resolved execution
+settings and parameter arrays just before execution. Use
+`SnapshotSpec(path="runs/example", parameters=False, stage="end")` for settings
+only after execution, or `stage="both"` for initial/final captures in separate
+subdirectories. Supported for simulation, inference and training; build requests
+reject this option. Existing snapshot files are not overwritten. See
+[Run Snapshots](/api/sim/run-snapshots) for the format and re-export API.

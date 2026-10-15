@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from snnlab.sim.artifacts.snapshots import RunSnapshot
 from snnlab.sim.requests.spec import ExecutorName
 from snnlab.sim.runtime.state import GraphRuntimeState
 from snnlab.sim.training.checkpoints import TrainingCheckpoint
@@ -40,6 +41,8 @@ class ExecutionResult:
     model: nn.Module | None = None
     decisions: list[dict[str, Any]] = field(default_factory=list)
     recorded_signals: dict[str, torch.Tensor] = field(default_factory=dict)
+
+    snapshots: dict[str, RunSnapshot] = field(default_factory=dict)
 
     _output_axes: dict[str, tuple[int | str, ...]] = field(
         default_factory=dict, repr=False

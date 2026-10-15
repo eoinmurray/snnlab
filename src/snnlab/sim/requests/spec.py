@@ -8,6 +8,7 @@ from typing import Any, Callable, Literal, Mapping, Sequence
 
 import torch
 
+from snnlab.sim.artifacts.snapshots import SnapshotSpec
 from snnlab.sim.diagnostics.tracing import TraceSpec
 from snnlab.sim.inputs.bindings import InputBinding, TargetArrayBinding
 from snnlab.sim.runtime.interventions import Intervention
@@ -81,7 +82,16 @@ class ExecutionSpec:
     training_timing: bool = False
     tracing: TraceSpec | None = None
 
+    snapshot: str | Path | SnapshotSpec | None = None
+
     def __post_init__(self):
+        if self.snapshot is not None:
+            if not isinstance(self.snapshot, (str, Path, SnapshotSpec)):
+                raise TypeError("snapshot must be a path or SnapshotSpec")
+            if isinstance(self.snapshot, (str, Path)):
+                SnapshotSpec(self.snapshot)
+            if self.kind == "build":
+                raise ValueError("snapshots require simulate, infer or train")
         if self.tracing is not None:
             if not isinstance(self.tracing, TraceSpec):
                 raise TypeError("tracing must be a TraceSpec")

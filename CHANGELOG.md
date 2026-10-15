@@ -6,6 +6,12 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-15
+
+### Added
+
+1. Optional run snapshots through `ExecutionSpec.snapshot`, `SnapshotSpec`, `RunSnapshot` and `write_run_snapshot`. Simulation, inference and native training export the effective compiled graph, resolved execution settings and optional lossless NPZ parameter arrays, with start/end/both capture stages and independent copies on `ExecutionResult.snapshots`. Includes checkpoint/override and training-resume coverage, metadata-only exports and API documentation. Existing snapshot files are never overwritten; snapshots do not replace resumable checkpoints.
+
 ## [0.16.0] - 2026-10-15
 
 ### Added

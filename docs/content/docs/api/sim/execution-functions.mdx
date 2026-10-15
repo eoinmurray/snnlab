@@ -127,3 +127,11 @@ These supported reference primitives retain historical arithmetic for numerical 
 `init_lif_state` returns `(voltage, refractory_counter)` of shape `(B, N)` on `device`: batch size `B`, cell count `N`, voltage in mV, int64 counters in steps. Resting initialization is -65 mV with zero counters. `randomize=True` draws uniform voltages from -65 to -50 mV using the device's global RNG. If `ref_std > 0`, counters use a clamped nonnegative normal draw with mean `ref_mean` and standard deviation `ref_std`, truncated to integers; otherwise counters remain zero even if `ref_mean` is nonzero. Seed the device's global RNG to reproduce historical initial conditions.
 
 `lif_step_expeuler` returns `(voltage, spikes, refractory_counter)` after exponential-Euler COBA integration, holding conductance constant for the step. `v` is mV, `g_e`, `g_i` and `g_L` are µS, `C_m` is nF, and `ref`/`ref_steps` are counter steps. `g_i=None` omits inhibition. Fixed historical potentials are resting/reset -65 mV, excitatory reversal 0 mV and inhibitory reversal -80 mV. `spike_fn` consumes voltage, plus optional threshold offset in mV, and returns hard spikes with any surrogate derivative. Always pass `dt_override` (ms) in new checks; its historical default is 0.25 ms. The voltage floor defaults to -200 mV; `V_max` optionally adds an upper clamp. `v_grad_dampen` scales integration gradients by its reciprocal. `v_noise_std` is the mV diffusion scale and uses global RNG when positive. `refractory_after_step=False` decrements before release, preserving historical COBA scheduling; `True` holds the full number of following steps. Low-level callers own shape, physical-parameter and timestep validation.
+
+## Optional run snapshots
+
+`simulate`, `infer` and `train` accept `ExecutionSpec.snapshot` to write the
+resolved network/settings and optional weight arrays. A path captures the start
+of execution; `SnapshotSpec` also supports end or both stages. The captured
+objects are available as `result.snapshots`. See
+[Run Snapshots](/api/sim/run-snapshots) for the shared writer and file format.

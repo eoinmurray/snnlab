@@ -16,6 +16,7 @@ import torch
 from snnlab import extensions as E
 from snnlab.sim.artifacts.bundle import load_graph_bundle, load_training_recipe
 from snnlab.sim.artifacts.integrity import _json_digest
+from snnlab.sim.artifacts.snapshots import SnapshotSession
 from snnlab.sim.diagnostics.tracing import TraceSession, current_trace
 from snnlab.sim.graph import extensions as X
 from snnlab.sim.graph.executor import GraphExecutor
@@ -1353,6 +1354,21 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             (-1, update, torch.arange(dataset_size)) for update in range(updates)
         ]
 
+    snapshots = SnapshotSession(
+        spec,
+        model,
+        kind="train",
+        protocol=resolved_inputs.protocol,
+        training=training,
+        device_resolved=device,
+        batch_size=batch_size,
+        batching=batching,
+        metrics=metric_policy,
+        checkpoint_selection=selection.to_dict(),
+        initialization=model.initialization_metadata,
+    )
+    snapshots.capture("start", completed_updates=completed_updates)
+
     if dataset_mode and data_state["batch"] == 0:
         record_epoch(data_state["epoch"], emit=False)
 
@@ -1617,4 +1633,6 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
 
     if timing.enabled:
         result.metrics["training_timing"] = timing.finish()
+    snapshots.capture("end", completed_updates=final_checkpoint.completed_updates)
+    result.snapshots = snapshots.snapshots
     return result

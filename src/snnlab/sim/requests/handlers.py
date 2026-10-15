@@ -17,6 +17,7 @@ from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab.sim.artifacts.bundle import load_graph_bundle, load_training_recipe
 from snnlab.sim.artifacts.integrity import _json_digest
+from snnlab.sim.artifacts.snapshots import SnapshotSession
 from snnlab.sim.graph import dynamics as M
 from snnlab.sim.graph.executor import GraphExecutor
 from snnlab.sim.graph.plan import plan_graph
@@ -323,6 +324,27 @@ def simulate(
         if isinstance(resolved_inputs, DatasetProvider)
         else ResolvedDenseInputs(resolved_inputs.tensors, protocol)
     )
+    snapshot_runtime_state = (
+        runtime_state if runtime_state is not None else spec.runtime_state
+    )
+    snapshots = SnapshotSession(
+        spec,
+        built.model,
+        kind="infer" if spec.kind == "infer" else "simulate",
+        protocol=protocol,
+        device_resolved=device,
+        checkpoint=checkpoint_provenance,
+        inference_overrides=overrides,
+        effective_poisson_bindings=poisson_bindings,
+        runtime_state_signature=snapshot_runtime_state.signature
+        if snapshot_runtime_state is not None
+        else None,
+        runtime_state_completed_steps=snapshot_runtime_state.completed_steps
+        if snapshot_runtime_state is not None
+        else None,
+        initialization=built.model.initialization_metadata,
+    )
+    snapshots.capture("start")
     if isinstance(resolved_inputs, DatasetProvider):
         if spec.resets or spec.decisions is not None:
             raise ValueError(
@@ -414,6 +436,8 @@ def simulate(
                 "completed_steps": result.runtime_state.completed_steps,
             }
         )
+    snapshots.capture("end")
+    result.snapshots = snapshots.snapshots
     return result
 
 

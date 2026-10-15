@@ -187,3 +187,13 @@ CPU/CUDA timelines. Tracing is disabled by default and does not change checkpoin
 identity. Hardware counters unavailable from PyTorch remain explicitly unavailable.
 See [Tracing](../../../docs/content/docs/api/sim/tracing.mdx) and the
 [SHD benchmark](../../../benchmarks/shd/README.md) for scope and CLI controls.
+
+## Run snapshots
+
+Set `ExecutionSpec(snapshot="runs/example", ...)` to save `snapshot.json` and
+optional `parameters.npz` before simulation, inference or training. Use
+`SnapshotSpec(path="runs/example", stage="both", parameters=True)` for separate
+initial/final exports. Captured `RunSnapshot` objects are in `result.snapshots`;
+`write_run_snapshot(path, snapshot)` re-exports them. Snapshots preserve resolved
+settings and copied weights, independently of `retain_parameters`; they do not
+replace training checkpoints or runtime state. Existing exports are not overwritten.
