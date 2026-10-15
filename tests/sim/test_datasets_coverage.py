@@ -1,8 +1,4 @@
-"""Coverage for datasets.py error branches.
-
-SHD loader tests were removed — SHD is not a supported path yet. What remains
-covers the unknown-dataset guards in load_dataset / _load_dataset_image.
-"""
+"""Public dataset loading and evaluation-only contracts with local fixtures."""
 
 from __future__ import annotations
 
@@ -10,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.sim.inputs.datasets import load_dataset
+from snnlab.sim import load_dataset
 
 
 def test_load_dataset_unknown_name_raises():

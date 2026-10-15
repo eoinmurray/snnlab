@@ -99,6 +99,13 @@ def runtime_state_compatibility(
             else {}
         ),
         "dt_ms": plan.dt_ms,
+        # Explicit duration-based replay must not resume with current scheduling.
+        # Keep signatures for the default and unmarked archived graphs intact.
+        **(
+            {"refractory_timing": "legacy_coba"}
+            if plan.graph.get("refractory_timing") == "legacy_coba"
+            else {}
+        ),
         **(
             {"autapses": dict(plan.autapses)}
             if any("allow_autapses" in row for row in plan.graph.get("projections", []))

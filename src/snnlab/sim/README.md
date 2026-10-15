@@ -7,6 +7,19 @@ independent of the internal file layout. The former `snnlab.sim.execution`
 module has been retired; import its supported functions and types from
 `snnlab.sim`.
 
+Explicit source arrays and replay spikes are available through `load_dataset`,
+`encode_images_poisson` and `poisson_spikes`. The spike generators return binary
+Bernoulli occupancy rather than Poisson counts; timesteps use ms and rates Hz.
+`fast_sigmoid_spike`, `lif_step_expeuler` and `init_lif_state` are supported
+numerical reference helpers. Import all six names from `snnlab.sim`, rather than
+their implementation modules. See the [source and reference contracts](../../../docs/content/docs/api/sim/execution-functions.mdx).
+
+Physical-time helpers are available from `snnlab.lang`. Fresh historical COBA LIF
+replay graphs use `lang.compile(net, refractory_timing="legacy_coba")`; the
+compiler authenticates the selected schedule and any training recipe together.
+See [Compilation](../../../docs/content/docs/api/lang/compilation.mdx) for exact
+duration, counter/held-step and checkpoint compatibility rules.
+
 Built-in spiking models include current and conductance LIF, ALIF and AdEx.
 ALIF uses a spike-triggered threshold offset; AdEx uses an exponential voltage
 term and adaptation current. Their per-cell adaptation is differentiable and

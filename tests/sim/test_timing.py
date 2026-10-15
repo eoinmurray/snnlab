@@ -2,11 +2,11 @@
 
 import pytest
 
-from snnlab._shared.timing import (
+from snnlab._shared.timing import refractory_steps
+from snnlab.lang import (
     duration_metadata,
     duration_steps,
     refractory_metadata,
-    refractory_steps,
 )
 
 

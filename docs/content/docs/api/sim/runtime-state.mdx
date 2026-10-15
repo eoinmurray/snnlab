@@ -68,6 +68,8 @@ The first function returns a JSON-compatible description of state layout and dyn
 
 Continuation checks compatible metadata, tensor groups, shapes, dtypes and device. A matching signature is not evidence that two runs use identical weights. For equality with an uninterrupted run, preserve weights, input/RNG protocol, backend, interventions and full measurement/decision policy.
 
+Graphs explicitly marked `refractory_timing="legacy_coba"` include that contract in compatibility metadata, so duration-based replay state cannot resume with following-step scheduling. Default and unmarked archived graph signatures are unchanged. Previously saved state for explicitly marked legacy graphs lacks this check and is rejected; start fresh from the authenticated replay bundle. State files are not rewritten.
+
 ## Continue and persist
 
 ```python

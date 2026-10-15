@@ -41,6 +41,10 @@ def author_ping(
     w_in=None,
     w_in_e=None,
     w_in_i=None,
+    refractory_e=3 * ms,
+    refractory_i=1.5 * ms,
+    recurrent_delay=0.1 * ms,
+    allow_autapses=False,
 ) -> PingCircuit:
     """Author an explicit E/I PING circuit.
 
@@ -67,7 +71,7 @@ def author_ping(
                 resting_mv=-65.0,
                 threshold_mv=-50.0,
                 reset_mv=-65.0,
-                refractory=3 * ms,
+                refractory=refractory_e,
                 voltage_grad_dampen=80.0,
                 initial_voltage_mv=-65.0,
             ),
@@ -82,7 +86,7 @@ def author_ping(
                 resting_mv=-65.0,
                 threshold_mv=-50.0,
                 reset_mv=-65.0,
-                refractory=1.5 * ms,
+                refractory=refractory_i,
                 voltage_grad_dampen=80.0,
                 initial_voltage_mv=-65.0,
             ),
@@ -96,7 +100,8 @@ def author_ping(
                 weight=w_ee or Normal(0.0, 0.0),
                 constraint=NonNegative(),
                 connection="recurrent",
-                delay=0.1 * ms,
+                delay=recurrent_delay,
+                allow_autapses=allow_autapses,
             )
         net.connect(
             e.spikes,
@@ -106,7 +111,7 @@ def author_ping(
             weight=w_ei,
             constraint=NonNegative(),
             connection="recurrent",
-            delay=0.1 * ms,
+            delay=recurrent_delay,
         )
         net.connect(
             i.spikes,
@@ -116,7 +121,7 @@ def author_ping(
             weight=w_ie,
             constraint=NonNegative(),
             connection="recurrent",
-            delay=0.1 * ms,
+            delay=recurrent_delay,
         )
         if include_silent_recurrence or w_ii is not None:
             net.connect(
@@ -127,7 +132,8 @@ def author_ping(
                 weight=w_ii or Normal(0.0, 0.0),
                 constraint=NonNegative(),
                 connection="recurrent",
-                delay=0.1 * ms,
+                delay=recurrent_delay,
+                allow_autapses=allow_autapses,
             )
         if source_e is not None:
             net.connect(

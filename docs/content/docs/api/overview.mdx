@@ -22,6 +22,22 @@ Each package's `__init__.py` is its central public export location. All supporte
 
 Reference signatures use Python typing names (`Any`, `Mapping`, `Sequence`, `Callable`, `Literal`), dataclass factories (`field`) and module aliases (`torch`, `np`, `nn`) as annotations/default notation. Import the symbols you call; signature blocks describe contracts and are not standalone scripts. Constructor validation may be followed by graph-dependent compilation/execution validation.
 
+## Migrating replay and reference code
+
+Replace private implementation imports with the supported package exports below. Existing function signatures, physical units, source-data ordering and seeded CPU arithmetic are retained.
+
+| Former implementation import | Supported import |
+| --- | --- |
+| `snnlab._shared.timing` | `from snnlab.lang import duration_steps, duration_metadata, refractory_metadata` |
+| `snnlab.sim.inputs.datasets` | `from snnlab.sim import load_dataset` |
+| `snnlab.sim.inputs.encoders` | `from snnlab.sim import encode_images_poisson` |
+| `snnlab.sim.graph.dynamics` (explicit drive) | `from snnlab.sim import poisson_spikes` |
+| `snnlab.sim.graph.dynamics` (reference checks) | `from snnlab.sim import fast_sigmoid_spike, lif_step_expeuler, init_lif_state` |
+
+For freshly authored historical COBA LIF replay graphs, use `lang.compile(net, refractory_timing="legacy_coba")`. Declare refractory durations as ms quantities and set `allow_autapses=True` on connections that require historical self-feedback. Compilation authenticates the graph, manifest and optional training recipe together; consumer-side marker or digest patching is unnecessary. See [historical replay](/api/lang/compilation#historical-coba-replay), [source arrays and seeded encoding](/api/sim/execution-functions#explicit-source-data), and [reference kernels](/api/sim/execution-functions#numerical-reference-helpers).
+
+The default remains `"following_steps"`. Reauthoring changes graph identity; retained bundles and checkpoints stay paired with their original authenticated graph. [Runtime compatibility](/api/sim/runtime-state#compatibility-and-signatures) distinguishes explicit legacy scheduling. CUDA generator draws use CUDA's RNG; they need not match CPU draws.
+
 ## Public package exports
 
 ### Lang
@@ -102,6 +118,9 @@ Import all supported authoring constructors, operations, readouts and recipe hel
 | `lang.validate_training` | [Reference](/api/lang/compilation) |
 | `lang.SignalLike` | [Reference](/api/lang/network) |
 | `lang.custom_operation` | [Reference](/api/lang/operations-readouts) |
+| `lang.duration_steps` | [Physical time](/api/lang/compilation#physical-time) |
+| `lang.duration_metadata` | [Physical time](/api/lang/compilation#physical-time) |
+| `lang.refractory_metadata` | [Physical time](/api/lang/compilation#physical-time) |
 | `lang.__version__` | Package version string. |
 
 ### Sim
@@ -110,6 +129,12 @@ Import all supported simulation functions and types from `snnlab.sim`, for examp
 
 | Symbol | Reference |
 | --- | --- |
+| `sim.load_dataset` | [Explicit source data](/api/sim/execution-functions#explicit-source-data) |
+| `sim.encode_images_poisson` | [Explicit source data](/api/sim/execution-functions#explicit-source-data) |
+| `sim.poisson_spikes` | [Explicit source data](/api/sim/execution-functions#explicit-source-data) |
+| `sim.fast_sigmoid_spike` | [Numerical reference helpers](/api/sim/execution-functions#numerical-reference-helpers) |
+| `sim.lif_step_expeuler` | [Numerical reference helpers](/api/sim/execution-functions#numerical-reference-helpers) |
+| `sim.init_lif_state` | [Numerical reference helpers](/api/sim/execution-functions#numerical-reference-helpers) |
 | `sim.__version__` | Package version string. |
 | `sim.ExecutionSpec` | [Reference](/api/sim/execution-spec) |
 | `sim.ValidationSpec` | [Reference](/api/sim/execution-spec) |

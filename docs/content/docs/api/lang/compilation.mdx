@@ -14,6 +14,7 @@ def compile(
     training: TrainSpec | None = None,
     target: str | None = None,
     assets: Mapping[str, str | Path] | None = None,
+    refractory_timing: str = "following_steps",
 ) -> Bundle: ...
 ```
 
@@ -22,9 +23,30 @@ def compile(
 | `network` | The authored `Network`. |
 | `training` | Optional [TrainSpec](/api/lang/training) recipe. |
 | `target` | Optional backend capability target, such as `"tools/snnsim"`. |
+| `refractory_timing` | `"following_steps"` (default) or `"legacy_coba"` for historical COBA LIF replay. |
 | `assets` | Mapping of declared logical asset names to physical files. |
 
 Graph and training validation errors raise `ValueError`. Backend capability diagnostics are retained in the bundle; inspect them before execution. Every declared asset needs a physical path, and undeclared or missing files are rejected. The manifest records digests, target, required capabilities and extension dependencies. Register importable callbacks or `module:function` references when authoring custom definitions. Their locations, units and optional exact package versions are recorded in the graph or recipe and covered by its digest. Bundle loading automatically imports the referenced external modules; no Python source or pickled callbacks are included in the bundle. See [Extensions](/api/lang/extensions).
+
+### Historical COBA replay
+
+```python
+from snnlab import lang
+
+net = lang.Network("historical_replay", dt=0.1 * lang.ms)
+cells = net.population(
+    "cells", size=4,
+    neuron=lang.COBA_LIF(tau_mem=20 * lang.ms, refractory=1.2 * lang.ms),
+)
+net.output("spikes", cells.spikes)
+bundle = lang.compile(net, refractory_timing="legacy_coba")
+path = bundle.write("historical_replay.bundle")
+loaded = lang.load_bundle(path)
+```
+
+This compiles a fresh authenticated replay bundle without patching serialized graph data or computing digests in application code. At 0.1 ms, the 1.2 ms duration resolves to 12 counter steps: historical COBA LIF scheduling holds 11 following steps, while the default holds 12. A 0.6 ms duration gives 6 counters and 5 historical held steps. Zero and one counter both allow spiking on the next step. Other built-in neurons retain following-step scheduling. Both contracts reject inexact-grid durations.
+
+The selected contract is included in graph identity, the manifest and any training recipe's graph reference. Checkpoints are not rebound and retained bundles are not rewritten. Explicit legacy runtime state cannot resume under the default contract. For historical self-feedback, declare `allow_autapses=True` in `net.connect(...)`; the connection default remains unchanged.
 
 ## Bundle
 
@@ -69,7 +91,7 @@ graph = lang.migrate_refractory(old.graph)
 
 Returns a validated graph copy whose built-in neurons define refractory periods only as ms quantities. Authenticate saved bundles with `load_bundle` first. Historical counts become durations using the **original graph timestep**: twelve steps at 0.1 ms become 1.2 ms. If an archived COBA neuron relied on implicit rounded defaults, migration preserves its realised duration at that timestep. Conflicting duration/count fields fail.
 
-Migration retains old COBA decrement-before-release scheduling through `refractory_timing="legacy_coba"`; other built-in models retain their following-step scheduling. New authoring always uses `"following_steps"`. Reauthor the network to adopt that common contract. Changing a migrated graph's timestep resolves its physical durations exactly and rejects non-divisible durations.
+Migration retains old COBA decrement-before-release scheduling through `refractory_timing="legacy_coba"`; other built-in models retain their following-step scheduling. For freshly authored replay bundles, use the [historical COBA compilation option](#historical-coba-replay). New authoring defaults to `"following_steps"`. Changing a migrated graph's timestep resolves its physical durations exactly and rejects non-divisible durations.
 
 The source graph, bundle files and authenticated identity are unchanged. The migrated copy has a new digest; pass it through `ExecutionSpec.graph` for fresh execution. Checkpoints and runtime state are not converted or rebound. Keep them paired with the original graph. Do not replace `Bundle.graph` alone: the manifest and any training recipe authenticate its original digest. Built-in timestep inference overrides perform the same conversion before changing the timestep, preserving source checkpoint authentication.
 
@@ -130,3 +152,17 @@ class ValidationResult:
 ```
 
 `Diagnostic.line()` returns a formatted severity/code/message string, including the subject when present. `ValidationResult.errors` and `.warnings` are filtered diagnostic lists; `.raise_for_errors()` returns normally without errors and otherwise raises `ValueError`. A successful graph validation does not promise that every backend supports the graph; inspect bundle capability diagnostics and execution planning errors separately.
+
+## Physical time
+
+```python
+from snnlab.lang import duration_steps, duration_metadata, refractory_metadata
+
+def duration_steps(duration_ms: float, dt_ms: float) -> int: ...
+def duration_metadata(duration_ms: float, dt_ms: float) -> dict: ...
+def refractory_metadata(refractory_e_ms: float, refractory_i_ms: float, dt_ms: float) -> dict: ...
+```
+
+These lightweight functions load neither PyTorch nor simulation code. All durations use ms. Durations must be finite and nonnegative; `dt_ms` must be positive and finite. `duration_steps` floors complete integration steps, correcting near-integer floating-point roundoff. `duration_metadata` returns `nominal_duration_ms`, `duration_steps`, and `realized_duration_ms`.
+
+`refractory_metadata` requires exact-grid durations and accepts zero. It returns `refractory_e_ms`, `refractory_i_ms`, `refractory_e_steps`, `refractory_i_steps`, `realized_refractory_e_ms`, and `realized_refractory_i_ms`. These counts describe physical durations, not the following held steps under historical COBA scheduling. No rounding policy or raw-counter constructor is exposed.

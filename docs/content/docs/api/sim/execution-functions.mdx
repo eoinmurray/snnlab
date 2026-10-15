@@ -85,3 +85,45 @@ data = result.numpy(batch=0)
 ```
 
 The Python handlers do not automatically write CLI artifact directories or plots. Use [inference artifact helpers](/api/sim/inference-artifacts) to persist a result. Invalid shapes, unsupported capabilities and incompatible saved state fail rather than being silently adapted.
+
+## Explicit source data
+
+```python
+from snnlab.sim import load_dataset, encode_images_poisson, poisson_spikes
+
+def load_dataset(name, max_samples=None, split=False,
+                 evaluation_split="validation", evaluation_only=False): ...
+def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None): ...
+def poisson_spikes(rate_hz, shape, dt, generator, device=None): ...
+```
+
+These functions expose source arrays for matched replay and measurements independently of execution bindings. `dt` is in ms; rates are in Hz. Both spike generators return binary `torch.float32` occupancy, using Bernoulli probability `rate_hz * dt / 1000`, with at most one spike per bin. Their historical names do not mean Poisson-distributed counts or preserved multiplets. Seeded draw ordering is unchanged on CPU; reproducibility requires the same device, generator state, shape and call sequence. Cross-device RNG algorithms need not agree.
+
+`load_dataset` returns NumPy `(X, y)` or, with `split=True`, `(X_train, X_eval, y_train, y_eval)`. MNIST has float32 `(samples, 784)` pixels normalized by 255 and int64 labels. `max_samples` deterministically subsamples its training partition with NumPy RandomState seed 42. Validation is a seed-42 stratified holdout of that partition, with size `max(ceil(0.1 * samples), number_of_classes)`. `evaluation_split="test"` uses the untouched official test partition. `evaluation_only=True` requires `split=True, evaluation_split="test"` and returns `(None, X_test, None, y_test)` without loading MNIST training data. Loading uses cached files and may download missing data.
+
+SHD retains its official train/test split and returns an object array whose entries are `(units_int16, times_float32_seconds)`, with int64 labels, 700 channels and 20 classes. Unlike MNIST, its `max_samples` deterministically caps **both** partitions. Without `split`, the partitions are concatenated. SHD ignores `evaluation_split` and does not implement the MNIST evaluation-only shortcut; prefer its ordinary split call. Caller-owned binning retains control over time resolution and collisions.
+
+`encode_images_poisson` takes a two-dimensional `(batch, channels)` PyTorch tensor, clips pixels to `[0, 1]`, and returns `(T_steps, batch, channels)` on the images' device. `max_rate_hz` is scalar or `(batch,)`; negative rates, wrong rate shapes and rate/timestep probabilities above one raise `ValueError`. Supply finite images, nonnegative finite rates, a positive finite timestep and a nonnegative integer step count. With a generator, random draws occur on `generator.device` and move to the image device before comparison; without one they use the image device's global RNG.
+
+`poisson_spikes` takes a scalar rate and a shape tuple. Draws occur on `generator.device` (CPU when `generator=None`); optional `device` moves the resulting occupancy tensor. This low-level historical primitive does not validate probability bounds: callers must supply a finite rate and positive timestep with probability in `[0, 1]`.
+
+## Numerical reference helpers
+
+```python
+from snnlab.sim import fast_sigmoid_spike, lif_step_expeuler, init_lif_state
+
+def fast_sigmoid_spike(u, slope, gradient_scale=1.0, threshold_inclusive=True): ...
+def init_lif_state(B, N, device, randomize=False, ref_mean=0.0, ref_std=0.0): ...
+def lif_step_expeuler(v, ref, g_e, g_i, C_m, g_L, ref_steps, spike_fn,
+                     v_grad_dampen=1.0, dt_override=None, V_floor=-200.0,
+                     V_max=None, threshold_offset=None, v_noise_std=0.0,
+                     refractory_after_step=False): ...
+```
+
+These supported reference primitives retain historical arithmetic for numerical and downstream integration checks. They use PyTorch tensors and do not load execution orchestration. They do not replace graph authoring or authentication.
+
+`fast_sigmoid_spike` returns a hard threshold at `u >= 0` (or `u > 0`) with surrogate derivative `gradient_scale * slope / (1 + slope * abs(u))**2`. `u` is the threshold-relative input; `slope` is inverse input units and `gradient_scale` scales its derivative. Defaults preserve historical draw-free arithmetic.
+
+`init_lif_state` returns `(voltage, refractory_counter)` of shape `(B, N)` on `device`: batch size `B`, cell count `N`, voltage in mV, int64 counters in steps. Resting initialization is -65 mV with zero counters. `randomize=True` draws uniform voltages from -65 to -50 mV using the device's global RNG. If `ref_std > 0`, counters use a clamped nonnegative normal draw with mean `ref_mean` and standard deviation `ref_std`, truncated to integers; otherwise counters remain zero even if `ref_mean` is nonzero. Seed the device's global RNG to reproduce historical initial conditions.
+
+`lif_step_expeuler` returns `(voltage, spikes, refractory_counter)` after exponential-Euler COBA integration, holding conductance constant for the step. `v` is mV, `g_e`, `g_i` and `g_L` are µS, `C_m` is nF, and `ref`/`ref_steps` are counter steps. `g_i=None` omits inhibition. Fixed historical potentials are resting/reset -65 mV, excitatory reversal 0 mV and inhibitory reversal -80 mV. `spike_fn` consumes voltage, plus optional threshold offset in mV, and returns hard spikes with any surrogate derivative. Always pass `dt_override` (ms) in new checks; its historical default is 0.25 ms. The voltage floor defaults to -200 mV; `V_max` optionally adds an upper clamp. `v_grad_dampen` scales integration gradients by its reciprocal. `v_noise_std` is the mV diffusion scale and uses global RNG when positive. `refractory_after_step=False` decrements before release, preserving historical COBA scheduling; `True` holds the full number of following steps. Low-level callers own shape, physical-parameter and timestep validation.

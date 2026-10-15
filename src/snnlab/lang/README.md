@@ -9,6 +9,19 @@ operations, readouts and training helpers directly from `snnlab.lang`, or use
 `import snnlab as snn` and `snn.lang.Network(...)`. The package resolves exports
 lazily and does not import the simulator or PyTorch for authoring.
 
+`duration_steps`, `duration_metadata` and `refractory_metadata` are public,
+tensor-free physical-time helpers available directly from `snnlab.lang`.
+All durations and timesteps use ms. Trial durations floor complete integration
+steps with near-integer floating-point correction; refractory durations require
+an exact timestep-grid match, including zero.
+
+For a fresh historical COBA LIF replay bundle, declare physical refractory
+durations and compile with `refractory_timing="legacy_coba"`. This preserves
+decrement-before-release scheduling and authenticates the graph, manifest and
+optional training recipe together. The default remains `"following_steps"`.
+See [Compilation and Bundles](../../../docs/content/docs/api/lang/compilation.mdx)
+for the runnable example, metadata keys and compatibility rules.
+
 ```python
 from snnlab import lang as snn
 

@@ -9,6 +9,12 @@ from importlib import import_module
 from ._version import __version__
 
 _EXPORTS = {
+    "load_dataset": "inputs.datasets",
+    "encode_images_poisson": "inputs.encoders",
+    "poisson_spikes": "graph.dynamics",
+    "fast_sigmoid_spike": "graph.dynamics",
+    "lif_step_expeuler": "graph.dynamics",
+    "init_lif_state": "graph.dynamics",
     "ExecutionSpec": "requests.spec",
     "ValidationSpec": "requests.spec",
     "InputBinding": "inputs.bindings",

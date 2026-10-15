@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Mapping
 
 from snnlab import extensions as E
+from snnlab._shared import neurons as N
 from snnlab.lang._version import __version__
 from snnlab.lang.compilation.bundles import BUNDLE_SCHEMA, Bundle
 from snnlab.lang.compilation.capabilities import (
@@ -27,8 +28,18 @@ def compile(
     training: TrainSpec | None = None,
     target: str | None = None,
     assets: Mapping[str, str | Path] | None = None,
+    refractory_timing: str = N.REFRACTORY_TIMING,
 ) -> Bundle:
+    """Compile and authenticate a graph with an explicit refractory schedule.
+
+    ``legacy_coba`` preserves historical COBA LIF counter scheduling for fresh
+    duration-based replay graphs. Other built-in neurons retain following-step
+    scheduling. The default remains ``following_steps``.
+    """
+    if refractory_timing not in (N.REFRACTORY_TIMING, N.LEGACY_REFRACTORY_TIMING):
+        raise ValueError("refractory_timing must be 'following_steps' or 'legacy_coba'")
     graph = E.with_requirements(graph_dict(network))
+    graph["refractory_timing"] = refractory_timing
     graph_validation = validate_graph(graph)
     graph_validation.raise_for_errors()
     graph_digest = digest(graph)

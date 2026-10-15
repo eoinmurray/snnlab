@@ -9,6 +9,23 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-15
+
+### Added
+
+1. Public tensor-free `lang.duration_steps`, `duration_metadata` and `refractory_metadata`; central `sim.load_dataset`, `encode_images_poisson`, `poisson_spikes`, `fast_sigmoid_spike`, `lif_step_expeuler` and `init_lif_state` exports support explicit replay and numerical reference checks. Existing timing, source-split, initialization and seeded CPU arithmetic are retained.
+2. `lang.compile(..., refractory_timing="legacy_coba")` authors authenticated duration-based historical COBA LIF replay bundles with consistent manifests and training references. Default following-step scheduling, exact-grid validation and autapse defaults remain unchanged; checkpoints and retained bundles are not rewritten.
+
+### Fixed
+
+1. `sim.poisson_spikes` now draws on `generator.device` before an optional output-device transfer. CPU seeded draw ordering remains unchanged. The function returns binary Bernoulli occupancy, not Poisson-distributed counts.
+2. Runtime-state compatibility now includes an explicit `legacy_coba` graph marker, preventing continuation under a different refractory schedule. Older state snapshots for explicitly marked legacy graphs must restart from their authenticated bundle; default and unmarked archived graph signatures remain unchanged. Saved files are not rewritten.
+
+### Validation
+
+1. Release-snapshot authoring/simulation checks passed 992 tests with 22 skips and two deselections. Focused replay/API checks passed 190 tests; 69 timing, dataset, replay and numerical conformance tests also passed against a locally installed wheel. Historical spikes and conductances require exact equality; voltage/logit comparisons use absolute and relative tolerances of `1e-6`. CUDA and MPS execution were unavailable locally.
+2. Lint, documentation type checks and root plus `/snnlab` static builds passed. Public references document supported imports, units, array ordering, dataset splits, generator/device behaviour and historical counter-versus-held-step scheduling.
+
 ## [0.15.0] - 2026-10-15
 
 ### Added

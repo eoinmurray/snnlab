@@ -109,12 +109,16 @@ def test_explicit_name_remapping_rejects_partial_and_duplicate_maps():
 
 @pytest.mark.parametrize("active_recurrence", [False, True])
 @pytest.mark.parametrize("dt_ms", [0.05, 0.1, 0.2, 0.3, 0.6])
+@pytest.mark.parametrize("public_replay", [False, True])
 def test_ping_forward_matches_preserved_pre_removal_reference(
     active_recurrence,
     dt_ms,
+    public_replay,
 ):
     steps = int(Fraction("200") / Fraction(str(dt_ms)))
-    net = snn.Network("legacy_graph_ping", dt=0.1 * snn.ms)
+    net = snn.Network(
+        "legacy_graph_ping", dt=(dt_ms if public_replay else 0.1) * snn.ms
+    )
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
@@ -125,26 +129,39 @@ def test_ping_forward_matches_preserved_pre_removal_reference(
         n_i=1,
         source=events,
         include_silent_recurrence=True,
+        **(
+            dict(
+                refractory_e=1.2 * snn.ms,
+                refractory_i=0.6 * snn.ms,
+                recurrent_delay=dt_ms * snn.ms,
+                allow_autapses=True,
+            )
+            if public_replay
+            else {}
+        ),
     )
     scores = snn.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_logits", scores)
-    bundle = snn.compile(net)
-    # Reconstruct the historical graph contract for the authenticated fixtures.
-    bundle.graph.pop("refractory_timing")
-    for projection in bundle.graph["projections"]:
-        projection.pop("allow_autapses", None)
-    bundle.graph["timebase"]["dt"]["value"] = dt_ms
-    for population in bundle.graph["populations"]:
-        if population["id"] in {"cell_E", "cell_I"}:
-            neuron = population["neuron"]
-            neuron.pop("refractory")
-            physical_ms = "1.2" if population["id"] == "cell_E" else "0.6"
-            count = Fraction(physical_ms) / Fraction(str(dt_ms))
-            assert count.denominator == 1
-            neuron["refractory_steps"] = int(count)
-    for projection in bundle.graph["projections"]:
-        if projection.get("connection") == "recurrent":
-            projection["delay"]["value"] = dt_ms
+    bundle = snn.compile(
+        net, refractory_timing="legacy_coba" if public_replay else "following_steps"
+    )
+    if not public_replay:
+        # Reconstruct the historical graph contract for the authenticated fixtures.
+        bundle.graph.pop("refractory_timing")
+        for projection in bundle.graph["projections"]:
+            projection.pop("allow_autapses", None)
+        bundle.graph["timebase"]["dt"]["value"] = dt_ms
+        for population in bundle.graph["populations"]:
+            if population["id"] in {"cell_E", "cell_I"}:
+                neuron = population["neuron"]
+                neuron.pop("refractory")
+                physical_ms = "1.2" if population["id"] == "cell_E" else "0.6"
+                count = Fraction(physical_ms) / Fraction(str(dt_ms))
+                assert count.denominator == 1
+                neuron["refractory_steps"] = int(count)
+        for projection in bundle.graph["projections"]:
+            if projection.get("connection") == "recurrent":
+                projection["delay"]["value"] = dt_ms
     built = build(
         ExecutionSpec(
             kind="build",

@@ -9,6 +9,9 @@ from importlib import import_module
 from ._version import __version__
 
 _EXPORTS = {
+    "duration_steps": "._shared.timing",
+    "duration_metadata": "._shared.timing",
+    "refractory_metadata": "._shared.timing",
     "ADEX": "components",
     "ALIF": "components",
     "AMPA": "components",
