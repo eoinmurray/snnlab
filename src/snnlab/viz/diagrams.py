@@ -300,6 +300,11 @@ def diagram_to_dot(
             "{ rank=same; " + " ".join(f"{_q(node)};" for node in outputs) + " }"
         )
     row_membership = {}
+    column_membership = {
+        member: group.id
+        for group in diagram.groups if group.same_rank
+        for member in group.members
+    }
     for group in diagram.groups:
         lines.append(
             f"subgraph {_q('cluster_' + _svg_id(group.id))} {{ label={_q(group.label)}; "
@@ -363,6 +368,8 @@ def diagram_to_dot(
             raise ValueError(f"unknown diagram edge role: {edge.role}")
         if edge.connection == "feedback":
             style = "dashed"
+            if edge.role == "inhibitory":
+                arrow = "normaltee"
         attributes = []
         if edge.id is not None:
             attributes.append(f"id={_q('e_' + _svg_id(edge.id))}")
@@ -392,7 +399,14 @@ def diagram_to_dot(
             port = "n"
             attributes.extend([f"tailport={port}", f"headport={port}"])
         elif edge.connection == "feedback":
-            attributes.extend(["tailport=s", "headport=s"])
+            if (
+                edge.source in column_membership
+                and column_membership.get(edge.target) == column_membership[edge.source]
+            ):
+                # Keep local returns between the vertically stacked populations.
+                attributes.extend(["tailport=sw", "headport=nw"])
+            else:
+                attributes.extend(["tailport=s", "headport=s"])
         elif edge.role == "training":
             attributes.extend(["tailport=n", "headport=s"])
         lines.append(

@@ -183,6 +183,40 @@ def test_recurrent_population_rows_render_left_to_right(tmp_path):
         assert e[1] == pytest.approx(i[1], abs=0.01)
 
 
+def test_local_inhibitory_feedback_stays_between_populations(tmp_path):
+    if shutil.which("dot") is None:
+        pytest.skip("Graphviz 'dot' is required for diagram rendering")
+    diagram = Diagram(
+        "local_feedback",
+        nodes=tuple(DiagramNode(name, name, "", "") for name in ("input", "E", "I", "out")),
+        edges=(
+            DiagramEdge("input", "E", role="excitatory"),
+            DiagramEdge("E", "I", role="excitatory", connection="recurrent"),
+            DiagramEdge("I", "E", role="inhibitory", connection="feedback", constraint=False),
+            DiagramEdge("E", "out", role="output"),
+        ),
+        groups=(DiagramGroup("layer", "Layer", ("E", "I"), same_rank=True),),
+    )
+    dot = diagram_to_dot(diagram)
+    assert "arrowhead=normaltee" in dot
+    result = subprocess.run(
+        ["dot", "-Tplain"], input=dot, capture_output=True, text=True, check=True
+    )
+    rows = [shlex.split(line) for line in result.stdout.splitlines()]
+    nodes = {row[1]: tuple(map(float, row[2:6])) for row in rows if row[0] == "node"}
+    e_x, e_y, _, e_height = nodes["E"]
+    i_x, i_y, _, i_height = nodes["I"]
+    assert e_x == pytest.approx(i_x)
+    bottom = e_y + e_height / 2
+    top = i_y - i_height / 2
+    assert bottom < top
+    feedback = next(row for row in rows if row[:3] == ["edge", "I", "E"])
+    coordinates = list(map(float, feedback[4:4 + 2 * int(feedback[3])]))
+    # The complete return spline stays in the gap, away from forward signals.
+    assert min(coordinates[1::2]) >= bottom - 0.01
+    assert max(coordinates[1::2]) <= top + 0.01
+
+
 def test_diagram_renderer_exports_svg_and_dot(tmp_path):
     diagram = Diagram(
         name="small",
