@@ -11,6 +11,7 @@ from torch import nn
 
 from snnlab import extensions as E
 from snnlab._shared import neurons as N
+from snnlab._shared.gains import sample as sample_gain
 from snnlab.sim.artifacts.inference import retention_identity
 from snnlab.sim.diagnostics.tracing import current_trace
 from snnlab.sim.graph import dynamics as M
@@ -969,6 +970,16 @@ class GraphExecutor(nn.Module):
             name: self._mask_autapses(name, value)
             for name, value in self.parameter_map().items()
         }
+        projection_gains = {
+            projection.id: sample_gain(
+                projection_rows[projection.id]["modulation"],
+                start_step=completed_steps,
+                steps=steps,
+                dt_ms=self.plan.dt_ms,
+            )
+            for projection in self.plan.projections
+            if projection.enabled and "modulation" in projection_rows[projection.id]
+        }
         for t in range(steps):
             segments.boundary(completed_steps + t, self.plan.dt_ms)
             segments.reset(completed_steps + t, voltage)
@@ -1004,6 +1015,8 @@ class GraphExecutor(nn.Module):
                     else:
                         with trace.detail(f"projection/{projection.id}"):
                             drive = source @ effective_weights[projection.parameter]
+                    if projection.id in projection_gains:
+                        drive = drive * projection_gains[projection.id][t]
                     spec = projection_rows[projection.id]["synapse"]
                     if spec["kind"] == "custom_synapse":
                         definition = E.resolve("synapse", spec)

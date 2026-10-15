@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.connectivity import resolve_autapses
+from snnlab._shared.gains import validate as validate_gain
 from snnlab.lang.compilation.diagnostics import Diagnostic, ValidationResult
 
 
@@ -129,6 +130,13 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
     population_sizes = {row["id"]: row["size"] for row in graph.get("populations", [])}
     for row in graph.get("projections", []):
         target = row["target"].partition(".")[0]
+        if "modulation" in row:
+            try:
+                validate_gain(row["modulation"])
+            except (ValueError, TypeError) as error:
+                out.diagnostics.append(
+                    Diagnostic("error", "E118", str(error), row["id"])
+                )
         if target in population_sizes:
             try:
                 synapse = row["synapse"]

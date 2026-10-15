@@ -1,0 +1,96 @@
+---
+title: Weight modulation
+description: Scheduled projection gains, timing conventions and portable custom functions.
+---
+
+Pass a gain specification to `net.connect(..., modulation=...)`. Omission keeps the existing static-weight behaviour and adds no schedule field to the graph. Every constructor below is exported from `snnlab.lang`.
+
+## Built-in schedules
+
+| Constructor and defaults | Behaviour |
+| --- | --- |
+| `lang.ConstantGain(value=1.0)` | Fixed gain. |
+| `lang.StepGain(at=0 * lang.ms, before=1.0, after=0.0)` | `before` until `at`, then `after`. The default disables new input from time zero. |
+| `lang.RampGain(start=0 * lang.ms, end=100 * lang.ms, before=0.0, after=1.0)` | Linear interpolation from `before` to `after`; holds those values outside the interval. Descending ramps are supported. |
+| `lang.SineGain(frequency=40 * lang.Hz, depth=0.5, offset=1.0, phase=0.0)` | Sine oscillation around `offset`; `phase` is in radians. Defaults span 0.5–1.5 at 40 Hz. |
+| `lang.PiecewiseGain(times=[...], values=[...])` | Successive constant values at strictly increasing transition times. Requires one more value than times. An empty `times` list with one value gives a constant. |
+
+All arguments except `ConstantGain.value` are keyword-only. Time and frequency arguments require quantities in ms and Hz respectively. Gains, times, frequency, depth and offset must be finite and nonnegative; phase can be any finite real number. Ramp end must exceed start. Sine depth must not exceed offset, keeping the entire oscillation nonnegative. Booleans are not gains.
+
+```python
+projection = net.connect(
+    inputs, cells.excitatory, name="oscillating_input",
+    synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
+    weight=lang.Constant(1.0),
+    modulation=lang.SineGain(frequency=40 * lang.Hz, depth=0.5),
+)
+
+# Alternative schedules for modulation=:
+step = lang.StepGain(at=100 * lang.ms, before=1, after=0)
+ramp = lang.RampGain(start=50 * lang.ms, end=150 * lang.ms)
+blocks = lang.PiecewiseGain(
+    times=[100 * lang.ms, 200 * lang.ms], values=[1, 0, 2],
+)
+```
+
+## Timing and dynamics
+
+The effective matrix is
+
+$$W_{\mathrm{eff}}(t)=g(t)W_0.$$
+
+Here $W_0$ is the stored baseline matrix, $g(t)$ is a dimensionless scalar gain, $t$ is absolute simulation time, and $W_{\mathrm{eff}}(t)$ has the same physical unit as $W_0$. The gain applies to the entire projection, identically across batch items and connections. It scales new input before synaptic filtering, including custom synapse callbacks. It does not multiply already accumulated current or conductance, alter connectivity masks, or modify the stored parameter.
+
+For sine schedules,
+
+$$g(t)=b+a\sin(2\pi f t+\phi),$$
+
+where $b$ is `offset`, $a$ is `depth`, $f$ is `frequency` in Hz, $t$ is time in seconds for this equation, and $\phi$ is `phase` in radians. Custom callbacks receive time in **milliseconds**.
+
+1. The first sample is at time zero. Continuing a run uses `runtime_state.completed_steps * dt_ms` as its next sample time.
+2. Step and piecewise changes take effect on the first timestep at or after the requested time. Near-integer timestep ratios are corrected for floating-point roundoff. Several transitions within one timestep resolve to the latest applicable value.
+3. Ramps are sampled on the same grid and hold their endpoint values outside the interval. Oscillations are sampled without averaging or antialiasing; choose a timestep fine enough to resolve them.
+4. Delayed spikes use the gain at **arrival**, rather than emission. A zero gain stops new drive; existing synaptic state still decays normally.
+5. Each fresh simulation or fresh training presentation starts at time zero. Only runtime-state continuation advances the clock across calls; voltage resets do not restart it.
+
+## CustomGain
+
+```python
+lang.CustomGain(function, *, config=None)
+```
+
+`function` is an importable callable or a `"module:function"` reference. Put the implementation in an importable module, for example `timing_functions.py`:
+
+```python
+import math
+
+def gated_sine(t_ms, config):
+    if t_ms < config["start_ms"]:
+        return 0.0
+    elapsed_s = (t_ms - config["start_ms"]) / 1000
+    return 1 + config["depth"] * math.sin(
+        2 * math.pi * config["frequency_hz"] * elapsed_s
+    )
+```
+
+Then attach it:
+
+```python
+gain = lang.CustomGain(
+    "timing_functions:gated_sine",
+    config={"start_ms": 100, "frequency_hz": 40, "depth": 0.5},
+)
+# Pass gain as modulation= when connecting the projection.
+```
+
+An importable function passed directly as `modulation=some_function` is shorthand for `lang.CustomGain(some_function)` with an empty configuration. Its signature is still `(t_ms, config)`.
+
+The callback must be a pure function returning one finite nonnegative real scalar. It must not rely on call count, mutable globals, random state, batch contents or neural activity. Callback exceptions propagate; invalid returns raise `ValueError` with the sample time. Configuration must be a JSON object containing finite JSON values and string keys. Each callback invocation receives a fresh deep copy of its configuration.
+
+Schedules are precomputed on the CPU once per enabled projection per execution call, with one sample per requested timestep. Python callbacks do not run inside the tensor timestep loop. This requires memory proportional to scheduled projections times timesteps and does not establish a performance speedup. Disabled projections do not evaluate their callbacks.
+
+## Bundles, training and continuation
+
+Bundles store the gain kind, settings and custom `module:function` reference plus configuration inside the authenticated projection declaration. Loading or planning resolves the reference automatically. No registration call, Python source or pickled function is stored. Lambdas, closures and functions defined in `__main__` are rejected at authoring. Make the module importable in every execution environment, and version its code externally: a reference authenticates its location and configuration, not the contents of the Python file.
+
+Schedule changes alter graph identity and runtime-state compatibility. Baseline weights remain ordinary parameters: gradients flow through the gain multiplication to them, constraints and autapse masks remain active, and shared parameters can have different schedules on different projections. Schedule coefficients and custom callbacks are not trainable. Weight checkpoints, `parameter_map()` and `result.parameters` contain baseline weights, not a sampled effective matrix. Continuation preserves the schedule's absolute clock; changing the schedule requires starting a new trajectory.

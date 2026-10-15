@@ -15,6 +15,7 @@ export async function getStaticPaths() {
 const source = await getSource();
 // Resolve the page again so development renders use the current content snapshot.
 const page = source.getPage(Astro.props.page.slugs)!;
+const pathname = `${docsBaseUrl}${page.slugs.join('/')}`;
 const { Content, headings } = page.data._render
   ? await page.data._render() : await render(page.data._raw);
 const toc = headings.map((heading) => ({ depth: heading.depth, title: heading.text, url: `#${heading.slug}` }));
@@ -28,10 +29,10 @@ const toc = headings.map((heading) => ({ depth: heading.depth, title: heading.te
     <title>{page.data.title} | snnlab</title>
     <meta name="description" content={page.data.description} />
     <meta property="og:image" content={new URL(`${docsBaseUrl}og/docs/${[...page.slugs, 'image.png'].join('/')}`, Astro.site).href} />
-    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <link rel="canonical" href={new URL(pathname, Astro.site)} />
   </head>
   <body class="flex flex-col min-h-screen">
-    <Docs tree={source.getPageTree()} pathname={Astro.url.pathname}
+    <Docs tree={source.getPageTree()} pathname={pathname}
       page={{ toc, full: page.data.full }} markdown={markdownUrl(page.slugs)} file={page.path}
       title={page.data.title} description={page.data.description} client:load>
       <div class="prose flex-1" data-static-content>

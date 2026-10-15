@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Protocol, Sequence
+from typing import Any, Callable, Iterator, Protocol, Sequence
 
 from snnlab.lang._specs import Spec, _value
 from snnlab.lang.parameters import Constant
@@ -94,6 +94,7 @@ class Projection:
     group: str | None
     enabled: bool
     allow_autapses: bool = False
+    modulation: Spec | None = None
 
     @property
     def conductance(self) -> Signal:
@@ -277,7 +278,20 @@ class Network:
         enabled: bool = True,
         initialization_scaling: str | None = None,
         allow_autapses: bool = False,
+        modulation: Spec | Callable | None = None,
     ) -> Projection:
+        modulation_data = None
+        if modulation is not None:
+            from snnlab._shared.gains import validate
+
+            if callable(modulation):
+                from snnlab.lang.modulation import CustomGain
+
+                modulation = CustomGain(modulation)
+            if not isinstance(modulation, Spec):
+                raise TypeError("modulation must be a gain specification")
+            modulation_data = modulation.json()
+            validate(modulation_data)
         if not isinstance(allow_autapses, bool):
             raise TypeError("allow_autapses must be boolean")
         if initialization_scaling is not None and initialization_scaling not in (
@@ -343,6 +357,8 @@ class Network:
         }
         if not enabled:
             row["enabled"] = False
+        if modulation_data is not None:
+            row["modulation"] = modulation_data
         self.projections.append(row)
         from snnlab.extensions import projection_port, resolve, synapse_unit
 
@@ -381,6 +397,7 @@ class Network:
             self.current_group,
             enabled,
             allow_autapses,
+            modulation,
         )
 
     def operation(

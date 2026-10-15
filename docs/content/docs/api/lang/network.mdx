@@ -109,6 +109,7 @@ net.connect(
     enabled=True,
     initialization_scaling=None,
     allow_autapses=False,
+    modulation=None,
 )
 ```
 
@@ -125,6 +126,7 @@ net.connect(
 | `connection` | `str = "feedforward"` | One of `"feedforward"`, `"recurrent"`, `"feedback"`, `"modulatory"`. |
 | `delay` | `Quantity` or `None`, default `None` | Additional transmission delay, expressed using `lang.ms`. |
 | `enabled` | `bool = True` | Whether this projection participates in execution. |
+| `modulation` | Gain specification, importable callable or `None` | Optional nonnegative scalar schedule applied to new arriving drive. See [Weight modulation](/api/lang/modulation). |
 | `allow_autapses` | `bool = False` | Permit a neuron to feed its own output back to itself. Exclusion applies to same-population identity regardless of routing label; different populations retain matching-index connections. |
 | `initialization_scaling` | `str` or `None`, default `None` | `"direct"` or `"fan_in_normalized"`. Omission normalizes new weights or inherits an existing parameter policy; conflicting shared-parameter settings fail. See [Initialization scaling](/api/lang/parameters#initialization-scaling). |
 
@@ -146,7 +148,7 @@ See [Parameters and constraints](/api/lang/parameters#constraints).
 
 ## Returned Projection
 
-The returned `Projection` records its `id`, source and target IDs, synapse, connection kind, delay, parameter IDs, group and enabled flag. `projection.conductance` (conductance synapses) or `projection.current` (current synapses) is a signal you can expose with `net.expose(projection.conductance, name="input_conductance")` for diagnostic traces. `projection.weight` returns a `ParameterRef` for its weight parameter, useful when selecting trainable parameters.
+The returned `Projection` records its `modulation` specification (or `None`), `id`, source and target IDs, synapse, connection kind, delay, parameter IDs, group and enabled flag. `projection.conductance` (conductance synapses) or `projection.current` (current synapses) is a signal you can expose with `net.expose(projection.conductance, name="input_conductance")` for diagnostic traces. `projection.weight` returns a `ParameterRef` for its weight parameter, useful when selecting trainable parameters.
 
 ```python
 projection = net.connect(

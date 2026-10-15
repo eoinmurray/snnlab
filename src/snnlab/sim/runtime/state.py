@@ -78,6 +78,7 @@ def runtime_state_compatibility(
     if projection_mode not in {"fast", "strict"}:
         raise ValueError("projection_mode must be fast or strict")
     parameters = {row["id"]: row for row in plan.graph.get("parameters", [])}
+    projections = {row["id"]: row for row in plan.graph.get("projections", [])}
     builtin = {
         row["id"]
         for row in plan.graph.get("projections", [])
@@ -129,15 +130,16 @@ def runtime_state_compatibility(
                 "source": row.source,
                 "target": row.target,
                 "polarity": row.polarity,
-                "synapse": next(
-                    item["synapse"]
-                    for item in plan.graph.get("projections", [])
-                    if item["id"] == row.id
-                ),
+                "synapse": projections[row.id]["synapse"],
                 "delay_steps": row.delay_steps,
                 "parameter": row.parameter,
                 "parameter_shape": parameters[row.parameter]["shape"],
                 "enabled": row.enabled,
+                **(
+                    {"modulation": projections[row.id]["modulation"]}
+                    if "modulation" in projections[row.id]
+                    else {}
+                ),
             }
             for row in plan.projections
         ],

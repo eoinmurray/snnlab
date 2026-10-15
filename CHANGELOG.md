@@ -6,6 +6,11 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+### Added
+
+1. Projection weight modulation through `Network.connect(modulation=...)`, with `ConstantGain`, `StepGain`, `RampGain`, `SineGain`, `PiecewiseGain` and portable `CustomGain` timing callbacks. Nonnegative scalar gains scale new input at arrival time before synaptic filtering; baseline weights retain gradients, constraints and connectivity masks. Shared weights support independent projection schedules.
+2. Custom timing functions use importable `module:function` references with finite JSON configuration, serialized inside authenticated bundles and resolved automatically. Schedules are sampled before execution using the absolute continuation clock; runtime-state compatibility includes schedule definitions. Added analytic dynamics/gradient, timing, continuation, validation and fresh-process bundle tests, a runnable example and conceptual/API documentation.
+
 ## [0.17.0] - 2026-10-15
 
 ### Added

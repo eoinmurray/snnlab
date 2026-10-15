@@ -4,6 +4,7 @@
     "network",
     "components",
     "parameters",
+    "modulation",
     "training",
     "compilation",
     "operations-readouts",

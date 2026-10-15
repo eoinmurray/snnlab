@@ -103,6 +103,11 @@ def capability_requirements(graph: Mapping[str, Any]) -> dict[str, Any]:
                     f"synapse:{projection['synapse']['kind']}",
                     f"connection:{projection['connection']}",
                     "delay:none" if delay is None else "delay:explicit",
+                    *(
+                        [f"modulation:{projection['modulation']['kind']}"]
+                        if "modulation" in projection
+                        else []
+                    ),
                 ],
             }
         )

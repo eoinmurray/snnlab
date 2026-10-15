@@ -8,6 +8,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import contentReload from './scripts/content-reload.mjs';
 import hydrationPreloads from './scripts/hydration-preloads.mjs';
+import slashRedirects from './scripts/slash-redirects.mjs';
 
 const base = process.env.SITE_BASE_PATH || '/';
 
@@ -49,7 +50,8 @@ export default defineConfig({
   server: { port: 3001 },
   site: process.env.SITE_URL || 'https://snnlab.eoinmurray.info',
   base,
-  trailingSlash: 'ignore',
+  trailingSlash: 'never',
+  build: { format: 'file' },
   markdown: {
     processor: unified({
       syntaxHighlight: false,
@@ -57,6 +59,6 @@ export default defineConfig({
       rehypePlugins: [[rehypeKatex, { strict: 'error', throwOnError: true }], rehypeCode, baseLinks],
     }),
   },
-  integrations: [isolatedCaches(), react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false }), hydrationPreloads()],
+  integrations: [isolatedCaches(), react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false }), hydrationPreloads(), slashRedirects()],
   vite: { plugins: [tailwindcss(), contentReload()] },
 });

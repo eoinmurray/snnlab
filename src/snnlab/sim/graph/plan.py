@@ -11,6 +11,7 @@ import torch
 from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.connectivity import resolve_autapses
+from snnlab._shared.gains import validate as validate_gain
 
 
 def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
@@ -252,6 +253,8 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
     planned = []
     for row in graph.get("projections", []):
         expected_unit = E.synapse_unit(row["synapse"])
+        if "modulation" in row:
+            validate_gain(row["modulation"])
         target_neuron = next(
             p["neuron"]
             for p in graph["populations"]
