@@ -15,7 +15,7 @@ from importlib import metadata
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
-from snnlab import _neurons as N
+from snnlab._shared import neurons as N
 
 
 @dataclass(frozen=True)

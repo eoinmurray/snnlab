@@ -1,105 +1,103 @@
-"""snnlang: deterministic authoring and inspection of spiking network graphs."""
+"""Public graph-authoring API, with implementations imported on demand.
 
-from . import ops, readouts, training
+Import supported constructors, operations, readouts and recipe helpers directly
+from ``snnlab.lang``. Implementation module paths are private.
+"""
+
+from importlib import import_module
+
 from ._version import __version__
-from .compiler import (
-    Bundle,
-    Diagnostic,
-    compile,
-    load_bundle,
-    migrate_refractory,
-    validate_graph,
-)
-from .core import (
-    ADEX,
-    ALIF,
-    AMPA,
-    COBA_ADEX,
-    COBA_ALIF,
-    COBA_LIF,
-    CUBA_ADEX,
-    CUBA_ALIF,
-    CUBA_LIF,
-    GABA,
-    LIF,
-    Constant,
-    CustomConstraint,
-    CustomInitializer,
-    CustomNeuron,
-    CustomSynapse,
-    ExponentialCurrent,
-    Hz,
-    LeakyIntegrator,
-    LowerClampedNormal,
-    Modulatory,
-    Network,
-    NonNegative,
-    Normal,
-    ParameterRef,
-    Population,
-    Projection,
-    Quantity,
-    Signal,
-    SignedNormal,
-    Uniform,
-    Zeros,
-    ms,
-    mV,
-    nA,
-    nS,
-    uS,
-)
-from .diagram import diagram
-from .training import TrainSpec
 
-__all__ = [
-    "ADEX",
-    "ALIF",
-    "AMPA",
-    "GABA",
-    "COBA_LIF",
-    "CUBA_LIF",
-    "COBA_ALIF",
-    "CUBA_ALIF",
-    "COBA_ADEX",
-    "CUBA_ADEX",
-    "ExponentialCurrent",
-    "CustomNeuron",
-    "CustomSynapse",
-    "CustomInitializer",
-    "CustomConstraint",
-    "LIF",
-    "Constant",
-    "LeakyIntegrator",
-    "LowerClampedNormal",
-    "Modulatory",
-    "Network",
-    "NonNegative",
-    "Normal",
-    "ParameterRef",
-    "Population",
-    "Projection",
-    "Quantity",
-    "Signal",
-    "SignedNormal",
-    "Uniform",
-    "Zeros",
-    "TrainSpec",
-    "Bundle",
-    "Diagnostic",
-    "compile",
-    "diagram",
-    "load_bundle",
-    "migrate_refractory",
-    "validate_graph",
-    "ops",
-    "readouts",
-    "training",
-    "Hz",
-    "mV",
-    "ms",
-    "nS",
-    "uS",
-    "nA",
-    "__version__",
-]
+_EXPORTS = {
+    "ADEX": "components",
+    "ALIF": "components",
+    "AMPA": "components",
+    "GABA": "components",
+    "COBA_LIF": "components",
+    "CUBA_LIF": "components",
+    "COBA_ALIF": "components",
+    "CUBA_ALIF": "components",
+    "COBA_ADEX": "components",
+    "CUBA_ADEX": "components",
+    "ExponentialCurrent": "components",
+    "CustomNeuron": "components",
+    "CustomSynapse": "components",
+    "CustomInitializer": "parameters",
+    "CustomConstraint": "parameters",
+    "LIF": "components",
+    "Constant": "parameters",
+    "LeakyIntegrator": "components",
+    "LowerClampedNormal": "parameters",
+    "Modulatory": "components",
+    "Network": "network",
+    "NonNegative": "parameters",
+    "Normal": "parameters",
+    "ParameterRef": "network",
+    "Population": "network",
+    "Projection": "network",
+    "Quantity": "units",
+    "Signal": "network",
+    "SignedNormal": "parameters",
+    "Uniform": "parameters",
+    "Zeros": "parameters",
+    "TrainSpec": "training",
+    "Bundle": "compilation.bundles",
+    "Diagnostic": "compilation.diagnostics",
+    "compile": "compilation.compile",
+    "diagram": "diagrams",
+    "load_bundle": "compilation.bundles",
+    "migrate_refractory": "compilation.graph_validation",
+    "validate_graph": "compilation.graph_validation",
+    "Hz": "units",
+    "mV": "units",
+    "ms": "units",
+    "nS": "units",
+    "uS": "units",
+    "nA": "units",
+    "linear": "operations",
+    "reduce": "operations",
+    "divide": "operations",
+    "Readout": "readouts",
+    "MeanVoltage": "readouts",
+    "FinalVoltage": "readouts",
+    "SpikeCount": "readouts",
+    "SpikeRate": "readouts",
+    "CumulativePotential": "readouts",
+    "Objective": "training",
+    "CrossEntropy": "training",
+    "ParameterGroup": "training",
+    "Regularizer": "training",
+    "UpperRatePenalty": "training",
+    "SpikeBudgetPenalty": "training",
+    "Optimizer": "training",
+    "AdamW": "training",
+    "FastSigmoid": "training",
+    "CustomObjective": "training",
+    "CustomRegularizer": "training",
+    "CustomOptimizer": "training",
+    "CustomSurrogate": "training",
+    "StopGradient": "training",
+    "ValidationResult": "compilation.diagnostics",
+    "validate_training": "compilation.training_validation",
+    "SignalLike": "network",
+    "custom_operation": "operations",
+}
+_ALIASES = {"custom_operation": "custom"}
+__all__ = [*_EXPORTS, "__version__"]
+
+
+def __getattr__(name):
+    # Retained, hash-pinned recipes still use the former operations namespace.
+    if name == "ops":
+        value = import_module(".operations", __name__)
+    else:
+        module = _EXPORTS.get(name)
+        if module is None:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        value = getattr(import_module(f".{module}", __name__), _ALIASES.get(name, name))
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))

@@ -5,6 +5,8 @@ description: Signal transformations, reductions and convenience readout layers.
 
 Operations return graph `Signal` objects; they do not operate immediately on PyTorch tensors. Declare outputs with [Network.output](/api/lang/network#output). Use signals from the same authoring network.
 
+Import `linear`, `reduce`, `divide`, `custom_operation`, `Readout` and the readout constructors directly from `snnlab.lang`.
+
 ## Operations
 
 ### linear
@@ -45,7 +47,7 @@ def divide(source: Signal, denominator: Signal, *, name: str, unit: str) -> Sign
 
 ## Readout wrapper
 
-`lang.readouts.Readout(signal, parameters=())` delegates signal attributes, exposes `.id`, and retains a tuple of parameter IDs for helpers that supply them. `net.output` and objective declarations accept its signal-like ID. Check the graph or parameter map when selecting all generated parameters: `.parameters` is not a universal inventory for every helper.
+`lang.Readout(signal, parameters=())` delegates signal attributes, exposes `.id`, and retains a tuple of parameter IDs for helpers that supply them. `net.output` and objective declarations accept its signal-like ID. Check the graph or parameter map when selecting all generated parameters: `.parameters` is not a universal inventory for every helper.
 
 ## Voltage sampling
 
@@ -59,7 +61,7 @@ A leaky integrator has two explicit voltage signals. Choose the signal before ap
 Both have `(time, batch, cells)` axes and unit `mV`. The pre-reset signal is currently supported only by leaky-integrator populations. If no reset occurs, the two samples agree. Threshold crossings can make them differ even for a non-spiking integrator, because its soft reset still applies.
 
 ```python
-scores = lang.ops.reduce(
+scores = lang.reduce(
     integrator.pre_reset_voltage,
     operation="mean",
     over="time",
@@ -138,4 +140,28 @@ def CumulativePotential(*, source: Signal, classes: int, name: str) -> Readout: 
 
 ## Custom operations
 
-`lang.ops.custom(definition, sources, *, name, shape, unit, parameters=(), signal_type="continuous", **config)` declares a registered differentiable operation. It can implement a custom readout without changing the executor. See [Extensions](/api/lang/extensions#operations-and-readouts).
+`lang.custom_operation(definition, sources, *, name, shape, unit, parameters=(), signal_type="continuous", **config)` declares a registered differentiable operation. It can implement a custom readout without changing the executor. See [Extensions](/api/lang/extensions#operations-and-readouts).
+
+## Readout and custom-operation signatures
+
+```python
+class Readout:
+    signal: Signal
+    parameters: tuple = ()
+```
+
+```python
+def custom_operation(
+    definition: str,
+    sources,
+    *,
+    name: str,
+    shape,
+    unit: str,
+    parameters=(),
+    signal_type="continuous",
+    **config,
+) -> Signal: ...
+```
+
+`Readout.id` delegates to its signal ID; other missing attributes delegate to the underlying signal. The wrapper's `parameters` tuple contains helper-reported parameter IDs and is not itself an optimizer parameter collection. `lang.custom_operation` returns a declared `Signal` and requires a registered operation; callback output shape/unit/dtype and differentiability remain part of its contract. See [Extensions](/api/lang/extensions#operations-and-readouts).

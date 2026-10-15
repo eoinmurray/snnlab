@@ -7,9 +7,9 @@ import pytest
 import torch
 
 from snnlab import lang
-from snnlab.lang.compiler import digest
-from snnlab.sim.bundle import load_graph_bundle
-from snnlab.sim.execution import (
+from snnlab._shared.timing import refractory_steps
+from snnlab.lang.compilation.serialization import digest
+from snnlab.sim import (
     ExecutionSpec,
     GraphExecutor,
     PoissonInputBinding,
@@ -18,7 +18,7 @@ from snnlab.sim.execution import (
     save_runtime_state,
     simulate,
 )
-from snnlab.sim.timing import refractory_steps
+from snnlab.sim.artifacts.bundle import load_graph_bundle
 
 MODELS = (
     lang.CUBA_LIF,

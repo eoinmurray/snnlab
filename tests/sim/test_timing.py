@@ -2,7 +2,7 @@
 
 import pytest
 
-from snnlab.sim.timing import (
+from snnlab._shared.timing import (
     duration_metadata,
     duration_steps,
     refractory_metadata,

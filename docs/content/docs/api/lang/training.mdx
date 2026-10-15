@@ -3,7 +3,7 @@ title: Training
 description: Training recipes, objectives, parameter groups, optimizers and surrogate gradients.
 ---
 
-Import recipe helpers from `snnlab.lang.training`; `TrainSpec` is also available as `lang.TrainSpec`. A recipe declares what should learn and how; [ExecutionSpec](/api/sim/execution-spec#training-controls) controls the actual epochs, minibatches and checkpoint paths. Compile it with [lang.compile](/api/lang/compilation#compile).
+Import all recipe helpers directly from `snnlab.lang`, including `TrainSpec`, `CrossEntropy`, `ParameterGroup`, `AdamW` and `FastSigmoid`. A recipe declares what should learn and how; [ExecutionSpec](/api/sim/execution-spec#training-controls) controls the actual epochs, minibatches and checkpoint paths. Compile it with [lang.compile](/api/lang/compilation#compile).
 
 ## TrainSpec
 
@@ -50,6 +50,8 @@ class Objective:
     prediction: str
     target: str
     weight: float = 1.0
+    config: dict[str, Any] = field(default_factory=dict)
+    definition: str | None = None
 ```
 
 `prediction` accepts a signal-like object or signal ID. `target` names a label tensor supplied through the execution request. Cross entropy uses class logits and integer class labels. Do not apply softmax before this loss. `weight` scales the objective contribution to total loss. Multiple objectives are allowed.
@@ -82,13 +84,16 @@ def AdamW(**config: Any) -> Optimizer: ...
 class Optimizer:
     kind: str
     config: dict[str, Any] = field(default_factory=dict)
+    definition: str | None = None
 ```
 
 ### FastSigmoid
 
 ```python
 def FastSigmoid(
-    *, slope: float = 1.0, gradient_scale: float = 1.0,
+    *,
+    slope: float = 1.0,
+    gradient_scale: float = 1.0,
     threshold_inclusive: bool = True,
 ) -> Spec: ...
 ```
@@ -104,8 +109,10 @@ Here $v$ is voltage relative to threshold, $s$ is the positive finite `slope` in
 For the SHD paper derivative with a 15 mV threshold-to-rest gap and dimensionless steepness 100, use:
 
 ```python
-surrogate = training.FastSigmoid(
-    slope=100 / 15, gradient_scale=1 / 100, threshold_inclusive=False,
+surrogate = lang.FastSigmoid(
+    slope=100 / 15,
+    gradient_scale=1 / 100,
+    threshold_inclusive=False,
 )
 ```
 
@@ -137,6 +144,7 @@ class Regularizer:
     signals: tuple[str, ...]
     strength: float
     config: dict[str, Any] = field(default_factory=dict)
+    definition: str | None = None
 ```
 
 `SpikeBudgetPenalty` penalizes population mean rates exceeding `ceiling_hz`, using a squared hinge. It averages presentations and then layers. Supply spike signals or IDs and the penalty strength. `UpperRatePenalty` is the single-signal convenience wrapper: `threshold` is in Hz. Rate evaluation requires an appropriate presentation duration. Regularizers are part of both total training and validation loss.
@@ -159,3 +167,31 @@ See [Training](/training) for a complete recipe and [PyTorch Integration](/pytor
 ## Custom training definitions
 
 `CustomObjective`, `CustomRegularizer`, `CustomOptimizer` and `CustomSurrogate` select versioned registered definitions. See [Extensions](/api/lang/extensions#objectives-and-regularizers) for callback contracts, regression targets, optional classification metrics and checkpoint limits.
+
+## Custom training constructors
+
+Import these from `snnlab.lang`. Each returns the corresponding declarative objective, regularizer, optimizer or surrogate specification after checking the registered name.
+
+```python
+def CustomObjective(
+    definition: str,
+    *,
+    prediction: SignalLike | str,
+    target: str,
+    weight: float = 1.0,
+    **config: Any,
+) -> Objective: ...
+
+
+def CustomRegularizer(
+    definition: str, *, signals: Sequence[Signal | str], strength: float, **config: Any
+) -> Regularizer: ...
+
+
+def CustomOptimizer(definition: str, **config: Any) -> Optimizer: ...
+
+
+def CustomSurrogate(definition: str, **config: Any) -> Spec: ...
+```
+
+`weight` and `strength` scale scalar callback results. A custom classification objective enables integer target/argmax metric semantics through its registration; other objectives support real-valued targets. Explicit regularizer signals are retained for loss computation even when diagnostics are disabled. See [callback contracts](/api/lang/extensions#objectives-and-regularizers).

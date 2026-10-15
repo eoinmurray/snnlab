@@ -29,7 +29,7 @@ and a registered current neuron matching the tutorial's delayed subtractive rese
 and ATan surrogate. This is not its built-in CUBA LIF reset rule. Both use float32,
 deterministic algorithms and disabled TF32. SNNLab uses fast projection mode,
 structural validation, eager custom callbacks, and no unused result snapshots.
-SNNLab compiles a `TrainSpec` and calls `snnlab.sim.execution.train()` once with
+SNNLab compiles a `TrainSpec` and calls `snnlab.sim.train()` once with
 an `ExecutionSpec` and `ValidationSpec`; the library owns minibatches, gradients,
 optimizer updates and checkpoints. Extension hooks preserve the matched temporal
 loss, Adam optimizer, initialization and ATan surrogate. A zero-loss classification

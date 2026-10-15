@@ -21,15 +21,15 @@ import pytest
 import torch
 
 from snnlab import lang
-from snnlab.sim import extensions as X
-from snnlab.sim import models as M
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
     plan_graph,
     simulate,
 )
+from snnlab.sim.graph import dynamics as M
+from snnlab.sim.graph import extensions as X
 
 snn = pytest.importorskip("snntorch")
 surrogate = snn.surrogate

@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from snnlab import lang
-from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
 
 
 def _network():
@@ -72,7 +72,7 @@ def test_exposed_voltage_conductance_and_input_return_by_name():
 
 def test_exposed_operation_is_resolved_by_signal():
     net, inputs, _, _ = _network()
-    scores = lang.readouts.SpikeCount(source=inputs, classes=2, name="scores")
+    scores = lang.SpikeCount(source=inputs, classes=2, name="scores")
     net.output("scores_output", scores)
     net.expose(scores, name="scores_diagnostic")
     result = _run(net)

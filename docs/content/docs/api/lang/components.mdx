@@ -34,8 +34,17 @@ The current graph executor initializes COBA voltages at its fixed leak reversal 
 ### Current-based LIF
 
 ```python
-def CUBA_LIF(*, tau_mem=20 * ms, capacitance_nf=1.0, resting_mv=-65.0, threshold_mv=-50.0, reset_mv=-65.0, refractory=0 * ms, initial_voltage_mv=None, voltage_grad_dampen=1.0) -> Spec:
-    ...
+def CUBA_LIF(
+    *,
+    tau_mem=20 * ms,
+    capacitance_nf=1.0,
+    resting_mv=-65.0,
+    threshold_mv=-50.0,
+    reset_mv=-65.0,
+    refractory=0 * ms,
+    initial_voltage_mv=None,
+    voltage_grad_dampen=1.0,
+) -> Spec: ...
 ```
 
 `LIF(**values)` returns the same specification as `CUBA_LIF(**values)`. Synaptic drive is in nanoamperes (`nA`), membrane voltage in millivolts and capacitance in nanofarads. The membrane integrates net excitatory minus inhibitory current using an exponential update that holds current fixed for that step.
@@ -82,3 +91,128 @@ The public constructors accept keyword arguments and produce specifications. For
 Use `lang.CustomNeuron(definition, **config)` and `lang.CustomSynapse(definition, **config)` after [registering their implementations](/api/lang/extensions). Extra state ports are available through `.state(name)`, and participate in outputs, diagnostics and continuation.
 
 Current-based projections expose `.current`; conductance-based projections expose `.conductance`. Use the property matching the synapse family.
+
+## Constructor signatures
+
+Import these constructors from `snnlab.lang`. The signatures below are the authoring contracts; `**values` permits specification metadata and does not promise backend support for every key. Time parameters use `Quantity` values such as `20 * lang.ms`. The model tables above define supported runtime settings.
+
+```python
+def COBA_LIF(*, refractory=None, **values: Any) -> Spec: ...
+
+
+def CUBA_LIF(
+    *,
+    tau_mem=20 * ms,
+    capacitance_nf=1.0,
+    resting_mv=-65.0,
+    threshold_mv=-50.0,
+    reset_mv=-65.0,
+    refractory=0 * ms,
+    initial_voltage_mv=None,
+    voltage_grad_dampen=1.0,
+) -> Spec: ...
+
+
+def LIF(**values: Any) -> Spec: ...
+
+
+def CUBA_ALIF(
+    *,
+    tau_adaptation=200 * ms,
+    adaptation_increment_mv=1.0,
+    initial_adaptation_mv=0.0,
+    **lif_values: Any,
+) -> Spec: ...
+
+
+def COBA_ALIF(
+    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+) -> Spec: ...
+
+
+def ALIF(**values: Any) -> Spec: ...
+
+
+def CUBA_ADEX(
+    *,
+    tau_adaptation=200 * ms,
+    delta_t_mv=2.0,
+    spike_mv=-30.0,
+    a_us=0.002,
+    b_na=0.05,
+    initial_adaptation_na=0.0,
+    **lif_values: Any,
+) -> Spec: ...
+
+
+def COBA_ADEX(
+    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+) -> Spec: ...
+
+
+def ADEX(**values: Any) -> Spec: ...
+
+
+def LeakyIntegrator(**values: Any) -> Spec: ...
+
+
+def AMPA(**values: Any) -> Spec: ...
+
+
+def GABA(**values: Any) -> Spec: ...
+
+
+def ExponentialCurrent(*, tau=5 * ms) -> Spec: ...
+
+
+def Modulatory(**values: Any) -> Spec: ...
+
+
+def CustomNeuron(definition: str, **config: Any) -> Spec: ...
+
+
+def CustomSynapse(definition: str, **config: Any) -> Spec: ...
+```
+
+All return a `Spec` containing model kind and serialized settings. Custom constructors require a registered definition and JSON-compatible configuration. Compilation performs model validation; `Modulatory` remains unsupported by the graph executor.
+
+## Population and Projection objects
+
+Create these through `Network.population` and `Network.connect`. Their data fields are:
+
+```python
+class Population:
+    network: "Network" = field(repr=False)
+    id: str
+    size: int
+    neuron: Spec
+    spiking: bool
+    group: str | None
+
+
+class Projection:
+    network: "Network" = field(repr=False)
+    id: str
+    source: str
+    target: str
+    synapse: Spec
+    connection: str
+    delay: Quantity | None
+    parameter_ids: tuple[str, ...]
+    group: str | None
+    enabled: bool
+    allow_autapses: bool = False
+```
+
+| Accessor | Return and restrictions |
+| --- | --- |
+| `Population.spikes` | Binary `(time, batch, size)` Signal; raises `AttributeError` on non-spiking populations. |
+| `Population.voltage` | Membrane voltage Signal in mV. |
+| `Population.pre_reset_voltage` | Leaky-integrator voltage before reset; other model families raise `AttributeError`. |
+| `Population.excitatory`, `.inhibitory`, `.modulatory` | Target port ID strings for `Network.connect`. Availability does not imply backend support for every port. |
+| `Population.state(name)` | Named declared state Signal, including built-in adaptation or registered state ports. |
+| `Projection.current`, `.conductance` | Signal for the matching synapse family; select the declared port, rather than interchanging units. |
+| `Projection.state(name)` | Named declared synapse state Signal. |
+| `Projection.weight` | `ParameterRef` for the first projection parameter. |
+
+State and signal lookups resolve through the parent network and fail for undeclared ports. Pass returned signals to `Network.output` or `Network.expose`; merely accessing a property does not request result retention.

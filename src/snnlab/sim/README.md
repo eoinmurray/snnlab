@@ -1,8 +1,11 @@
 # snnlab.sim
 
 `snnlab.sim` executes spiking-network graphs and supports surrogate-gradient
-training. The Python graph-execution API lives in `snnlab.sim.execution`;
-these types and functions are not re-exported from `snnlab.sim`.
+training. Import the supported Python API from `snnlab.sim`. Its central export
+map in `__init__.py` resolves implementations lazily, keeping public imports
+independent of the internal file layout. The former `snnlab.sim.execution`
+module has been retired; import its supported functions and types from
+`snnlab.sim`.
 
 Built-in spiking models include current and conductance LIF, ALIF and AdEx.
 ALIF uses a spike-triggered threshold offset; AdEx uses an exponential voltage
@@ -17,7 +20,7 @@ the exponential-Euler discretization.
 `GraphPlan`. There is no type named `GraphExecution`.
 
 ```python
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 
 # graph is a validated graph mapping, such as a compiled bundle's graph.json.
 model = GraphExecutor(plan_graph(graph), seed=17)
@@ -47,7 +50,7 @@ use the request API:
 
 ```python
 from pathlib import Path
-from snnlab.sim.execution import ExecutionSpec, build
+from snnlab.sim import ExecutionSpec, build
 
 built = build(ExecutionSpec(
     kind="build",
@@ -82,8 +85,37 @@ before execution. See the [Extensions reference](../../../docs/content/docs/api/
 
 See the full [ExecutionSpec reference](../../../docs/content/docs/api/sim/execution-spec.mdx)
 and [ExecutionResult reference](../../../docs/content/docs/api/sim/execution-result.mdx)
-for fields, input bindings, and result handling. Implementation details are in
-[execution.py](execution.py).
+for fields, input bindings, and result handling.
+
+## Source organisation
+
+`__init__.py` is the only public export location. The packages below are internal
+implementation details; applications should import supported functions and types
+from `snnlab.sim`. Each package initializer is deliberately minimal.
+
+| Package | Responsibility and source files | API reference |
+| --- | --- | --- |
+| `requests/` | [spec.py](requests/spec.py), [result.py](requests/result.py), [handlers.py](requests/handlers.py): requests, results, build/simulate/infer and dispatch. | ExecutionSpec, ExecutionResult, Execution Functions |
+| `inputs/` | [bindings.py](inputs/bindings.py), [resolution.py](inputs/resolution.py), datasets, encoders and providers. | ExecutionSpec input bindings and resolution |
+| `graph/` | [plan.py](graph/plan.py), [executor.py](graph/executor.py), dynamics, tensor kernels and extension helpers. | GraphExecutor, PyTorch Integration |
+| `runtime/` | [state.py](runtime/state.py), [recording.py](runtime/recording.py), [interventions.py](runtime/interventions.py), [resets_decisions.py](runtime/resets_decisions.py). | Runtime State, Recording and Measurement, Interventions, Resets and Decisions |
+| `training/` | [trainer.py](training/trainer.py), policies, observations, selection and [checkpoints.py](training/checkpoints.py). | Execution Functions, training policies, Training Checkpoints |
+| `artifacts/` | [bundle.py](artifacts/bundle.py), [inference.py](artifacts/inference.py), [integrity.py](artifacts/integrity.py): loading, inference products and shared canonical digests. | Compilation, Inference Artifacts |
+| `diagnostics/` | [tracing.py](diagnostics/tracing.py), [conformance.py](diagnostics/conformance.py): bounded training diagnostics and internal numerical comparison tools. | Tracing |
+
+Shared, tensor-free contracts live outside the simulator in `snnlab/_shared`:
+[neurons.py](../_shared/neurons.py) validates built-in neuron specifications,
+[connectivity.py](../_shared/connectivity.py) resolves shared structural rules,
+and [timing.py](../_shared/timing.py) converts physical durations to timesteps.
+Both authoring and execution consume these standard-library-only modules;
+they do not depend on `lang` or `sim`. The public extension registry remains
+[snnlab/extensions.py](../extensions.py).
+
+Request handlers orchestrate execution. Graph dynamics and declaration/result
+modules do not import those handlers or the native trainer. Format identifiers
+live beside their formats, graph metadata helpers live with planning, and
+training reporting helpers live with the trainer. Command-line argument
+adaptation is kept in `cli.py`.
 
 The documentation site's [GraphExecutor API reference](../../../docs/content/docs/api/sim/graph-executor.mdx)
 appears under API Reference → Sim.
@@ -135,7 +167,7 @@ execution reference for migration and nonfinite/gradient semantics.
 ## Optional training tracing
 
 Pass `tracing=TraceSpec(output=Path("new-trace-directory"), mode="both")` to
-`ExecutionSpec(kind="train", ...)`. Import `TraceSpec` from `snnlab.sim.tracing`.
+`ExecutionSpec(kind="train", ...)`. Import `TraceSpec` from `snnlab.sim`.
 Modes `off`, `monitor`, `profile` and `both` support bounded selected-update
 measurements, detached activity/sparsity, phase timing, memory and PyTorch
 CPU/CUDA timelines. Tracing is disabled by default and does not change checkpoint

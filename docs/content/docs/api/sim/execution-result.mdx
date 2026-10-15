@@ -3,10 +3,10 @@ title: ExecutionResult
 description: Returned tensors, diagnostics, training metrics, checkpoints and NumPy conversion.
 ---
 
-Import result types from `snnlab.sim.execution`. [ExecutionSpec](/api/sim/execution-spec) configures a run; these objects carry its results.
+Import result types from `snnlab.sim`. [ExecutionSpec](/api/sim/execution-spec) configures a run; these objects carry its results.
 
 ```python
-from snnlab.sim.execution import ExecutionResult, NumpyExecutionResult
+from snnlab.sim import ExecutionResult, NumpyExecutionResult
 ```
 
 For concrete array layouts, units, file schemas and a runnable analysis workflow, see [Output and diagnostic data](/data-formats).
@@ -115,7 +115,7 @@ Without `batch`, all batch items and tensor axes are preserved. Passing a non-ne
 
 `time_ms` comes from the effective execution timestep and step count, including timestep/duration overrides. It starts at zero for a fresh run; a resumed runtime trajectory starts at its absolute continuation step. Time-reduced outputs such as class scores do not have a time axis, even though `data.time_ms` still describes the run. Training converts its final-update outputs and diagnostics, with time referring to that update's input presentation.
 
-Import `ExecutionResult` and `NumpyExecutionResult` from `snnlab.sim.execution` if needed for type annotations.
+Import `ExecutionResult` and `NumpyExecutionResult` from `snnlab.sim` if needed for type annotations.
 
 ## Shapes and gradients
 
@@ -138,8 +138,8 @@ class ExecutionResult:
     training_checkpoint: TrainingCheckpoint | None = None
     selected_checkpoint: TrainingCheckpoint | None = None
     final_state: dict[str, torch.Tensor] = field(default_factory=dict)
-    recorded_signals: dict[str, torch.Tensor] = {}
-    decisions: list[dict[str, Any]] = []
+    recorded_signals: dict[str, torch.Tensor] = field(default_factory=dict)
+    decisions: list[dict[str, Any]] = field(default_factory=list)
     runtime_state: GraphRuntimeState | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     model: nn.Module | None = None
@@ -184,3 +184,9 @@ rows. These are elapsed seconds for the current call, including resumed partial
 epochs. They do not change or persist into checkpoint identity. See
 [training timing](/api/sim/execution-spec#training_timing) for exact boundaries and
 the difference between synchronized device work and host-only enqueue latency.
+
+## Persistence and returned object types
+
+`training_checkpoint` and `selected_checkpoint` are [TrainingCheckpoint](/api/sim/training-checkpoints) objects. `runtime_state` is [GraphRuntimeState](/api/sim/runtime-state), and selected recording sink callbacks receive [RecordingBlock](/api/sim/recording-measurement) objects. Persist a result through [write_inference_artifacts](/api/sim/inference-artifacts); `.numpy()` converts plotting arrays without saving any files.
+
+`recorded_signals` and `decisions` use per-instance factories, so separately constructed results do not share their empty mappings/lists. Their returned contents are mutable caller-owned containers.

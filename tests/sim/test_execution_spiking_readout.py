@@ -6,12 +6,7 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
-    DenseArrayBinding,
-    ExecutionSpec,
-    build,
-    simulate,
-)
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, build, simulate
 from tests.sim._execution_builders import direct_train_bundle
 
 

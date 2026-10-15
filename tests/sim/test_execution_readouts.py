@@ -5,11 +5,7 @@ from __future__ import annotations
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
-    DenseArrayBinding,
-    ExecutionSpec,
-    simulate,
-)
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
 
 
 def _standard_readout_graph(
@@ -25,11 +21,11 @@ def _standard_readout_graph(
         else None
     )
     if readout == "final":
-        value = snn.readouts.FinalVoltage(source=source, classes=2, name="scores")
+        value = snn.FinalVoltage(source=source, classes=2, name="scores")
     elif readout == "count":
-        value = snn.readouts.SpikeCount(source=source, classes=2, name="scores")
+        value = snn.SpikeCount(source=source, classes=2, name="scores")
     elif readout == "rate":
-        value = snn.readouts.SpikeRate(
+        value = snn.SpikeRate(
             source=source,
             classes=2,
             name="scores",
@@ -37,7 +33,7 @@ def _standard_readout_graph(
             mask=valid,
         )
     elif readout == "cumulative":
-        value = snn.readouts.CumulativePotential(
+        value = snn.CumulativePotential(
             source=source, classes=2, name="scores"
         )
     else:

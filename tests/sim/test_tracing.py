@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from snnlab.sim.execution import ExecutionSpec, GraphExecutor, train
-from snnlab.sim.tracing import TraceSession, TraceSpec, current_trace, timeline_metrics
+from snnlab.sim import ExecutionSpec, GraphExecutor, TraceSpec, train
+from snnlab.sim.diagnostics.tracing import TraceSession, current_trace, timeline_metrics
 from tests.sim.test_execution_epochs import request
 
 
@@ -233,7 +233,7 @@ def test_cuda_stream_timing_and_profiler_activity(tmp_path):
 
 
 def test_tracing_does_not_enter_resume_identity(tmp_path):
-    from snnlab.sim.execution import save_training_checkpoint
+    from snnlab.sim import save_training_checkpoint
 
     spec = request()
     full = train(spec)

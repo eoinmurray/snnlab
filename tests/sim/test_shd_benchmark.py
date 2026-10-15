@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.sim.execution import ExecutionSpec, build, load_training_checkpoint
+from snnlab.sim import ExecutionSpec, build, load_training_checkpoint
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = ROOT / "benchmarks/shd"
@@ -167,7 +167,7 @@ def test_native_smoke_updates_all_learned_weights_and_exports_portable_bundle(tm
     assert timing["training_s"] > 0
     assert timing["validation_s"] > 0
     assert timing["train_evaluation_s"] == 0
-    code = "from snnlab.sim.execution import build,ExecutionSpec; import sys; r=build(ExecutionSpec(kind='build',bundle=sys.argv[1],device='cpu')); assert len(r.parameters)==4"
+    code = "from snnlab.sim import build,ExecutionSpec; import sys; r=build(ExecutionSpec(kind='build',bundle=sys.argv[1],device='cpu')); assert len(r.parameters)==4"
     subprocess.run(
         [sys.executable, "-c", code, str(output / "network.bundle")],
         check=True,

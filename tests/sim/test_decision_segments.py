@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from snnlab.sim.execution import (
+from snnlab.sim import (
     Boundary,
     BoundarySchedule,
     DecisionSegments,
@@ -14,7 +14,6 @@ from snnlab.sim.execution import (
     ExecutionSpec,
     GraphExecutor,
     ResetVoltage,
-    execution_spec_from_args,
     load_runtime_state,
     plan_graph,
     save_runtime_state,
@@ -23,7 +22,7 @@ from snnlab.sim.execution import (
     validate_inference_artifacts,
     write_inference_artifacts,
 )
-from snnlab.sim.tool import parse_args
+from snnlab.sim.cli import execution_spec_from_args, parse_args
 from tests.sim.test_spike_replay import graph_fixture, stream
 
 
@@ -241,7 +240,7 @@ def test_typed_simulation_cli_and_cache(tmp_path):
 def test_cli_writes_decisions_and_runtime_state(tmp_path):
     import numpy as np
 
-    from snnlab.sim.tool import main
+    from snnlab.sim.cli import main
 
     bundle = tmp_path / "network.bundle"
     graph_fixture(bundle_path=bundle)
@@ -307,7 +306,7 @@ def test_reset_subset_only_changes_selected_batch():
 
 def test_unsupported_neuron_reset_and_training_rejected():
     from snnlab import lang as snn
-    from snnlab.sim.execution import execute_request, train
+    from snnlab.sim import execute_request, train
 
     graph = graph_fixture(neuron=snn.CUBA_LIF())
     with pytest.raises(ValueError, match="leaky-integrator"):

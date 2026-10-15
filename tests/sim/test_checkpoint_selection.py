@@ -7,15 +7,14 @@ from dataclasses import replace
 import pytest
 import torch
 
-from snnlab.sim.execution import (
+from snnlab.sim import (
     CheckpointSelection,
     SelectionMetric,
     build,
-    execution_spec_from_args,
     load_training_checkpoint,
     train,
 )
-from snnlab.sim.tool import parse_args
+from snnlab.sim.cli import execution_spec_from_args, parse_args
 from tests.sim.test_epoch_observations import observations, request
 
 
@@ -250,7 +249,7 @@ def test_selection_preserves_training_trajectory_and_rng():
 
 
 def test_old_checkpoint_cannot_reconstruct_selection_history(tmp_path):
-    from snnlab.sim.execution import save_training_checkpoint
+    from snnlab.sim import save_training_checkpoint
 
     spec = request()
     first = train(replace(spec, updates=1))

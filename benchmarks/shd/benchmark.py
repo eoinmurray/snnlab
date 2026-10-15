@@ -13,19 +13,19 @@ from shd_data import acquire, digest, prepare, synthetic_snapshot
 from shd_recipe import TRAINABLE, Config, author_network
 
 import snnlab
-from snnlab.sim.execution import (
+from snnlab.sim import (
     Batching,
     CheckpointSelection,
     DatasetEncoder,
     DatasetSnapshotBinding,
     EpochObservations,
     ExecutionSpec,
+    TraceSpec,
     TrainingMetrics,
     ValidationSpec,
     resolve_device,
     train,
 )
-from snnlab.sim.tracing import TraceSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -156,7 +156,7 @@ def run(
     metadata = {
         "configuration": asdict(cfg),
         "dataset": dataset,
-        "engine": "snnlab.sim.execution.train",
+        "engine": "snnlab.sim.train",
         "compile_mode": mode,
         "device": str(device),
         "device_name": torch.cuda.get_device_name(device)

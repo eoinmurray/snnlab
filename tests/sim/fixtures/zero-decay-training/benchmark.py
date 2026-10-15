@@ -10,8 +10,7 @@ from torch import nn
 
 from snnlab import extensions as E
 from snnlab import lang
-from snnlab.lang import training as recipe
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 
 NEURON = "snnlab.benchmark-synaptic/v1"
 SURROGATE = "snnlab.benchmark-fast-sigmoid/v1"
@@ -130,7 +129,7 @@ class GraphModel(nn.Module):
                 )
                 self.ids[name] = projection.weight.id
             source = cells.spikes
-        score = lang.ops.reduce(source, operation="sum", over="time", name="scores")
+        score = lang.reduce(source, operation="sum", over="time", name="scores")
         net.output("class_scores", score)
         plan = plan_graph(lang.compile(net).graph)
         options = (
@@ -142,7 +141,7 @@ class GraphModel(nn.Module):
             plan,
             seed=42,
             trainable_parameters=tuple(self.ids.values()),
-            surrogate=recipe.CustomSurrogate(SURROGATE).json(),
+            surrogate=lang.CustomSurrogate(SURROGATE).json(),
             **options,
         )
         self.snapshots = snapshots

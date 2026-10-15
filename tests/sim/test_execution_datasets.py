@@ -9,7 +9,8 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
+from snnlab.lang.compilation.serialization import digest
+from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     ExecutionSpec,
@@ -18,7 +19,7 @@ from snnlab.sim.execution import (
     resolve_poisson_input_bindings,
     train,
 )
-from snnlab.sim.tool import main
+from snnlab.sim.cli import main
 from tests.sim._execution_builders import (
     direct_train_bundle as _direct_train_bundle,
 )
@@ -209,13 +210,13 @@ def test_poisson_binding_rejects_invalid_rate_probability():
 
 def test_graph_cli_generates_fixed_rate_poisson_protocol(tmp_path):
     graph = _standard_readout_graph("count")
-    bundle = snn.compiler.Bundle(
+    bundle = snn.Bundle(
         graph=graph,
         training=None,
         manifest={
             "schema": "snnlang.bundle/v1",
-            "graph_digest": snn.compiler.digest(graph),
-            "files": [{"path": "graph.json", "digest": snn.compiler.digest(graph)}],
+            "graph_digest": digest(graph),
+            "files": [{"path": "graph.json", "digest": digest(graph)}],
             "assets": [],
             "compiler": {"name": "test", "version": "1"},
             "target": None,

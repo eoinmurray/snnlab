@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, infer
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, infer
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 TRAINING_DIR = OUTPUT_DIR.parent / "training"

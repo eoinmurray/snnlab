@@ -3,6 +3,8 @@ title: Network
 description: Complete reference for authoring networks, populations, connections, parameters, outputs and diagnostics.
 ---
 
+All supported authoring symbols are exported directly by `snnlab.lang`. You can use `from snnlab import lang`, or `import snnlab as snn` followed by `snn.lang.Network(...)`; no implementation-module imports are required.
+
 `lang.Network` is the mutable authoring object for a spiking network. Its methods declare a graph; they do not execute it. Compile the network with `lang.compile`, then pass the compiled graph or bundle to [ExecutionSpec](/api/sim/execution-spec).
 
 ```python
@@ -188,7 +190,7 @@ net.operation(
 
 Adds an operation consuming one signal or a sequence of signals from this network. Returns a `Signal` with ID `"<name>.value"` and the explicitly declared shape, unit and signal type. `parameters` supplies `ParameterRef` objects; `config` supplies operation-specific settings.
 
-This is the lower-level operation declaration API. Prefer the helpers in `lang.ops` and `lang.readouts` when they cover the desired operation. Declaring an arbitrary `kind` does not make it executable; compilation/execution check backend capabilities.
+This is the lower-level operation declaration API. Prefer the public helpers such as `lang.linear`, `lang.reduce` and `lang.MeanVoltage` when they cover the desired operation. All are exported directly from `snnlab.lang`; see [Operations and Readouts](/api/lang/operations-readouts). Declaring an arbitrary `kind` does not make it executable; compilation/execution check backend capabilities.
 
 ## output
 
@@ -255,3 +257,20 @@ with net.group(name, parent=None) as component:
 | `current_group` | Active group name, or `None`. |
 
 The object and its declaration collections are mutable. Prefer the authoring methods so names and signal references are registered consistently. Compilation produces bundle data; execution works from that compiled graph rather than running methods on the authoring object.
+
+## Signal
+
+Network methods return `Signal` objects for inputs and operation outputs, and populations/projections provide additional signal properties. A signal is an authoring reference, not an execution tensor.
+
+```python
+class Signal:
+    network: "Network" = field(compare=False, repr=False)
+    id: str
+    shape: Shape
+    unit: str
+    signal_type: str
+    owner: str
+    port: str
+```
+
+`Signal.json_ref()` returns its graph ID string. Shape entries can be integer feature sizes or symbolic axes such as `"time"` and `"batch"`. `unit` and `signal_type` describe the declared value, and `owner` / `port` locate its producer. Use a signal from the same network when connecting declarations. The dataclass is frozen; execution values are obtained through result outputs or diagnostics.

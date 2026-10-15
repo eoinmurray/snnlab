@@ -1,0 +1,87 @@
+---
+title: Execution Functions
+description: Build, simulate, infer, train and dispatch graph execution requests.
+---
+
+Import these functions from `snnlab.sim`. They consume [ExecutionSpec](/api/sim/execution-spec) and return [ExecutionResult](/api/sim/execution-result).
+
+## build
+
+```python
+def build(spec: ExecutionSpec) -> ExecutionResult: ...
+```
+
+Validates and plans the supplied graph or bundle, initializes parameters and returns the model in `result.model`. It does not advance simulation time, load `spec.checkpoint`, train, or write output files. Bundle loading verifies declared digests and resolves extension imports. Without graph data or a bundle, execution fails.
+
+## simulate
+
+```python
+def simulate(
+    spec: ExecutionSpec, *, runtime_state: GraphRuntimeState | None = None
+) -> ExecutionResult: ...
+```
+
+Builds a fresh model, resolves inputs/device and optional weight checkpoint, then executes the graph. Input bindings support dense tensors, sparse events, generated Poisson spikes and dataset snapshots. `runtime_state` supplies ongoing dynamics: a non-`None` keyword argument takes precedence over the request field. Parameters are loaded separately from dynamic state. See [continuation](/api/sim/runtime-state).
+
+Simulation supports inference overrides, interventions, resets, measurement windows and recording. Timestep overrides cannot convert runtime state. Dataset batches are independent presentations; multiple batches do not produce a single resumable runtime trajectory. See [ExecutionSpec](/api/sim/execution-spec) for input and override validation.
+
+## infer
+
+```python
+def infer(spec: ExecutionSpec) -> ExecutionResult: ...
+```
+
+Delegates to `simulate(spec)` with the same checkpoint, input and result semantics. It does not train a model. Use `spec.runtime_state` for continuation through this function.
+
+## train
+
+```python
+def train(spec: ExecutionSpec) -> ExecutionResult: ...
+```
+
+Runs the compiled training recipe with resolved named targets. The recipe selects parameters, objectives, optimizer, regularizers and surrogate; the execution request controls epochs, updates, batching, validation and observations. Use `checkpoint` for training resume and `save_final_checkpoint` / `save_selected_checkpoint` for optional persistence. Selection can return no winner if no eligible boundary was reached.
+
+The result's outputs and diagnostics describe the final optimizer update, rather than all training samples. Epoch/update summaries are in `metrics`; retained checkpoints are separate fields. Training rejects inference interventions, reset/decision policies and explicit measurement/recording policies. It does not consume `runtime_state`.
+
+## execute_request
+
+```python
+def execute_request(spec: ExecutionSpec) -> ExecutionResult: ...
+```
+
+Dispatches by `spec.kind`: `"build"`, `"simulate"`, `"infer"` or `"train"`. Unknown kinds raise `ValueError`. Direct handler calls perform their named operation; prefer this dispatcher when the request kind should select the operation.
+
+## resolve_device
+
+```python
+def resolve_device(requested: str | torch.device = "auto") -> str: ...
+```
+
+Returns a device string. `"auto"` first honours `PINGLAB_DEVICE`, otherwise selects CUDA when available and CPU otherwise. MPS is explicit opt-in. Accepted explicit names are `"cpu"`, `"cuda"`, `"cuda:N"` and `"mps"`; unavailable accelerator backends and unknown names raise `ValueError`. CUDA index validity may be checked later by PyTorch.
+
+## Example
+
+```python
+from pathlib import Path
+from snnlab.sim import ExecutionSpec, PoissonInputBinding, execute_request
+
+# network.bundle declares a spike input named inputs.
+result = execute_request(
+    ExecutionSpec(
+        kind="simulate",
+        bundle=Path("network.bundle"),
+        device="cpu",
+        input_bindings=(
+            PoissonInputBinding(
+                input_id="inputs",
+                steps_count=100,
+                rates_hz=(20.0,),
+                seed=17,
+            ),
+        ),
+    )
+)
+data = result.numpy(batch=0)
+```
+
+The Python handlers do not automatically write CLI artifact directories or plots. Use [inference artifact helpers](/api/sim/inference-artifacts) to persist a result. Invalid shapes, unsupported capabilities and incompatible saved state fail rather than being silently adapted.

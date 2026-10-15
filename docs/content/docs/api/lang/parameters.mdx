@@ -26,7 +26,7 @@ For `LowerClampedNormal`, `initial_zero_fraction` must satisfy `0 <= fraction < 
 
 ### Initialization scaling
 
-`Network.connect`, `Network.parameter` and `readouts.MeanVoltage` accept `initialization_scaling="fan_in_normalized"` or `"direct"`. Scaling is separate from the parameter's physical unit and initializer distribution.
+`Network.connect`, `Network.parameter` and `lang.MeanVoltage` accept `initialization_scaling="fan_in_normalized"` or `"direct"`. Scaling is separate from the parameter's physical unit and initializer distribution.
 
 | Policy | Stored initial weights |
 | --- | --- |
@@ -38,7 +38,7 @@ For lower-clamped normals, execution draws and lower-clamps first, then applies 
 For example, a directly initialized mean-voltage readout preserves the legacy readout initializer's scale:
 
 ```python
-scores = lang.readouts.MeanVoltage(
+scores = lang.MeanVoltage(
     source=cells.spikes,
     classes=10,
     name="scores",
@@ -144,3 +144,26 @@ Built-in graph training enforces supported constraints after optimizer steps. Or
 ## Custom initializers and constraints
 
 Use `CustomInitializer(definition, **config)` and `CustomConstraint(definition, **config)` after registering Python callbacks. Custom initializers receive the runtime tensor shape/device/dtype. Constraints apply after the selected initialization scaling and after optimizer updates. Call `GraphExecutor.enforce_constraints()` in an external PyTorch loop. See [Extensions](/api/lang/extensions#initializers-and-constraints) for callback contracts and persistent masking.
+
+## Reference constructors
+
+```python
+class Quantity:
+    value: float
+    unit: str
+
+
+class ParameterRef:
+    network: "Network" = field(compare=False, repr=False)
+    id: str
+
+
+def CustomInitializer(definition: str, **config: Any) -> Spec: ...
+
+
+def CustomConstraint(definition: str, **config: Any) -> Spec: ...
+```
+
+`Quantity` is a frozen value/unit record. `Quantity.json()` returns `{"value": value, "unit": unit}`. Multiplication by exported unit helpers constructs one; it does not convert between nS and uS. `ParameterRef` identifies an existing authoring parameter and retains its network association. Prefer `Network.parameter` or `projection.weight` over constructing references manually.
+
+`CustomInitializer` and `CustomConstraint` return registered specifications; unknown names fail during construction. Callback signatures and supported state are defined in [Extensions](/api/lang/extensions).

@@ -8,13 +8,13 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.sim.execution import (
+from snnlab.sim import (
     TargetArrayBinding,
     load_target_array_bindings,
     load_training_checkpoint,
     resolve_target_array_bindings,
 )
-from snnlab.sim.tool import main
+from snnlab.sim.cli import main
 from tests.sim._execution_builders import (
     direct_train_bundle as _direct_train_bundle,
 )

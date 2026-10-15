@@ -88,7 +88,7 @@ Documentation tests run by default; Python package tests run only nightly.
 Manual no-test releases still run lint, package builds and documentation
 compilation.
 
-This initial extraction retains the existing bundle schemas, backend target `tools/snnsim`, component format versions and numerical defaults. Those strings identify persisted scientific contracts; they are not Python import paths. Package version 0.1.0 identifies the combined distribution.
+The library retains the existing bundle schemas, backend target `tools/snnsim`, component format versions and numerical defaults. Those strings identify persisted scientific contracts; they are not Python import paths. The combined distribution version is defined in `src/snnlab/__init__.py`; component format versions identify separate compatibility contracts.
 
 The retained-data regression against historical Pinglab runs remains in Pinglab. The portable tests live here. No scientific runs or generated example bundles are shipped.
 

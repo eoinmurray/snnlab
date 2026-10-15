@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
+from snnlab.sim import (
     AddPoissonSpikes,
     DenseArrayBinding,
     DenseSpikeReplay,
@@ -15,7 +15,6 @@ from snnlab.sim.execution import (
     GraphExecutor,
     ReplaySpikes,
     SparseSpikeReplay,
-    execution_spec_from_args,
     intervention_identity,
     load_spike_replay,
     plan_graph,
@@ -24,7 +23,7 @@ from snnlab.sim.execution import (
     validate_inference_artifacts,
     write_inference_artifacts,
 )
-from snnlab.sim.tool import parse_args
+from snnlab.sim.cli import execution_spec_from_args, parse_args
 from tests._circuits import author_ping
 from tests.sim._execution_builders import expose_graph_diagnostics
 
@@ -470,8 +469,8 @@ def test_direct_forward_artifacts_retain_authenticated_replay_identity(tmp_path)
 def test_replay_cli_runs_typed_request_and_writes_authenticated_artifacts(tmp_path):
     import numpy as np
 
-    from snnlab.sim.bundle import load_graph_bundle
-    from snnlab.sim.tool import main
+    from snnlab.sim.artifacts.bundle import load_graph_bundle
+    from snnlab.sim.cli import main
 
     bundle_path = tmp_path / "network.bundle"
     graph_fixture(bundle_path=bundle_path)

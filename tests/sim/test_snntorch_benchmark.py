@@ -39,7 +39,7 @@ def test_fast_projection_mode_preserves_strict_trajectory_gradients_and_update(a
     strict.executor = comparison.GraphExecutor(
         comparison.plan_graph(strict.graph),
         trainable_parameters=tuple(strict.executor.parameter_map()),
-        surrogate=comparison.recipe.CustomSurrogate("comparison.atan/v1").json(),
+        surrogate=comparison.lang.CustomSurrogate("comparison.atan/v1").json(),
         projection_mode="strict",
         extension_validation="structural",
     )
@@ -130,7 +130,7 @@ def test_two_epoch_training_and_plot_artifacts_keep_partial_batches(
     assert execution.training["optimizer"]["kind"] == "custom_optimizer"
     assert native_result.training_checkpoint.completed_updates == 6
     assert [row["epoch"] for row in native_result.metrics["epochs"]] == [0, 1, 2]
-    assert results[1]["training_api"] == "snnlab.sim.execution.train"
+    assert results[1]["training_api"] == "snnlab.sim.train"
     assert results[1]["train_call_seconds"] > 0
     assert (tmp_path / "snnlab.native/manifest.json").exists()
     left_checkpoint = torch.load(tmp_path / "snntorch.pt", weights_only=True)
@@ -216,7 +216,7 @@ def test_minimal_layout_and_retained_results():
         )
     else:
         assert (
-            report["training"]["snnlab"]["training_api"] == "snnlab.sim.execution.train"
+            report["training"]["snnlab"]["training_api"] == "snnlab.sim.train"
         )
         assert report["cloud"]["native_training_checkpoint"].endswith("snnlab.native")
 

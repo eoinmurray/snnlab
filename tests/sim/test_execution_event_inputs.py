@@ -9,7 +9,8 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
+from snnlab.lang.compilation.serialization import digest
+from snnlab.sim import (
     DenseArrayBinding,
     EventStreamBinding,
     ExecutionSpec,
@@ -18,7 +19,7 @@ from snnlab.sim.execution import (
     resolve_input_bindings,
     simulate,
 )
-from snnlab.sim.tool import main
+from snnlab.sim.cli import main
 from tests.sim._execution_builders import (
     coupled_graph as _coupled_graph,
 )
@@ -177,13 +178,13 @@ def test_event_stream_spikes_can_share_a_request_with_dense_valid_time_mask():
 
 def test_event_stream_file_loader_and_cli_emit_replayable_protocol(tmp_path):
     graph = _standard_readout_graph("count")
-    bundle = snn.compiler.Bundle(
+    bundle = snn.Bundle(
         graph=graph,
         training=None,
         manifest={
             "schema": "snnlang.bundle/v1",
-            "graph_digest": snn.compiler.digest(graph),
-            "files": [{"path": "graph.json", "digest": snn.compiler.digest(graph)}],
+            "graph_digest": digest(graph),
+            "files": [{"path": "graph.json", "digest": digest(graph)}],
             "assets": [],
             "compiler": {"name": "test", "version": "1"},
             "target": None,

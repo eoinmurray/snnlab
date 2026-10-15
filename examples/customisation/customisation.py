@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from snnlab import extensions, lang, viz
-from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.5

@@ -1,11 +1,13 @@
-"""Data-only standard training recipe declarations."""
+"""Data-only training recipes, objectives, regularizers and optimizer policies."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
-from .core import ParameterRef, Quantity, Signal, SignalLike, Spec
+from snnlab.lang._specs import Spec
+from snnlab.lang.network import ParameterRef, Signal, SignalLike
+from snnlab.lang.units import Quantity
 
 
 @dataclass(frozen=True)
@@ -137,7 +139,7 @@ def CustomOptimizer(definition: str, **config: Any) -> Optimizer:
 
 
 def CustomSurrogate(definition: str, **config: Any) -> Spec:
-    from .core import _custom
+    from snnlab.lang._specs import _custom
 
     return _custom("surrogate", definition, config)
 

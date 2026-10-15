@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     TargetArrayBinding,

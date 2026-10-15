@@ -4,7 +4,29 @@ from importlib import import_module
 
 from ._version import __version__
 
-_EXPORTS = {'FrameTimeline': 'animation', 'save_animation': 'animation', 'Recording': 'contracts', 'RecordingError': 'contracts', 'Diagram': 'diagrams', 'DiagramEdge': 'diagrams', 'DiagramGroup': 'diagrams', 'DiagramNode': 'diagrams', 'DiagramTheme': 'diagrams', 'diagram_to_dot': 'diagrams', 'render_diagram': 'diagrams', 'FigureGrid': 'figure_grid', 'FigureRect': 'figure_grid', 'FigureRegion': 'figure_grid', 'grid_layout': 'layouts', 'Panel': 'scene', 'Scene': 'scene', 'Theme': 'styles', 'exponential_trace': 'transforms', 'projection_activity': 'transforms', 'representative_frame': 'transforms'}
+_EXPORTS = {
+    "FrameTimeline": "plotting.animation",
+    "save_animation": "plotting.animation",
+    "Recording": "recording",
+    "RecordingError": "recording",
+    "Diagram": "diagrams.model",
+    "DiagramEdge": "diagrams.model",
+    "DiagramGroup": "diagrams.model",
+    "DiagramNode": "diagrams.model",
+    "DiagramTheme": "diagrams.model",
+    "diagram_to_dot": "diagrams.dot",
+    "render_diagram": "diagrams.render",
+    "FigureGrid": "plotting.grid",
+    "FigureRect": "plotting.geometry",
+    "FigureRegion": "plotting.geometry",
+    "grid_layout": "plotting.geometry",
+    "Panel": "plotting.scene",
+    "Scene": "plotting.scene",
+    "Theme": "plotting.theme",
+    "exponential_trace": "transforms",
+    "projection_activity": "transforms",
+    "representative_frame": "transforms",
+}
 __all__ = [*_EXPORTS, "__version__"]
 
 

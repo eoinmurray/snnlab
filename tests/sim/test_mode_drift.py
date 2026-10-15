@@ -13,7 +13,7 @@ import torch
 
 
 def test_encode_images_poisson_deterministic():
-    from snnlab.sim.encoders import encode_images_poisson
+    from snnlab.sim.inputs.encoders import encode_images_poisson
 
     images = torch.rand(4, 64)
     g1 = torch.Generator().manual_seed(123)
@@ -28,7 +28,7 @@ def test_encode_images_poisson_deterministic():
 
 
 def test_load_dataset_deterministic_mnist():
-    from snnlab.sim.datasets import load_dataset
+    from snnlab.sim.inputs.datasets import load_dataset
 
     a_tr, a_te, ay_tr, ay_te = load_dataset("mnist", max_samples=200, split=True)
     b_tr, b_te, by_tr, by_te = load_dataset("mnist", max_samples=200, split=True)
@@ -39,7 +39,7 @@ def test_load_dataset_deterministic_mnist():
 
 
 def test_validation_and_official_test_are_distinct_mnist():
-    from snnlab.sim.datasets import load_dataset
+    from snnlab.sim.inputs.datasets import load_dataset
 
     _, validation_x, _, validation_y = load_dataset(
         "mnist", max_samples=500, split=True, evaluation_split="validation"

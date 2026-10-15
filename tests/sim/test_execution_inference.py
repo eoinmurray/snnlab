@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from snnlab.sim.execution import (
+from snnlab.sim import (
     AddPoissonSpikes,
     DenseArrayBinding,
     DropSpikes,

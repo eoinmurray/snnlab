@@ -7,7 +7,7 @@ import torch
 
 from snnlab import extensions as E
 from snnlab import lang
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
@@ -306,8 +306,7 @@ def test_custom_synapses_always_execute_callbacks(mode):
 
 
 def test_cli_modes_and_no_snapshot_flags():
-    from snnlab.sim.execution import execution_spec_from_args
-    from snnlab.sim.tool import parse_args
+    from snnlab.sim.cli import execution_spec_from_args, parse_args
 
     spec = execution_spec_from_args(
         parse_args(
@@ -357,7 +356,7 @@ def test_no_snapshots_reduces_clone_work_without_changing_gradients():
 def test_dataset_snapshot_policy_and_authenticated_cache(tmp_path):
     import numpy as np
 
-    from snnlab.sim.execution import (
+    from snnlab.sim import (
         DatasetEncoder,
         DatasetSnapshotBinding,
         validate_inference_artifacts,
@@ -423,8 +422,7 @@ def test_dataset_snapshot_policy_and_authenticated_cache(tmp_path):
 
 
 def test_cli_cannot_save_omitted_runtime_snapshot():
-    from snnlab.sim.execution import execution_spec_from_args
-    from snnlab.sim.tool import parse_args
+    from snnlab.sim.cli import execution_spec_from_args, parse_args
 
     with pytest.raises(ValueError, match="requires"):
         execution_spec_from_args(

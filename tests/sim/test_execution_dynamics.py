@@ -8,14 +8,14 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
-    DelayBuffer,
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
     plan_graph,
     simulate,
 )
+from snnlab.sim.graph.executor import DelayBuffer
 from tests._circuits import author_ping
 from tests.sim._execution_builders import expose_graph_diagnostics
 

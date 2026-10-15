@@ -1,7 +1,6 @@
 """Shared graph builders for focused execution test modules."""
 
 from snnlab import lang as snn
-from snnlab.lang import training
 from tests._circuits import author_ping
 
 
@@ -58,24 +57,24 @@ def direct_train_bundle():
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    scores = snn.readouts.SpikeCount(source=events, classes=2, name="scores")
-    snn.ops.linear(events, size=1, name="shadow")
+    scores = snn.SpikeCount(source=events, classes=2, name="scores")
+    snn.linear(events, size=1, name="shadow")
     net.output("class_scores", scores)
     parameter_ids = [row["id"] for row in net.parameters]
     recipe = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup(
+            snn.ParameterGroup(
                 ["scores_projection.weight"], name="readout", lr=0.1
             ),
-            training.ParameterGroup(
+            snn.ParameterGroup(
                 [pid for pid in parameter_ids if pid != "scores_projection.weight"],
                 name="frozen",
                 lr=0,
                 frozen=True,
             ),
         ],
-        optimizer=training.AdamW(weight_decay=0.0),
+        optimizer=snn.AdamW(weight_decay=0.0),
         presentation_duration=0.3 * snn.ms,
     )
     return snn.compile(net, training=recipe, target=None)
@@ -94,11 +93,11 @@ def standard_readout_graph(
         else None
     )
     if readout == "final":
-        value = snn.readouts.FinalVoltage(source=source, classes=2, name="scores")
+        value = snn.FinalVoltage(source=source, classes=2, name="scores")
     elif readout == "count":
-        value = snn.readouts.SpikeCount(source=source, classes=2, name="scores")
+        value = snn.SpikeCount(source=source, classes=2, name="scores")
     elif readout == "rate":
-        value = snn.readouts.SpikeRate(
+        value = snn.SpikeRate(
             source=source,
             classes=2,
             name="scores",
@@ -106,7 +105,7 @@ def standard_readout_graph(
             mask=valid,
         )
     elif readout == "cumulative":
-        value = snn.readouts.CumulativePotential(
+        value = snn.CumulativePotential(
             source=source, classes=2, name="scores"
         )
     else:

@@ -16,8 +16,8 @@ import pytest
 import torch
 from scipy.signal import find_peaks
 
-from snnlab.sim import models as M
-from snnlab.sim.timing import duration_steps, refractory_steps
+from snnlab._shared.timing import duration_steps, refractory_steps
+from snnlab.sim.graph import dynamics as M
 
 b2 = pytest.importorskip("brian2")
 
@@ -178,7 +178,7 @@ def test_collection_production_refractory_and_duration_match_brian2(
     nominal_ms = 200.0
     expected_steps = int(Fraction("200") / Fraction(str(dt_ms)))
     from snnlab import lang
-    from snnlab.sim.execution import GraphExecutor, plan_graph
+    from snnlab.sim import GraphExecutor, plan_graph
 
     net = lang.Network("refractory-oracle", dt=dt_ms * lang.ms)
     drive = net.input(

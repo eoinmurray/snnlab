@@ -1,0 +1,82 @@
+---
+title: Runtime State and Continuation
+description: Dynamic trajectory state, portable persistence and compatibility checks.
+---
+
+Import these objects from `snnlab.sim`. Runtime state continues neuron, synapse, delay, segment and measurement dynamics. [Training checkpoints](/api/sim/training-checkpoints) separately retain parameters and optimizer progress.
+
+## GraphRuntimeState
+
+```python
+class GraphRuntimeState:
+    signature: str
+    compatibility: dict[str, Any]
+    completed_steps: int
+    voltages: dict[str, torch.Tensor]
+    refractory: dict[str, torch.Tensor]
+    conductances: dict[str, torch.Tensor]
+    population_histories: dict[str, torch.Tensor]
+    input_histories: dict[str, torch.Tensor]
+    custom_state: dict[str, torch.Tensor] = field(default_factory=dict)
+    currents: dict[str, torch.Tensor] = field(default_factory=dict)
+    segment_state: dict[str, Any] = field(default_factory=dict)
+    segment_counts: dict[str, torch.Tensor] = field(default_factory=dict)
+    reduction_state: dict[str, Any] = field(default_factory=dict)
+    reduction_tensors: dict[str, torch.Tensor] = field(default_factory=dict)
+```
+
+Obtain this object from `result.runtime_state`; manually assembling its internal tensor groups is rarely useful. `completed_steps` is the absolute next update coordinate. Population/input histories preserve delayed propagation; `custom_state` and `currents` retain registered dynamics and current-based projections. Segment and reduction fields retain partial decision counters and measurement accumulators.
+
+```python
+state_copy = result.runtime_state.detached(device="cpu")
+```
+
+`detached(*, device="cpu")` returns detached, independently cloned tensors on the selected device. Segment/reduction metadata is deep-copied; compatibility metadata is shared. No gradient history crosses continuation boundaries.
+
+## save_runtime_state
+
+```python
+def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path: ...
+```
+
+Writes `manifest.json` and compressed `tensors.npz` to a directory, publishing each file by replacement, and returns the directory `Path`. This is portable JSON/NumPy storage, not pickle. Use a dedicated destination; the pair is not a transactional directory replacement for concurrent readers. Save does not capture model weights.
+
+## load_runtime_state
+
+```python
+def load_runtime_state(
+    path: str | Path, *, device: str | torch.device = "cpu"
+) -> GraphRuntimeState: ...
+```
+
+Authenticates the stored tensor digest, names, shapes and dtypes, loads tensors on `device`, and returns state. Readers support schema versions 1–4; segment/reduction metadata is checked when present. Missing files raise filesystem errors; invalid schemas, digests or metadata raise `ValueError`. Loading alone does not establish compatibility with a new model; the executor checks that on continuation.
+
+## Compatibility and signatures
+
+```python
+def runtime_state_compatibility(
+    plan: GraphPlan, *, projection_mode="fast", threshold_inclusive=True
+) -> dict[str, Any]: ...
+
+
+def runtime_state_signature(
+    plan: GraphPlan, *, projection_mode="fast", threshold_inclusive=True
+) -> str: ...
+```
+
+The first function returns a JSON-compatible description of state layout and dynamics. The second returns its canonical SHA-256 digest as `sha256:HEX`. Both consume a `GraphPlan`; pass the same projection arithmetic and built-in threshold convention as the executor. They exclude parameter values, enabling deliberate branches with compatible weights. They bind timestep, populations, projection routing/delays and relevant connectivity/dynamics policies.
+
+Continuation checks compatible metadata, tensor groups, shapes, dtypes and device. A matching signature is not evidence that two runs use identical weights. For equality with an uninterrupted run, preserve weights, input/RNG protocol, backend, interventions and full measurement/decision policy.
+
+## Continue and persist
+
+```python
+from snnlab.sim import save_runtime_state, load_runtime_state
+
+first = model(first_inputs, diagnostics=False)
+save_runtime_state("trajectory.state", first.runtime_state)
+state = load_runtime_state("trajectory.state", device="cpu")
+second = model(next_inputs, diagnostics=False, runtime_state=state)
+```
+
+Here `model` is an existing CPU GraphExecutor and the two input mappings are consecutive chunks. Supply the same full [measurement](/api/sim/recording-measurement) and [decision](/api/sim/resets-decisions) policies on every call when used. A fresh call without state starts fresh dynamics. An execution timestep override cannot convert saved state. `retain_runtime_state=False` suppresses the returned continuation snapshot.

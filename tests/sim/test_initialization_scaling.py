@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
@@ -22,7 +22,7 @@ def readout_net(scaling=None, initializer=None):
     source = net.input(
         "events", shape=("time", "batch", 8), signal_type="spikes", unit="spike"
     )
-    output = snn.readouts.MeanVoltage(
+    output = snn.MeanVoltage(
         source=source,
         classes=3,
         name="scores",
@@ -158,7 +158,7 @@ def test_checkpoint_load_and_training_resume_preserve_stored_weights(tmp_path, s
     bundle.graph["parameters"][0]["initialization_scaling"] = scaling
     bundle.graph["parameters"][0]["initializer"] = snn.Constant(0.4).json()
     # Recompute training identity after deliberately changing the fixture graph.
-    from snnlab.lang.compiler import digest
+    from snnlab.lang.compilation.serialization import digest
 
     bundle.training["graph_digest"] = digest(bundle.graph)
     events = torch.zeros(3, 2, 2)
@@ -213,7 +213,7 @@ def test_operation_parameter_scaling_and_old_default(scaling, expected):
     source = net.input(
         "events", shape=("time", "batch", 8), signal_type="spikes", unit="spike"
     )
-    value = snn.ops.linear(source, size=3, name="linear")
+    value = snn.linear(source, size=3, name="linear")
     net.output("output", value)
     graph = snn.compile(net).graph
     row = graph["parameters"][0]

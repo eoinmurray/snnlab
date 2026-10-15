@@ -6,9 +6,9 @@ import pytest
 import torch
 
 from snnlab import extensions, lang
-from snnlab.lang import training
-from snnlab.sim.execution import ExecutionSpec, GraphExecutor, build, plan_graph
-from snnlab.sim.models import fast_sigmoid_spike
+from snnlab import lang as training
+from snnlab.sim import ExecutionSpec, GraphExecutor, build, plan_graph
+from snnlab.sim.graph.dynamics import fast_sigmoid_spike
 from tests.sim.test_gpu_efficiency import circuit
 
 
@@ -32,7 +32,7 @@ def bundle_with_surrogate(config):
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    scores = lang.readouts.SpikeCount(source=events, classes=2, name="scores")
+    scores = lang.SpikeCount(source=events, classes=2, name="scores")
     net.output("class_scores", scores)
     recipe = lang.TrainSpec(
         objectives=[training.CrossEntropy(prediction=scores, target="label")],

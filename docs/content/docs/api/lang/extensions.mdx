@@ -5,6 +5,8 @@ description: Versioned Python registrations for custom dynamics, weights, operat
 
 `snnlab.extensions` connects user-defined Python implementations to portable graph specifications. Register a stable name such as `my_lab.adaptive/v1` when authoring, then use it in a `lang.CustomNeuron` or another custom declaration. Callbacks can be importable functions or explicit `module:function` strings. Loading a saved bundle and graph simulation automatically resolve those references; the execution process needs no registration calls.
 
+The public registry stays at `snnlab.extensions` and is shared by authoring and execution. Its built-in neuron contracts come from private `snnlab._shared`; importing the registry does not import the simulator or PyTorch. The runtime helpers in `snnlab.sim.graph.extensions` are internal implementation details, not another registry or public import location.
+
 Bundles contain names, import references, units, dependency metadata and JSON configuration. Python source and pickled functions are never included. `graph["extensions"]` and `training["extensions"]` record each document's dependencies, covered by its digest; `manifest["extensions"]` lists the combined requirements. Referenced modules must be on Python's import path or installed in the execution environment. Loading imports these external modules and never downloads implementations. Changing an implementation's semantics requires a new versioned name; import references do not authenticate source contents.
 
 ```python
@@ -32,8 +34,17 @@ All registrations also accept `package=None, package_version=None`. `package` is
 ## Neurons
 
 ```python
-def register_neuron(name, step, *, initialize, input_unit='nA', state_units=None, validate=None):
-    ...
+def register_neuron(
+    name,
+    step,
+    *,
+    initialize,
+    input_unit="nA",
+    state_units=None,
+    validate=None,
+    package=None,
+    package_version=None,
+): ...
 ```
 
 `initialize(StateContext)` returns a mapping containing `voltage` and any additional tensor state. `refractory` defaults to a zero-valued integer tensor. `step(NeuronContext)` returns `(new_state, spikes)`. Return a new state mapping and avoid mutating previous tensors in place. State keys, tensor shapes and dtypes must remain stable during execution; spikes must be binary and have `(batch, cells)` shape.
@@ -69,8 +80,17 @@ See [Customisation](/custom-neurons-and-synapses) for a complete adaptive neuron
 ## Synapses
 
 ```python
-def register_synapse(name, step, *, initialize=None, output_unit='nA', state_units=None, validate=None):
-    ...
+def register_synapse(
+    name,
+    step,
+    *,
+    initialize=None,
+    output_unit="nA",
+    state_units=None,
+    validate=None,
+    package=None,
+    package_version=None,
+): ...
 ```
 ```python
 class SynapseContext:
@@ -91,12 +111,14 @@ synapse = lang.CustomSynapse("my_lab.synapse/v1", tau_ms=5.0)
 ## Initializers and constraints
 
 ```python
-def register_initializer(name, function, *, validate=None):
-    ...
+def register_initializer(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
 ```
 ```python
-def register_constraint(name, function, *, validate=None):
-    ...
+def register_constraint(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
 ```
 
 Initializer callback: `function(shape, config, *, device, dtype) -> Tensor`. Return finite values with the exact requested shape/device/dtype. Use PyTorch's seeded generator for reproducible draws, rather than hidden random state. Projection runtime shape is `(source, target)`; ordinary custom-operation parameters retain their declared shape.
@@ -111,12 +133,22 @@ constraint = lang.CustomConstraint("my_lab.mask/v1", mask=[[1, 0], [0, 1]])
 ## Operations and readouts
 
 ```python
-def register_operation(name, function, *, validate=None):
-    ...
+def register_operation(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
 ```
 ```python
-def custom(definition: str, sources, *, name: str, shape, unit: str, parameters=(), signal_type='continuous', **config) -> Signal:
-    ...
+def custom_operation(
+    definition: str,
+    sources,
+    *,
+    name: str,
+    shape,
+    unit: str,
+    parameters=(),
+    signal_type="continuous",
+    **config,
+) -> Signal: ...
 ```
 
 Callback: `function(sources, parameters, config) -> Tensor`. `sources` is a tuple of input tensors; `parameters` maps declared graph parameter IDs to live tensors. Return the declared output shape on the execution device/dtype, retaining autograd. Explicitly list any trainable parameters through `parameters=(ref, ...)` and select them in the training recipe. Captured Python modules or tensors are not automatically registered model parameters.
@@ -126,45 +158,56 @@ Custom readouts can be operations, explicit graph populations, or ordinary exter
 ## Objectives and regularizers
 
 ```python
-def register_objective(name, function, *, classification=False, validate=None):
-    ...
+def register_objective(
+    name,
+    function,
+    *,
+    classification=False,
+    validate=None,
+    package=None,
+    package_version=None,
+): ...
 ```
 ```python
-def register_regularizer(name, function, *, validate=None):
-    ...
+def register_regularizer(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
 ```
 
-Objective callback: `function(prediction, target, config) -> scalar Tensor`. Use `training.CustomObjective(definition, prediction=signal, target="name", weight=1.0, **config)`. Non-classification objectives accept finite real target tensors with a leading sample axis, including multidimensional regression targets. `classification=True` requires one-dimensional integer labels and enables argmax accuracy metrics.
+Objective callback: `function(prediction, target, config) -> scalar Tensor`. Use `lang.CustomObjective(definition, prediction=signal, target="name", weight=1.0, **config)`. Non-classification objectives accept finite real target tensors with a leading sample axis, including multidimensional regression targets. `classification=True` requires one-dimensional integer labels and enables argmax accuracy metrics.
 
-Regularizer callback: `function(signals, duration_s, config) -> scalar Tensor`. Use `training.CustomRegularizer(definition, signals=(signal, ...), strength=..., **config)`. Signals are supplied even when diagnostics are disabled. The executor multiplies objective and regularizer values by their declared weight or strength. Returned scalars must be finite, on the execution device and use the prediction/signal dtype.
+Regularizer callback: `function(signals, duration_s, config) -> scalar Tensor`. Use `lang.CustomRegularizer(definition, signals=(signal, ...), strength=..., **config)`. Signals are supplied even when diagnostics are disabled. The executor multiplies objective and regularizer values by their declared weight or strength. Returned scalars must be finite, on the execution device and use the prediction/signal dtype.
 
 ## Optimizers
 
 ```python
-def register_optimizer(name, factory, *, validate=None):
-    ...
+def register_optimizer(
+    name, factory, *, validate=None, package=None, package_version=None
+): ...
 ```
 
-Factory: `factory(parameter_groups, config) -> torch.optim.Optimizer`. Use `training.CustomOptimizer(definition, **config)`. The executor supplies selected parameter groups and their learning rates, then calls standard `zero_grad`, `step` and constraint enforcement.
+Factory: `factory(parameter_groups, config) -> torch.optim.Optimizer`. Use `lang.CustomOptimizer(definition, **config)`. The executor supplies selected parameter groups and their learning rates, then calls standard `zero_grad`, `step` and constraint enforcement.
 
 Checkpointing supports per-parameter tensor state and JSON scalar state, including stateless optimizers. Load the same recipe and make its referenced implementation modules available before resuming; registration is restored automatically. Scheduler state, arbitrary Python objects and custom global optimizer state are not automatically captured. External training loops can manage these separately.
 
 ## Surrogate gradients
 
 ```python
-def register_surrogate(name, derivative, *, validate=None):
-    ...
+def register_surrogate(
+    name, derivative, *, validate=None, package=None, package_version=None
+): ...
 ```
 
-Callback: `derivative(value, config) -> Tensor`, with the same shape/device/dtype as `value`. Use `training.CustomSurrogate(definition, **config)`. The executor keeps a hard threshold in the forward pass and multiplies the backward gradient by this derivative. This applies to built-in spiking neurons and custom neurons using `context.spike`; a custom neuron that thresholds independently owns its own backward behaviour.
+Callback: `derivative(value, config) -> Tensor`, with the same shape/device/dtype as `value`. Use `lang.CustomSurrogate(definition, **config)`. The executor keeps a hard threshold in the forward pass and multiplies the backward gradient by this derivative. This applies to built-in spiking neurons and custom neurons using `context.spike`; a custom neuron that thresholds independently owns its own backward behaviour.
 
 For direct PyTorch construction, pass the serialized custom specification as `GraphExecutor(..., surrogate=recipe["surrogate"])`.
 
 ## Dataset encoders and inputs
 
 ```python
-def register_encoder(name, function, *, validate=None):
-    ...
+def register_encoder(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
 ```
 
 Callback: `function(arrays, selected, *, dt_ms, channels, config, seed) -> Tensor`. Return binary `(time, selected_samples, channels)` spikes. Use `DatasetEncoder(kind="custom", definition="my_lab.encoder/v1", config={...}, seed=...)` inside `DatasetSnapshotBinding`. The resolved protocol retains the definition, configuration, seed and snapshot identity. Dataset snapshot labels remain integer labels.
@@ -182,3 +225,62 @@ The graph executor keeps `runtime_state.currents` separate from `.conductances`;
 ## Runtime validation policy
 
 Custom neuron/synapse steps and surrogate derivatives use structural validation by default. Opt into `extension_validation="strict"` while developing custom callbacks or investigating numerical failures. `ExecutionSpec(..., extension_validation="structural")` or the same keyword on `GraphExecutor` keeps tensor contracts but skips per-step finite and binary-spike checks and backward derivative finite checks. Test callback numerical behaviour with strict mode before relying on structural mode. Invalid values may propagate silently. Initialization and restored state remain strictly checked. See [ExecutionSpec](/api/sim/execution-spec) for the exact scope and CLI option.
+
+## Registry and definition records
+
+Import the registry functions and context records from `snnlab.extensions`. Specialized registrations return the same immutable `Definition` type as `register`.
+
+```python
+class Definition:
+    name: str
+    function: Callable[..., Any]
+    initialize: Callable[..., Any] | None = None
+    validate: Callable[[Mapping[str, Any]], None] | None = None
+    unit: str = "1"
+    state_units: Mapping[str, str] = field(default_factory=dict)
+    classification: bool = False
+    references: Mapping[str, str] = field(default_factory=dict)
+    package: str | None = None
+    package_version: str | None = None
+
+
+def register(
+    category: str,
+    name: str,
+    function: Callable[..., Any] | str,
+    *,
+    initialize=None,
+    validate=None,
+    unit="1",
+    state_units=None,
+    classification=False,
+    package=None,
+    package_version=None,
+) -> Definition: ...
+
+
+def get(category: str, name: str) -> Definition: ...
+
+
+def resolve(category: str, spec: Mapping[str, Any]) -> Definition: ...
+
+
+def definitions(category: str | None = None) -> tuple[Definition, ...]: ...
+```
+
+`register` accepts categories `neuron`, `synapse`, `initializer`, `constraint`, `operation`, `objective`, `regularizer`, `optimizer`, `surrogate` and `encoder`. Prefer specialized registrations for their unit-aware argument names. Invalid category/name/callback/unit metadata, missing packages and duplicate registrations fail. A registration modifies the process-local registry.
+
+`get(category, name)` returns an existing definition or raises `ValueError`. `resolve(category, spec)` also runs its configuration validator, using `spec["definition"]` and `spec.get("config", {})`. `definitions(category=None)` returns a sorted tuple of records, optionally filtered by a validated category. These inspection calls do not execute neuron/synapse steps.
+
+`Definition.function`, `.initialize` and `.validate` retain resolved callbacks; `references` records portable import references. `unit`, `state_units` and `classification` define runtime contracts; package fields record dependency provenance. Returned state-unit/reference mappings are read-only for registered definitions.
+
+## Dependency metadata helpers
+
+```python
+def required(graph, training=None): ...
+
+
+def restore(data): ...
+```
+
+`required(graph, training=None)` returns descriptors for used custom definitions, combining saved metadata and registered definitions; conflicting saved descriptors fail. `restore(data)` loads descriptor callbacks, validates exact declared dependency versions and populates the registry. Existing conflicting registrations fail. Normal bundle loading calls restoration after integrity checks; applications ordinarily do not call these helpers directly. Import references identify functions, not immutable source-code digests.

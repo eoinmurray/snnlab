@@ -11,8 +11,7 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.lang import training
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     ValidationSpec,
@@ -97,7 +96,7 @@ def main():
         synapse=lang.LeakyIntegrator(tau=20 * lang.ms),
         weight=w_out,
     )
-    scores = lang.ops.reduce(
+    scores = lang.reduce(
         readout.voltage, operation="mean", over="time", name="mean_readout_voltage"
     )
     # 4. Declare the official output and optional diagnostics.
@@ -107,18 +106,18 @@ def main():
     net.expose(readout.voltage, name="readout_voltage")
 
     # 5. Define the loss, trainable parameters and optimizer.
-    objective = training.CrossEntropy(prediction=scores, target="class")
-    readout_parameters = training.ParameterGroup(
+    objective = lang.CrossEntropy(prediction=scores, target="class")
+    readout_parameters = lang.ParameterGroup(
         (w_out,), name="readout", lr=READOUT_LEARNING_RATE
     )
-    input_parameters = training.ParameterGroup(
+    input_parameters = lang.ParameterGroup(
         (w_in,), name="input_to_E", lr=INPUT_LEARNING_RATE
     )
     recipe = lang.TrainSpec(
         objectives=(objective,),
         parameter_groups=(input_parameters, readout_parameters),
-        optimizer=training.AdamW(weight_decay=0.0),
-        surrogate=training.FastSigmoid(slope=1.0),
+        optimizer=lang.AdamW(weight_decay=0.0),
+        surrogate=lang.FastSigmoid(slope=1.0),
         gradient_clip=1.0,
         presentation_duration=DURATION_MS * lang.ms,
     )

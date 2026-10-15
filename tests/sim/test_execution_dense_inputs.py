@@ -10,7 +10,8 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
+from snnlab.lang.compilation.serialization import digest
+from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     DenseArrayBinding,
@@ -21,7 +22,7 @@ from snnlab.sim.execution import (
     resolve_dense_array_bindings,
     simulate,
 )
-from snnlab.sim.tool import main
+from snnlab.sim.cli import main
 
 
 @pytest.mark.parametrize(
@@ -84,11 +85,11 @@ def _standard_readout_graph(
         else None
     )
     if readout == "final":
-        value = snn.readouts.FinalVoltage(source=source, classes=2, name="scores")
+        value = snn.FinalVoltage(source=source, classes=2, name="scores")
     elif readout == "count":
-        value = snn.readouts.SpikeCount(source=source, classes=2, name="scores")
+        value = snn.SpikeCount(source=source, classes=2, name="scores")
     elif readout == "rate":
-        value = snn.readouts.SpikeRate(
+        value = snn.SpikeRate(
             source=source,
             classes=2,
             name="scores",
@@ -96,7 +97,7 @@ def _standard_readout_graph(
             mask=valid,
         )
     elif readout == "cumulative":
-        value = snn.readouts.CumulativePotential(
+        value = snn.CumulativePotential(
             source=source, classes=2, name="scores"
         )
     else:
@@ -201,13 +202,13 @@ def test_dense_array_bindings_fail_closed_on_contract_mismatch(bindings, message
 
 def test_dense_array_file_loader_and_cli_emit_replayable_protocol(tmp_path):
     graph = _standard_readout_graph("count")
-    bundle = snn.compiler.Bundle(
+    bundle = snn.Bundle(
         graph=graph,
         training=None,
         manifest={
             "schema": "snnlang.bundle/v1",
-            "graph_digest": snn.compiler.digest(graph),
-            "files": [{"path": "graph.json", "digest": snn.compiler.digest(graph)}],
+            "graph_digest": digest(graph),
+            "files": [{"path": "graph.json", "digest": digest(graph)}],
             "assets": [],
             "compiler": {"name": "test", "version": "1"},
             "target": None,

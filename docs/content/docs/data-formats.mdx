@@ -48,7 +48,7 @@ import numpy as np
 import torch
 
 from snnlab import lang
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     RecordingSpec,
@@ -72,7 +72,7 @@ net.connect(
     weight=lang.Constant(0.5),
 )
 net.output("spikes", cells.spikes)
-scores = lang.readouts.SpikeCount(source=cells.spikes, classes=2, name="scores")
+scores = lang.SpikeCount(source=cells.spikes, classes=2, name="scores")
 net.output("class_scores", scores)
 net.expose(cells.spikes, name="e_spikes")
 net.expose(cells.voltage, name="e_voltage")
@@ -208,7 +208,7 @@ The current manifest schema string is `tools/snnsim.inference-artifacts/v1` (a r
 | `summary.json` | Accuracy, duration, source digest, shapes and spike counts |
 | `derived-manifest.json` | Derived schema/version, source artifact digest and file digests |
 
-Derived raster steps are local indices into the saved dense trajectory, unlike the absolute steps in selected sparse recordings. Convert them using the source run's time offset and timestep. The derived helper creates a new destination and rejects an existing directory. `validate_derived_inference_products` is available from `snnlab.sim.execution` to verify the products and optionally their source.
+Derived raster steps are local indices into the saved dense trajectory, unlike the absolute steps in selected sparse recordings. Convert them using the source run's time offset and timestep. The derived helper creates a new destination and rejects an existing directory. `validate_derived_inference_products` is available from `snnlab.sim` to verify the products and optionally their source.
 
 ## Decision counts and training metrics
 

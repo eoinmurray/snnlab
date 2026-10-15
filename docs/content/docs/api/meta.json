@@ -1,6 +1,7 @@
 {
   "title": "API Reference",
   "pages": [
+    "overview",
     "lang",
     "sim",
     "viz",

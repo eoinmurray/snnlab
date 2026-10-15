@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from snnlab import lang
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionResult,
     ExecutionSpec,
@@ -21,7 +21,7 @@ def _graph():
     inputs = net.input(
         "inputs", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    counts = lang.readouts.SpikeCount(source=inputs, classes=2, name="count")
+    counts = lang.SpikeCount(source=inputs, classes=2, name="count")
     net.output("spikes", inputs)
     net.output("counts", counts)
     net.expose(inputs, name="input_trace")

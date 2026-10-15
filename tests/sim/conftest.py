@@ -2,7 +2,7 @@
 
 import pytest
 
-from snnlab.sim import models as M
+from snnlab.sim.graph import dynamics as M
 
 _DEFAULTS = {
     name: getattr(M, name)

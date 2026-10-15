@@ -18,8 +18,8 @@ import math
 import pytest
 import torch
 
-from snnlab.sim import models as M
-from snnlab.sim.models import spike_biophysical
+from snnlab.sim.graph import dynamics as M
+from snnlab.sim.graph.dynamics import spike_biophysical
 
 lif_step_expeuler = M.lif_step_expeuler
 

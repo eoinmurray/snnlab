@@ -210,6 +210,27 @@ mean_spectrum = analysis.power_spectrum(trial_rate_traces, bin_dt_ms, aggregatio
 
 The [API reference](/api/analysis) specifies all rounding, smoothing, threshold, trial aggregation, constant-cell and undefined-result policies. The older rhythmicity and basic aggregate helpers retain their established contracts, including historical zero fallbacks; those are documented individually rather than silently rewritten.
 
+## Public imports and measurement groups
+
+Every measurement is available through the central `analysis/__init__.py` export
+map. No submodule imports are needed:
+
+```python
+import snnlab as snn
+
+rate_hz = snn.analysis.firing_rate(spikes, dt)
+intervals = snn.analysis.inter_spike_intervals(spikes, dt)
+```
+
+The reference groups functions into [activity](/api/analysis#activity),
+[intervals](/api/analysis#intervals), [correlations](/api/analysis#correlations),
+[spectra](/api/analysis#spectra), [rhythmicity](/api/analysis#rhythmicity),
+[cycles](/api/analysis#cycles) and [conductance](/api/analysis#conductance).
+Internal files follow those responsibilities; application imports stay at
+`snnlab.analysis`. Importing Analysis is lazy, and using basic measurements does
+not load SciPy. Analysis remains independent of the simulator, PyTorch and
+Matplotlib.
+
 ## Existing imports
 
 Import measurements directly from `snnlab.analysis` and assemble the report your application needs. The former `snnlab.sim.metrics` import path and specialised `compute_metrics` report have been removed.

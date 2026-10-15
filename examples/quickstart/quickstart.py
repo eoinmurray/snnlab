@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from snnlab import lang, viz
-from snnlab.sim.execution import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.1

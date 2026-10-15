@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from snnlab.sim import extensions as X
+from snnlab.sim.graph import extensions as X
 
 snn = pytest.importorskip("snntorch")
 ROOT = Path(__file__).resolve().parents[2]

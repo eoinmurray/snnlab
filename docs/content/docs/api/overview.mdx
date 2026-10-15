@@ -1,0 +1,317 @@
+---
+title: Overview and Symbol Index
+description: Public import paths and a complete index of the supported Python API.
+---
+
+The supported reference covers authoring (`snnlab.lang`), graph execution (`snnlab.sim`), visualization (`snnlab.viz`), NumPy analysis (`snnlab.analysis`) and shared Python extensions (`snnlab.extensions`).
+
+```python
+from snnlab import lang, sim, viz, analysis, extensions
+from snnlab.sim import ExecutionSpec, simulate
+```
+
+Each package's `__init__.py` is its central public export location. All supported functions and types are accessible through `import snnlab as snn` and `snn.lang`, `snn.sim`, `snn.viz` or `snn.analysis`, without submodule imports. All four packages resolve exports lazily, and subpackages are imported on demand. The former `snnlab.sim.execution` import path has been retired; import its supported functions and types from `snnlab.sim`. `snnlab.__version__`, `lang.__version__`, `sim.__version__` and `viz.__version__` are version strings.
+
+## Finding an API
+
+1. [Lang](/api/lang/network) creates declarations; [Compilation](/api/lang/compilation) validates and writes architecture bundles.
+2. [Execution Functions](/api/sim/execution-functions) runs [ExecutionSpec](/api/sim/execution-spec) requests and returns [ExecutionResult](/api/sim/execution-result).
+3. [Training Checkpoints](/api/sim/training-checkpoints) stores weights/optimizer progress; [Runtime State](/api/sim/runtime-state) stores ongoing dynamics.
+4. [Viz](/api/viz/plotting) composes figures and animations; [Analysis](/api/analysis) measures recorded arrays.
+5. [Extensions](/api/lang/extensions) registers versioned callback implementations shared by authoring and execution.
+
+Reference signatures use Python typing names (`Any`, `Mapping`, `Sequence`, `Callable`, `Literal`), dataclass factories (`field`) and module aliases (`torch`, `np`, `nn`) as annotations/default notation. Import the symbols you call; signature blocks describe contracts and are not standalone scripts. Constructor validation may be followed by graph-dependent compilation/execution validation.
+
+## Public package exports
+
+### Lang
+
+Import all supported authoring constructors, operations, readouts and recipe helpers directly from `snnlab.lang`. For example, `lang.MeanVoltage`, `lang.reduce` and `lang.CrossEntropy` need no nested module access. `import snnlab as snn` also supports `snn.lang.Network(...)` through lazy package access.
+
+| Symbol | Reference |
+| --- | --- |
+| `lang.ADEX` | [Reference](/api/lang/components) |
+| `lang.ALIF` | [Reference](/api/lang/components) |
+| `lang.AMPA` | [Reference](/api/lang/components) |
+| `lang.GABA` | [Reference](/api/lang/components) |
+| `lang.COBA_LIF` | [Reference](/api/lang/components) |
+| `lang.CUBA_LIF` | [Reference](/api/lang/components) |
+| `lang.COBA_ALIF` | [Reference](/api/lang/components) |
+| `lang.CUBA_ALIF` | [Reference](/api/lang/components) |
+| `lang.COBA_ADEX` | [Reference](/api/lang/components) |
+| `lang.CUBA_ADEX` | [Reference](/api/lang/components) |
+| `lang.ExponentialCurrent` | [Reference](/api/lang/components) |
+| `lang.CustomNeuron` | [Reference](/api/lang/components) |
+| `lang.CustomSynapse` | [Reference](/api/lang/components) |
+| `lang.CustomInitializer` | [Reference](/api/lang/parameters) |
+| `lang.CustomConstraint` | [Reference](/api/lang/parameters) |
+| `lang.LIF` | [Reference](/api/lang/components) |
+| `lang.Constant` | [Reference](/api/lang/parameters) |
+| `lang.LeakyIntegrator` | [Reference](/api/lang/components) |
+| `lang.LowerClampedNormal` | [Reference](/api/lang/parameters) |
+| `lang.Modulatory` | [Reference](/api/lang/components) |
+| `lang.Network` | [Reference](/api/lang/network) |
+| `lang.NonNegative` | [Reference](/api/lang/parameters) |
+| `lang.Normal` | [Reference](/api/lang/parameters) |
+| `lang.ParameterRef` | [Reference](/api/lang/parameters) |
+| `lang.Population` | [Reference](/api/lang/components) |
+| `lang.Projection` | [Reference](/api/lang/components) |
+| `lang.Quantity` | [Reference](/api/lang/parameters) |
+| `lang.Signal` | [Reference](/api/lang/network) |
+| `lang.SignedNormal` | [Reference](/api/lang/parameters) |
+| `lang.Uniform` | [Reference](/api/lang/parameters) |
+| `lang.Zeros` | [Reference](/api/lang/parameters) |
+| `lang.TrainSpec` | [Reference](/api/lang/training) |
+| `lang.Bundle` | [Reference](/api/lang/compilation) |
+| `lang.Diagnostic` | [Reference](/api/lang/compilation) |
+| `lang.compile` | [Reference](/api/lang/compilation) |
+| `lang.diagram` | [Reference](/api/lang/compilation) |
+| `lang.load_bundle` | [Reference](/api/lang/compilation) |
+| `lang.migrate_refractory` | [Reference](/api/lang/compilation) |
+| `lang.validate_graph` | [Reference](/api/lang/compilation) |
+| `lang.Hz` | [Reference](/api/lang/parameters) |
+| `lang.mV` | [Reference](/api/lang/parameters) |
+| `lang.ms` | [Reference](/api/lang/parameters) |
+| `lang.nS` | [Reference](/api/lang/parameters) |
+| `lang.uS` | [Reference](/api/lang/parameters) |
+| `lang.nA` | [Reference](/api/lang/parameters) |
+| `lang.linear` | [Reference](/api/lang/operations-readouts) |
+| `lang.reduce` | [Reference](/api/lang/operations-readouts) |
+| `lang.divide` | [Reference](/api/lang/operations-readouts) |
+| `lang.Readout` | [Reference](/api/lang/operations-readouts) |
+| `lang.MeanVoltage` | [Reference](/api/lang/operations-readouts) |
+| `lang.FinalVoltage` | [Reference](/api/lang/operations-readouts) |
+| `lang.SpikeCount` | [Reference](/api/lang/operations-readouts) |
+| `lang.SpikeRate` | [Reference](/api/lang/operations-readouts) |
+| `lang.CumulativePotential` | [Reference](/api/lang/operations-readouts) |
+| `lang.Objective` | [Reference](/api/lang/training) |
+| `lang.CrossEntropy` | [Reference](/api/lang/training) |
+| `lang.ParameterGroup` | [Reference](/api/lang/training) |
+| `lang.Regularizer` | [Reference](/api/lang/training) |
+| `lang.UpperRatePenalty` | [Reference](/api/lang/training) |
+| `lang.SpikeBudgetPenalty` | [Reference](/api/lang/training) |
+| `lang.Optimizer` | [Reference](/api/lang/training) |
+| `lang.AdamW` | [Reference](/api/lang/training) |
+| `lang.FastSigmoid` | [Reference](/api/lang/training) |
+| `lang.CustomObjective` | [Reference](/api/lang/training) |
+| `lang.CustomRegularizer` | [Reference](/api/lang/training) |
+| `lang.CustomOptimizer` | [Reference](/api/lang/training) |
+| `lang.CustomSurrogate` | [Reference](/api/lang/training) |
+| `lang.StopGradient` | [Reference](/api/lang/training) |
+| `lang.ValidationResult` | [Reference](/api/lang/compilation) |
+| `lang.validate_training` | [Reference](/api/lang/compilation) |
+| `lang.SignalLike` | [Reference](/api/lang/network) |
+| `lang.custom_operation` | [Reference](/api/lang/operations-readouts) |
+| `lang.__version__` | Package version string. |
+
+### Sim
+
+Import all supported simulation functions and types from `snnlab.sim`, for example `from snnlab.sim import ExecutionSpec, simulate`. The package export map in `sim/__init__.py` keeps these import paths stable when implementation files move. Paths below are shown relative to `snnlab`.
+
+| Symbol | Reference |
+| --- | --- |
+| `sim.__version__` | Package version string. |
+| `sim.ExecutionSpec` | [Reference](/api/sim/execution-spec) |
+| `sim.ValidationSpec` | [Reference](/api/sim/execution-spec) |
+| `sim.InputBinding` | [Reference](/api/sim/execution-spec) |
+| `sim.DenseArrayBinding` | [Reference](/api/sim/execution-spec) |
+| `sim.TargetArrayBinding` | [Reference](/api/sim/execution-spec) |
+| `sim.EventStreamBinding` | [Reference](/api/sim/execution-spec) |
+| `sim.PoissonInputBinding` | [Reference](/api/sim/execution-spec) |
+| `sim.DatasetEncoder` | [Reference](/api/sim/execution-spec) |
+| `sim.DatasetSnapshotBinding` | [Reference](/api/sim/execution-spec) |
+| `sim.TrainingMetrics` | [Reference](/api/sim/execution-spec) |
+| `sim.Batching` | [Reference](/api/sim/execution-spec) |
+| `sim.EpochObservations` | [Reference](/api/sim/execution-spec) |
+| `sim.ObservationProbe` | [Reference](/api/sim/execution-spec) |
+| `sim.EpochReport` | [Reference](/api/sim/execution-spec) |
+| `sim.build` | [Reference](/api/sim/execution-functions) |
+| `sim.simulate` | [Reference](/api/sim/execution-functions) |
+| `sim.infer` | [Reference](/api/sim/execution-functions) |
+| `sim.train` | [Reference](/api/sim/execution-functions) |
+| `sim.execute_request` | [Reference](/api/sim/execution-functions) |
+| `sim.resolve_device` | [Reference](/api/sim/execution-functions) |
+| `sim.GraphExecutor` | [Reference](/api/sim/graph-executor) |
+| `sim.GraphPlan` | [Reference](/api/sim/graph-executor) |
+| `sim.PlannedProjection` | [Reference](/api/sim/graph-executor) |
+| `sim.plan_graph` | [Reference](/api/sim/graph-executor) |
+| `sim.CapabilityIssue` | [Reference](/api/sim/graph-executor) |
+| `sim.graph_capability_issues` | [Reference](/api/sim/graph-executor) |
+| `sim.ExecutionResult` | [Reference](/api/sim/execution-result) |
+| `sim.NumpyExecutionResult` | [Reference](/api/sim/execution-result) |
+| `sim.TrainingCheckpoint` | [Reference](/api/sim/training-checkpoints) |
+| `sim.save_training_checkpoint` | [Reference](/api/sim/training-checkpoints) |
+| `sim.load_training_checkpoint` | [Reference](/api/sim/training-checkpoints) |
+| `sim.capture_training_rng_state` | [Reference](/api/sim/training-checkpoints) |
+| `sim.restore_training_rng_state` | [Reference](/api/sim/training-checkpoints) |
+| `sim.CheckpointSelection` | [Reference](/api/sim/training-checkpoints) |
+| `sim.SelectionMetric` | [Reference](/api/sim/training-checkpoints) |
+| `sim.GraphRuntimeState` | [Reference](/api/sim/runtime-state) |
+| `sim.save_runtime_state` | [Reference](/api/sim/runtime-state) |
+| `sim.load_runtime_state` | [Reference](/api/sim/runtime-state) |
+| `sim.runtime_state_compatibility` | [Reference](/api/sim/runtime-state) |
+| `sim.runtime_state_signature` | [Reference](/api/sim/runtime-state) |
+| `sim.write_inference_artifacts` | [Reference](/api/sim/inference-artifacts) |
+| `sim.validate_inference_artifacts` | [Reference](/api/sim/inference-artifacts) |
+| `sim.derive_inference_products` | [Reference](/api/sim/inference-artifacts) |
+| `sim.validate_derived_inference_products` | [Reference](/api/sim/inference-artifacts) |
+| `sim.retention_identity` | [Reference](/api/sim/inference-artifacts) |
+| `sim.MeasurementWindow` | [Reference](/api/sim/recording-measurement) |
+| `sim.SignalRecording` | [Reference](/api/sim/recording-measurement) |
+| `sim.RecordingSpec` | [Reference](/api/sim/recording-measurement) |
+| `sim.RecordingBlock` | [Reference](/api/sim/recording-measurement) |
+| `sim.NPZRecordingSink` | [Reference](/api/sim/recording-measurement) |
+| `sim.recording_identity` | [Reference](/api/sim/recording-measurement) |
+| `sim.ReplaySpikes` | [Reference](/api/sim/interventions) |
+| `sim.DropSpikes` | [Reference](/api/sim/interventions) |
+| `sim.AddPoissonSpikes` | [Reference](/api/sim/interventions) |
+| `sim.DenseSpikeReplay` | [Reference](/api/sim/interventions) |
+| `sim.SparseSpikeReplay` | [Reference](/api/sim/interventions) |
+| `sim.SpikeReplay` | [Reference](/api/sim/interventions) |
+| `sim.Intervention` | [Reference](/api/sim/interventions) |
+| `sim.save_spike_replay` | [Reference](/api/sim/interventions) |
+| `sim.load_spike_replay` | [Reference](/api/sim/interventions) |
+| `sim.intervention_identity` | [Reference](/api/sim/interventions) |
+| `sim.Boundary` | [Reference](/api/sim/resets-decisions) |
+| `sim.BoundarySchedule` | [Reference](/api/sim/resets-decisions) |
+| `sim.ResetVoltage` | [Reference](/api/sim/resets-decisions) |
+| `sim.DecisionSegments` | [Reference](/api/sim/resets-decisions) |
+| `sim.segment_identity` | [Reference](/api/sim/resets-decisions) |
+| `sim.TraceSpec` | [Reference](/api/sim/tracing) |
+| `sim.ResolvedDenseInputs` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.load_dense_array_bindings` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.load_target_array_bindings` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.load_event_stream_bindings` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.resolve_dense_array_bindings` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.resolve_event_stream_bindings` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.resolve_poisson_input_bindings` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.resolve_input_bindings` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.resolve_target_array_bindings` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+| `sim.resolve_dataset_snapshot_binding` | [Reference](/api/sim/execution-spec#input-resolution-helpers) |
+
+### Viz
+
+| Symbol | Reference |
+| --- | --- |
+| `viz.__version__` | Package version string. |
+| `viz.FrameTimeline` | [Reference](/api/viz/plotting) |
+| `viz.save_animation` | [Reference](/api/viz/plotting) |
+| `viz.Recording` | [Reference](/api/viz/plotting) |
+| `viz.RecordingError` | [Reference](/api/viz/plotting) |
+| `viz.Diagram` | [Reference](/api/viz/diagrams) |
+| `viz.DiagramEdge` | [Reference](/api/viz/diagrams) |
+| `viz.DiagramGroup` | [Reference](/api/viz/diagrams) |
+| `viz.DiagramNode` | [Reference](/api/viz/diagrams) |
+| `viz.DiagramTheme` | [Reference](/api/viz/diagrams) |
+| `viz.diagram_to_dot` | [Reference](/api/viz/diagrams) |
+| `viz.render_diagram` | [Reference](/api/viz/diagrams) |
+| `viz.FigureGrid` | [Reference](/api/viz/plotting) |
+| `viz.FigureRect` | [Reference](/api/viz/plotting) |
+| `viz.FigureRegion` | [Reference](/api/viz/plotting) |
+| `viz.grid_layout` | [Reference](/api/viz/plotting) |
+| `viz.Panel` | [Reference](/api/viz/plotting) |
+| `viz.Scene` | [Reference](/api/viz/plotting) |
+| `viz.Theme` | [Reference](/api/viz/plotting) |
+| `viz.exponential_trace` | [Reference](/api/viz/plotting) |
+| `viz.projection_activity` | [Reference](/api/viz/plotting) |
+| `viz.representative_frame` | [Reference](/api/viz/plotting) |
+
+### Analysis
+
+| Symbol | Reference |
+| --- | --- |
+| `analysis.per_neuron_firing_rates` | [Reference](/api/analysis) |
+| `analysis.binned_spike_counts` | [Reference](/api/analysis) |
+| `analysis.population_rate_trace` | [Reference](/api/analysis) |
+| `analysis.power_spectrum` | [Reference](/api/analysis) |
+| `analysis.spectral_peak` | [Reference](/api/analysis) |
+| `analysis.band_power` | [Reference](/api/analysis) |
+| `analysis.band_power_fraction` | [Reference](/api/analysis) |
+| `analysis.inter_spike_intervals` | [Reference](/api/analysis) |
+| `analysis.isi_cv` | [Reference](/api/analysis) |
+| `analysis.spike_count_correlations` | [Reference](/api/analysis) |
+| `analysis.detect_population_bursts` | [Reference](/api/analysis) |
+| `analysis.cycle_boundaries` | [Reference](/api/analysis) |
+| `analysis.cycle_spike_counts` | [Reference](/api/analysis) |
+| `analysis.cycle_occupancy_distribution` | [Reference](/api/analysis) |
+| `analysis.firing_rate` | [Reference](/api/analysis) |
+| `analysis.population_spike_count_cv` | [Reference](/api/analysis) |
+| `analysis.active_fraction` | [Reference](/api/analysis) |
+| `analysis.population_event_times` | [Reference](/api/analysis) |
+| `analysis.iei_histogram` | [Reference](/api/analysis) |
+| `analysis.spike_autocorrelogram` | [Reference](/api/analysis) |
+| `analysis.rhythmicity_scalars` | [Reference](/api/analysis) |
+| `analysis.rhythmicity_metrics` | [Reference](/api/analysis) |
+| `analysis.conductance_loop_score` | [Reference](/api/analysis) |
+| `analysis.rolling_conductance_loop_score` | [Reference](/api/analysis) |
+
+## Source organisation
+
+### Lang
+
+`lang/__init__.py` is the central public authoring export map. The files below are internal; importing the package or building networks does not load simulator implementations or PyTorch. `snnlab.extensions` remains the shared public registry.
+
+| Implementation | Responsibility | Reference |
+| --- | --- | --- |
+| `network.py` | Network declarations, population/projection/parameter references and signals. | [Network](/api/lang/network) |
+| `components.py` | Neuron and synapse specification constructors. | [Components](/api/lang/components) |
+| `parameters.py`, `units.py` | Initializers, constraints, physical quantities and unit constants. | [Parameters and Constraints](/api/lang/parameters) |
+| `operations.py`, `readouts.py` | Graph transformations, reductions and convenience readouts. | [Operations and Readouts](/api/lang/operations-readouts) |
+| `training.py` | Data-only recipe, objective, regularizer, optimizer and surrogate declarations. | [Training](/api/lang/training) |
+| `compilation/` | Compilation, separate graph/training validation, diagnostics, capabilities, canonical serialization, bundles and reports. | [Compilation and Bundles](/api/lang/compilation) |
+| `diagrams.py` | Renderer-neutral structural diagram projection. | [Structural diagrams](/api/lang/compilation#structural-diagrams) |
+
+`_specs.py` contains private specification primitives. Private serialization helpers stay outside the public export list. Legacy operations namespace access is retained for hash-pinned recipes; current application code uses the direct package exports above.
+
+### Sim
+
+`snnlab.sim` is the only public simulation export location. Its central export map resolves the internal packages below lazily; applications should use the package imports listed above. The internal package initializers do not re-export the API.
+
+| Internal package | Responsibility | Reference |
+| --- | --- | --- |
+| `requests/` | Request specifications, result types and execution handlers. | [ExecutionSpec](/api/sim/execution-spec), [ExecutionResult](/api/sim/execution-result), [Execution Functions](/api/sim/execution-functions) |
+| `inputs/` | Binding declarations, file resolution, datasets, encoders and batch providers. | [Input bindings](/api/sim/execution-spec#input_bindings), [resolution helpers](/api/sim/execution-spec#input-resolution-helpers) |
+| `graph/` | Planning, PyTorch graph execution, numerical dynamics, kernels and extension helpers. | [GraphExecutor](/api/sim/graph-executor), [PyTorch Integration](/api/sim/pytorch) |
+| `runtime/` | Trajectory state, recording, measurement, interventions, resets and decisions. | [Runtime State](/api/sim/runtime-state), [Recording and Measurement](/api/sim/recording-measurement), [Interventions](/api/sim/interventions), [Resets and Decisions](/api/sim/resets-decisions) |
+| `training/` | Native trainer, batching/measurement policies, epoch observations, selection and checkpoints. | [Training controls](/api/sim/execution-spec#training-controls), [Training Checkpoints](/api/sim/training-checkpoints) |
+| `artifacts/` | Bundle loading, authenticated inference products and shared integrity checks. | [Compilation](/api/lang/compilation), [Inference Artifacts](/api/sim/inference-artifacts) |
+| `diagnostics/` | Bounded training tracing and internal numerical conformance tools. | [Tracing](/api/sim/tracing) |
+
+Shared contracts live above the authoring and simulation packages in private `snnlab/_shared`: `neurons.py` owns built-in neuron validation and state units, `connectivity.py` owns structural connection rules, and `timing.py` owns physical-duration/timestep conversion. These modules depend only on the standard library and each other. Both `lang` and `sim` consume them; the shared layer does not import either package. `snnlab.extensions` remains the public callback registry, separate from simulation implementation helpers.
+
+`cli.py` owns command-line parsing and request adaptation; `__main__.py` launches it for `python -m snnlab.sim`. Numerical implementations and request/result declarations do not import execution handlers or the trainer. Persisted format identifiers remain beside their formats.
+
+### Viz
+
+`viz/__init__.py` is the central public visualization export map. Every supported type and helper is available through `import snnlab as snn; snn.viz`, or `from snnlab import viz`. The implementation packages below follow the [Diagrams](/api/viz/diagrams) and [Plotting and Animation](/api/viz/plotting) reference sections; their initializers do not re-export the API.
+
+| Implementation | Responsibility | Reference |
+| --- | --- | --- |
+| `recording.py` | Renderer-neutral time-series data and validation. | [Recording](/api/viz/plotting#execution-arrays-and-recording) |
+| `transforms.py` | NumPy activity traces, projection activity and representative-frame selection. | [Transforms](/api/viz/plotting#numerical-transforms) |
+| `diagrams/model.py` | Structural diagram nodes, edges, groups and theme. | [Diagram contracts](/api/viz/diagrams#diagram-data) |
+| `diagrams/dot.py` | Deterministic DOT formatting. | [Diagrams](/api/viz/diagrams) |
+| `diagrams/render.py` | Graphviz execution and SVG, PNG, PDF or DOT file export. | [Diagrams](/api/viz/diagrams) |
+| `plotting/geometry.py` | Figure rectangles, named regions and point layouts without Matplotlib. | [Plotting and Animation](/api/viz/plotting) |
+| `plotting/grid.py`, `plotting/scene.py` | FigureGrid rendering and panel composition around Matplotlib. | [Plotting and Animation](/api/viz/plotting) |
+| `plotting/theme.py`, `plotting/animation.py` | Figure style, timeline sampling and video encoding. | [Plotting and Animation](/api/viz/plotting) |
+
+Imports are lazy: diagram contracts and DOT formatting use only the standard library; recordings, transforms and geometry use NumPy without loading Matplotlib. Figure rendering, scenes and animation helpers load Matplotlib when accessed. Graphviz is invoked only for rendered diagram exports, not for DOT generation. Visualization does not import simulator implementations or PyTorch.
+
+The former flat implementation modules are retired. Replace imports such as `from snnlab.viz.figure_grid import FigureGrid` with `from snnlab.viz import FigureGrid`; internal paths are not supported application imports.
+
+### Analysis
+
+`analysis/__init__.py` is the central lazy public export map for all 24 measurements. Use `import snnlab as snn; snn.analysis` or import functions directly from `snnlab.analysis`. Implementation modules are private and follow the groups in the [Analysis reference](/api/analysis).
+
+| Implementation | Responsibility | Reference |
+| --- | --- | --- |
+| `activity.py` | Population/per-neuron rates, binned counts, rate traces, active fractions and population-count CV. | [Activity](/api/analysis#activity) |
+| `intervals.py` | Within-presentation per-neuron intervals and ISI CV. | [Intervals](/api/analysis#intervals) |
+| `correlations.py` | Correlations between binned neuron counts. | [Correlations](/api/analysis#correlations) |
+| `spectra.py` | Spectra, spectral peaks, band power and fractions. | [Spectra](/api/analysis#spectra) |
+| `rhythmicity.py` | Pooled events, interval histograms, autocorrelograms and rhythm descriptors. | [Rhythmicity](/api/analysis#rhythmicity) |
+| `cycles.py` | Burst detection, cycle boundaries, counts and occupancy. | [Cycles](/api/analysis#cycles) |
+| `conductance.py` | Conductance-loop scores and rolling summaries. | [Conductance](/api/analysis#conductance) |
+
+Private `_validation.py` and `_sampling.py` own shared array validation, windowing, binning and smoothing. They remain local to Analysis. Package import alone loads neither NumPy nor SciPy. Basic measurements use NumPy; smoothing loads SciPy when requested, and spectra/cycle helpers load it on access. Analysis imports no simulator implementations, PyTorch or Matplotlib. Public signatures, numerical defaults and return conventions remain unchanged.

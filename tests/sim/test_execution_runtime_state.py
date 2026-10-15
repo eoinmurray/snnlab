@@ -9,7 +9,8 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import (
+from snnlab.lang.compilation.serialization import digest
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphRuntimeState,
@@ -19,7 +20,7 @@ from snnlab.sim.execution import (
     save_runtime_state,
     simulate,
 )
-from snnlab.sim.tool import main
+from snnlab.sim.cli import main
 from tests.sim._execution_builders import (
     coupled_graph as _coupled_graph,
 )
@@ -325,13 +326,13 @@ def test_runtime_state_validates_batch_shape_and_dtype():
 
 def test_graph_cli_runtime_state_round_trip_requires_bundle(tmp_path):
     graph, inputs = _continuation_case()
-    bundle = snn.compiler.Bundle(
+    bundle = snn.Bundle(
         graph=graph,
         training=None,
         manifest={
             "schema": "snnlang.bundle/v1",
-            "graph_digest": snn.compiler.digest(graph),
-            "files": [{"path": "graph.json", "digest": snn.compiler.digest(graph)}],
+            "graph_digest": digest(graph),
+            "files": [{"path": "graph.json", "digest": digest(graph)}],
             "assets": [],
             "compiler": {"name": "test", "version": "1"},
             "target": None,

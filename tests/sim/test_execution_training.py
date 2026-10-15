@@ -6,13 +6,7 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.lang import training
-from snnlab.sim.execution import (
-    DenseArrayBinding,
-    ExecutionSpec,
-    execute_request,
-    train,
-)
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, execute_request, train
 from tests._circuits import author_ping
 
 
@@ -74,24 +68,24 @@ def _direct_train_bundle():
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    scores = snn.readouts.SpikeCount(source=events, classes=2, name="scores")
-    snn.ops.linear(events, size=1, name="shadow")
+    scores = snn.SpikeCount(source=events, classes=2, name="scores")
+    snn.linear(events, size=1, name="shadow")
     net.output("class_scores", scores)
     parameter_ids = [row["id"] for row in net.parameters]
     recipe = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup(
+            snn.ParameterGroup(
                 ["scores_projection.weight"], name="readout", lr=0.1
             ),
-            training.ParameterGroup(
+            snn.ParameterGroup(
                 [pid for pid in parameter_ids if pid != "scores_projection.weight"],
                 name="frozen",
                 lr=0,
                 frozen=True,
             ),
         ],
-        optimizer=training.AdamW(weight_decay=0.0),
+        optimizer=snn.AdamW(weight_decay=0.0),
         presentation_duration=0.3 * snn.ms,
     )
     return snn.compile(net, training=recipe, target=None)
@@ -197,23 +191,23 @@ def test_graph_training_backpropagates_through_recurrence_and_spike_budget():
         row for row in net.parameters if row["id"] == "cell_input.weight"
     )
     input_parameter["initializer"] = snn.Constant(100.0).json()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     net.expose(cell.E.spikes, name="cell_E.spikes")
     net.expose(cell.I.spikes, name="cell_I.spikes")
     parameter_ids = [row["id"] for row in net.parameters]
     recipe = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
-        parameter_groups=[training.ParameterGroup(parameter_ids, name="all", lr=1e-3)],
-        optimizer=training.AdamW(weight_decay=0.0),
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
+        parameter_groups=[snn.ParameterGroup(parameter_ids, name="all", lr=1e-3)],
+        optimizer=snn.AdamW(weight_decay=0.0),
         regularizers=[
-            training.SpikeBudgetPenalty(
+            snn.SpikeBudgetPenalty(
                 signals=(cell.E.spikes, cell.I.spikes),
                 ceiling_hz=0.0,
                 strength=0.01,
             )
         ],
-        surrogate=training.FastSigmoid(slope=1.0),
+        surrogate=snn.FastSigmoid(slope=1.0),
         presentation_duration=3 * snn.ms,
     )
     bundle = snn.compile(net, training=recipe, target=None)
@@ -263,8 +257,8 @@ def test_opt_in_training_timings_partition_epochs_without_changing_updates(
 ):
     from dataclasses import replace
 
-    import snnlab.sim.execution as execution
-    from snnlab.sim.execution import ValidationSpec
+    import snnlab.sim.training.trainer as execution
+    from snnlab.sim import ValidationSpec
 
     bundle = _direct_train_bundle()
     inputs = torch.zeros(3, 5, 2)

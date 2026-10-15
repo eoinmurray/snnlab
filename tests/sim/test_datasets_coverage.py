@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.sim.datasets import load_dataset
+from snnlab.sim.inputs.datasets import load_dataset
 
 
 def test_load_dataset_unknown_name_raises():

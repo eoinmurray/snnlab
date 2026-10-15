@@ -5,8 +5,8 @@ import json
 import numpy as np
 import pytest
 
-from snnlab.lang.compiler import digest
-from snnlab.sim.tool import main, parse_args
+from snnlab.lang.compilation.serialization import digest
+from snnlab.sim.cli import main, parse_args
 from tests.sim._bundle_builders import ping_classifier
 from tests.sim._execution_builders import direct_train_bundle
 

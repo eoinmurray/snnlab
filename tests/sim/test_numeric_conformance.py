@@ -10,22 +10,15 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.lang import training
-from snnlab.lang.compiler import digest
-from snnlab.sim.conformance import (
+from snnlab.lang.compilation.serialization import digest
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, GraphExecutor, build, train
+from snnlab.sim.diagnostics.conformance import (
     CONFORMANCE_REPORT_SCHEMA,
     ComparisonPolicy,
     canonical_json_tensor,
     compare_conformance_layers,
     remap_named_tensors,
     write_conformance_report,
-)
-from snnlab.sim.execution import (
-    DenseArrayBinding,
-    ExecutionSpec,
-    GraphExecutor,
-    build,
-    train,
 )
 from tests._circuits import author_ping
 from tests.sim._execution_builders import expose_graph_diagnostics
@@ -133,7 +126,7 @@ def test_ping_forward_matches_preserved_pre_removal_reference(
         source=events,
         include_silent_recurrence=True,
     )
-    scores = snn.readouts.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_logits", scores)
     bundle = snn.compile(net)
     # Reconstruct the historical graph contract for the authenticated fixtures.
@@ -228,7 +221,7 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
         source=events,
         include_silent_recurrence=True,
     )
-    scores = snn.readouts.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.MeanVoltage(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_logits", scores)
     recurrent = [
         "cell_E_to_E.weight",
@@ -238,12 +231,12 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
     ]
     trainable = ["cell_input.weight", "scores_projection.weight", *recurrent]
     recipe = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup(trainable, name="all", lr=0.01),
+            snn.ParameterGroup(trainable, name="all", lr=0.01),
         ],
-        optimizer=training.AdamW(weight_decay=0.0),
-        surrogate=training.FastSigmoid(slope=5.0),
+        optimizer=snn.AdamW(weight_decay=0.0),
+        surrogate=snn.FastSigmoid(slope=5.0),
         presentation_duration=4.0 * snn.ms,
     )
     bundle = snn.compile(net, training=recipe)
@@ -351,24 +344,24 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
     events = net.input(
         "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
     )
-    scores = snn.readouts.SpikeCount(source=events, classes=2, name="scores")
-    snn.ops.linear(events, size=1, name="shadow")
+    scores = snn.SpikeCount(source=events, classes=2, name="scores")
+    snn.linear(events, size=1, name="shadow")
     net.output("class_scores", scores)
     parameter_ids = [row["id"] for row in net.parameters]
     recipe = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup(
+            snn.ParameterGroup(
                 ["scores_projection.weight"], name="readout", lr=0.1
             ),
-            training.ParameterGroup(
+            snn.ParameterGroup(
                 [name for name in parameter_ids if name != "scores_projection.weight"],
                 name="frozen",
                 lr=0.0,
                 frozen=True,
             ),
         ],
-        optimizer=training.AdamW(weight_decay=0.0),
+        optimizer=snn.AdamW(weight_decay=0.0),
         epochs=2,
         presentation_duration=0.3 * snn.ms,
     )

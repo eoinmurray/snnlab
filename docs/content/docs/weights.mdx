@@ -44,7 +44,7 @@ With four source channels, `Constant(2.0)` stores 0.5 per edge under the default
 ```python
 import torch
 from snnlab import lang
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 
 net = lang.Network("weight_scaling", dt=0.25 * lang.ms)
 events = net.input("events", shape=("time", "batch", 4),
@@ -112,7 +112,7 @@ An autapse feeds a neuron's output back into that same neuron. New `Network.conn
 
 ```python
 from snnlab import lang
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 
 net = lang.Network("self_connectivity", dt=0.1 * lang.ms)
 E = net.population("E", size=32, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))

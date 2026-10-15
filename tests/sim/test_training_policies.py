@@ -11,8 +11,7 @@ import pytest
 import torch
 
 from snnlab import extensions
-from snnlab.sim import execution as execution
-from snnlab.sim.execution import (
+from snnlab.sim import (
     Batching,
     CheckpointSelection,
     EpochObservations,

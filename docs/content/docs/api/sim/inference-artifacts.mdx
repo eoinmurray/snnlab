@@ -1,0 +1,113 @@
+---
+title: Inference Artifacts
+description: Persist, authenticate and derive reusable inference results.
+---
+
+Import these helpers from `snnlab.sim`. They persist returned results without rerunning inference. Digests detect inconsistent or changed content; they are not digital signatures from a trusted publisher.
+
+## write_inference_artifacts
+
+```python
+def write_inference_artifacts(
+    path: str | Path, result: ExecutionResult, *, graph: Mapping[str, Any], seed: int
+) -> Mapping[str, Any]: ...
+```
+
+Creates the directory if necessary and writes `outputs.npz`, `recording.npz` (named diagnostics), `parameters.npz`, `metrics.json` and `inference-manifest.json`. A non-empty `recorded_signals` mapping adds `recordings.npz` and manifest schema version 2; otherwise version 1 is used. Returns the manifest mapping, including `artifact_digest`.
+
+Tensors are detached and copied to CPU NumPy arrays. The request digest binds recorded execution protocol, seed, checkpoint provenance, overrides, intervention policy, diagnostics, device and relevant segment/retention metadata. Retention-disabled result fields remain empty on disk. This helper does not persist the complete training checkpoint or runtime state. Writes replace named files in place; use a separate directory per result and avoid concurrent readers while writing.
+
+## validate_inference_artifacts
+
+```python
+def validate_inference_artifacts(
+    path: str | Path,
+    *,
+    graph: Mapping[str, Any] | None = None,
+    seed: int | None = None,
+    expected_interventions: Mapping[str, Any] | None | EllipsisType = ...,
+    expected_segments: Mapping[str, Any] | None | EllipsisType = ...,
+    expected_retention: Mapping[str, Any] | None | EllipsisType = ...,
+) -> Mapping[str, Any]: ...
+```
+
+Returns the manifest after checking its digest, required file set, file digests, array metadata and recorded request integrity. Optional `graph` and `seed` additionally check caller expectations. Missing files and malformed JSON raise their underlying errors; incompatible schemas, digests, file sets and expectation mismatches raise `ValueError`.
+
+For each `expected_*` argument, omission (`...`) checks internal integrity without requiring that policy to match a caller request. Explicit `None` requires no such policy; a mapping requires an exact match. Construct identities with [intervention_identity](/api/sim/interventions#intervention_identity), [segment_identity](/api/sim/resets-decisions#segment_identity) and `retention_identity` below. These checks do not establish every aspect of an arbitrary expected inference request, especially input/checkpoint choices that are not passed as expectations.
+
+## retention_identity
+
+```python
+def retention_identity(
+    *,
+    graph,
+    start_step,
+    steps_count,
+    batch_size,
+    diagnostics=True,
+    retain_outputs=True,
+    retain_parameters=True,
+    retain_final_state=True,
+    retain_runtime_state=True,
+    projection_mode="fast",
+    measurement=None,
+    recording=None,
+    batch_offset=0,
+): ...
+```
+
+Returns a JSON-compatible retention policy mapping, including for default retention settings. Pass the effective graph, actual absolute run coordinates, output-retention setting, measurement and recording configuration. It validates recording axes and the window, and binds selected signals, sink identity and execution window. Use it with `expected_retention` before cache reuse.
+
+## derive_inference_products
+
+```python
+def derive_inference_products(
+    source: str | Path,
+    destination: str | Path,
+    *,
+    logits_id: str,
+    labels: np.ndarray | torch.Tensor,
+    spike_recordings: Sequence[str] = (),
+) -> Mapping[str, Any]: ...
+```
+
+Validates the source cache, then derives argmax predictions and accuracy from a named floating `(batch, classes)` output. Labels must be a matching one-dimensional integer array with values in range. Requested `spike_recordings` are names from diagnostic `recording.npz`, with binary `(time, batch, cells)` arrays; this helper does not consume streamed recording blocks or `recordings.npz`.
+
+The source must record a positive execution duration. Rates are spike counts divided by that duration in seconds, with `(batch, cells)` shape. Sparse raster products retain step, batch and cell coordinates plus original shape. The destination must not already exist.
+
+Writes `labels.npy`, `predictions.npy`, `rates.npz`, `rasters.npz`, `summary.json` and `derived-manifest.json`. Returns summary fields plus the derived `artifact_digest`; the source remains unchanged.
+
+## validate_derived_inference_products
+
+```python
+def validate_derived_inference_products(
+    path: str | Path, *, source_artifact_digest: str | None = None
+) -> Mapping[str, Any]: ...
+```
+
+Checks derived schema, manifest/file digests, required file set and summary/source identity, returning the manifest. Passing `source_artifact_digest` pins the expected source cache. It checks the saved source identity, rather than reopening or rerunning that source.
+
+## Example
+
+```python
+from snnlab.sim import (
+    write_inference_artifacts,
+    validate_inference_artifacts,
+    derive_inference_products,
+    validate_derived_inference_products,
+)
+
+# result, graph and labels come from the same inference request.
+manifest = write_inference_artifacts("inference-cache", result, graph=graph, seed=17)
+validate_inference_artifacts("inference-cache", graph=graph, seed=17)
+products = derive_inference_products(
+    "inference-cache",
+    "derived-results",
+    logits_id="logits",
+    labels=labels,
+)
+validate_derived_inference_products(
+    "derived-results",
+    source_artifact_digest=manifest["artifact_digest"],
+)
+```

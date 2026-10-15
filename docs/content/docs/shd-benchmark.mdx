@@ -5,7 +5,7 @@ description: Training curves, configuration and measured timings for a ten-epoch
 
 This benchmark trains a feedforward conductance-based network on
 [Spiking Heidelberg Digits](https://zenkelab.org/resources/spiking-heidelberg-datasets-shd/)
-using `snnlab.lang` and native `snnlab.sim.execution.train()`. It runs **10 epochs
+using `snnlab.lang` and native `snnlab.sim.train()`. It runs **10 epochs
 at batch size 256** on one NVIDIA H100, reaching **45.96% validation accuracy**.
 The official test set is untouched; this is a fixed performance workload, not a
 convergence study.

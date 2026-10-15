@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     derive_inference_products,

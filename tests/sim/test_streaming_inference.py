@@ -12,7 +12,7 @@ import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 from torch.utils._pytree import tree_flatten
 
-from snnlab.sim.execution import (
+from snnlab.sim import (
     GraphExecutor,
     MeasurementWindow,
     NPZRecordingSink,
@@ -342,7 +342,7 @@ def test_actual_live_tensor_allocation_is_bounded_by_batch():
 
 
 def test_segment_resets_and_window_accumulators_share_boundary_ownership(tmp_path):
-    from snnlab.sim.execution import BoundarySchedule, DecisionSegments, ResetVoltage
+    from snnlab.sim import BoundarySchedule, DecisionSegments, ResetVoltage
     from tests.sim.test_spike_replay import stream
 
     graph = copy.deepcopy(request().graph)
@@ -412,8 +412,8 @@ def test_masked_rate_window_matches_dense_and_continuation():
 
 
 def test_cli_streams_to_npz_without_retained_outputs(tmp_path):
-    from snnlab.sim.bundle import load_graph_bundle
-    from snnlab.sim.tool import main
+    from snnlab.sim.artifacts.bundle import load_graph_bundle
+    from snnlab.sim.cli import main
     from tests.sim.test_spike_replay import graph_fixture, stream
 
     bundle = tmp_path / "network.bundle"
@@ -489,7 +489,7 @@ def test_fractional_mask_keeps_weighted_mean_semantics():
 
 
 def test_actual_dataset_retention_allocation_is_bounded_by_batch(tmp_path):
-    from snnlab.sim.dataset_provider import DatasetProvider, simulate_dataset
+    from snnlab.sim.inputs.provider import DatasetProvider, simulate_dataset
 
     peaks = []
     for count in (9, 90):
@@ -544,7 +544,7 @@ def test_parameterless_reductions_preserve_promoted_output_dtype(dtype):
 
     net = snn.Network("dtypes", dt=1 * snn.ms)
     source = net.input("values", shape=("time", "batch"), signal_type="mask")
-    total = snn.ops.reduce(source, operation="sum", over="time", name="sum_values")
+    total = snn.reduce(source, operation="sum", over="time", name="sum_values")
     net.output("total", total)
     graph = snn.compile(net).graph
     values = {"values": torch.ones(5, 2, dtype=dtype)}

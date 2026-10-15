@@ -282,3 +282,9 @@ for scopes, initial/partial epochs and checkpoint-write inclusion.
 ## Projection arithmetic and snapshot retention
 
 `--projection-mode fast` is the default for training and inference; `strict` retains historical zero-decay arithmetic, including nonfinite propagation. `--no-retain-parameters`, `--no-retain-final-state` and `--no-retain-runtime-state` omit independent result snapshots while retaining named outputs. Complete training checkpoints remain available. `--save-runtime-state` requires runtime retention. See [arithmetic and retention semantics](/api/sim/execution-spec#projection-arithmetic-and-result-snapshots).
+
+## Python API equivalents
+
+The command line constructs [ExecutionSpec](/api/sim/execution-spec) and dispatches to [Execution Functions](/api/sim/execution-functions). Python-only applications can use those functions without constructing command-line argument namespaces. Training and runtime persistence have distinct formats: see [Training Checkpoints](/api/sim/training-checkpoints) and [Runtime State](/api/sim/runtime-state).
+
+Use `--checkpoint-selection '{"mode":"none"}'` to disable candidate selection. Explicit epoch selection and the named legacy mode follow [CheckpointSelection](/api/sim/training-checkpoints#checkpointselection-and-selectionmetric); omitting the option preserves legacy selection. A disabled policy produces no selected checkpoint, so do not combine it with a request to save a winner.

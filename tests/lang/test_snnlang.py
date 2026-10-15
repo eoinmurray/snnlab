@@ -6,8 +6,8 @@ import shutil
 import pytest
 
 from snnlab import lang as snn
-from snnlab.lang import training
-from snnlab.lang.compiler import canonical_json, graph_dict, validate_graph
+from snnlab.lang import validate_graph
+from snnlab.lang.compilation.serialization import canonical_json, graph_dict
 from tests._circuits import author_ping
 
 
@@ -87,18 +87,18 @@ def test_feedback_requires_delay():
 def test_readouts_expand_to_serialisable_ops(kind):
     net, cell = small_network()
     if kind == "mean":
-        value = snn.readouts.MeanVoltage(source=cell.E.spikes, classes=4, name="r")
+        value = snn.MeanVoltage(source=cell.E.spikes, classes=4, name="r")
     elif kind == "final":
-        value = snn.readouts.FinalVoltage(source=cell.E.spikes, classes=4, name="r")
+        value = snn.FinalVoltage(source=cell.E.spikes, classes=4, name="r")
     elif kind == "count":
-        value = snn.readouts.SpikeCount(source=cell.E.spikes, classes=4, name="r")
+        value = snn.SpikeCount(source=cell.E.spikes, classes=4, name="r")
     elif kind == "rate":
         mask = net.input("valid", shape=("time", "batch"), signal_type="mask")
-        value = snn.readouts.SpikeRate(
+        value = snn.SpikeRate(
             source=cell.E.spikes, classes=4, name="r", mask=mask
         )
     else:
-        value = snn.readouts.CumulativePotential(
+        value = snn.CumulativePotential(
             source=cell.E.spikes, classes=4, name="r"
         )
     net.output("scores", value)
@@ -114,13 +114,13 @@ def test_readouts_expand_to_serialisable_ops(kind):
 def test_spike_rate_rejects_ambiguous_duration():
     net, cell = small_network()
     with pytest.raises(ValueError, match="duration"):
-        snn.readouts.SpikeRate(source=cell.E.spikes, classes=4, name="rate")
+        snn.SpikeRate(source=cell.E.spikes, classes=4, name="rate")
 
 
 def test_validation_rejects_invalid_rate_mask_shape():
     net, cell = small_network()
     mask = net.input("valid", shape=("batch", 3), signal_type="mask")
-    rate = snn.readouts.SpikeRate(
+    rate = snn.SpikeRate(
         source=cell.E.spikes, classes=4, name="rate", mask=mask
     )
     net.output("rates", rate)
@@ -130,7 +130,7 @@ def test_validation_rejects_invalid_rate_mask_shape():
 
 def test_validation_rejects_non_positive_rate_duration():
     net, cell = small_network()
-    rate = snn.readouts.SpikeRate(
+    rate = snn.SpikeRate(
         source=cell.E.spikes, classes=4, name="rate", duration=0
     )
     net.output("rates", rate)
@@ -140,7 +140,7 @@ def test_validation_rejects_non_positive_rate_duration():
 
 def test_validation_rejects_linear_readout_parameter_shape_drift():
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=4, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=4, name="scores")
     net.output("class_scores", scores)
     graph = graph_dict(net)
     parameter = next(
@@ -185,24 +185,24 @@ def test_validation_rejects_operation_unit_drift():
 
 def test_training_selects_and_freezes_parameters():
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     ids = [p["id"] for p in net.parameters]
     selected = "scores_projection.weight"
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup([selected], name="selected", lr=1e-3),
-            training.ParameterGroup(
+            snn.ParameterGroup([selected], name="selected", lr=1e-3),
+            snn.ParameterGroup(
                 [pid for pid in ids if pid != selected],
                 name="frozen",
                 lr=0,
                 frozen=True,
             ),
         ],
-        optimizer=training.AdamW(),
-        stop_gradients=[training.StopGradient.at(cell.E.spikes)],
-        surrogate=training.FastSigmoid(slope=1.25),
+        optimizer=snn.AdamW(),
+        stop_gradients=[snn.StopGradient.at(cell.E.spikes)],
+        surrogate=snn.FastSigmoid(slope=1.25),
     )
     bundle = snn.compile(net, training=spec)
     assert bundle.training is not None
@@ -222,14 +222,14 @@ def test_training_selects_and_freezes_parameters():
 
 def test_gradient_vocabulary_rejects_invalid_surrogate_and_dampening():
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     ids = [p["id"] for p in net.parameters]
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
-        parameter_groups=[training.ParameterGroup(ids, name="all", lr=1e-3)],
-        optimizer=training.AdamW(),
-        surrogate=training.FastSigmoid(slope=0),
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
+        parameter_groups=[snn.ParameterGroup(ids, name="all", lr=1e-3)],
+        optimizer=snn.AdamW(),
+        surrogate=snn.FastSigmoid(slope=0),
     )
     with pytest.raises(ValueError, match="surrogate slope must be positive"):
         snn.compile(net, training=spec)
@@ -240,15 +240,15 @@ def test_gradient_vocabulary_rejects_invalid_surrogate_and_dampening():
 
 def test_spike_budget_and_presentation_duration_compile_exact_physical_contract():
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     ids = [p["id"] for p in net.parameters]
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
-        parameter_groups=[training.ParameterGroup(ids, name="all", lr=1e-3)],
-        optimizer=training.AdamW(),
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
+        parameter_groups=[snn.ParameterGroup(ids, name="all", lr=1e-3)],
+        optimizer=snn.AdamW(),
         regularizers=[
-            training.SpikeBudgetPenalty(
+            snn.SpikeBudgetPenalty(
                 signals=(cell.E.spikes, cell.I.spikes), ceiling_hz=10.0, strength=0.01
             )
         ],
@@ -272,15 +272,15 @@ def test_spike_budget_and_presentation_duration_compile_exact_physical_contract(
 
 def test_loss_and_duration_vocabulary_fail_closed():
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     ids = [p["id"] for p in net.parameters]
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
-        parameter_groups=[training.ParameterGroup(ids, name="all", lr=1e-3)],
-        optimizer=training.AdamW(),
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
+        parameter_groups=[snn.ParameterGroup(ids, name="all", lr=1e-3)],
+        optimizer=snn.AdamW(),
         regularizers=[
-            training.SpikeBudgetPenalty(signals=(), ceiling_hz=-1, strength=-1)
+            snn.SpikeBudgetPenalty(signals=(), ceiling_hz=-1, strength=-1)
         ],
         presentation_duration=0.15 * snn.ms,
     )
@@ -295,23 +295,23 @@ def test_loss_and_duration_vocabulary_fail_closed():
 
 def test_objective_rejects_stop_gradient_route_with_no_downstream_trainable_parameter():
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     ids = [p["id"] for p in net.parameters]
     input_weight = "cell_input.weight"
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup([input_weight], name="input", lr=1e-3),
-            training.ParameterGroup(
+            snn.ParameterGroup([input_weight], name="input", lr=1e-3),
+            snn.ParameterGroup(
                 [pid for pid in ids if pid != input_weight],
                 name="frozen",
                 lr=0,
                 frozen=True,
             ),
         ],
-        optimizer=training.AdamW(),
-        stop_gradients=[training.StopGradient.at(cell.E.spikes)],
+        optimizer=snn.AdamW(),
+        stop_gradients=[snn.StopGradient.at(cell.E.spikes)],
     )
     with pytest.raises(ValueError, match="objective has no differentiable route"):
         snn.compile(net, training=spec)
@@ -327,22 +327,22 @@ def test_trainable_zero_initialized_recurrent_variant_has_named_gradient_route()
     recurrent_parameter = recurrent["parameters"][0]
     parameter = next(p for p in net.parameters if p["id"] == recurrent_parameter)
     parameter["initializer"] = snn.Zeros().json()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     ids = [p["id"] for p in net.parameters]
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup([recurrent_parameter], name="recurrent", lr=4e-4),
-            training.ParameterGroup(
+            snn.ParameterGroup([recurrent_parameter], name="recurrent", lr=4e-4),
+            snn.ParameterGroup(
                 [pid for pid in ids if pid != recurrent_parameter],
                 name="frozen",
                 lr=0,
                 frozen=True,
             ),
         ],
-        optimizer=training.AdamW(),
-        surrogate=training.FastSigmoid(slope=1),
+        optimizer=snn.AdamW(),
+        surrogate=snn.FastSigmoid(slope=1),
     )
     recipe = snn.compile(net, training=spec).training
     assert recipe["resolved_parameters"]["trainable"] == [recurrent_parameter]
@@ -360,19 +360,19 @@ def test_disabled_trainable_projection_is_not_a_differentiable_route():
         connection="recurrent",
         enabled=False,
     )
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     ids = [p["id"] for p in net.parameters]
     pid = disabled.weight.id
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup([pid], name="disabled", lr=1e-3),
-            training.ParameterGroup(
+            snn.ParameterGroup([pid], name="disabled", lr=1e-3),
+            snn.ParameterGroup(
                 [item for item in ids if item != pid], name="frozen", lr=0, frozen=True
             ),
         ],
-        optimizer=training.AdamW(),
+        optimizer=snn.AdamW(),
     )
     with pytest.raises(ValueError, match="objective has no differentiable route"):
         snn.compile(net, training=spec)
@@ -382,37 +382,37 @@ def test_disabled_trainable_projection_is_not_a_differentiable_route():
     ("groups", "message"),
     [
         (
-            lambda ids: [training.ParameterGroup(ids[:1], name="partial", lr=1e-3)],
+            lambda ids: [snn.ParameterGroup(ids[:1], name="partial", lr=1e-3)],
             "omitted",
         ),
         (
             lambda ids: [
-                training.ParameterGroup(ids, name="first", lr=1e-3),
-                training.ParameterGroup(ids[:1], name="second", lr=1e-3),
+                snn.ParameterGroup(ids, name="first", lr=1e-3),
+                snn.ParameterGroup(ids[:1], name="second", lr=1e-3),
             ],
             "already selected",
         ),
         (
             lambda ids: [
-                training.ParameterGroup(ids, name="frozen", lr=1e-3, frozen=True)
+                snn.ParameterGroup(ids, name="frozen", lr=1e-3, frozen=True)
             ],
             "frozen parameter group learning rate must be zero",
         ),
         (
-            lambda ids: [training.ParameterGroup(ids, name="trainable", lr=0)],
+            lambda ids: [snn.ParameterGroup(ids, name="trainable", lr=0)],
             "trainable parameter group learning rate must be positive",
         ),
     ],
 )
 def test_training_parameter_groups_fail_closed(groups, message):
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     ids = [p["id"] for p in net.parameters]
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=groups(ids),
-        optimizer=training.AdamW(),
+        optimizer=snn.AdamW(),
     )
     with pytest.raises(ValueError, match=message):
         snn.compile(net, training=spec)
@@ -420,12 +420,12 @@ def test_training_parameter_groups_fail_closed(groups, message):
 
 def test_training_rejects_unknown_parameter():
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
-        parameter_groups=[training.ParameterGroup(["ghost"], name="bad", lr=1e-3)],
-        optimizer=training.AdamW(),
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
+        parameter_groups=[snn.ParameterGroup(["ghost"], name="bad", lr=1e-3)],
+        optimizer=snn.AdamW(),
     )
     with pytest.raises(ValueError, match="unknown training parameter"):
         snn.compile(net, training=spec)
@@ -547,16 +547,16 @@ def test_all_visual_views_render(tmp_path):
     if shutil.which("dot") is None:
         pytest.skip("Graphviz 'dot' is required for snnlang visualisation")
     net, cell = small_network()
-    scores = snn.readouts.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
+    scores = snn.SpikeCount(source=cell.E.spikes, classes=2, name="scores")
     net.output("class_scores", scores)
     spec = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=scores, target="label")],
+        objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            training.ParameterGroup(
+            snn.ParameterGroup(
                 [p["id"] for p in net.parameters], name="all", lr=1e-3
             )
         ],
-        optimizer=training.AdamW(),
+        optimizer=snn.AdamW(),
     )
     bundle = snn.compile(net, training=spec)
     for view in ("circuit", "training", "expanded"):
@@ -622,14 +622,14 @@ def test_spike_count_parameters_can_define_its_training_group():
     inputs = net.input(
         "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
     )
-    scores = snn.readouts.SpikeCount(source=inputs, classes=2, name="scores")
+    scores = snn.SpikeCount(source=inputs, classes=2, name="scores")
     net.output("class_scores", scores)
     recipe = snn.TrainSpec(
-        objectives=(training.CrossEntropy(prediction=scores, target="class"),),
+        objectives=(snn.CrossEntropy(prediction=scores, target="class"),),
         parameter_groups=(
-            training.ParameterGroup(scores.parameters, name="readout", lr=0.01),
+            snn.ParameterGroup(scores.parameters, name="readout", lr=0.01),
         ),
-        optimizer=training.AdamW(),
+        optimizer=snn.AdamW(),
     )
     bundle = snn.compile(net, training=recipe, target="tools/snnsim")
     assert bundle.training["resolved_parameters"]["trainable"] == [

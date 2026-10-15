@@ -1,9 +1,16 @@
 {
   "title": "Sim",
   "pages": [
+    "execution-functions",
     "graph-executor",
     "execution-spec",
     "execution-result",
+    "training-checkpoints",
+    "runtime-state",
+    "inference-artifacts",
+    "recording-measurement",
+    "interventions",
+    "resets-decisions",
     "tracing",
     "pytorch",
     "cli"

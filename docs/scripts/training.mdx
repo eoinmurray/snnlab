@@ -23,8 +23,7 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.lang import training
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     ValidationSpec,
@@ -80,7 +79,7 @@ The readout is an explicit population of **two non-spiking leaky-integrator cell
 
 `w_out` is explicitly declared with shape `(2, 16)`: 32 output weights, one row per readout cell and one column per E cell. It starts with small normally distributed values and is passed to `net.connect` as `weight=w_out`. By default, the executor divides projection weights by the source count (16 here). These classifier weights have no non-negative constraint, so learning can make them positive or negative; the input-to-E conductance weights remain non-negative.
 
-Each readout cell integrates its weighted E spikes without emitting spikes. `lang.ops.reduce` averages the readout voltage over time to produce two class scores per sample, with shape `(batch, 2)`. Cross-entropy treats these scores as logits, rather than probabilities.
+Each readout cell integrates its weighted E spikes without emitting spikes. `lang.reduce` averages the readout voltage over time to produce two class scores per sample, with shape `(batch, 2)`. Cross-entropy treats these scores as logits, rather than probabilities.
 
 This trains both connections: the E layer learns spike features through `w_in`, and the readout learns how to combine them through `w_out`. The neuron time constants and other neuron settings remain fixed.
 
@@ -102,7 +101,7 @@ See the [Training API reference](/api/lang/training) for objectives, parameter g
 
 `CrossEntropy` associates the class scores with a target named `"class"`. Its labels must be integers in the range `0` to `1`. The two parameter groups select `(w_in,)` and `(w_out,)`. Their learning rates are `INPUT_LEARNING_RATE` and `READOUT_LEARNING_RATE`; the smaller input rate limits changes to the E neurons’ conductances. Neither group is frozen. Every parameter belongs to exactly one group.
 
-`training.FastSigmoid(slope=1.0)` explicitly enables the fast-sigmoid surrogate for the E neurons. The forward pass still emits discrete spikes; the backward pass uses a smooth approximation to the threshold derivative so gradients reach `w_in`. Small nonzero initial `w_out` values allow this gradient path to carry a signal from the first update. `gradient_clip=1.0` caps the combined gradient norm before the optimizer step.
+`lang.FastSigmoid(slope=1.0)` explicitly enables the fast-sigmoid surrogate for the E neurons. The forward pass still emits discrete spikes; the backward pass uses a smooth approximation to the threshold derivative so gradients reach `w_in`. Small nonzero initial `w_out` values allow this gradient path to carry a signal from the first update. `gradient_clip=1.0` caps the combined gradient norm before the optimizer step.
 
 `AdamW(weight_decay=0.0)` updates both connections. `TrainSpec` declares the loss and optimization rules. The direct `ExecutionSpec` fields below determine the epoch and minibatch schedule.
 
@@ -140,7 +139,7 @@ To select completed-epoch weights by validation cross-entropy, breaking ties wit
 
 ```python
 from dataclasses import replace
-from snnlab.sim.execution import CheckpointSelection, SelectionMetric
+from snnlab.sim import CheckpointSelection, SelectionMetric
 
 execution = replace(execution, checkpoint_selection=CheckpointSelection(
     metric=SelectionMetric("cross_entropy", objective=0, direction="min"),
@@ -160,7 +159,7 @@ Optional named epoch observations can be requested without enabling diagnostic t
 
 ```python
 from dataclasses import replace
-from snnlab.sim.execution import EpochObservations
+from snnlab.sim import EpochObservations
 
 # `execution` is your ExecutionSpec for the graph and training inputs.
 execution = replace(execution, observations=EpochObservations(

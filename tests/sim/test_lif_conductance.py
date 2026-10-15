@@ -16,8 +16,8 @@ until `lif_step_expeuler` is implemented.
 import pytest
 import torch
 
-from snnlab.sim import models as M
-from snnlab.sim.models import coba_current, spike_biophysical
+from snnlab.sim.graph import dynamics as M
+from snnlab.sim.graph.dynamics import coba_current, spike_biophysical
 
 lif_step_expeuler = M.lif_step_expeuler
 

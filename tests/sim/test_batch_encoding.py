@@ -6,8 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.sim.dataset_provider import DatasetProvider
-from snnlab.sim.execution import (
+from snnlab.sim import (
     CheckpointSelection,
     DatasetEncoder,
     DatasetSnapshotBinding,
@@ -20,6 +19,7 @@ from snnlab.sim.execution import (
     simulate,
     train,
 )
+from snnlab.sim.inputs.provider import DatasetProvider
 from tests.sim.test_epoch_observations import request
 
 
@@ -439,7 +439,7 @@ def test_encoding_peak_does_not_grow_with_dataset_size(tmp_path, monkeypatch):
 def test_cli_dataset_encoding_is_automatic_and_categorical_rates_are_recorded(tmp_path):
     import json
 
-    from snnlab.sim.tool import main
+    from snnlab.sim.cli import main
     from tests.sim._execution_builders import direct_train_bundle
 
     bundle = direct_train_bundle().write(tmp_path / "network.bundle")

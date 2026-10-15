@@ -13,8 +13,7 @@ import torch
 
 from snnlab import extensions as ext
 from snnlab import lang
-from snnlab.lang import training as recipe
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     DenseArrayBinding,
@@ -266,7 +265,7 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
         initializer=lang.CustomInitializer("test.normal/v1", value=0.1),
         constraint=lang.CustomConstraint("test.bounds/v1", limit=0.5),
     )
-    scores = lang.ops.custom(
+    scores = lang.custom_operation(
         "test.affine/v1",
         inputs,
         name="scores",
@@ -277,16 +276,16 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
     net.output("prediction", scores)
     training = lang.TrainSpec(
         objectives=(
-            recipe.CustomObjective("test.mse/v1", prediction=scores, target="value"),
+            lang.CustomObjective("test.mse/v1", prediction=scores, target="value"),
         ),
-        parameter_groups=(recipe.ParameterGroup((gain,), name="all", lr=0.2),),
-        optimizer=recipe.CustomOptimizer("test.sgd/v1", momentum=0.5),
+        parameter_groups=(lang.ParameterGroup((gain,), name="all", lr=0.2),),
+        optimizer=lang.CustomOptimizer("test.sgd/v1", momentum=0.5),
         regularizers=(
-            recipe.CustomRegularizer(
+            lang.CustomRegularizer(
                 "test.energy/v1", signals=(scores,), strength=0.01
             ),
         ),
-        surrogate=recipe.CustomSurrogate("test.triangle/v1"),
+        surrogate=lang.CustomSurrogate("test.triangle/v1"),
     )
     bundle = lang.compile(net, training=training)
     path = bundle.write(tmp_path / "bundle")
@@ -319,7 +318,7 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
 import sys
 import torch
 from snnlab import extensions
-from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, train
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, train
 assert not extensions.definitions()
 result = train(ExecutionSpec(kind="train", bundle=sys.argv[1],
     input_bindings=(DenseArrayBinding("inputs", torch.ones(3, 4, 1)),),
@@ -350,7 +349,7 @@ def test_custom_surrogate_derivative_reaches_current_weights():
     model = GraphExecutor(
         plan_graph(lang.compile(net).graph),
         trainable_parameters=(projection.weight.id,),
-        surrogate=recipe.CustomSurrogate("test.constant/v1", derivative=2).json(),
+        surrogate=lang.CustomSurrogate("test.constant/v1", derivative=2).json(),
     )
     result = model({"inputs": torch.ones(1, 1, 1)})
     result.outputs["spikes"].sum().backward()
@@ -464,7 +463,7 @@ import sys
 import numpy as np
 import torch
 from snnlab import extensions, lang
-from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
 assert not extensions.definitions()
 if sys.argv[3] == "lang":
     bundle = lang.load_bundle(sys.argv[1])
@@ -593,7 +592,7 @@ def test_import_references_are_verified_before_loading(tmp_path):
     )
     (path / "graph.json").write_text(json.dumps(graph))
     ext._REGISTRY.clear()
-    from snnlab.sim.bundle import load_graph_bundle
+    from snnlab.sim.artifacts.bundle import load_graph_bundle
 
     for loader in (lang.load_bundle, load_graph_bundle):
         with pytest.raises(ValueError, match="digest"):
@@ -605,7 +604,7 @@ def test_older_name_only_bundle_requires_registration(tmp_path):
     net, *_ = custom_network()
     bundle = lang.compile(net)
     bundle.graph.pop("extensions")
-    from snnlab.lang.compiler import canonical_json, digest
+    from snnlab.lang.compilation.serialization import canonical_json, digest
 
     path = bundle.write(tmp_path / "bundle")
     bundle.manifest["graph_digest"] = digest(bundle.graph)
@@ -622,15 +621,15 @@ def test_stateless_optimizer_resume(tmp_path):
     inputs = net.input(
         "inputs", shape=("time", "batch", 2), signal_type="continuous", unit="1"
     )
-    scores = lang.ops.linear(inputs, size=2, name="readout")
-    scores = lang.ops.reduce(scores, operation="mean", over="time", name="average")
+    scores = lang.linear(inputs, size=2, name="readout")
+    scores = lang.reduce(scores, operation="mean", over="time", name="average")
     net.output("prediction", scores)
     training = lang.TrainSpec(
-        objectives=(recipe.CrossEntropy(prediction=scores, target="class"),),
+        objectives=(lang.CrossEntropy(prediction=scores, target="class"),),
         parameter_groups=(
-            recipe.ParameterGroup(("readout.weight",), name="readout", lr=0.1),
+            lang.ParameterGroup(("readout.weight",), name="readout", lr=0.1),
         ),
-        optimizer=recipe.CustomOptimizer("test.stateless/v1"),
+        optimizer=lang.CustomOptimizer("test.stateless/v1"),
     )
     bundle = lang.compile(net, training=training)
     args = dict(

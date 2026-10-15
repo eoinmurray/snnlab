@@ -5,9 +5,8 @@ import torch
 
 from snnlab import extensions as E
 from snnlab import lang
-from snnlab.lang import training as recipe
-from snnlab.sim import extensions as X
-from snnlab.sim.execution import ExecutionSpec, GraphExecutor, build, plan_graph
+from snnlab.sim import ExecutionSpec, GraphExecutor, build, plan_graph
+from snnlab.sim.graph import extensions as X
 from tests.sim.test_execution_extensions import custom_network
 
 
@@ -79,7 +78,7 @@ def test_strict_rejects_invalid_callback_values(bad):
         plan_graph(lang.compile(net).graph),
         trainable_parameters=(projection.weight.id,),
         extension_validation="strict",
-        surrogate=recipe.CustomSurrogate("test.invalid/v1").json()
+        surrogate=lang.CustomSurrogate("test.invalid/v1").json()
         if bad == "derivative"
         else None,
     )
@@ -92,7 +91,7 @@ def test_cached_surrogate_and_structural_derivative_contract(monkeypatch):
     E.register_surrogate("test.derivative/v1", lambda x, config: torch.ones_like(x))
     dispatch = X.make_spike(
         slope=25,
-        custom=recipe.CustomSurrogate("test.derivative/v1").json(),
+        custom=lang.CustomSurrogate("test.derivative/v1").json(),
         check_values=False,
     )
     monkeypatch.setattr(
@@ -112,7 +111,7 @@ def test_malformed_derivative_fails_in_both_policies(check_values):
     E.register_surrogate("test.bad/v1", lambda x, config: torch.ones(9))
     dispatch = X.make_spike(
         slope=25,
-        custom=recipe.CustomSurrogate("test.bad/v1").json(),
+        custom=lang.CustomSurrogate("test.bad/v1").json(),
         check_values=check_values,
     )
     with pytest.raises(ValueError, match="shape"):
@@ -143,7 +142,7 @@ def test_policy_agreement_state_outputs_gradients_and_continuation(device):
         model = GraphExecutor(
             plan,
             trainable_parameters=(projection.weight.id,),
-            surrogate=recipe.CustomSurrogate("test.triangle/v1").json(),
+            surrogate=lang.CustomSurrogate("test.triangle/v1").json(),
             extension_validation=policy,
         ).to(device)
         full = model({"inputs": values})
@@ -241,8 +240,7 @@ def test_initialization_remains_strict(policy):
 
 @pytest.mark.parametrize("mode", ["sim", "train"])
 def test_cli_policy_maps_to_execution_spec(mode):
-    from snnlab.sim.execution import execution_spec_from_args
-    from snnlab.sim.tool import parse_args
+    from snnlab.sim.cli import execution_spec_from_args, parse_args
 
     assert (
         execution_spec_from_args(
@@ -279,7 +277,7 @@ def test_default_executor_skips_step_value_scans():
 def test_legacy_argument_namespace_uses_structural_default():
     from types import SimpleNamespace
 
-    from snnlab.sim.execution import execution_spec_from_args
+    from snnlab.sim.cli import execution_spec_from_args
 
     spec = execution_spec_from_args(SimpleNamespace(mode="sim", device="cpu"))
     assert spec.extension_validation == "structural"

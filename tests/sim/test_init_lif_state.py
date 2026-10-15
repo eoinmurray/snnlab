@@ -6,8 +6,8 @@ and produces spurious oscillations.
 import pytest
 import torch
 
-from snnlab.sim import models as M
-from snnlab.sim.models import init_lif_state
+from snnlab.sim.graph import dynamics as M
+from snnlab.sim.graph.dynamics import init_lif_state
 
 
 class TestInitLifState:

@@ -5,6 +5,15 @@ description: Figure layouts, recording adapters, scenes, transforms, themes and 
 
 `snnlab.viz` provides composition tools around Matplotlib and NumPy. It does not prescribe one plot type. Import the helpers through `from snnlab import viz`; choose Matplotlib artists appropriate to your data.
 
+All helpers are also available through `import snnlab as snn; snn.viz`.
+`viz/__init__.py` is the central public export map. Internally, `recording.py`
+owns time-series contracts, `transforms.py` owns numerical transforms, and
+`plotting/` groups geometry, figure grids, scenes, themes and animation.
+Implementation submodules are private; application code imports from
+`snnlab.viz` only. Recordings, transforms, rectangles, regions and point layouts
+use NumPy without loading Matplotlib. FigureGrid, scenes and animation helpers
+load Matplotlib when accessed; applying a Theme loads it when needed.
+
 ## Execution arrays and Recording
 
 Use [ExecutionResult.numpy](/api/sim/execution-result#numpy) for named plotting arrays. A `viz.Recording` is a separate visualization container for time series; it is not the removed execution `recordings` field.
@@ -50,7 +59,7 @@ Rows run from top to bottom and columns from left to right. Integers create equa
 | --- | --- |
 | `place` | `place(name, *, row, column, rowspan=1, colspan=1)` → `FigureRegion`. Declares an axes region. |
 | `reserve` | Same arguments as `place`; reserves space that cannot become axes. |
-| `names` | `names()` → tuple of registered names. |
+| `names` | Read-only property returning a tuple of registered names; use `layout.names` without calling it. |
 | `region` | `region(name)` → `FigureRegion`; unknown names raise `KeyError`. |
 | `rect` | `rect(name, *, padding=0.0)` → normalized `FigureRect`. |
 | `subgrid` | `subgrid(name, *, rows, columns, padding=0.0, row_gap=0.02, column_gap=0.02)` → nested grid sharing the theme. |
@@ -192,3 +201,101 @@ def save_animation(
 `FrameTimeline.sample(steps, *, frames, dt_ms)` uniformly samples step indices and requires `0 < frames <= steps`. `.compose(segments, *, dt_ms)` accepts `(start_step, end_step, frame_count)` segments; reversed ranges play backward and equal endpoints create holds. `.time_ms(frame)` converts the selected step to milliseconds.
 
 `save_animation` passes frame indices to the update callback, saves through Matplotlib's FFmpeg writer, and returns `FuncAnimation`. FFmpeg must be available. A timeline's selected simulation steps are distinct from animation frame indices: use `timeline.steps[frame]` inside your update callback.
+
+## Method signatures
+
+Methods are shown on their owning classes; `self` and `cls` are supplied automatically. Properties such as `Recording.steps`, `Recording.duration_ms`, `FigureGrid.names` and `FigureRect.mpl` are accessed without parentheses.
+
+```python
+class Recording:
+    def require(self, *names: str) -> tuple[np.ndarray, ...]: ...
+```
+
+```python
+class FigureRect:
+    def inset(
+        self, padding: float | tuple[float, float, float, float]
+    ) -> "FigureRect": ...
+```
+
+```python
+class FigureGrid:
+    def place(
+        self, name: str, *, row: int, column: int, rowspan: int = 1, colspan: int = 1
+    ) -> FigureRegion: ...
+    def reserve(
+        self, name: str, *, row: int, column: int, rowspan: int = 1, colspan: int = 1
+    ) -> FigureRegion: ...
+    def region(self, name: str) -> FigureRegion: ...
+    def rect(
+        self, name: str, *, padding: float | tuple[float, float, float, float] = 0.0
+    ) -> FigureRect: ...
+    def subgrid(
+        self,
+        name: str,
+        *,
+        rows: int | Sequence[float],
+        columns: int | Sequence[float],
+        padding: float | tuple[float, float, float, float] = 0.0,
+        row_gap: float | Sequence[float] = 0.02,
+        column_gap: float | Sequence[float] = 0.02,
+    ) -> "FigureGrid": ...
+    def figure(self, *, figsize: tuple[float, float], dpi: int = 120) -> Any: ...
+    def add_axes(
+        self,
+        figure: Any,
+        name: str,
+        *,
+        padding: float | tuple[float, float, float, float] = 0.0,
+        frame: bool = True,
+        **kwargs: Any,
+    ) -> Any: ...
+    def style_axis(self, axis: Any, *, frame: bool = True) -> None: ...
+    def draw_region(
+        self,
+        figure: Any,
+        name: str,
+        *,
+        role: str = "ink",
+        fill: str | None = None,
+        linewidth: float = 1.4,
+        dashed: bool = False,
+        zorder: float = -10,
+    ) -> Rectangle: ...
+```
+
+```python
+class Panel:
+    def draw(self, ax: Any, recording: Recording) -> Any: ...
+    def update(self, frame: int) -> object: ...
+```
+
+```python
+class Scene:
+    def add(
+        self, panel: Panel, *, axis: Any = None, region: str | None = None
+    ) -> Any: ...
+    def on_frame(self, callback: Callable[[int, "Scene"], object]) -> None: ...
+    def update(self, frame: int) -> tuple[object, ...]: ...
+```
+
+```python
+class FrameTimeline:
+    @classmethod
+    def sample(cls, steps: int, *, frames: int, dt_ms: float) -> "FrameTimeline": ...
+    @classmethod
+    def compose(
+        cls, segments: list[tuple[int, int, int]], *, dt_ms: float
+    ) -> "FrameTimeline": ...
+    def time_ms(self, frame: int) -> float: ...
+```
+
+```python
+class Theme:
+    def colour(self, role: str) -> str: ...
+    def apply(self) -> None: ...
+```
+
+`FrameTimeline` stores supplied step indices and `dt_ms`; the factories validate sampling counts/segments, but do not validate that `dt_ms` is finite and positive. Supply a meaningful positive timestep. Timeline indexing follows NumPy indexing. FFmpeg availability and file encoding errors propagate when saving animation.
+
+`RecordingError` is a `ValueError` subclass raised for invalid recording time-series contracts or missing required signals. Figure layout lookup raises `KeyError` for unknown region names; invalid tracks, gaps, bounds and overlapping regions raise `ValueError`.

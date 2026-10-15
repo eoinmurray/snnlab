@@ -4,27 +4,28 @@ description: Optional bounded activity monitoring and PyTorch CPU/CUDA profiling
 ---
 
 `TraceSpec` adds diagnostics to native `train()` calls. Import it from
-`snnlab.sim.tracing` and pass it as `ExecutionSpec.tracing`. Tracing defaults to
+`snnlab.sim` and pass it as `ExecutionSpec.tracing`. Tracing defaults to
 `None`; disabled tracing opens no profiler, samples no activity and adds no
 measurement clocks or device fences. It does not change the graph/training
 recipe or checkpoint compatibility identity.
 
 ```python
 from pathlib import Path
-from snnlab.sim.execution import ExecutionSpec, train
-from snnlab.sim.tracing import TraceSpec
+from snnlab.sim import ExecutionSpec, TraceSpec, train
 
-result = train(ExecutionSpec(
-    kind="train",
-    bundle=Path("network.bundle"),
-    # Supply input_bindings, targets and normal training settings here.
-    tracing=TraceSpec(
-        output=Path("artifacts/run-001/tracing"),
-        mode="both",
-        skip_updates=1,
-        active_updates=3,
-    ),
-))
+result = train(
+    ExecutionSpec(
+        kind="train",
+        bundle=Path("network.bundle"),
+        # Supply input_bindings, targets and normal training settings here.
+        tracing=TraceSpec(
+            output=Path("artifacts/run-001/tracing"),
+            mode="both",
+            skip_updates=1,
+            active_updates=3,
+        ),
+    )
+)
 summary = result.metrics["tracing"]
 ```
 
@@ -150,3 +151,20 @@ for whole-call and epoch phases, including setup, validation and checkpointing.
 
 Backend references: [PyTorch Profiler](https://docs.pytorch.org/docs/2.10/profiler.html)
 and [profiler recipe](https://docs.pytorch.org/tutorials/recipes/recipes/profiler_recipe.html).
+
+## TraceSpec signature
+
+```python
+class TraceSpec:
+    output: str | Path
+    mode: Literal["off", "monitor", "profile", "both"] = "monitor"
+    skip_updates: int = 1
+    active_updates: int = 3
+    block_size: int = 16
+    record_shapes: bool = True
+    profile_memory: bool = True
+    with_stack: bool = False
+    detailed_labels: bool = True
+```
+
+The constructor validates mode, non-empty output path, non-negative skipped updates, positive capture/block counts and boolean options. Invalid values raise `ValueError` or `TypeError`. Capture artifacts and summaries are side effects of `train`, not construction. `TraceSession` and request-local tracing engines are internal execution machinery; user code configures tracing through `TraceSpec`.

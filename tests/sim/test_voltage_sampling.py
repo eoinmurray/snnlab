@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 from tests.sim._bundle_builders import ping_classifier
 
 
@@ -38,7 +38,7 @@ def fixture(*, spiking=False):
         for operation in ("mean", "sum"):
             for masked in (False, True):
                 name = f"{phase}_{operation}_{'masked' if masked else 'full'}"
-                value = snn.ops.reduce(
+                value = snn.reduce(
                     signal,
                     operation=operation,
                     over="time",

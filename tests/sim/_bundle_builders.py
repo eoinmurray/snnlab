@@ -1,7 +1,6 @@
 """Shared classifier bundles for simulator regression tests."""
 
 from snnlab import lang as snn
-from snnlab.lang import training
 from tests._circuits import author_ping
 
 
@@ -18,7 +17,7 @@ def ping_classifier():
         source=image,
         include_silent_recurrence=True,
     )
-    readout = snn.readouts.MeanVoltage(
+    readout = snn.MeanVoltage(
         source=cell.E.spikes,
         classes=10,
         name="classifier",
@@ -35,18 +34,18 @@ def ping_classifier():
     recurrent = [p["id"] for p in net.parameters if p["id"] in recurrent_projection_ids]
     feedforward = [p["id"] for p in net.parameters if p["id"] not in set(recurrent)]
     train = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=readout, target="digit")],
+        objectives=[snn.CrossEntropy(prediction=readout, target="digit")],
         parameter_groups=[
-            training.ParameterGroup(feedforward, name="feedforward", lr=1e-3),
-            training.ParameterGroup(
+            snn.ParameterGroup(feedforward, name="feedforward", lr=1e-3),
+            snn.ParameterGroup(
                 recurrent,
                 name="recurrent_frozen",
                 lr=0.0,
                 frozen=True,
             ),
         ],
-        optimizer=training.AdamW(weight_decay=1e-4),
-        surrogate=training.FastSigmoid(slope=1.0),
+        optimizer=snn.AdamW(weight_decay=1e-4),
+        surrogate=snn.FastSigmoid(slope=1.0),
         presentation_duration=200 * snn.ms,
         epochs=20,
     )
@@ -65,15 +64,15 @@ def deep_network():
     third = author_ping(
         net, name="decision", n_e=128, n_i=32, source=second.E.spikes
     )
-    result = snn.readouts.SpikeCount(
+    result = snn.SpikeCount(
         source=third.E.spikes, classes=20, name="gesture_readout"
     )
     net.output("gesture_logits", result)
     net.expose(first.E.spikes, second.E.spikes, third.E.spikes)
     recipe = snn.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=result, target="gesture")],
+        objectives=[snn.CrossEntropy(prediction=result, target="gesture")],
         regularizers=[
-            training.SpikeBudgetPenalty(
+            snn.SpikeBudgetPenalty(
                 signals=(
                     first.E.spikes,
                     first.I.spikes,
@@ -87,14 +86,14 @@ def deep_network():
             )
         ],
         parameter_groups=[
-            training.ParameterGroup(
+            snn.ParameterGroup(
                 [row["id"] for row in net.parameters],
                 name="all_layers",
                 lr=1e-3,
             )
         ],
-        optimizer=training.AdamW(weight_decay=1e-4),
-        surrogate=training.FastSigmoid(slope=1.0),
+        optimizer=snn.AdamW(weight_decay=1e-4),
+        surrogate=snn.FastSigmoid(slope=1.0),
         presentation_duration=100 * snn.ms,
         epochs=20,
     )

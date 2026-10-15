@@ -3,56 +3,49 @@
 Public functions are available directly as ``snnlab.analysis.<name>``.
 Spike functions expect one presentation's dense ``(time, cells)`` raster.
 Timestep, interval, lag and window arguments use milliseconds.
+
+Implementation modules are private; public exports are resolved on demand.
 """
 
-from ._activity import (
-    binned_spike_counts,
-    inter_spike_intervals,
-    isi_cv,
-    per_neuron_firing_rates,
-    population_rate_trace,
-    spike_count_correlations,
-)
-from ._conductance import conductance_loop_score, rolling_conductance_loop_score
-from ._cycles import (
-    cycle_boundaries,
-    cycle_occupancy_distribution,
-    cycle_spike_counts,
-    detect_population_bursts,
-)
-from ._rhythmicity import (
-    iei_histogram,
-    population_event_times,
-    rhythmicity_metrics,
-    rhythmicity_scalars,
-    spike_autocorrelogram,
-)
-from ._spectra import band_power, band_power_fraction, power_spectrum, spectral_peak
-from ._spikes import active_fraction, firing_rate, population_spike_count_cv
+from importlib import import_module
 
-__all__ = [
-    "per_neuron_firing_rates",
-    "binned_spike_counts",
-    "population_rate_trace",
-    "power_spectrum",
-    "spectral_peak",
-    "band_power",
-    "band_power_fraction",
-    "inter_spike_intervals",
-    "isi_cv",
-    "spike_count_correlations",
-    "detect_population_bursts",
-    "cycle_boundaries",
-    "cycle_spike_counts",
-    "cycle_occupancy_distribution",
-    "firing_rate",
-    "population_spike_count_cv",
-    "active_fraction",
-    "population_event_times",
-    "iei_histogram",
-    "spike_autocorrelogram",
-    "rhythmicity_scalars",
-    "rhythmicity_metrics",
-    "conductance_loop_score",
-    "rolling_conductance_loop_score",
-]
+_EXPORTS = {
+    "per_neuron_firing_rates": "activity",
+    "binned_spike_counts": "activity",
+    "population_rate_trace": "activity",
+    "power_spectrum": "spectra",
+    "spectral_peak": "spectra",
+    "band_power": "spectra",
+    "band_power_fraction": "spectra",
+    "inter_spike_intervals": "intervals",
+    "isi_cv": "intervals",
+    "spike_count_correlations": "correlations",
+    "detect_population_bursts": "cycles",
+    "cycle_boundaries": "cycles",
+    "cycle_spike_counts": "cycles",
+    "cycle_occupancy_distribution": "cycles",
+    "firing_rate": "activity",
+    "population_spike_count_cv": "activity",
+    "active_fraction": "activity",
+    "population_event_times": "rhythmicity",
+    "iei_histogram": "rhythmicity",
+    "spike_autocorrelogram": "rhythmicity",
+    "rhythmicity_scalars": "rhythmicity",
+    "rhythmicity_metrics": "rhythmicity",
+    "conductance_loop_score": "conductance",
+    "rolling_conductance_loop_score": "conductance",
+}
+__all__ = [*_EXPORTS]
+
+
+def __getattr__(name):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(f".{module}", __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))

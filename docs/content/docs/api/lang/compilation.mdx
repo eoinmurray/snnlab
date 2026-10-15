@@ -62,6 +62,7 @@ Renders one selected view to the given path and returns its `Path`. The suffix s
 ```python
 def migrate_refractory(graph: Mapping[str, Any]) -> dict[str, Any]: ...
 
+
 old = lang.load_bundle("historical.bundle")
 graph = lang.migrate_refractory(old.graph)
 ```
@@ -92,6 +93,16 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult: ...
 
 Returns `ValidationResult`, whose `.diagnostics` lists `Diagnostic(severity, code, message, subject=None)` records. `.errors` and `.warnings` filter diagnostics by severity; `.raise_for_errors()` raises on errors. This checks graph declarations; execution planning performs additional backend checks.
 
+## validate_training
+
+```python
+def validate_training(
+    graph: Mapping[str, Any], training: Mapping[str, Any]
+) -> ValidationResult: ...
+```
+
+Import it directly from `snnlab.lang`. It validates a compiled recipe against the graph, including named parameters, objectives, targets, optimizer and surrogate declarations. Inspect the returned diagnostics or call `.raise_for_errors()`; successful structural validation does not establish backend support. `lang.compile` performs both graph and recipe validation automatically.
+
 ## Structural diagrams
 
 ```python
@@ -101,3 +112,21 @@ def diagram(
 ```
 
 `lang.diagram` returns a renderer-neutral `viz.Diagram`. `view` accepts `"circuit"`, `"training"` or `"expanded"`. Circuit/training views collapse groups; `expand_groups` selectively expands known groups in those views. Unknown groups and unsupported view combinations raise `ValueError`. Expanded static views reject graphs with more than 120 projections plus operations. See [diagram rendering](/api/viz/diagrams).
+
+## Diagnostic records and validation results
+
+`Diagnostic` and `ValidationResult` are exported by `snnlab.lang`; `validate_graph` and `validate_training` return validation results.
+
+```python
+class Diagnostic:
+    severity: str
+    code: str
+    message: str
+    subject: str | None = None
+
+
+class ValidationResult:
+    diagnostics: list[Diagnostic] = field(default_factory=list)
+```
+
+`Diagnostic.line()` returns a formatted severity/code/message string, including the subject when present. `ValidationResult.errors` and `.warnings` are filtered diagnostic lists; `.raise_for_errors()` returns normally without errors and otherwise raises `ValueError`. A successful graph validation does not promise that every backend supports the graph; inspect bundle capability diagnostics and execution planning errors separately.

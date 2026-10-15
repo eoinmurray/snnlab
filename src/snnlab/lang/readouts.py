@@ -1,11 +1,15 @@
-"""Concise readouts expanded into ordinary graph operations."""
+"""Convenience readout declarations expanded into graph operations."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import ops
-from .core import LeakyIntegrator, NonNegative, Normal, Signal, Spec, ms
+import snnlab.lang.operations as ops
+from snnlab.lang._specs import Spec
+from snnlab.lang.components import LeakyIntegrator
+from snnlab.lang.network import Signal
+from snnlab.lang.parameters import NonNegative, Normal
+from snnlab.lang.units import ms
 
 
 @dataclass(frozen=True)

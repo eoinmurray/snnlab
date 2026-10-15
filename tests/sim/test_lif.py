@@ -5,8 +5,8 @@ import math
 import pytest
 import torch
 
-from snnlab.sim import models as M
-from snnlab.sim.models import exp_synapse, lif_step, spike_biophysical
+from snnlab.sim.graph import dynamics as M
+from snnlab.sim.graph.dynamics import exp_synapse, lif_step, spike_biophysical
 
 
 def _fresh_state(B=1, N=1):

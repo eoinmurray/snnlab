@@ -5,12 +5,12 @@ description: Complete reference for configuring graph construction, simulation, 
 
 `ExecutionSpec` describes one execution request. It selects the graph, input data, device, diagnostics and optional training or inference settings. Creating the object does not run anything; pass it to `build`, `simulate`, `infer`, `train` or `execute_request`.
 
-Import it from `snnlab.sim.execution`. This reference describes the current implementation in [execution.py](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/execution.py). The [quickstart](/quickstart) demonstrates its simulation use.
+Import it from `snnlab.sim`. This reference describes the current request contract in [requests/spec.py](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/requests/spec.py). The [quickstart](/quickstart) demonstrates its simulation use.
 
 ## Constructor
 
 ```python
-from snnlab.sim.execution import ExecutionSpec
+from snnlab.sim import ExecutionSpec
 
 ExecutionSpec(
     kind: Literal["build", "simulate", "train", "infer"],
@@ -61,7 +61,7 @@ ExecutionSpec(
 
 This is a signature display, not executable construction code. `Path`, `Mapping`, `Sequence`, `Literal`, `Any` and `torch.Tensor` denote Python types. Empty mappings and sequences are created by dataclass factories for each instance; the displayed `{}` defaults are not shared mutable defaults.
 
-The class is a frozen dataclass. You cannot reassign its fields, but nested mappings, tensors and objects are not deeply frozen. Type annotations do not validate values at construction; execution handlers and input resolvers perform the checks described below.
+The class is a frozen dataclass. You cannot reassign its fields, but nested mappings, tensors and objects are not deeply frozen. Construction validates execution-control enums, boolean retention/timing flags, recording/measurement types and supported tracing use. Handlers and input resolvers perform additional graph-dependent checks described below.
 
 ## Request and graph
 
@@ -76,7 +76,7 @@ Chooses the handler when using `execute_request(spec)`:
 | `"build"` | Validate/lower the graph and initialize a `GraphExecutor`. No input execution. |
 | `"simulate"` | Build and execute the graph using resolved inputs. |
 | `"infer"` | Currently delegates to the graph simulation handler, including checkpoint loading. |
-| `"train"` | Build the graph and perform AdamW updates using a training recipe and targets. |
+| `"train"` | Build the graph and perform optimizer updates using a training recipe and targets. |
 
 Calling a handler directly selects that operation independently of `kind`: `simulate(spec)` does not dispatch on `spec.kind`. Keep `kind` consistent with the handler. In particular, `build` only automatically loads bundle training metadata when `kind="train"`. An unsupported `kind` raises `ValueError` in the dispatcher.
 
@@ -114,7 +114,7 @@ If neither `graph` nor `bundle` supplies graph data, graph execution raises `Val
 
 Supplies all input data for the request. Pass typed binding instances in one sequence, for example `input_bindings=(poisson_input,)`. Binding IDs must match inputs declared by `net.input`.
 
-Declare the accepted signal with [Network.input](/api/lang/network#input). The binding types and their compatibility rules are documented below. Import bindings and `InputBinding` from `snnlab.sim.execution`.
+Declare the accepted signal with [Network.input](/api/lang/network#input). The binding types and their compatibility rules are documented below. Import bindings and `InputBinding` from `snnlab.sim`.
 
 ### Binding rules
 
@@ -122,7 +122,7 @@ All graph inputs must be covered exactly once by name. Names refer to IDs declar
 
 ### InputBinding
 
-[`ExecutionSpec.input_bindings`](/api/sim/execution-spec#input_bindings) is the sole input field on the execution request. `InputBinding` is a public type alias from `snnlab.sim.execution`:
+[`ExecutionSpec.input_bindings`](/api/sim/execution-spec#input_bindings) is the sole input field on the execution request. `InputBinding` is a public type alias from `snnlab.sim`:
 
 ```python
 InputBinding = (
@@ -209,8 +209,10 @@ For `rate_poisson`, features must have `(samples, channels)` shape and floating 
 
 ```python
 encoder = DatasetEncoder(
-    "rate_poisson", duration_ms=200,
-    rates_hz=(40, 80, 120), seed=17,
+    "rate_poisson",
+    duration_ms=200,
+    rates_hz=(40, 80, 120),
+    seed=17,
 )
 ```
 
@@ -274,9 +276,14 @@ no timing clocks or timing fences are used.
 
 ```python
 execution = ExecutionSpec(
-    kind="train", bundle=bundle_path,
-    input_bindings=(train_input,), targets={"class": train_labels},
-    validation=validation, epochs=20, batch_size=32, shuffle=True,
+    kind="train",
+    bundle=bundle_path,
+    input_bindings=(train_input,),
+    targets={"class": train_labels},
+    validation=validation,
+    epochs=20,
+    batch_size=32,
+    shuffle=True,
     training_timing=True,
 )
 result = train(execution)
@@ -325,7 +332,7 @@ require a separate profiler; `training_s` is not their sum alone.
 
 **Type:** `ValidationSpec | None`. **Default:** `None`.
 
-Held-out data for epoch evaluation by `train`. Import `ValidationSpec` from `snnlab.sim.execution`:
+Held-out data for epoch evaluation by `train`. Import `ValidationSpec` from `snnlab.sim`:
 
 ```python
 validation = ValidationSpec(
@@ -358,7 +365,7 @@ This field is used only by graph `train`, and requires positive effective `epoch
 
 **Type:** `EpochObservations | None`. **Default:** `None`. Requires graph `train` with positive `epochs`.
 
-Import `EpochObservations` and `ObservationProbe` from `snnlab.sim.execution`. Select exact graph IDs; all selections default to empty tuples and `probes` to an independent empty mapping. Unknown IDs, duplicate IDs, non-spiking population selections and non-trainable gradient selections are rejected.
+Import `EpochObservations` and `ObservationProbe` from `snnlab.sim`. Select exact graph IDs; all selections default to empty tuples and `probes` to an independent empty mapping. Unknown IDs, duplicate IDs, non-spiking population selections and non-trainable gradient selections are rejected.
 
 ```python
 observations = EpochObservations(
@@ -369,15 +376,23 @@ observations = EpochObservations(
     probes={
         "reference": ObservationProbe(input_bindings=reference_inputs, seed=17),
         "validation_draw_1": ObservationProbe(
-            input_bindings=draw_inputs, seed=23, split="validation",
+            input_bindings=draw_inputs,
+            seed=23,
+            split="validation",
         ),
     },
 )
 execution = ExecutionSpec(
-    kind="train", graph=bundle.graph, training=bundle.training,
-    input_bindings=train_inputs, targets=train_targets,
-    validation=validation, observations=observations,
-    epochs=20, batch_size=32, diagnostics=False,
+    kind="train",
+    graph=bundle.graph,
+    training=bundle.training,
+    input_bindings=train_inputs,
+    targets=train_targets,
+    validation=validation,
+    observations=observations,
+    epochs=20,
+    batch_size=32,
+    diagnostics=False,
 )
 ```
 
@@ -418,12 +433,14 @@ The previous training keys in `options` are no longer accepted by graph `train`;
 
 ### metrics
 
-Import `TrainingMetrics` from `snnlab.sim.execution`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it preserves full train/validation evaluation at initialization and every completed epoch, and update history.
+Import `TrainingMetrics` from `snnlab.sim`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it preserves full train/validation evaluation at initialization and every completed epoch, and update history.
 
 ```python
-metrics=TrainingMetrics(
-    train="online", validation="epoch",
-    initial=("validation",), update_history=False,
+metrics = TrainingMetrics(
+    train="online",
+    validation="epoch",
+    initial=("validation",),
+    update_history=False,
 )
 ```
 
@@ -444,12 +461,14 @@ Explicit metrics, batching or callbacks retain contiguous available epoch histor
 
 ### batching
 
-Import `Batching` from `snnlab.sim.execution`. Omitting it preserves the existing `shuffle` flag and kept tail.
+Import `Batching` from `snnlab.sim`. Omitting it preserves the existing `shuffle` flag and kept tail.
 
 ```python
-batching=Batching(
-    order="stratified", stratify_by="class",
-    remainder="merge_small", min_batch_size=20,
+batching = Batching(
+    order="stratified",
+    stratify_by="class",
+    remainder="merge_small",
+    min_batch_size=20,
 )
 ```
 
@@ -472,11 +491,17 @@ Resolved schedule metadata lives at `result.metrics["execution_protocol"]["train
 Optional callable receiving an immutable `EpochReport`, once after each **newly completed** epoch's requested measurements and observations. Epoch-zero evaluation remains in history and does not invoke the hook. The hook receives no model or optimizer references; merely enabling it adds no evaluations or unrequested observations.
 
 ```python
-from snnlab.sim.execution import EpochReport
+from snnlab.sim import EpochReport
+
 
 def report_epoch(report: EpochReport) -> None:
-    print(report.epoch, report.total_epochs, report.train.accuracy,
-          report.validation.accuracy, flush=True)
+    print(
+        report.epoch,
+        report.total_epochs,
+        report.train.accuracy,
+        report.validation.accuracy,
+        flush=True,
+    )
 ```
 
 `report.epoch`, `total_epochs`, `updates` and `examples` are global counters. `train`, `validation`, `observations` and `timing` are recursively immutable host mappings supporting both key and attribute access. Unavailable split metrics, observations or disabled timing are `None`. Split values equal the corresponding retained epoch row. Python, NumPy, CPU and available accelerator RNG states are preserved around the callback, including on failure. Exceptions propagate; optimizer updates are not automatically retried.
@@ -534,10 +559,10 @@ There is no automatic collection of unexposed signals. The previous `recording` 
 
 ### checkpoint_selection
 
-Import `CheckpointSelection` and `SelectionMetric` from `snnlab.sim.execution`. Selection is an execution control, independent of `TrainSpec` and epoch observations:
+Import `CheckpointSelection` and `SelectionMetric` from `snnlab.sim`. Selection is an execution control, independent of `TrainSpec` and epoch observations:
 
 ```python
-checkpoint_selection=CheckpointSelection(
+checkpoint_selection = CheckpointSelection(
     split="validation",
     cadence="completed_epoch",
     metric=SelectionMetric("cross_entropy", objective=0, direction="min"),
@@ -546,7 +571,7 @@ checkpoint_selection=CheckpointSelection(
 )
 ```
 
-Pass this object as `ExecutionSpec.checkpoint_selection`. `split` is `"train"` or `"validation"`; validation selection requires `ValidationSpec`. Epoch selection requires positive `epochs`. `objective` is the zero-based training objective index and must identify a built-in cross-entropy objective. Both metrics are measured from that objective's predictions; cross-entropy is **unweighted**, excludes regularizers, and is reported in epoch `*_cross_entropies` mappings. Metrics are sample-weighted across the entire resolved split, with a fixed evaluation seed and minibatch size.
+Pass this object as `ExecutionSpec.checkpoint_selection`. `split` is `"train"` or `"validation"`; validation selection requires `ValidationSpec`. Epoch selection requires positive `epochs`. `objective` is the zero-based training objective index and must identify a classification objective (built-in cross entropy or a custom objective registered with `classification=True`). Both metrics are measured from that objective's predictions; cross-entropy is **unweighted**, excludes regularizers, and is reported in epoch `*_cross_entropies` mappings. Metrics are sample-weighted across the entire resolved split, with a fixed evaluation seed and minibatch size.
 
 `direction` supports `"min"` and `"max"`. Tie-break metrics are checked in declared order after an exact primary-score tie. An exact tie across all metrics retains the earliest candidate. Duplicate metrics, unknown indices, incompatible objectives, missing scores and non-finite scores fail explicitly. Only `cadence="completed_epoch"` is supported. The saved parameters, optimizer/RNG state and epoch coordinates belong to the weights actually evaluated.
 
@@ -556,7 +581,7 @@ Omitting the field preserves historical behavior, explicitly named `CheckpointSe
 
 `CheckpointSelection.to_dict()` / `.from_dict()` round-trip the policy as JSON-compatible data. The resolved policy and evaluation contract are stored in checkpoint metadata, alongside the winning record and a separate best-candidate snapshot. Final checkpoints retain that winner across resume, including invocations without improvement. Selected checkpoints can themselves resume. Resume rejects changes to policy, evaluation seed/batch size, protocol, or resolved input/label contents. A checkpoint from before selection metadata existed cannot start epoch selection retrospectively; legacy resume retains its historical invocation-local baseline.
 
-Epoch-selection checkpoints use schema version 4 and require this feature's reader. Default legacy checkpoints keep schema version 2 (3 with observations), with additional selection metadata readable by this implementation. See [Checkpoint selection results](/api/sim/execution-result#checkpoint-selection) and [CLI](/api/sim/cli#checkpoint-selection).
+Epoch-selection checkpoints use schema version 4 (or version 5 when reporting state is retained) and require a compatible reader. Default legacy checkpoints keep schema version 2 (3 with observations), with additional selection metadata readable by this implementation. See [Checkpoint selection results](/api/sim/execution-result#checkpoint-selection) and [CLI](/api/sim/cli#checkpoint-selection).
 
 ### checkpoint
 
@@ -586,94 +611,23 @@ This is distinct from `checkpoint`: a weight checkpoint supplies parameters; run
 
 ## interventions
 
-`ExecutionSpec.interventions` is an ordered sequence of typed objects, defaulting to `()`. It is supported by graph `simulate` / `infer` and directly by `GraphExecutor.forward`. Graph training rejects interventions. Import the types from `snnlab.sim.execution`:
-
-```python
-DropSpikes(population_id="E", probability=0.25, seed=None)
-AddPoissonSpikes(population_id="E", rate_hz=5.0, seed=None)
-ReplaySpikes(population_id="I", replay=payload)
-```
-
-`population_id` must be an exact spiking population ID. COBA LIF, current-based LIF, spiking leaky integrators and registered spiking neurons use the same intervention point. A repeated intervention kind on the same population is rejected. Drop probability must be finite in `[0, 1]`; add rate must be finite and non-negative with `rate_hz * dt_ms / 1000 <= 1`. Stochastic `seed=None` uses the execution seed (or module construction seed for direct `forward`); supplied seeds must be non-negative integers. Random streams use the intervention's ordered index, target and absolute timestep.
-
-Interventions run immediately after each targeted population's ordinary neuron update and before any zero-delay downstream consumer. They alter **emitted spikes**, preserving the neuron update's voltage, reset and refractory state. Replacement spikes enter recurrent/delayed histories, diagnostics and readouts. Changes can affect the target's later state through recurrent feedback. Replay consumes no random draws. List order is literal: replay then drop modifies replayed spikes; drop then replay replaces the dropped stream; replay then add unions replay with generated spikes.
-
-The previous `options["inference_interventions"]` mapping is rejected with a migration error. Move the ordered sequence to `interventions=(DropSpikes(...), AddPoissonSpikes(...), ReplaySpikes(...))`. Direct `GraphExecutor.forward` likewise requires typed objects instead of mappings. `options["inference_overrides"]` remains separate.
+**Type:** `Sequence[Intervention]`. **Default:** an empty tuple. Ordered `ReplaySpikes`, `DropSpikes` and `AddPoissonSpikes` objects alter emitted population spikes during simulation/inference. They do not replace ordinary neuron integration and are rejected by training. See [Spike Interventions and Replay](/api/sim/interventions) for order, seeds and validation.
 
 ### DenseSpikeReplay
 
-```python
-class DenseSpikeReplay:
-    value: torch.Tensor       # Binary [time, batch, cells]
-    start_step: int           # Inclusive absolute timestep
-    dt_ms: float
-    sha256: str               # Expected canonical payload digest
-```
-
-For a caller-owned stream, create an independent, authenticated snapshot:
-
-```python
-from snnlab.sim.execution import DenseSpikeReplay, ReplaySpikes
-
-payload = DenseSpikeReplay.from_tensor(
-    baseline_spikes, start_step=0, dt_ms=0.1,
-)
-request = ExecutionSpec(
-    kind="infer", graph=bundle.graph,
-    input_bindings=input_bindings,
-    interventions=(ReplaySpikes("I", payload),),
-)
-```
-
-`.from_tensor` validates and copies values, then computes `sha256`. To verify an externally pinned payload, construct `DenseSpikeReplay(value, start_step, dt_ms, sha256=expected_digest)` instead. Every execution takes a private snapshot, verifies the digest before neuron stepping, and rejects later mutation of the supplied payload. Values must be real binary values; NaN, infinity and fractional spikes fail. Batch/cell dimensions must match the execution and target exactly. No broadcasting or repetition is inferred.
+A binary `(time, batch, cells)` snapshot with absolute start step, timestep and canonical payload digest. Use `DenseSpikeReplay.from_tensor` for an independent validated snapshot. See [dense replay](/api/sim/interventions#densespikereplay).
 
 ### SparseSpikeReplay
 
-```python
-class SparseSpikeReplay:
-    steps: torch.Tensor      # Absolute integer timesteps
-    batches: torch.Tensor
-    cells: torch.Tensor
-    start_step: int
-    steps_count: int
-    batch_size: int
-    cells_count: int
-    dt_ms: float
-    sha256: str
-```
-
-Use `SparseSpikeReplay.from_events(...)` with these coordinates and coverage fields, omitting `sha256`, to create a validated independent snapshot. All three coordinate vectors must be one-dimensional integer tensors of equal length, lexicographically ordered by `(step, batch, cell)`, without duplicates. Explicit dimensions define complete coverage; absent coordinates mean zero spikes. Empty event vectors represent an all-zero covered stream. Sparse replay remains sparse until the current batch/cell spike tensor is emitted.
-
-Dense and sparse payloads use `snnlab.spike-replay/v1`. Their digest is SHA-256 of the canonical header (sorted-key compact JSON plus a newline), followed by dense uint8 C-order bytes, or sparse `steps`, `batches`, `cells` in order as little-endian int64 bytes. The header binds representation, start step, step count, batch/cell dimensions and timestep. Digests use `sha256:HEX`; different representations have different payload identities even when their emitted spikes agree.
+A snapshot of ordered absolute `(step, batch, cell)` coordinates plus explicit coverage dimensions and digest. Empty coordinates mean zero spikes over the covered interval. See [sparse replay](/api/sim/interventions#sparsespikereplay).
 
 ### Replay coverage and continuation
 
-Coverage is the half-open interval `[start_step, start_step + steps_count)`. Dense `steps_count` comes from its time axis. Coverage dimensions and counts must be positive integers; `start_step` must be a non-negative integer. `dt_ms` must match the effective execution timestep. Replay must cover the entire current execution window; there is no padding or fallback outside coverage.
-
-On continuation, the execution starts at `runtime_state.completed_steps`. Supply the original full replay or a separately authenticated absolute-coordinate slice covering that chunk. Unrelated call boundaries do not restart replay. The target's ordinary state and transmitted delayed histories are carried by runtime state, so chunked execution agrees with uninterrupted execution, including delayed-edge boundaries. Changing replay intentionally creates a new intervention identity.
+Replay must cover the complete current absolute execution window with matching timestep and dimensions. Continuation begins at `runtime_state.completed_steps`. See [coverage and continuation](/api/sim/interventions#replay-coverage-and-continuation).
 
 ### Replay files and cache checks
 
-```python
-from snnlab.sim.execution import (
-    save_spike_replay, load_spike_replay,
-    intervention_identity, validate_inference_artifacts,
-)
-
-file_digest = save_spike_replay("baseline.npz", payload)
-loaded = load_spike_replay("baseline.npz", sha256=file_digest)
-expected = intervention_identity(
-    request.interventions, graph=bundle.graph, seed=request.seed,
-    start_step=0, steps_count=100, batch_size=1,
-)
-validate_inference_artifacts(cache_path, expected_interventions=expected)
-```
-
-`save_spike_replay` writes the schema/header and dense value or sparse coordinate arrays, returning a SHA-256 **file-byte** digest. The loader verifies those bytes before decoding an immutable in-memory copy, disables pickle, and also verifies canonical payload identity. Pin the returned digest in caller provenance; no source registry is created.
-
-`intervention_identity` validates/authenticates the supplied interventions before cache reuse and returns the exact metadata shape stored in `result.metrics["inference_interventions"]`: requested/resolved ordering, replay digest/coverage, stochastic seeds, and the current absolute execution window. Use the effective graph after any timestep override and the actual runtime start coordinate. Passing `expected_interventions=None` explicitly requires a cache without interventions; omitting the keyword retains internal-integrity-only validation. A mismatched replay, target, order or window fails even when graph and execution seed are unchanged. Existing artifact corruption checks remain active. This check covers interventions; complete expected-request authentication is a separate contract.
-
-File location is not part of intervention identity: relocating identical bytes preserves file authentication; independently saved identical payloads preserve canonical payload identity. Transformations, jitter generation and experiment-specific source-run pins belong to the caller. The [CLI replay route](/api/sim/cli#population-spike-replay) uses the same typed objects and authenticated loader.
+`save_spike_replay` / `load_spike_replay` persist and authenticate replay bytes. `intervention_identity` resolves expected policy/window metadata for cache checking. See [replay persistence and cache checks](/api/sim/interventions#replay-files-and-cache-checks) and [Inference Artifacts](/api/sim/inference-artifacts).
 
 ## options
 
@@ -701,7 +655,7 @@ Timestep recompilation rejects runtime continuation state. When using a checkpoi
 The named objects below follow the same structure as Quickstart. Here, `compiled_graph` is an already compiled graph declaring a spike input named `"inputs"` with `(time, batch, 16)` axes; its graph timestep determines physical duration.
 
 ```python
-from snnlab.sim.execution import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
 
 poisson_input = PoissonInputBinding(
     input_id="inputs",
@@ -741,113 +695,27 @@ Validation happens when a handler resolves the request. Frozen dataclass constru
 
 ## resets
 
-`ExecutionSpec.resets` accepts a sequence of `ResetVoltage(population_id, boundaries, value_mv=0.0)` objects. Only leaky-integrator populations are supported. Resets replace voltage before that population's update at the specified absolute timestep. Other populations, refractory counters, synaptic state and delayed spike histories continue normally. Overlapping resets for the same population, batch member and timestep are rejected.
-
-```python
-from pathlib import Path
-
-from snnlab.sim.execution import (
-    Boundary, BoundarySchedule, DecisionSegments, ExecutionSpec, ResetVoltage,
-)
-
-boundaries = BoundarySchedule(steps=(0, 200, 400))
-request = ExecutionSpec(
-    kind="infer",
-    bundle=Path("network.bundle"),
-    input_bindings=input_bindings,
-    resets=(ResetVoltage("out", boundaries, value_mv=0.0),),
-    decisions=DecisionSegments(
-        boundaries=boundaries,
-        end_step=600,
-        population_totals=("E", "I"),
-        output_spike_counts=("out",),
-    ),
-)
-```
-
-`BoundarySchedule(steps=(...), batches=None)` shares one strictly increasing schedule across all batch members. Pass a non-empty tuple of unique batch indices to select members. Alternatively, use `BoundarySchedule(events=(Boundary(0), Boundary(200, batches=(0,)), Boundary(250, batches=(1,))))`. Events must be increasing separately for each affected batch member. The `steps`/`batches` and `events` forms are mutually exclusive; steps and batch indices are non-negative integers. Boundary schedules may extend beyond the current execution chunk.
+**Type:** `Sequence[ResetVoltage]`. **Default:** an empty tuple. Selectively replaces leaky-integrator voltage before the update at scheduled absolute boundaries. Other dynamic state continues. Overlapping resets are rejected. See [Resets and Decision Segments](/api/sim/resets-decisions#resets) for batch-specific schedules and examples.
 
 ## decisions
 
-`DecisionSegments(boundaries, end_step, population_totals=(), output_spike_counts=())` defines explicit, potentially nonuniform segments for each batch member. Each member must have an initial boundary before the common terminal `end_step`; activity before its first boundary and after `end_step` is excluded. At least one count population is required, and every counted population must emit spikes.
-
-A boundary at step 200 closes `[0, 200)` before any voltage reset and before the step-200 update. Step 200 belongs to the next segment. `end_step` closes the last segment even when it equals the current chunk's end. Reset events at a chunk's end are applied only when execution resumes and updates that timestep. An unrelated call boundary never closes a segment.
-
-Completed segments appear in `result.decisions`, ordered by closing timestep then batch index. Each record contains `batch`, `start_step`, `end_step`, `duration_ms`, integer `population_totals` and per-neuron integer `output_spike_counts`. Counts use emitted spikes after any replay/drop/add interventions. Output counts are neuron/class counts, not weighted hidden-population readout values. The same records are stored in inference `metrics.json`.
-
-Partial accumulators use one `int64` tensor of shape `(batch, population_size)` per counted population, with no additional dense spike history. `result.runtime_state` retains these counts and the boundary cursor. Reuse the original full reset/decision policy with every continuation call. Changing or removing the policy, or attaching one to an existing unaudited runtime trajectory, fails explicitly. `save_runtime_state`/`load_runtime_state` preserve the accumulators and digest-bound metadata through schema version 3; ordinary older runtime artifacts remain supported. Returned records grow with completed segments; this does not change retention of ordinary graph outputs or diagnostics.
-
-These fields are supported by graph simulation/inference and by `GraphExecutor.forward(..., resets=..., decisions=...)`. Training rejects them. Supply continuous streams through dense, event or Poisson bindings. Dataset snapshots encode independent sample batches and reject continuous reset/decision policies.
-
-For cache reuse, compute the resolved policy with `segment_identity(resets, decisions, graph=effective_graph, batch_size=batch_size)` and pass it as `validate_inference_artifacts(path, expected_segments=identity)`. Passing `expected_segments=None` requires a cache without this policy; omission checks internal integrity only. Reset targets, values, absolute schedules, timing and count selections are bound into the inference request digest. This is a policy check; complete expected-request verification remains separate.
-
+**Type:** `DecisionSegments | None`. **Default:** `None`. Defines explicit absolute segments with population totals and per-cell emitted spike counts. Segment closure precedes voltage reset and the boundary's update. Partial counters continue through runtime state; unrelated call boundaries do not close segments. Training and independent dataset batches reject this continuous policy. See [decision semantics](/api/sim/resets-decisions#decisions).
 
 ## Automatic inference reductions
 
-Graph inference automatically accumulates supported `reduce_sum`, `reduce_mean` and `select_final` operations while stepping the network. Native population/input/projection/custom-state signals and chains of timewise `linear` operations are supported. This includes weighted SpikeCount, MeanVoltage, FinalVoltage and SpikeRate readouts, with input valid-time masks. A full-history consumer still receives its requested history; unsupported operation chains retain the existing dense path. There is no optimization flag to enable.
-
-This optimization leaves spike propagation, dynamic state and RNG consumption unchanged. Output names, shapes, dtypes and units are preserved. CPU/CUDA non-pre-reset floating sums use float64 accumulators and cast results back to the model dtype; pre-reset signals retain their historical sequential arithmetic, and MPS uses the native dtype. Dense parallel and online sequential sums can differ through floating-point ordering. Bounded equivalence fixtures use `rtol=2e-6`, `atol=2e-6`; these are tested tolerances rather than universal error bounds for arbitrarily long or cancellation-heavy runs.
-
-Training with autograd keeps its dense history and gradients. No truncated backpropagation is introduced. Direct PyTorch execution optimizes when gradients are disabled or no inputs/parameters require gradients. Epoch evaluation uses the automatic path under `no_grad`. `metrics["online_reductions"]` identifies lowered operations and `metrics["retained_signal_samples"]` reports remaining dense histories.
+Supported inference sum/mean/final readouts accumulate online without retaining full source histories. Autograd keeps its dense path. Floating-point summation order can differ from dense execution. See [supported reductions and numerical limits](/api/sim/recording-measurement#automatic-inference-reductions).
 
 ## measurement
 
-`measurement: MeasurementWindow | None = None` selects one explicit absolute `[start_step, end_step)` window for graph time reductions. Without it, each call reduces its own input interval, preserving the previous API behavior. An unrelated chunk boundary cannot restart an explicitly declared window.
-
-```python
-from snnlab.sim.execution import MeasurementWindow
-
-window = MeasurementWindow(start_step=0, end_step=600)
-first = model(first_inputs, diagnostics=False, measurement=window)
-continued = model(
-    remaining_inputs,
-    diagnostics=False,
-    measurement=window,
-    runtime_state=first.runtime_state,
-)
-assert continued.metrics["measurement_complete"]
-```
-
-Partial calls return aggregates accumulated so far and set `measurement_complete=False`. A mean with no valid samples yet returns zero until the window completes; a completed empty masked mean/rate window fails. Final selection tracks the last sample inside the window. Activity outside the window is excluded, and subsequent calls preserve the completed aggregate. Masked rates carry valid duration alongside counts; an explicitly authored fixed rate duration retains its declared meaning.
-
-Runtime state retains compact `reduction_tensors`, the policy and an absolute cursor in `reduction_state`. Portable save/load uses schema version 4, preserving older schemas. Reuse the same graph, parameters, backend and window for uninterrupted/continued equivalence. Changed or removed window policies, missing tensors, unsupported window reductions and adding a window to an unaudited continuation fail explicitly. Measurement windows require inference without autograd.
-
-[DecisionSegments](/api/sim/execution-spec#decisions) independently close/reset per-decision integer counters at their explicit boundaries. A MeasurementWindow covers its declared interval across those decisions; selective voltage resets do not silently reset its aggregate. Both policies and their partial accumulators survive the same runtime checkpoint.
+**Type:** `MeasurementWindow | None`. **Default:** `None`. Selects an absolute half-open interval for supported graph time reductions across continuation calls. Partial results carry `measurement_complete=False`; reuse the full original window on continuation. Requires inference without autograd. See [measurement windows](/api/sim/recording-measurement#measurement).
 
 ## recording
 
-`recording: RecordingSpec | None = None` selects additional time/batch/cell signals without requiring full exposed diagnostics. Import `RecordingSpec`, `SignalRecording`, `RecordingBlock` and `NPZRecordingSink` from `snnlab.sim.execution`.
-
-```python
-from snnlab.sim.execution import RecordingSpec, SignalRecording, NPZRecordingSink
-
-sink = NPZRecordingSink("recording-blocks")  # requires an empty directory
-recording = RecordingSpec(
-    signals=(
-        SignalRecording("E.spikes", kind="spike_events"),
-        SignalRecording("out.voltage", cells=(0, 1), kind="dense"),
-    ),
-    sink=sink,
-    sink_id=sink.identity,
-)
-result = model(inputs, diagnostics=False, recording=recording, retain_outputs=False)
-```
-
-`SignalRecording(signal, cells=None, kind="dense")` supports native signals and timewise linear chains. Cell selections must be nonempty, unique and in range. Dense recordings retain `(recorded_time, batch, selected_cells)` values in selection order. `kind="spike_events"` accepts population spikes and produces an `int64` `(events, 3)` tensor: absolute timestep, batch index and original cell index. Coordinates remain absolute during continuation; dataset batch indices identify positions in the full selected presentation sequence. Event rows follow execution/batch-block order rather than promising a global sort.
-
-`RecordingSpec.window` optionally restricts selected recordings to an absolute MeasurementWindow. Without a sink, tensors are returned in `result.recorded_signals` and saved as authenticated `recordings.npz` (inference-artifact schema version 2). In-memory sparse retention scales with emitted events; selected dense retention scales with selected history. An empty recording window returns a correctly shaped empty tensor. `metrics["recording_units"]` declares signal units.
-
-A sink is a callable receiving independent CPU `RecordingBlock` objects. Blocks carry signal, kind, values, absolute bounds, timestep, batch offset, original cell selection and units. Selected recordings default to one timestep per block; set `RecordingSpec(block_steps=32)` (or `"block_steps": 32` in recording JSON) to buffer up to 32 timesteps per signal before a CPU transfer. Event extraction runs on the transferred CPU block. Larger blocks change callback granularity and group signals into independent blocks, so opt in only when the sink supports this. A final partial block is always flushed, with absolute bounds and original cell indices preserved. Each continued call flushes its own blocks. With a sink, no recording tensors are accumulated in the result. Named reduced outputs are also delivered at call completion. Their block bounds describe accumulated measurement coverage, and `measurement_window` retains the full requested bounds, including for partial results. A stable `sink_id` is required, and callback RNG state is restored so recording cannot consume the executor's random streams. Sink callbacks should consume/write blocks rather than retain them when bounded memory is required.
-
-The built-in NPZ sink writes one compressed block file plus a JSONL manifest containing coordinates, units, shapes, dtypes and payload SHA-256 digests. Sink files are separate from inference-artifact files; generic external sink contents are not authenticated by the inference cache validator. Use a separate empty sink directory for each continued invocation.
+**Type:** `RecordingSpec | None`. **Default:** `None`. Selects dense signal cells or sparse spike events, optionally within a window and/or delivered to a bounded recording sink. Sink output is separate from named diagnostics. See [recording selection](/api/sim/recording-measurement#recording) and [sink contracts](/api/sim/recording-measurement#methods-and-sink-contract).
 
 ## retain_outputs
 
-`retain_outputs: bool = True` preserves the existing named output tensors by default. Set it to `False` to omit them from the result. A recording sink still receives reduced outputs at completion; supported timewise outputs are delivered per timestep without assembling a dense output history. Unsupported streamed output chains fail explicitly. Diagnostics are controlled independently: use `diagnostics=False` to avoid exposed dense histories.
-
-Dataset inference uses one initialized/checkpoint-loaded model, encodes successive batches and supplies global batch offsets to the sink. With diagnostics disabled, a sink and `retain_outputs=False`, it does not concatenate named outputs, selected recordings or per-sample final states across the dataset. Input/label/order metadata and batch provenance still scale with sample count. Requesting retained outputs, dense diagnostics or in-memory recordings explicitly restores the corresponding storage cost. These controls do not claim constant-memory training through time.
-
-Recording/window/retention policy and execution coordinates bind the inference request digest. Before cache reuse, call `retention_identity(graph=graph, start_step=0, steps_count=600, batch_size=2, diagnostics=False, measurement=window, recording=recording, retain_outputs=False)` and pass the result to `validate_inference_artifacts(path, expected_retention=identity)`. Explicit `None` requires older artifacts without retention identity; omission checks internal integrity only. Full checkpoint/input expected-request verification remains a separate contract.
+**Type:** `bool`. **Default:** `True`. False suppresses named result outputs while execution, requested recording and reductions proceed. Explicit diagnostics are controlled independently. See [retention and memory limits](/api/sim/recording-measurement#retain_outputs).
 
 ## Custom dynamics validation
 
@@ -887,10 +755,210 @@ The [zero-decay benchmark](https://github.com/eoinmurray/snnlab/blob/main/benchm
 
 ### tracing
 
-**Type:** `snnlab.sim.tracing.TraceSpec | None`. **Default:** `None`.
+**Type:** `snnlab.sim.TraceSpec | None`. **Default:** `None`.
 
 Optional bounded native-training monitoring and PyTorch CPU/CUDA profiling.
 Modes are `off`, `monitor`, `profile` and `both`. Configuration, CLI examples,
 measurement scopes and unavailable counters are documented in [Tracing](/api/sim/tracing).
 Tracing is diagnostic and does not enter graph, training or checkpoint identity.
 Use separate baseline and diagnostic calls when measuring performance.
+
+## Related reference pages
+
+1. [Execution Functions](/api/sim/execution-functions) documents handler signatures, dispatch and device resolution.
+2. [Training Checkpoints](/api/sim/training-checkpoints) documents checkpoint fields, persistence and selection methods.
+3. [Runtime State and Continuation](/api/sim/runtime-state) documents state fields, save/load and compatibility.
+4. [Inference Artifacts](/api/sim/inference-artifacts) documents saved result validation and derivation.
+5. [Recording and Measurement](/api/sim/recording-measurement) documents blocks, sinks and window methods.
+6. [Spike Interventions and Replay](/api/sim/interventions) documents replay constructors and identity functions.
+7. [Resets and Decision Segments](/api/sim/resets-decisions) documents schedule methods and cache identity.
+
+## Input binding constructors
+
+All binding types below are frozen dataclasses imported from `snnlab.sim`. Their referenced tensors/mappings are not deeply immutable. These signatures complement the field-specific input contracts above.
+
+```python
+class DenseArrayBinding:
+    input_id: str
+    value: torch.Tensor
+    source: Mapping[str, Any] = field(default_factory=dict)
+
+
+class TargetArrayBinding:
+    target_id: str
+    value: torch.Tensor
+    source: Mapping[str, Any] = field(default_factory=dict)
+
+
+class EventStreamBinding:
+    input_id: str
+    steps: torch.Tensor
+    batches: torch.Tensor
+    channels: torch.Tensor
+    steps_count: int
+    batch_size: int
+    source: Mapping[str, Any] = field(default_factory=dict)
+
+
+class PoissonInputBinding:
+    input_id: str
+    steps_count: int
+    rates_hz: Sequence[float]
+    seed: int
+    batch_size: int = 1
+    categorical: bool = False
+
+
+class DatasetEncoder:
+    kind: Literal["rate_poisson", "prebinned_spikes", "event_bin", "custom"]
+    duration_ms: float | None = None
+    max_rate_hz: float | None = None
+    seed: int = 0
+    definition: str | None = None
+    config: Mapping[str, Any] = field(default_factory=dict)
+    rates_hz: Sequence[float] | None = None
+
+
+class DatasetSnapshotBinding:
+    path: Path
+    input_id: str
+    dataset_id: str
+    split: str
+    encoder: DatasetEncoder
+    target_id: str | None = None
+    feature_key: str = "features"
+    label_key: str = "labels"
+    sample_cap: int | None = None
+    shuffle: bool = False
+    order_seed: int = 0
+
+
+class ValidationSpec:
+    input_bindings: Sequence[InputBinding] = field(default_factory=tuple)
+    targets: Mapping[str, torch.Tensor] = field(default_factory=dict)
+    target_bindings: Sequence[TargetArrayBinding] = field(default_factory=tuple)
+    protocol: Mapping[str, Any] = field(default_factory=dict)
+    encoding_seeds: Sequence[int] = ()
+```
+
+## Input resolution helpers
+
+Import these functions and `ResolvedDenseInputs` from `snnlab.sim`. Normal simulation/training requests perform resolution automatically. Low-level resolvers materialize inputs; use request-managed dataset batching for bounded batch encoding.
+
+```python
+class ResolvedDenseInputs:
+    tensors: Mapping[str, torch.Tensor]
+    protocol: Mapping[str, Any]
+```
+
+`ResolvedDenseInputs.tensors` maps graph input IDs to device tensors; `.protocol` retains resolved shapes, timing and source provenance.
+
+### File loaders
+
+```python
+def load_dense_array_bindings(
+    path: str | Path, graph: Mapping[str, Any]
+) -> tuple[DenseArrayBinding, ...]: ...
+
+
+def load_target_array_bindings(
+    path: str | Path, training: Mapping[str, Any]
+) -> tuple[TargetArrayBinding, ...]: ...
+
+
+def load_event_stream_bindings(
+    path: str | Path, graph: Mapping[str, Any]
+) -> tuple[EventStreamBinding, ...]: ...
+```
+
+`load_dense_array_bindings` loads NPY/NPZ with pickle disabled and records file digest/source metadata. NPY requires exactly one graph input. NPZ keys normally name inputs; a single `input_spikes` array supports the historical single-input alias. Full graph shape/name validation occurs during resolution.
+
+`load_target_array_bindings` loads NPY for a recipe with one named target, or NPZ with exactly the recipe's target names. It returns a tuple of bindings; dtype/sample checks occur during resolution.
+
+`load_event_stream_bindings` requires NPZ coordinate arrays. A single-input file can use `steps`, `batches`, `channels`, `steps_count` and `batch_size`; multi-input files prefix each field with `<input_id>.`. It returns typed event bindings without treating absent events as missing coverage. Invalid file/key layouts fail; event coordinate validation occurs in the resolver.
+
+### Dense, event and Poisson resolvers
+
+```python
+def resolve_dense_array_bindings(
+    graph: Mapping[str, Any],
+    *,
+    bindings: Sequence[DenseArrayBinding] = (),
+    inputs: Mapping[str, torch.Tensor] | None = None,
+    device: str | torch.device = "cpu",
+    seed: int = 0,
+    protocol: Mapping[str, Any] | None = None,
+) -> ResolvedDenseInputs: ...
+
+
+def resolve_event_stream_bindings(
+    graph: Mapping[str, Any],
+    *,
+    bindings: Sequence[EventStreamBinding],
+    device: str | torch.device = "cpu",
+    seed: int = 0,
+    protocol: Mapping[str, Any] | None = None,
+) -> ResolvedDenseInputs: ...
+
+
+def resolve_poisson_input_bindings(
+    graph: Mapping[str, Any],
+    *,
+    bindings: Sequence[PoissonInputBinding],
+    device: str | torch.device = "cpu",
+    seed: int = 0,
+    protocol: Mapping[str, Any] | None = None,
+) -> ResolvedDenseInputs: ...
+
+
+def resolve_input_bindings(
+    graph: Mapping[str, Any],
+    *,
+    dense_bindings: Sequence[DenseArrayBinding] = (),
+    event_bindings: Sequence[EventStreamBinding] = (),
+    poisson_bindings: Sequence[PoissonInputBinding] = (),
+    inputs: Mapping[str, torch.Tensor] | None = None,
+    device: str | torch.device = "cpu",
+    seed: int = 0,
+    protocol: Mapping[str, Any] | None = None,
+) -> ResolvedDenseInputs: ...
+```
+
+The family-specific resolvers require bindings matching the graph's named inputs. They validate dimensions, dtype/value contracts and common time/batch axes, move/materialize tensors on `device`, and return `ResolvedDenseInputs`. Do not supply both dense `bindings` and `inputs` mappings. Sparse event resolution creates dense binary execution tensors; it is not a sparse execution backend.
+
+`resolve_input_bindings` combines dense, event and Poisson sources for different inputs. Each graph input must occur exactly once across the supplied families. Source provenance and resolved timing are retained in the protocol. Seeded Poisson generation follows each binding's seed and declared graph timestep; rates must produce valid step probabilities. Caller protocol metadata does not override shape/value validation.
+
+### Targets
+
+```python
+def resolve_target_array_bindings(
+    training: Mapping[str, Any],
+    *,
+    bindings: Sequence[TargetArrayBinding] = (),
+    targets: Mapping[str, torch.Tensor] | None = None,
+    sample_count: int,
+    device: str | torch.device = "cpu",
+) -> tuple[dict[str, torch.Tensor], list[dict[str, Any]]]: ...
+```
+
+Returns `(targets, provenance_rows)`. Target IDs must match the recipe, with `sample_count` leading samples. Classification targets require a one-dimensional integer vector, converted to `torch.long`; custom non-classification targets accept finite real arrays, including additional dimensions. Duplicate or missing IDs and incompatible shapes/dtypes raise errors. Supply `bindings` or `targets`, not both.
+
+### Dataset snapshots
+
+```python
+def resolve_dataset_snapshot_binding(
+    graph: Mapping[str, Any],
+    binding: DatasetSnapshotBinding,
+    *,
+    device: str | torch.device = "cpu",
+    execution_seed: int = 0,
+    protocol: Mapping[str, Any] | None = None,
+    _snapshot=None,
+    _indices=None,
+    _spike_seed=None,
+    _rate_seed=None,
+    _validated=False,
+) -> tuple[ResolvedDenseInputs, tuple[TargetArrayBinding, ...]]: ...
+```
+
+Returns `(resolved_inputs, target_bindings)` for one digest-identified snapshot. The graph must have exactly the binding's named `(time, batch, channels)` input. Snapshot format, encoder, source selection and label validation follow the dataset rules above. Parameters beginning with `_` are internal batch-provider hooks; applications should leave them at defaults. This low-level function encodes the selected snapshot together; request-managed encoding batches it as needed.

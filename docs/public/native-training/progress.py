@@ -14,7 +14,7 @@ import numpy as np
 from progress_objectives import equal_class_loss
 
 from snnlab import extensions, lang, viz
-from snnlab.sim.execution import (
+from snnlab.sim import (
     Batching,
     CheckpointSelection,
     DatasetEncoder,
@@ -75,7 +75,7 @@ def main():
     inputs = net.input(
         "events", shape=("time", "batch", 700), signal_type="spikes", unit="spike"
     )
-    scores = lang.readouts.SpikeCount(source=inputs, classes=20, name="scores")
+    scores = lang.SpikeCount(source=inputs, classes=20, name="scores")
     net.output("class_scores", scores)
     if args.equal_class_loss:
         extensions.register_objective(
@@ -84,22 +84,22 @@ def main():
         weights = args.samples / (
             max(1, int((counts > 0).sum())) * np.maximum(counts, 1)
         )
-        objective = lang.training.CustomObjective(
+        objective = lang.CustomObjective(
             "examples.equal-class-progress/v1",
             prediction=scores,
             target="class",
             weights=weights.tolist(),
         )
     else:
-        objective = lang.training.CrossEntropy(prediction=scores, target="class")
+        objective = lang.CrossEntropy(prediction=scores, target="class")
     recipe = lang.TrainSpec(
         objectives=(objective,),
         parameter_groups=(
-            lang.training.ParameterGroup(
+            lang.ParameterGroup(
                 ("scores_projection.weight",), name="readout", lr=0.01
             ),
         ),
-        optimizer=lang.training.AdamW(weight_decay=0),
+        optimizer=lang.AdamW(weight_decay=0),
         presentation_duration=args.steps * lang.ms,
     )
     bundle = lang.compile(net, training=recipe)

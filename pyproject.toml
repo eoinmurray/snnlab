@@ -12,7 +12,7 @@ dependencies = ["numpy>=2.2.6", "scipy>=1.15.3", "torch>=2.10.0", "torchvision>=
 Repository = "https://github.com/eoinmurray/snnlab"
 
 [project.scripts]
-snnsim = "snnlab.sim.tool:main"
+snnsim = "snnlab.sim.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -53,7 +53,6 @@ ignore = ["E501", "E741"]
 
 [tool.coverage.run]
 source = ["snnlab.sim"]
-omit = ["*/profiling.py"]
 
 [tool.coverage.report]
 show_missing = true

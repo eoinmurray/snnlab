@@ -8,9 +8,9 @@ import torch
 
 from snnlab import extensions as ext
 from snnlab import lang
-from snnlab.lang import training
-from snnlab.lang.compiler import graph_dict, validate_graph
-from snnlab.sim.execution import (
+from snnlab.lang import validate_graph
+from snnlab.lang.compilation.serialization import graph_dict
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
@@ -364,18 +364,18 @@ def test_compatible_shared_weights_initialize_once():
 
 def test_builtin_training_and_checkpoint_resume_preserve_exclusion(tmp_path):
     net, cells, projection = recurrent_network()
-    prediction = lang.readouts.MeanVoltage(
+    prediction = lang.MeanVoltage(
         source=cells.spikes, classes=2, name="scores", weight=lang.Uniform(0.1, 1.0)
     )
     net.output("class_scores", prediction)
     recipe = lang.TrainSpec(
-        objectives=[training.CrossEntropy(prediction=prediction, target="label")],
+        objectives=[lang.CrossEntropy(prediction=prediction, target="label")],
         parameter_groups=[
-            training.ParameterGroup(
+            lang.ParameterGroup(
                 [row["id"] for row in net.parameters], name="all", lr=0.01
             )
         ],
-        optimizer=training.AdamW(weight_decay=0),
+        optimizer=lang.AdamW(weight_decay=0),
         presentation_duration=10 * lang.ms,
     )
     bundle = lang.compile(net, training=recipe, target=None)

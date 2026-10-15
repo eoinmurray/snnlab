@@ -13,7 +13,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from snnlab import lang, viz
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 TRAINING_DIR = OUTPUT_DIR.parent / "training"

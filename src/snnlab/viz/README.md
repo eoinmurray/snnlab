@@ -1,6 +1,6 @@
-# snnviz
+# snnlab.viz
 
-`snnviz` owns visual rendering for Pinglab's spiking-network tools. It provides
+`snnlab.viz` owns visual rendering for Pinglab's spiking-network tools. It provides
 renderer-neutral recording and structural-diagram contracts, numerical
 transforms, deterministic layout helpers, a thin Matplotlib composition layer
 for activity stills and animations, and Graphviz export for diagrams. It does
@@ -13,7 +13,9 @@ system for new multi-panel figures and animation frames. It uses explicit named
 placement rather than a textual area map:
 
 ```python
-grid = snnviz.FigureGrid(
+import snnlab as snn
+
+grid = snn.viz.FigureGrid(
     rows=(0.3, 1.0, 1.4),
     columns=4,
     row_gap=(0.02, 0.05),
@@ -36,20 +38,19 @@ regions can span tracks, nest another `FigureGrid`, or be reserved so no axis
 can enter them. Gaps may be one shared value or one value per boundary. Geometry
 is resolved once in normalized figure coordinates, so the same layout is stable
 across SVG, PDF, PNG posters and every video frame. New grids use the opaque
-white, hard-edged, monospace `snnviz` house style by default.
+white, hard-edged, monospace `snnlab.viz` house style by default.
 
 Structural producers lower their own semantics into `Diagram`, `DiagramNode`,
-`DiagramEdge`, and `DiagramGroup`; `snnviz.render_diagram` owns deterministic
+`DiagramEdge`, and `DiagramGroup`; `snn.viz.render_diagram` owns deterministic
 DOT generation and SVG, PNG, PDF, or DOT export. This keeps source-specific
 schema interpretation outside the renderer. For example:
 
 ```python
-from snnlab import lang as snn
-from tools import snnviz
+import snnlab as snn
 
-bundle = snn.compile(network)
-visual = snn.diagram(bundle, view="circuit", expand_groups={"cell"})
-snnviz.render_diagram(visual, "circuit.svg")
+bundle = snn.lang.compile(network)
+visual = snn.lang.diagram(bundle, view="circuit", expand_groups={"cell"})
+snn.viz.render_diagram(visual, "circuit.svg")
 ```
 
 Structural diagrams use a natural layout by default (`height_to_width_ratio=None`).
@@ -86,7 +87,7 @@ an appropriate view or grouping before reducing type sizes.
 ## Scientific visual style guide
 
 This guide consolidates the visual conventions already used across Pinglab.
-Some rules are enforced by `snnviz` contracts; others are composition rules that
+Some rules are enforced by `snnlab.viz` contracts; others are composition rules that
 renderers and experiment presentation stages must apply deliberately.
 
 ### Current technical reference
@@ -112,7 +113,7 @@ mid grey. The default scalar image map runs from white through red to black.
 Every plot, figure, schematic, poster, and video frame must use an opaque pure
 white `#ffffff` background. Do not use warm paper, tinted, grey, transparent, or
 theme-dependent backgrounds in final visual outputs. The former warm
-`snnviz.styles.Theme` background has been removed; its defaults now implement
+`snn.viz.Theme` background has been removed; its defaults now implement
 the shared scientific palette directly.
 
 #### Typography
@@ -222,7 +223,7 @@ legend text 6 pt.
    amber `#e89400`, then dark and mid grey. Use black and red for one- or
    two-series comparisons. Reserve cyan and amber for genuinely additional
    categories and greys for related subfamilies or context. Do not use the warm
-   background currently defined by `snnviz.styles.Theme` in final output.
+   background currently defined by `snn.viz.Theme` in final output.
 
 6. **Do not rely on colour alone.** Where series may overlap or the distinction
    is scientifically important, reinforce colour with labels, line styles,
@@ -270,6 +271,37 @@ legend text 6 pt.
     figures and sufficient resolution for rasterised content. Presentation-stage
     exports must remain flat, reproducible outputs with their provenance recorded
     by the experiment runner.
+
+## Source layout and public imports
+
+`__init__.py` is the sole public export map. Access every supported type and
+function through `snn.viz` or `from snnlab.viz import ...`; implementation paths
+may change without changing those public imports.
+
+| File or package | Responsibility |
+| --- | --- |
+| `recording.py` | Renderer-neutral time-series contracts and validation. |
+| `transforms.py` | NumPy activity transforms and frame selection. |
+| `diagrams/model.py` | Structural diagram contracts and diagram theme. |
+| `diagrams/dot.py` | Deterministic DOT formatting. |
+| `diagrams/render.py` | Graphviz process execution and file export. |
+| `plotting/geometry.py` | Backend-independent rectangles, regions and point layouts. |
+| `plotting/grid.py` | FigureGrid geometry resolution and Matplotlib figure helpers. |
+| `plotting/scene.py` | Panels and scene composition. |
+| `plotting/theme.py` | Figure styling. |
+| `plotting/animation.py` | Timeline sampling and animation encoding. |
+
+The internal package initializers do not re-export public objects. Diagram
+contracts and DOT formatting require only the standard library. Recordings,
+transforms and geometry use NumPy without importing Matplotlib. FigureGrid,
+Scene and animation helpers load Matplotlib on access; `Theme.apply()` loads
+it when styling is applied. Rendering diagram images invokes Graphviz.
+Visualization does not import simulation implementations or PyTorch.
+
+The former flat implementation paths are retired; migrate application imports
+from `snnlab.viz.figure_grid`, `contracts`, `layouts`, `styles`, `scene` or
+`animation` to the corresponding names from `snnlab.viz`. Diagram objects also
+come from the public package, rather than `snnlab.viz.diagrams`.
 
 ## Composition boundary
 

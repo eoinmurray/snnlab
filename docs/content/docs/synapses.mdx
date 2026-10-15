@@ -46,7 +46,7 @@ This script drives current ALIF and conductance ALIF with one excitatory pulse, 
 ```python
 import torch
 from snnlab import lang
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 
 net = lang.Network("synapse_families", dt=0.25 * lang.ms)
 exc = net.input("exc", shape=("time", "batch", 1),

@@ -8,7 +8,7 @@ There are no inhibitory populations or recurrent connections.
 ## Implementation and protocol
 
 1. `shd_recipe.py` declares the graph and `TrainSpec` with `snnlab.lang`.
-   `benchmark.py` calls `snnlab.sim.execution.train()` once. The native trainer
+   `benchmark.py` calls `snnlab.sim.train()` once. The native trainer
    owns initialization, batches, encoding seeds, forward/backward, Adam, constraints,
    validation, observations, timings and the final resumable checkpoint.
 2. Public registered extensions preserve the source's centered readout initializer,

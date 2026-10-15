@@ -10,8 +10,7 @@ import torch
 from scipy.integrate import solve_ivp
 
 from snnlab import lang
-from snnlab.sim import extensions as X
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
@@ -23,6 +22,7 @@ from snnlab.sim.execution import (
     save_runtime_state,
     simulate,
 )
+from snnlab.sim.graph import extensions as X
 
 MODELS = (lang.CUBA_ALIF, lang.COBA_ALIF, lang.CUBA_ADEX, lang.COBA_ADEX)
 

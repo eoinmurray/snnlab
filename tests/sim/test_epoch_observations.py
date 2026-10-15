@@ -10,8 +10,7 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim.epoch_observations import evaluation_rng
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     EpochObservations,
     ExecutionSpec,
@@ -21,6 +20,7 @@ from snnlab.sim.execution import (
     load_training_checkpoint,
     train,
 )
+from snnlab.sim.training.observations import evaluation_rng
 
 
 def request():
@@ -41,16 +41,16 @@ def request():
         synapse=snn.LeakyIntegrator(tau=2 * snn.ms),
         weight=snn.LowerClampedNormal(4.0, 0.1),
     )
-    mean = snn.ops.reduce(
+    mean = snn.reduce(
         out.pre_reset_voltage, operation="mean", over="time", name="mean"
     )
     net.output("scores", mean)
     recipe = snn.TrainSpec(
-        objectives=[snn.training.CrossEntropy(prediction=mean, target="label")],
+        objectives=[snn.CrossEntropy(prediction=mean, target="label")],
         parameter_groups=[
-            snn.training.ParameterGroup([projection.weight], name="weights", lr=0.01)
+            snn.ParameterGroup([projection.weight], name="weights", lr=0.01)
         ],
-        optimizer=snn.training.AdamW(weight_decay=0),
+        optimizer=snn.AdamW(weight_decay=0),
         gradient_clip=0.001,
     )
     bundle = snn.compile(net, training=recipe)
@@ -291,7 +291,7 @@ def test_activity_observation_does_not_request_dense_spike_history(monkeypatch):
 
 
 def test_missing_gradients_and_optimizer_state_survive_resume(tmp_path):
-    from snnlab.lang.compiler import digest
+    from snnlab.lang.compilation.serialization import digest
 
     spec = request()
     graph, recipe = copy.deepcopy(spec.graph), copy.deepcopy(spec.training)
@@ -328,7 +328,7 @@ def test_missing_gradients_and_optimizer_state_survive_resume(tmp_path):
 
 
 def test_fixed_validation_draws_are_repeatable_and_separately_identified():
-    from snnlab.sim.execution import PoissonInputBinding
+    from snnlab.sim import PoissonInputBinding
 
     spec = request()
     selected = replace(
@@ -353,7 +353,7 @@ def test_fixed_validation_draws_are_repeatable_and_separately_identified():
 
 
 def test_history_logical_coordinates_are_checked(tmp_path):
-    from snnlab.sim.execution import save_training_checkpoint
+    from snnlab.sim import save_training_checkpoint
 
     spec = request()
     spec = replace(spec, observations=observations(spec))

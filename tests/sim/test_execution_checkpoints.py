@@ -8,8 +8,7 @@ import json
 import pytest
 import torch
 
-from snnlab.sim.conformance import canonical_json_tensor, compare_conformance_layers
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     capture_training_rng_state,
@@ -18,6 +17,10 @@ from snnlab.sim.execution import (
     save_training_checkpoint,
     simulate,
     train,
+)
+from snnlab.sim.diagnostics.conformance import (
+    canonical_json_tensor,
+    compare_conformance_layers,
 )
 from tests.sim._execution_builders import (
     direct_train_bundle as _direct_train_bundle,

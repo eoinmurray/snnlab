@@ -1,8 +1,13 @@
-# snnlang
+# snnlab.lang
 
-`snnlang` is a standalone Python authoring library for graph-shaped spiking
+`snnlab.lang` is the authoring package for graph-shaped spiking
 circuits. It validates a network and optional standard training recipe, then
 writes a deterministic, data-only bundle. It does not simulate or train.
+
+`__init__.py` is the central public export location. Import constructors,
+operations, readouts and training helpers directly from `snnlab.lang`, or use
+`import snnlab as snn` and `snn.lang.Network(...)`. The package resolves exports
+lazily and does not import the simulator or PyTorch for authoring.
 
 ```python
 from snnlab import lang as snn
@@ -29,7 +34,7 @@ with net.group("cell"):
         synapse=snn.GABA(tau=9 * snn.ms), weight=snn.Normal(1.0, 0.1),
         constraint=snn.NonNegative(), connection="recurrent", delay=0.1 * snn.ms,
     )
-scores = snn.readouts.MeanVoltage(
+scores = snn.MeanVoltage(
     source=e.spikes, classes=10, name="classifier"
 )
 net.output("scores", scores)
@@ -53,8 +58,9 @@ execution validate the synapse/neuron family and parameter units; values are
 never silently converted between physical units. Bundles produced before SNNLang 0.2.0 may carry an
 incorrect legacy `nS` label even though their values were executed as `uS`.
 
-`snnlang` owns the semantic projection of a bundle through `snn.diagram(...)`;
-the resulting renderer-neutral diagram is rendered by `tools.snnviz`. The
+`snnlab.lang` owns the semantic projection of a bundle through `lang.diagram(...)`;
+the resulting renderer-neutral diagram is rendered by `viz.render_diagram(...)`,
+with `lang` and `viz` imported from `snnlab`. The
 existing `Bundle.visualise(...)` convenience method delegates through this same
 boundary.
 
@@ -194,7 +200,7 @@ still data-only and does not import this authoring package.
 
 ```python
 import torch
-from snnlab.sim.execution import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
 
 result = simulate(ExecutionSpec(
     kind="simulate",
@@ -234,7 +240,7 @@ uniform, constant, and zero distributions. Lower-clamped normals can apply
 seeded Bernoulli or exact-fan-in initial zeroing. Build metrics expose stable
 per-parameter realized statistics together with the constraint, unit, runtime
 shape, and effective scaling convention. `Network.connect`, `Network.parameter`,
-and `readouts.MeanVoltage` accept `initialization_scaling="direct"` or
+and `lang.MeanVoltage` accept `initialization_scaling="direct"` or
 `"fan_in_normalized"`. Projection defaults remain normalized; direct scaling
 skips only fan-in division after drawing, clamping and compensated initial
 zeroing. The policy is serialized on the parameter, shared connections inherit
@@ -358,3 +364,21 @@ of integrator `.voltage`; loading never rewrites retained artifacts. Adopting
 explicit sampling changes graph identity and requires compatible checkpoints.
 Each call reduces its own measurement window; continuing dynamic state does
 not implicitly carry cross-call reduction accumulators.
+
+## Source organisation
+
+| Source | Responsibility |
+| --- | --- |
+| [network.py](network.py) | Network authoring and graph reference objects. |
+| [components.py](components.py) | Built-in and custom neuron/synapse declarations. |
+| [parameters.py](parameters.py), [units.py](units.py) | Initializers, constraints, quantities and units. |
+| [operations.py](operations.py), [readouts.py](readouts.py) | Signal transformations and convenience readouts. |
+| [training.py](training.py) | Recipe, objective, regularizer, optimizer and surrogate declarations. |
+| [compilation/](compilation/) | Compilation, graph/training validation, diagnostics, capabilities, serialization, bundles and reports. |
+| [diagrams.py](diagrams.py) | Renderer-neutral diagram projection. |
+
+`_specs.py` contains private specification primitives. Applications use the
+package exports, including `MeanVoltage`, `linear`, `reduce`, `CrossEntropy`,
+`AdamW`, `FastSigmoid`, `ValidationResult` and `validate_training`. Registration
+stays in `snnlab.extensions`. Legacy namespace access is retained for pinned
+recipes, outside the advertised export list.

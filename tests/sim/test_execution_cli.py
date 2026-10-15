@@ -5,18 +5,17 @@ from __future__ import annotations
 import pytest
 import torch
 
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphRuntimeState,
     PoissonInputBinding,
-    execution_spec_from_args,
     graph_capability_issues,
     resolve_device,
     simulate,
     train,
 )
-from snnlab.sim.tool import parse_args
+from snnlab.sim.cli import execution_spec_from_args, parse_args
 from tests.sim._bundle_builders import deep_network, ping_classifier
 from tests.sim._execution_builders import coupled_graph as _coupled_graph
 

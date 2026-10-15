@@ -12,6 +12,13 @@ diagram = lang.diagram(bundle, view="expanded")
 viz.render_diagram(diagram, "network.png", scale=2, height_to_width_ratio=None)
 ```
 
+`viz/__init__.py` is the central public export location: `import snnlab as snn`
+exposes every diagram helper through `snn.viz`. Internally, `diagrams/model.py`
+owns the data contracts and theme, `diagrams/dot.py` formats DOT, and
+`diagrams/render.py` handles Graphviz and files. These implementation paths are
+private. Diagram imports and DOT generation load neither NumPy nor Matplotlib;
+Graphviz is needed only when exporting SVG, PNG or PDF.
+
 ## Diagram data
 
 ### Diagram
@@ -126,3 +133,7 @@ class DiagramTheme:
 ```
 
 This immutable theme defines colours, font sizes, the font family and wrapping. The default uses bold node names and quieter regular detail, with muted red for inhibition, slate blue for outputs and teal for trainable parameters. Frozen training links are grey and dashed. The main forward path receives alignment priority, feedback routes beneath it, and training annotations sit below the last component they describe. It is separate from the Matplotlib [Theme](/api/viz/plotting#theme). Passing a custom diagram theme changes rendering without changing network or diagram semantics.
+
+## Import and validation boundaries
+
+All types and functions on this page are exported lazily through `snnlab.viz`. Diagram construction validates graph structure; DOT generation validates requested layout/canvas settings; rendering additionally depends on Graphviz. A valid `Diagram` alone does not verify that the external renderer is installed or that an output path is writable. `DiagramTheme` is a frozen style record supplied to either DOT generation or rendering.

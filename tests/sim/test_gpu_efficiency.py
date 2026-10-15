@@ -8,21 +8,24 @@ import pytest
 import torch
 
 from snnlab import lang
-from snnlab.sim import execution as execution
-from snnlab.sim.dataset_provider import DatasetProvider, iter_batches
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
+    MeasurementWindow,
     RecordingSpec,
     SignalRecording,
     plan_graph,
+    save_training_checkpoint,
     simulate,
     train,
 )
-from snnlab.sim.streaming import MeasurementWindow
+from snnlab.sim.cli import execution_spec_from_args
+from snnlab.sim.inputs.provider import DatasetProvider, iter_batches
+from snnlab.sim.requests import handlers as execution_functions
+from snnlab.sim.training import trainer as training_execution
 from tests.sim._execution_builders import direct_train_bundle
 
 DEVICES = [
@@ -65,7 +68,7 @@ def circuit(constructor):
         weight=lang.Constant(0.1),
         allow_autapses=False,
     )
-    scores = lang.readouts.FinalVoltage(source=cells.spikes, classes=2, name="scores")
+    scores = lang.FinalVoltage(source=cells.spikes, classes=2, name="scores")
     net.output("voltage", cells.voltage)
     net.output("spikes", cells.spikes)
     net.output("class_scores", scores)
@@ -219,7 +222,7 @@ def test_prefetched_training_and_resume_are_exact(tmp_path, device):
             reference.parameters[name], actual.parameters[name], atol=0, rtol=0
         )
     partial = train(replace(spec, dataset_prefetch=2, updates=2))
-    execution.save_training_checkpoint(
+    save_training_checkpoint(
         tmp_path / "checkpoint", partial.training_checkpoint
     )
     resumed = train(
@@ -237,13 +240,13 @@ def test_discarded_candidates_do_not_snapshot(tmp_path, monkeypatch):
     for group in recipe["parameter_groups"]:
         group["lr"] = 0
     calls = []
-    original = execution.capture_training_rng_state
+    original = training_execution.capture_training_rng_state
 
     def capture(device):
         calls.append(device)
         return original(device)
 
-    monkeypatch.setattr(execution, "capture_training_rng_state", capture)
+    monkeypatch.setattr(training_execution, "capture_training_rng_state", capture)
     result = train(
         ExecutionSpec(
             kind="train",
@@ -314,7 +317,7 @@ def test_recording_blocks_preserve_events_cells_and_bounds(device):
 def test_timing_modes_use_explicit_boundaries(monkeypatch):
     graph, _ = circuit(lang.CUBA_LIF)
     calls = []
-    monkeypatch.setattr(execution, "_synchronize_device", calls.append)
+    monkeypatch.setattr(execution_functions, "_synchronize_device", calls.append)
     spec = ExecutionSpec(
         kind="infer",
         graph=graph,
@@ -355,9 +358,9 @@ def test_cuda_graph_mode_is_rejected():
 
 
 def test_cli_efficiency_options_map_to_request():
-    from snnlab.sim.tool import parse_args
+    from snnlab.sim.cli import parse_args
 
-    spec = execution.execution_spec_from_args(
+    spec = execution_spec_from_args(
         parse_args(
             [
                 "sim",

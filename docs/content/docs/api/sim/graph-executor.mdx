@@ -3,14 +3,14 @@ title: GraphExecutor
 description: PyTorch module for executing a compiled spiking-network graph, accessing parameters and continuing simulation state.
 ---
 
-`GraphExecutor` is a `torch.nn.Module` that executes a prepared graph plan. Import it from `snnlab.sim.execution`; it is not re-exported from `snnlab.sim`.
+`GraphExecutor` is a `torch.nn.Module` that executes a prepared graph plan. Import it from `snnlab.sim`.
 
 Use this class when composing a spiking network with ordinary PyTorch layers or writing an external optimization loop. For bundle loading, input bindings and execution provenance, use [ExecutionSpec](/api/sim/execution-spec) with `build`, `simulate`, `infer` or `train`.
 
 ## Constructor
 
 ```python
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 
 GraphExecutor(
     plan,
@@ -45,7 +45,7 @@ When using a compiled training recipe, pass its `resolved_parameters.trainable` 
 ## plan_graph and GraphPlan
 
 ```python
-from snnlab.sim.execution import GraphPlan, plan_graph
+from snnlab.sim import GraphPlan, plan_graph
 
 plan = plan_graph(bundle.graph)
 ```
@@ -135,7 +135,7 @@ second = model(
 
 `GraphRuntimeState` stores voltages, refractory state, synaptic state, delay histories and custom dynamic state needed to continue a compatible trajectory. It excludes static weights. Continuation state is detached, so this does not retain a gradient path across calls.
 
-Use `save_runtime_state` and `load_runtime_state` from `snnlab.sim.execution` to persist dynamic state. See [runtime state](/api/sim/execution-spec#runtime_state) for the execution request's continuation rules.
+Use `save_runtime_state` and `load_runtime_state` from `snnlab.sim` to persist dynamic state. See [runtime state](/api/sim/execution-spec#runtime_state) for the execution request's continuation rules.
 
 ## Complete example
 
@@ -144,20 +144,24 @@ This example authors a current-based network, compiles it, constructs the execut
 ```python
 import torch
 from snnlab import lang
-from snnlab.sim.execution import GraphExecutor, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 
 net = lang.Network("executor_example", dt=0.5 * lang.ms)
 inputs = net.input(
     "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
 )
 cells = net.population(
-    "E", size=16,
+    "E",
+    size=16,
     neuron=lang.CUBA_LIF(tau_mem=20 * lang.ms, capacitance_nf=1.0),
 )
 net.connect(
-    inputs, cells.excitatory, name="input_to_E",
+    inputs,
+    cells.excitatory,
+    name="input_to_E",
     synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
-    weight=lang.Uniform(4.0, 6.0), constraint=lang.NonNegative(),
+    weight=lang.Uniform(4.0, 6.0),
+    constraint=lang.NonNegative(),
 )
 net.output("spikes", cells.spikes)
 
@@ -175,3 +179,41 @@ print(tuple(result.outputs["spikes"].shape))
 Inherited `.parameters()`, `.to(...)`, `.train()`, `.eval()` and `.state_dict()` follow PyTorch module conventions. `.train()` sets module mode; it does not run snnlab's training handler. Save and load the model's state dictionary for weights, and use runtime state separately for trajectory continuation.
 
 See [PyTorch integration](/api/sim/pytorch) for external layers and checkpoint conventions, and the runnable [PyTorch Integration guide](/pytorch-integration) for a complete training loop.
+
+## Capability inspection and plan records
+
+```python
+class CapabilityIssue:
+    element: str
+    capability: str
+    message: str
+
+
+def graph_capability_issues(graph: Mapping[str, Any]) -> list[CapabilityIssue]: ...
+
+
+class PlannedProjection:
+    id: str
+    source: str
+    target: str
+    polarity: str
+    decay: float
+    delay_steps: int
+    parameter: str
+    enabled: bool
+
+
+class GraphPlan:
+    graph: Mapping[str, Any]
+    dt_ms: float
+    populations: tuple[Mapping[str, Any], ...]
+    projections: tuple[PlannedProjection, ...]
+    observables: tuple[Mapping[str, Any], ...]
+    outputs: tuple[Mapping[str, Any], ...]
+    refractory: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    autapses: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+```
+
+`graph_capability_issues(graph)` returns unsupported-feature records before planning; an empty list is not a replacement for complete graph/timebase validation. `plan_graph` performs the execution checks described above. `PlannedProjection` holds resolved routing, delay and decay metadata; applications normally consume it through `GraphPlan.projections` rather than constructing it directly.
+
+Complete state persistence and compatibility functions are documented under [Runtime State and Continuation](/api/sim/runtime-state). External optimizer ownership, wrapper modules and state dictionaries are documented under [PyTorch Integration](/api/sim/pytorch).

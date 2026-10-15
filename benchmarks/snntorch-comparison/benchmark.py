@@ -25,8 +25,7 @@ from torch.nn import functional as F
 from snnlab import __version__ as snnlab_version
 from snnlab import extensions as E
 from snnlab import lang
-from snnlab.lang import training as recipe
-from snnlab.sim.execution import (
+from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     GraphExecutor,
@@ -317,28 +316,28 @@ class LabNetwork(nn.Module):
             )
         net.output("spikes", output.spikes)
         net.output("voltage", output.voltage)
-        counts = lang.ops.reduce(
+        counts = lang.reduce(
             output.spikes, operation="sum", over="time", name="spike_counts"
         )
         net.output("class_scores", counts)
         training = lang.TrainSpec(
             objectives=(
-                recipe.CustomObjective(
+                lang.CustomObjective(
                     "comparison.temporal_ce/v1",
                     prediction=output.voltage,
                     target="class",
                 ),
-                recipe.CustomObjective(
+                lang.CustomObjective(
                     "comparison.spike_accuracy/v1", prediction=counts, target="class"
                 ),
             ),
             parameter_groups=(
-                recipe.ParameterGroup(
+                lang.ParameterGroup(
                     tuple(p["id"] for p in net.parameters), name="weights", lr=config.lr
                 ),
             ),
-            optimizer=recipe.CustomOptimizer("comparison.adam/v1", betas=(0.9, 0.999)),
-            surrogate=recipe.CustomSurrogate("comparison.atan/v1"),
+            optimizer=lang.CustomOptimizer("comparison.adam/v1", betas=(0.9, 0.999)),
+            surrogate=lang.CustomSurrogate("comparison.atan/v1"),
             presentation_duration=config.steps * lang.ms,
         )
         self.bundle = lang.compile(net, training=training)
@@ -346,7 +345,7 @@ class LabNetwork(nn.Module):
         self.executor = GraphExecutor(
             plan_graph(self.graph),
             trainable_parameters=tuple(p["id"] for p in net.parameters),
-            surrogate=recipe.CustomSurrogate("comparison.atan/v1").json(),
+            surrogate=lang.CustomSurrogate("comparison.atan/v1").json(),
             extension_validation=EXECUTION_POLICY["extension_validation"],
             projection_mode=EXECUTION_POLICY["projection_mode"],
             # Prepared built-in kernels can compile; this benchmark's matched
@@ -596,7 +595,7 @@ def run_lab_training(
         raise RuntimeError("native training returned incomplete epoch evaluations")
     if not all(math.isfinite(row["loss"]) for row in result.metrics["updates"]):
         raise RuntimeError("nonfinite native training loss")
-    metrics["training_api"] = "snnlab.sim.execution.train"
+    metrics["training_api"] = "snnlab.sim.train"
     metrics["train_call_seconds"] = elapsed
     metrics["wall_seconds"] = elapsed
     metrics["timing_scope"] = (
