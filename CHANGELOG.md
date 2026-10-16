@@ -6,6 +6,19 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-16
+
+### Added
+
+1. Spatial geometry through optional `spatial_shape=(channels, height, width)` on inputs and populations, with inferred population size and flat channel-major execution tensors. `Network.connect(connectivity=lang.Conv2d(...))` supports compact shared kernels, integer/pair kernel sizes, stride and zero padding independently of current/conductance synapse dynamics. Geometry and kernel shape are validated before execution; existing dense graphs retain their defaults and serialized data.
+2. `lang.pool2d` adds average and max spatial pooling, including pooling chains feeding dense/convolutional projections with causal delays. Average pooling excludes padding and produces continuous fractional drive; max pooling preserves the input signal type. Same-population convolution requires explicit `allow_autapses=True`; count-valued event encoding remains deferred.
+3. Convolution/pooling support gradients, compact shared parameters, native training, bundle/checkpoint serialization, run snapshots, recording and runtime continuation. Added PyTorch arithmetic/gradient comparisons and integration coverage plus conceptual/API documentation. No new runnable example is included.
+
+### Changed
+
+1. All network diagram views now show populations, operations and projections explicitly, with groups rendered as labelled boundaries. `"expanded"` remains an alias for the explicit circuit view; the `expand_groups` argument has been removed from `lang.diagram` and `Bundle.visualise`. The static complexity limit applies to all views.
+2. Diagram rendering now uses semantic node colours, aligned forward paths, separated feedback lanes and positioned training annotations. Added retained-graph regression/visual fixtures, refreshed existing example diagrams and updated the PyTorch integration diagram to show the spiking network's internal structure.
+
 ## [0.18.0] - 2026-10-15
 
 ### Added

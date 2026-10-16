@@ -12,6 +12,7 @@ from torch import nn
 from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.gains import sample as sample_gain
+from snnlab._shared.spatial import convolution_drive, pool_tensor, signal_spatial_shape
 from snnlab.sim.artifacts.inference import retention_identity
 from snnlab.sim.diagnostics.tracing import current_trace
 from snnlab.sim.graph import dynamics as M
@@ -534,7 +535,7 @@ class GraphExecutor(nn.Module):
                 (
                     p.delay_steps
                     for p in self.plan.projections
-                    if p.source.startswith(name + ".") and p.delay_steps > 0
+                    if p.root_source.startswith(name + ".") and p.delay_steps > 0
                 ),
                 default=1,
             )
@@ -545,7 +546,7 @@ class GraphExecutor(nn.Module):
                 (
                     p.delay_steps
                     for p in self.plan.projections
-                    if p.source.partition(".")[0] == row["id"]
+                    if p.root_source.partition(".")[0] == row["id"]
                 ),
                 default=0,
             )
@@ -980,11 +981,50 @@ class GraphExecutor(nn.Module):
             for projection in self.plan.projections
             if projection.enabled and "modulation" in projection_rows[projection.id]
         }
+        spatial_operations = {
+            f"{row['id']}.value": row
+            for row in self.plan.graph.get("operations", [])
+            if row["kind"] == "pool2d"
+        }
         for t in range(steps):
             segments.boundary(completed_steps + t, self.plan.dt_ms)
             segments.reset(completed_steps + t, voltage)
             step_pre_reset = {}
             new_spikes: dict[str, torch.Tensor] = {}
+            source_cache = {}
+
+            def projection_source(signal, delay):
+                key = (signal, delay)
+                if key in source_cache:
+                    return source_cache[key]
+                pending = []
+                while signal in spatial_operations:
+                    operation = spatial_operations[signal]
+                    pending.append(operation)
+                    signal = operation["sources"][0]
+                owner = signal.partition(".")[0]
+                if owner in populations:
+                    result = (
+                        new_spikes[owner]
+                        if delay == 0
+                        else histories[owner]._values[-delay]
+                    )
+                else:
+                    source_t = t - delay
+                    result = (
+                        inputs[owner][source_t]
+                        if source_t >= 0
+                        else input_histories[owner][source_t]
+                    )
+                for operation in reversed(pending):
+                    result = pool_tensor(
+                        result,
+                        signal_spatial_shape(self.plan.graph, operation["sources"][0]),
+                        operation["config"],
+                    )
+                source_cache[key] = result
+                return result
+
             for pop in self.plan.populations:
                 name = pop["id"]
                 incoming = {
@@ -996,25 +1036,28 @@ class GraphExecutor(nn.Module):
                     if not projection.enabled:
                         conductance[key].zero_()
                         continue
-                    source_owner = projection.source.partition(".")[0]
-                    if source_owner in populations:
-                        if projection.delay_steps == 0:
-                            source = new_spikes[source_owner]
-                        else:
-                            history = histories[source_owner]._values
-                            source = history[-projection.delay_steps]
-                    else:
-                        source_t = t - projection.delay_steps
-                        source = (
-                            inputs[source_owner][source_t]
-                            if source_t >= 0
-                            else input_histories[source_owner][source_t]
-                        )
+                    source = projection_source(
+                        projection.source, projection.delay_steps
+                    )
+
+                    def project():
+                        config = projection_rows[projection.id].get("connectivity")
+                        if config is not None:
+                            return convolution_drive(
+                                source,
+                                effective_weights[projection.parameter],
+                                signal_spatial_shape(
+                                    self.plan.graph, projection.source
+                                ),
+                                config,
+                            )
+                        return source @ effective_weights[projection.parameter]
+
                     if trace is None:
-                        drive = source @ effective_weights[projection.parameter]
+                        drive = project()
                     else:
                         with trace.detail(f"projection/{projection.id}"):
-                            drive = source @ effective_weights[projection.parameter]
+                            drive = project()
                     if projection.id in projection_gains:
                         drive = drive * projection_gains[projection.id][t]
                     spec = projection_rows[projection.id]["synapse"]
@@ -1320,6 +1363,12 @@ class GraphExecutor(nn.Module):
                 parameter = op["parameters"][0].replace(".", "__")
                 signal_values[f"{op['id']}.value"] = (
                     sources[0] @ self.weights[parameter]
+                )
+            elif kind == "pool2d":
+                signal_values[f"{op['id']}.value"] = pool_tensor(
+                    sources[0],
+                    signal_spatial_shape(self.plan.graph, op["sources"][0]),
+                    op["config"],
                 )
             elif kind in {"reduce_mean", "reduce_sum"}:
                 mask_name = op.get("config", {}).get("mask")

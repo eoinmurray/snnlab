@@ -100,6 +100,34 @@ def runtime_state_compatibility(
             else {}
         ),
         "dt_ms": plan.dt_ms,
+        **(
+            {
+                "spatial": {
+                    "shapes": {
+                        row["id"]: row["spatial_shape"]
+                        for collection in ("inputs", "populations", "operations")
+                        for row in plan.graph.get(collection, [])
+                        if "spatial_shape" in row
+                    },
+                    "pooling": [
+                        row
+                        for row in plan.graph.get("operations", [])
+                        if row["kind"] == "pool2d"
+                    ],
+                    "connectivity": {
+                        row["id"]: row["connectivity"]
+                        for row in plan.graph.get("projections", [])
+                        if "connectivity" in row
+                    },
+                }
+            }
+            if any(
+                "spatial_shape" in row
+                for collection in ("inputs", "populations", "operations")
+                for row in plan.graph.get(collection, [])
+            )
+            else {}
+        ),
         # Explicit duration-based replay must not resume with current scheduling.
         # Keep signatures for the default and unmarked archived graphs intact.
         **(

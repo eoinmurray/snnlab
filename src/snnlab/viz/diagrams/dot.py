@@ -12,8 +12,10 @@ from .model import Diagram, DiagramNode, DiagramTheme
 def _q(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
+
 def _svg_id(value: str) -> str:
     return "n_" + "".join(char if char.isalnum() else "_" for char in value)
+
 
 def _colour(theme: DiagramTheme, role: str) -> str:
     values = {
@@ -34,26 +36,73 @@ def _colour(theme: DiagramTheme, role: str) -> str:
     except KeyError as error:
         raise ValueError(f"unknown diagram colour role: {role}") from error
 
+
 def _label(value: str, columns: int) -> str:
     """Wrap display text without dropping words or shrinking its type."""
-    return "".join(
+    text = "".join(
         html.escape(line) + '<BR ALIGN="LEFT"/>'
         for paragraph in value.replace("_", " ").splitlines()
         for line in textwrap.wrap(paragraph, width=columns, break_long_words=False)
     )
+    return (
+        '<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5">'
+        f'<TR><TD ALIGN="LEFT">{text}</TD></TR></TABLE>'
+    )
+
+
+def _box_colours(node: DiagramNode, theme: DiagramTheme) -> tuple[str, str]:
+    fills = {
+        "neutral": theme.neutral,
+        "output": theme.output,
+        "training": theme.training,
+    }
+    fill = fills.get(node.kind) or getattr(theme, f"{node.kind}_fill")
+    border = getattr(theme, f"{node.kind}_border")
+    if node.kind == "population" and node.accent_role == "inhibitory":
+        border = theme.inhibitory
+    return fill, border
+
 
 def _card(node: DiagramNode, theme: DiagramTheme) -> str:
-    accent = (
-        theme.muted if "frozen" in node.classes else _colour(theme, node.accent_role)
-    )
+    _, accent = _box_colours(node, theme)
     rows = []
-    for text, size, colour, bold in (
+    box_type = {"training": "Training group", "neutral": "Neutral / external"}.get(
+        node.kind, node.kind.capitalize()
+    )
+    fields = [
+        (
+            box_type.upper(),
+            max(10, theme.secondary_size - 1),
+            accent,
+            False,
+        ),
         (node.title, theme.label_size, theme.ink, True),
-        (node.detail, theme.secondary_size, theme.muted, False),
-        (node.badge, theme.secondary_size - 1, accent, False),
-    ):
-        if not text:
-            continue
+    ]
+    fields.extend(
+        (line, theme.secondary_size, theme.muted, False)
+        for index, line in enumerate(node.detail.splitlines())
+    )
+    standard_badges = {
+        "input",
+        "population",
+        "operation",
+        "output",
+        "training",
+        "objective",
+        "spiking",
+        "analogue",
+        "spikes",
+        "continuous",
+        "mask",
+        "frozen",
+        "trainable",
+        "annotation",
+    }
+    if node.badge and node.badge not in standard_badges:
+        fields.append((node.badge, theme.secondary_size, accent, False))
+    row_limit = 4 if node.kind == "population" else 3
+    visible_fields = [field for field in fields if field[0]][:row_limit]
+    for text, size, colour, bold in visible_fields:
         if rows:
             rows.append('<TR><TD HEIGHT="5"></TD></TR>')
         for paragraph in text.replace("_", " ").splitlines():
@@ -73,6 +122,7 @@ def _card(node: DiagramNode, theme: DiagramTheme) -> str:
         + "".join(rows)
         + "</TABLE>>"
     )
+
 
 def _forward_spine(diagram: Diagram) -> tuple[str, ...]:
     """Find a longest acyclic forward path to prioritise its alignment."""
@@ -100,6 +150,7 @@ def _forward_spine(diagram: Diagram) -> tuple[str, ...]:
             if incoming[target] == 0:
                 queue.append(target)
     return max((paths[node] for node in queue), key=len, default=())
+
 
 def diagram_to_dot(
     diagram: Diagram,
@@ -130,16 +181,20 @@ def diagram_to_dot(
         if canvas_size is None
         else f', viewport="{canvas_size[0] / 2:g},{canvas_size[1] / 2:g},1"'
     )
+    incoming_nodes = {edge.target for edge in diagram.edges}
+    input_count = sum(
+        node.kind == "input" and node.id not in incoming_nodes for node in diagram.nodes
+    )
+    rank_spacing = "4.5" if input_count >= 3 else "1.1"
     lines = [
         f"digraph {_q(diagram.name)} {{",
-        f'graph [rankdir=LR{ratio}{viewport}, bgcolor="{theme.background}", pad="0.3", nodesep="0.35", ranksep="0.65",',
-        f'  splines=spline, outputorder=edgesfirst, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}",',
+        f'graph [rankdir=LR{ratio}{viewport}, bgcolor="{theme.background}", pad="0.3", nodesep="0.65", ranksep="{rank_spacing}",',
+        f'  splines=ortho, outputorder=edgesfirst, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}",',
         f"  label=<<B>{html.escape(title)}</B>>, labelloc=t, labeljust=l, fontsize={theme.title_size:g}, compound=true, newrank=true];",
         f'node [shape=plain, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}"];',
         f'edge [fontname={_q(theme.font_name)}, fontsize={theme.secondary_size - 1:g}, fontcolor="{theme.muted}", color="{theme.ink}", penwidth=1.1, arrowsize=0.65];',
     ]
     known_kinds = {
-        "component",
         "population",
         "output",
         "objective",
@@ -151,22 +206,15 @@ def diagram_to_dot(
     for node in diagram.nodes:
         if node.kind not in known_kinds:
             raise ValueError(f"unknown diagram node kind: {node.kind}")
-        border = (
-            theme.line
-            if node.accent_role == "ink"
-            else _colour(theme, node.accent_role)
-        )
-        fill = _colour(
-            theme, node.kind if node.kind in {"output", "training"} else "neutral"
-        )
-        if "frozen" in node.classes:
-            border, fill = theme.line, theme.neutral
+        fill, border = _box_colours(node, theme)
+        if border.startswith("#") and len(border) == 7:
+            border += "80"
         classes = " ".join(("node", *node.classes))
         margin = f"{node.margin[0]:g},{node.margin[1]:g}"
         lines.append(
             f"{_q(node.id)} [id={_q(_svg_id(node.id))}, class={_q(classes)}, "
             f'label={_card(node, theme)}, shape=box, style="filled", '
-            f'fillcolor="{fill}", color="{border}", penwidth={node.pen_width:g}, margin="{margin}", width=1.4, height=0.8];'
+            f'fillcolor="{fill}", color="{border}", penwidth={node.pen_width:g}, margin="{margin}", width=0, height=0, nojustify=true];'
         )
     # External sources share the entry column; downstream inputs retain their rank.
     targets = {edge.target for edge in diagram.edges}
@@ -176,10 +224,6 @@ def diagram_to_dot(
         for node in diagram.nodes
         if node.kind == "input" and node.id not in targets and node.id not in grouped
     ]
-    if len(sources) > 1:
-        lines.append(
-            "{ rank=same; " + " ".join(f"{_q(node)};" for node in sources) + " }"
-        )
     outputs = [
         node.id
         for node in diagram.nodes
@@ -193,9 +237,97 @@ def diagram_to_dot(
     row_membership = {}
     column_membership = {
         member: group.id
-        for group in diagram.groups if group.same_rank
+        for group in diagram.groups
+        if group.same_rank
         for member in group.members
     }
+    # Reciprocal E/I populations form a column even without an authored group.
+    population_ids = {node.id for node in diagram.nodes if node.kind == "population"}
+    explicit_rows = {
+        member for group in diagram.groups if group.same_row for member in group.members
+    }
+    excitatory_pairs = {
+        (edge.source, edge.target)
+        for edge in diagram.edges
+        if edge.role == "excitatory" and edge.connection in {"recurrent", "feedback"}
+    }
+    population_columns = {}
+    for edge in diagram.edges:
+        if (
+            edge.role == "inhibitory"
+            and edge.connection in {"recurrent", "feedback"}
+            and edge.source != edge.target
+            and {edge.source, edge.target} <= population_ids
+            and not {edge.source, edge.target} & explicit_rows
+            and (edge.target, edge.source) in excitatory_pairs
+            and edge.source not in population_columns.values()
+            and edge.target not in population_columns
+        ):
+            population_columns[edge.target] = edge.source
+            column_membership[edge.target] = column_membership[edge.source] = (
+                edge.target
+            )
+    for excitatory, inhibitory in population_columns.items():
+        grouped_column = any(
+            group.same_rank and {excitatory, inhibitory} <= set(group.members)
+            for group in diagram.groups
+        )
+        lines.append(f"{{ rank=same; {_q(excitatory)}; {_q(inhibitory)}; }}")
+        lines.append(
+            f"{_q(inhibitory)} -> {_q(excitatory)} "
+            f"[style=invis, weight=10000, constraint={'true' if grouped_column else 'false'}];"
+        )
+    # Feedback-coupled circuits read left to right, with each local E/I column intact.
+    node_order = {node.id: index for index, node in enumerate(diagram.nodes)}
+    nodes_by_id = {node.id: node for node in diagram.nodes}
+    representatives = {
+        member: e for e, i in population_columns.items() for member in (e, i)
+    }
+    coupled_columns = set()
+    for edge in diagram.edges:
+        if edge.connection != "feedback":
+            continue
+        source = representatives.get(edge.source, edge.source)
+        target = representatives.get(edge.target, edge.target)
+        if (
+            source != target
+            and all(
+                nodes_by_id[identifier].kind in {"population"}
+                for identifier in (source, target)
+            )
+            and not {source, target} & explicit_rows
+        ):
+            coupled_columns.add(tuple(sorted((source, target))))
+    if len(sources) > 1 and not coupled_columns:
+        lines.append(
+            "{ rank=same; " + " ".join(f"{_q(node)};" for node in sources) + " }"
+        )
+    for source, target in sorted(coupled_columns):
+        entries = [
+            edge.source
+            for edge in diagram.edges
+            if edge.target == target and nodes_by_id[edge.source].kind == "input"
+        ]
+        entry = entries[0] if len(entries) == 1 else target
+        lines.append(
+            f"{_q(source)} -> {_q(entry)} [style=invis, weight=10000, minlen=2];"
+        )
+        if source in population_columns and target in population_columns:
+            lines.append(
+                f"{_q(population_columns[source])} -> {_q(population_columns[target])} "
+                "[style=invis, weight=10000, minlen=2];"
+            )
+    # Keep successive local inhibitory populations on a common baseline.
+    for edge in diagram.edges:
+        if (
+            edge.connection == "feedforward"
+            and edge.source in population_columns
+            and edge.target in population_columns
+        ):
+            lines.append(
+                f"{_q(population_columns[edge.source])} -> {_q(population_columns[edge.target])} "
+                "[style=invis, weight=1000, constraint=true];"
+            )
     for group in diagram.groups:
         lines.append(
             f"subgraph {_q('cluster_' + _svg_id(group.id))} {{ label={_q(group.label)}; "
@@ -234,15 +366,16 @@ def diagram_to_dot(
                     node_order[identifier],
                 ),
             )
+            anchor = population_columns.get(anchor, anchor)
             lines.append(f"{{ rank=same; {_q(anchor)}; {_q(node.id)}; }}")
             lines.append(f"{_q(anchor)} -> {_q(node.id)} [style=invis, weight=50];")
     spine = set(zip(path, path[1:]))
-    for edge in diagram.edges:
+    for edge_index, edge in enumerate(diagram.edges):
         colour = theme.ink
         arrow = "normal"
         style = "solid"
         if edge.role == "inhibitory":
-            colour, arrow = theme.inhibitory, "tee"
+            colour, arrow = theme.inhibitory, "normaltee"
         elif edge.role == "modulatory":
             arrow, style = "diamond", "dashed"
         elif edge.role == "signal":
@@ -252,7 +385,7 @@ def diagram_to_dot(
         elif edge.role == "training":
             colour, arrow, style = (
                 theme.muted if edge.frozen else theme.training_line,
-                "none" if edge.frozen else "vee",
+                "vee",
                 "dashed" if edge.frozen else "dotted",
             )
         elif edge.role != "excitatory":
@@ -264,12 +397,20 @@ def diagram_to_dot(
         attributes = []
         if edge.id is not None:
             attributes.append(f"id={_q('e_' + _svg_id(edge.id))}")
-        classes = " ".join(("edge", *edge.classes))
-        if edge.classes:
-            attributes.append(f"class={_q(classes)}")
+        else:
+            attributes.append(f"id={_q('e_layout_' + str(edge_index))}")
+        classes = " ".join(
+            dict.fromkeys(("edge", edge.role, edge.connection, *edge.classes))
+        )
+        attributes.append(f"class={_q(classes)}")
         internal_row = (
             edge.source in row_membership
             and row_membership.get(edge.target) == row_membership[edge.source]
+        )
+        internal_column = (
+            edge.source in column_membership
+            and column_membership.get(edge.target) == column_membership[edge.source]
+            and edge.source != edge.target
         )
         attributes.extend(
             [
@@ -277,27 +418,50 @@ def diagram_to_dot(
                 f"arrowhead={arrow}",
                 f"style={style}",
                 (
-                    f"label=<{_label(edge.label, min(14, theme.wrap_columns))}>"
+                    f"xlabel=<{_label(edge.label, min(14, theme.wrap_columns))}>"
                     if edge.label
                     else 'label=""'
                 ),
-                f"constraint={'true' if edge.constraint and not internal_row else 'false'}",
+                f"constraint={'true' if edge.constraint and not internal_row and not internal_column else 'false'}",
                 f"penwidth={edge.pen_width:g}",
-                "weight=100" if (edge.source, edge.target) in spine else "weight=1",
+                "weight=10000"
+                if nodes_by_id[edge.source].kind == "input"
+                else "weight=100"
+                if (edge.source, edge.target) in spine
+                else "weight=1",
             ]
         )
         if edge.source == edge.target:
             port = "n"
             attributes.extend([f"tailport={port}", f"headport={port}"])
-        elif edge.connection == "feedback":
-            if (
-                edge.source in column_membership
-                and column_membership.get(edge.target) == column_membership[edge.source]
-            ):
-                # Keep local returns between the vertically stacked populations.
-                attributes.extend(["tailport=sw", "headport=nw"])
+        elif edge.connection in {"feedback", "recurrent"} and (
+            edge.source in column_membership
+            and column_membership.get(edge.target) == column_membership[edge.source]
+        ):
+            if edge.role == "inhibitory":
+                attributes.extend(["tailport=nw", "headport=sw"])
             else:
-                attributes.extend(["tailport=s", "headport=s"])
+                attributes.extend(["tailport=se", "headport=ne"])
+        elif edge.connection == "feedback" and not coupled_columns:
+            if (
+                edge.source in row_membership
+                and edge.target in row_membership
+                and row_membership[edge.source] != row_membership[edge.target]
+            ):
+                # Coupled rows exchange signals through the gap between circuits.
+                forward = node_order[edge.source] < node_order[edge.target]
+                attributes.extend(
+                    [
+                        f"tailport={'s' if forward else 'n'}",
+                        f"headport={'n' if forward else 's'}",
+                    ]
+                )
+            else:
+                # Opposite directions use opposite sides, rather than sharing a U-turn.
+                if node_order[edge.source] < node_order[edge.target]:
+                    attributes.extend(["tailport=e", "headport=w"])
+                else:
+                    attributes.extend(["tailport=n", "headport=n"])
         elif edge.role == "training":
             attributes.extend(["tailport=n", "headport=s"])
         lines.append(

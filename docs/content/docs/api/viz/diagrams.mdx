@@ -75,7 +75,7 @@ class DiagramGroup:
     same_row: bool = False
 ```
 
-`Diagram` validates unique node IDs, existing edge endpoints and group members. `metadata` carries renderer-neutral context. A node supplies its text, category and accent role; an edge supplies direction, semantic role, optional label and routing hints. `frozen=True` marks a frozen connection visually. Groups enclose existing nodes; `same_rank` and `same_row` cannot both be enabled.
+`Diagram` validates unique node IDs, existing edge endpoints and group members. `metadata` carries renderer-neutral context. A node supplies its text, category and accent role; an edge supplies direction, semantic role, optional label and routing hints. `frozen=True` marks a frozen connection visually. Supported node kinds are `input`, `population`, `operation`, `output`, `training`, `objective` and `neutral`. Collapsed `component` nodes are not supported. Groups enclose existing nodes; `same_rank` and `same_row` cannot both be enabled.
 
 Colour roles resolve against `DiagramTheme`. Use roles such as `signal`, `inhibitory`, `modulatory`, `output_line` or `training_line`, rather than arbitrary colour values in an edge's `role`. Node `classes` and edge `classes` become rendering metadata.
 
@@ -107,7 +107,7 @@ def render_diagram(
 ) -> Path: ...
 ```
 
-Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT writes source directly; other formats invoke the external Graphviz `dot` executable. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. When `canvas_size` is supplied, SVG intrinsic dimensions match PNG dimensions; PNG `scale` multiplies the canvas dimensions. A canvas smaller than the natural layout raises `ValueError` before export, preventing clipping. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
+Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT writes source directly; other formats use Graphviz `dot` for layout and `neato -n2` to export fixed routes after wire and label clearance. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. When `canvas_size` is supplied, SVG intrinsic dimensions match PNG dimensions; PNG `scale` multiplies the canvas dimensions. A canvas smaller than the natural layout raises `ValueError` before export, preventing clipping. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
 
 ## DiagramTheme
 
@@ -132,7 +132,7 @@ class DiagramTheme:
     font_name: str = "Helvetica"
 ```
 
-This immutable theme defines colours, font sizes, the font family and wrapping. The default uses bold node names and quieter regular detail, with muted red for inhibition, slate blue for outputs and teal for trainable parameters. Frozen training links are grey and dashed. The main forward path receives alignment priority, feedback routes beneath it, and training annotations sit below the last component they describe. It is separate from the Matplotlib [Theme](/api/viz/plotting#theme). Passing a custom diagram theme changes rendering without changing network or diagram semantics.
+This immutable theme defines colours, font sizes, the font family and wrapping. The default uses bold node names and quieter regular detail, with muted red for inhibition, slate blue for outputs and teal for trainable parameters. Frozen training links are grey and dashed. The main forward path receives alignment priority, long-range feedback uses separated overhead lanes, and training annotations share the column of the population or operation they describe. It is separate from the Matplotlib [Theme](/api/viz/plotting#theme). Passing a custom diagram theme changes rendering without changing network or diagram semantics.
 
 ## Import and validation boundaries
 

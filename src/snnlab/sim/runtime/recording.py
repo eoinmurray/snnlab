@@ -394,7 +394,7 @@ class OnlineReductions:
             op = self.ops.get(signal)
             if op is None:
                 return bool(axes.get(signal) and axes[signal][0] == "time")
-            if op["kind"] != "linear" or axes[signal][0] != "time":
+            if op["kind"] not in {"linear", "pool2d"} or axes[signal][0] != "time":
                 return False
             if not pointwise(op["sources"][0], selected):
                 return False
@@ -490,10 +490,19 @@ class OnlineReductions:
         return [op for signal, op in self.ops.items() if signal not in removed]
 
     def samples(self, values):
+        from snnlab._shared.spatial import pool_tensor, signal_spatial_shape
+
         for signal, op in self.points.items():
-            values[signal] = (
-                values[op["sources"][0]] @ self.parameters[op["parameters"][0]]
-            )
+            if op["kind"] == "pool2d":
+                values[signal] = pool_tensor(
+                    values[op["sources"][0]],
+                    signal_spatial_shape(self.graph, op["sources"][0]),
+                    op["config"],
+                )
+            else:
+                values[signal] = (
+                    values[op["sources"][0]] @ self.parameters[op["parameters"][0]]
+                )
         return values
 
     def add(self, key, sample, *, final=False):

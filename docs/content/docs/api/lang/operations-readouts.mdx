@@ -5,9 +5,26 @@ description: Signal transformations, reductions and convenience readout layers.
 
 Operations return graph `Signal` objects; they do not operate immediately on PyTorch tensors. Declare outputs with [Network.output](/api/lang/network#output). Use signals from the same authoring network.
 
-Import `linear`, `reduce`, `divide`, `custom_operation`, `Readout` and the readout constructors directly from `snnlab.lang`.
+Import `linear`, `pool2d`, `reduce`, `divide`, `custom_operation`, `Readout` and the readout constructors directly from `snnlab.lang`.
 
 ## Operations
+
+### pool2d
+
+```python
+def pool2d(
+    source: Signal, *, kernel_size, name: str,
+    stride=None, padding=0, mode="avg",
+) -> Signal: ...
+```
+
+Pools each timestep and batch item over spatial neighbourhoods. The source must have channel-major `spatial_shape=(channels, height, width)` metadata and flat `(time, batch, channels * height * width)` tensor shape. The output retains spatial metadata and a flat final axis, so it can feed another projection directly.
+
+`kernel_size`, `stride` and `padding` accept an integer or a two-integer pair. Stride defaults to the kernel size. Padding is symmetric; output sizes use floor division without ceil mode. Padding must not exceed half the corresponding kernel dimension. Empty outputs, mismatched shapes and invalid settings fail validation.
+
+`mode="avg"` excludes padded positions from the average and returns a continuous signal with the source's unit. Averaging binary spikes produces fractional activity; it does not emit a new binary spike or represent event multiplicity. A receiving projection uses that value as a fractional synaptic drive. `mode="max"` preserves the source signal type: max pooling binary spikes remains binary; max pooling voltage remains voltage. Max-pool gradients follow PyTorch's selected maximum, including its tie behaviour.
+
+Both modes support gradients, output/recording history and streaming time reductions. Pooling chains over inputs or population spikes can feed dense or convolutional projections, including delayed connections. See [Convolutional connectivity](/api/lang/network#convolutional-connectivity) for geometry and kernel contracts.
 
 ### linear
 

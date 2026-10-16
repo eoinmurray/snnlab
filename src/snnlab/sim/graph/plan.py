@@ -12,6 +12,7 @@ from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.connectivity import resolve_autapses
 from snnlab._shared.gains import validate as validate_gain
+from snnlab._shared.spatial import source_root, validate_spatial
 
 
 def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
@@ -72,6 +73,7 @@ class CapabilityIssue:
 
 GRAPH_CAPABILITIES_V1 = {
     "schema": "tools/snnsim.capabilities/v1",
+    "connectivity": {"dense", "conv2d"},
     "neurons": {"coba_lif", "cuba_lif", "leaky_integrator", "custom_neuron"}
     | N.ADAPTIVE_KINDS,
     "synapses": {
@@ -82,6 +84,7 @@ GRAPH_CAPABILITIES_V1 = {
         "custom_synapse",
     },
     "operations": {
+        "pool2d",
         "linear",
         "reduce_mean",
         "reduce_sum",
@@ -122,6 +125,7 @@ def graph_capability_issues(graph: Mapping[str, Any]) -> list[CapabilityIssue]:
         "custom_synapse",
     }
     operation_capabilities: set[str] = {
+        "pool2d",
         "linear",
         "reduce_mean",
         "reduce_sum",
@@ -188,6 +192,7 @@ class PlannedProjection:
     delay_steps: int
     parameter: str
     enabled: bool
+    root_source: str = ""
 
 
 @dataclass(frozen=True)
@@ -203,6 +208,7 @@ class GraphPlan:
 
 
 def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
+    validate_spatial(graph)
     E.restore(graph)
     autapses = resolve_autapses(graph)
     if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
@@ -278,7 +284,8 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
             raise ValueError(
                 f"{row['id']}: delay {delay_ms} ms is not an integer number of dt={dt} ms steps"
             )
-        source_owner = row["source"].partition(".")[0]
+        root = source_root(graph, row["source"])
+        source_owner = root.partition(".")[0]
         # Recurrent/feedback edges are causal even when the author declares
         # zero additional delay. Feedforward population edges may consume the
         # current-step source after topological scheduling.
@@ -303,16 +310,17 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
                 delay_steps=steps,
                 parameter=row["parameters"][0],
                 enabled=row.get("enabled", True),
+                root_source=root,
             )
         )
     populations = list(graph.get("populations", []))
     population_ids = {p["id"] for p in populations}
     zero_edges = [
-        (p.source.partition(".")[0], p.target.partition(".")[0])
+        (p.root_source.partition(".")[0], p.target.partition(".")[0])
         for p in planned
         if p.enabled
         and p.delay_steps == 0
-        and p.source.partition(".")[0] in population_ids
+        and p.root_source.partition(".")[0] in population_ids
     ]
     ordered: list[Mapping[str, Any]] = []
     remaining = {p["id"]: p for p in populations}

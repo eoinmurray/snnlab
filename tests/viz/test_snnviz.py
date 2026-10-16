@@ -111,7 +111,7 @@ def test_diagram_contract_compiles_deterministically():
         name="small",
         nodes=(
             DiagramNode("input", "Input", "8 channels", "spikes", kind="input"),
-            DiagramNode("cell", "Cell", "E 8 · I 2", "component", kind="component"),
+            DiagramNode("cell", "Cell", "8 units", "spiking", kind="population"),
         ),
         edges=(DiagramEdge("input", "cell", role="excitatory"),),
         groups=(DiagramGroup("network", "Network", ("cell",)),),
@@ -121,7 +121,7 @@ def test_diagram_contract_compiles_deterministically():
     assert '"input" -> "cell"' in diagram_to_dot(diagram)
     assert 'subgraph "cluster_n_network"' in diagram_to_dot(diagram)
     assert 'style="filled"' in diagram_to_dot(diagram)
-    assert 'fontname="Helvetica"' in diagram_to_dot(diagram)
+    assert 'fontname="Helvetica Neue"' in diagram_to_dot(diagram)
     assert 'ratio="0.6"' in diagram_to_dot(diagram, height_to_width_ratio=0.6)
 
     assert "ratio=" not in diagram_to_dot(diagram)
@@ -188,7 +188,7 @@ def test_local_inhibitory_feedback_stays_between_populations(tmp_path):
         pytest.skip("Graphviz 'dot' is required for diagram rendering")
     diagram = Diagram(
         "local_feedback",
-        nodes=tuple(DiagramNode(name, name, "", "") for name in ("input", "E", "I", "out")),
+        nodes=tuple(DiagramNode(name, name, "", "", kind="population" if name in {"E", "I"} else "neutral") for name in ("input", "E", "I", "out")),
         edges=(
             DiagramEdge("input", "E", role="excitatory"),
             DiagramEdge("E", "I", role="excitatory", connection="recurrent"),
@@ -207,12 +207,12 @@ def test_local_inhibitory_feedback_stays_between_populations(tmp_path):
     e_x, e_y, _, e_height = nodes["E"]
     i_x, i_y, _, i_height = nodes["I"]
     assert e_x == pytest.approx(i_x)
-    bottom = e_y + e_height / 2
-    top = i_y - i_height / 2
+    bottom = i_y + i_height / 2
+    top = e_y - e_height / 2
     assert bottom < top
     feedback = next(row for row in rows if row[:3] == ["edge", "I", "E"])
     coordinates = list(map(float, feedback[4:4 + 2 * int(feedback[3])]))
-    # The complete return spline stays in the gap, away from forward signals.
+    # The return wire stays in the gap, away from forward signals.
     assert min(coordinates[1::2]) >= bottom - 0.01
     assert max(coordinates[1::2]) <= top + 0.01
 
@@ -278,7 +278,7 @@ def test_wrapped_diagram_text_preserves_case_and_typographic_hierarchy(tmp_path)
     rendered = " ".join(element.text or "" for element in text)
     assert "Long population title" in rendered
     assert "400 units & conductance model" in rendered
-    assert "spiking population" in rendered
+    assert "spiking population" not in rendered
     title = next(element for element in text if element.text == "Long population title")
     detail = next(element for element in text if "400 units" in (element.text or ""))
     assert title.attrib.get("font-weight") == "bold"
@@ -295,8 +295,8 @@ def test_forward_path_and_training_annotations_remain_aligned(tmp_path):
         "training_layout",
         nodes=(
             DiagramNode("input", "Input", "64 channels", "spikes", kind="input"),
-            DiagramNode("classifier", "Classifier", "10 units", "component", kind="component"),
-            DiagramNode("hidden", "Hidden", "128 units", "component", kind="component"),
+            DiagramNode("classifier", "Classifier", "10 units", "population", kind="population"),
+            DiagramNode("hidden", "Hidden", "128 units", "population", kind="population"),
             DiagramNode("scores", "Scores", "10 classes", "output", kind="output"),
             DiagramNode("learned", "Learned", "2 tensors", "trainable", kind="training"),
             DiagramNode("frozen", "Recurrent", "2 tensors", "frozen", kind="training"),
@@ -321,7 +321,7 @@ def test_forward_path_and_training_annotations_remain_aligned(tmp_path):
         assert positions[annotation][0] == pytest.approx(positions[anchor][0], abs=0.01)
         assert positions[annotation][1] < positions[anchor][1]
     text = dot.read_text()
-    assert 'arrowhead=none, style=dashed' in text
+    assert 'arrowhead=vee, style=dashed' in text
     assert 'arrowhead=vee, style=dotted' in text
 
 

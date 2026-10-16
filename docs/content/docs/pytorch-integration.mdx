@@ -93,7 +93,6 @@ viz.render_diagram(
     OUTPUT_DIR / "network.png",
     scale=2,
     height_to_width_ratio=None,
-    canvas_size=(1920, 900),
 )
 initial_parameters = {
     name: value.detach().clone() for name, value in model.named_parameters()
@@ -378,19 +377,10 @@ class Classifier(nn.Module):
 
 def make_diagram(bundle, model):
     """Show the loaded spiking graph and the actual external head modules."""
-    input_channels = bundle.graph["inputs"][0]["shape"][-1]
-    sizes = [population["size"] for population in bundle.graph["populations"]]
-    nodes = [
-        viz.DiagramNode(
-            id="snn",
-            title="Spiking network",
-            detail=f"{input_channels} inputs → {sizes[0]} E cells → {sizes[1]} readout cells",
-            badge="saved snnlab bundle",
-            kind="component",
-        )
-    ]
-    edges = []
-    previous = "snn"
+    spiking = lang.diagram(bundle, view="expanded")
+    nodes = list(spiking.nodes)
+    edges = list(spiking.edges)
+    previous = next(node.id for node in nodes if node.kind == "output")
     head_ids = []
     for index, layer in enumerate(model.head):
         identifier = f"head_{index}"
@@ -433,6 +423,12 @@ def make_diagram(bundle, model):
         nodes=tuple(nodes),
         edges=tuple(edges),
         groups=(
+            *spiking.groups,
+            viz.DiagramGroup(
+                id="snn",
+                label="Spiking network",
+                members=tuple(node.id for node in spiking.nodes),
+            ),
             viz.DiagramGroup(
                 id="head", label="Ordinary PyTorch head", members=tuple(head_ids)
             ),
@@ -474,7 +470,6 @@ def main():
         OUTPUT_DIR / "network.png",
         scale=2,
         height_to_width_ratio=None,
-        canvas_size=(1920, 900),
     )
     initial_parameters = {
         name: value.detach().clone() for name, value in model.named_parameters()

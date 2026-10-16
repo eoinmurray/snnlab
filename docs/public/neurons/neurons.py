@@ -62,7 +62,6 @@ def compare(input_family):
         lang.diagram(bundle, view="expanded"),
         OUTPUT_DIR / f"network-{input_family}.png",
         scale=2,
-        canvas_size=(1920, 1800),
         height_to_width_ratio=None,
     )
     steps = round(DURATION_MS / DT_MS)

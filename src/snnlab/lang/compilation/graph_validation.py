@@ -9,6 +9,7 @@ from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.connectivity import resolve_autapses
 from snnlab._shared.gains import validate as validate_gain
+from snnlab._shared.spatial import projection_shape, source_root, validate_spatial
 from snnlab.lang.compilation.diagnostics import Diagnostic, ValidationResult
 
 
@@ -30,6 +31,10 @@ def _validate_neuron(neuron, graph):
 
 def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
     out = ValidationResult()
+    try:
+        validate_spatial(graph)
+    except (ValueError, TypeError, KeyError) as error:
+        out.diagnostics.append(Diagnostic("error", "E119", str(error)))
     try:
         E.restore(graph)
     except (ValueError, TypeError) as error:
@@ -339,6 +344,11 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                     ),
                     signals[source]["shape"][-1],
                 ]
+                if "connectivity" in row:
+                    try:
+                        expected_shape = projection_shape(graph, row)
+                    except (ValueError, TypeError, KeyError):
+                        continue  # Spatial validation above provides the diagnostic.
                 if parameter_rows[pid]["shape"] != expected_shape:
                     out.diagnostics.append(
                         Diagnostic(
@@ -349,7 +359,10 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                         )
                     )
         consumers.add(source)
-        source_owner = source.partition(".")[0]
+        try:
+            source_owner = source_root(graph, source).partition(".")[0]
+        except ValueError:
+            source_owner = source.partition(".")[0]
         if (
             row.get("enabled", True)
             and source_owner in adjacency
@@ -499,7 +512,14 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
         if (
             primary
             and row["kind"]
-            in {"linear", "reduce_mean", "reduce_sum", "select_final", "cumulative_sum"}
+            in {
+                "linear",
+                "pool2d",
+                "reduce_mean",
+                "reduce_sum",
+                "select_final",
+                "cumulative_sum",
+            }
             and row["unit"] != primary.get("unit")
         ):
             out.diagnostics.append(

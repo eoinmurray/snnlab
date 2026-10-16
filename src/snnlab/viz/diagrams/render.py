@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import subprocess
@@ -10,6 +11,7 @@ from pathlib import Path
 
 from .dot import diagram_to_dot
 from .model import Diagram, DiagramTheme
+from .routing import expose_arrowheads, position_wire_labels, route_feedback_lanes
 
 
 def render_diagram(
@@ -41,18 +43,39 @@ def render_diagram(
         return output
     with tempfile.TemporaryDirectory(prefix="snnviz-diagram-") as temporary:
         dot_path = Path(temporary) / "diagram.dot"
-        if canvas_size is not None:
-            dot_path.write_text(
-                diagram_to_dot(
-                    diagram, theme=theme, height_to_width_ratio=height_to_width_ratio
-                )
-            )
+        dot_path.write_text(dot)
+        layout_path = Path(temporary) / "layout.json"
+        positioned_path = Path(temporary) / "positioned.dot"
+        # Separate invocations avoid renderer-dependent coordinate mutations when
+        # Graphviz writes multiple formats from a single in-memory graph.
+        for format_name, destination in (
+            ("json", layout_path),
+            ("dot", positioned_path),
+        ):
             layout = subprocess.run(
-                ["dot", "-Tplain", str(dot_path)], capture_output=True, text=True
+                ["dot", f"-T{format_name}", "-o", str(destination), str(dot_path)],
+                capture_output=True,
+                text=True,
             )
             if layout.returncode:
                 raise RuntimeError(f"Graphviz failed: {layout.stderr.strip()}")
-            graph = layout.stdout.splitlines()[0].split()
+        layout_data, positioned_dot = route_feedback_lanes(
+            json.loads(layout_path.read_text()), positioned_path.read_text()
+        )
+        layout_data, positioned_dot = expose_arrowheads(layout_data, positioned_dot)
+        positioned_path.write_text(position_wire_labels(layout_data, positioned_dot))
+        if canvas_size is not None:
+            natural_layout = subprocess.run(
+                ["neato", "-n2", "-Tplain"],
+                input=re.sub(
+                    r'\bviewport="[^"]*"\s*,?', "", positioned_path.read_text()
+                ),
+                capture_output=True,
+                text=True,
+            )
+            if natural_layout.returncode:
+                raise RuntimeError(f"Graphviz failed: {natural_layout.stderr.strip()}")
+            graph = natural_layout.stdout.splitlines()[0].split()
             natural = tuple(
                 math.ceil((float(value) + 0.6) * 144) for value in graph[2:4]
             )
@@ -63,8 +86,14 @@ def render_diagram(
                 raise ValueError(
                     f"diagram canvas is too small; natural layout needs at least {natural[0]} × {natural[1]} pixels"
                 )
-        dot_path.write_text(dot)
-        args = ["dot", f"-T{suffix[1:]}", str(dot_path), "-o", str(output)]
+        args = [
+            "neato",
+            "-n2",
+            f"-T{suffix[1:]}",
+            str(positioned_path),
+            "-o",
+            str(output),
+        ]
         if suffix == ".png":
             args.insert(1, f"-Gdpi={144 * scale}")
         result = subprocess.run(args, capture_output=True, text=True)

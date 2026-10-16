@@ -1,0 +1,679 @@
+{
+  "source": {
+    "repository": "eoinmurray/pinglab",
+    "revision": "a9370bcc3bd085bc8490d30b2f5963505f531bd3",
+    "path": "experiments/exp133/sender_receiver.py",
+    "sha256": "c9816db53dcd4bceff734c4a0f848dd2fd68bf7a310217a96dcdc6145b8820f8",
+    "variant": "sender_receiver",
+    "helper_path": "experiments/exp133/recipe.py",
+    "helper_sha256": "950dc59f3e71f17d3d019b67dc9e06ca017d77e4909ae89cb2bbfc9e00225d8d"
+  },
+  "graph": {
+    "schema": "snnlang.graph/v1",
+    "voltage_sampling": "explicit",
+    "refractory_timing": "following_steps",
+    "name": "exp133_sender_receiver",
+    "timebase": {
+      "dt": {
+        "value": 0.1,
+        "unit": "ms"
+      }
+    },
+    "inputs": [
+      {
+        "id": "drive_R",
+        "shape": [
+          "time",
+          "batch",
+          128
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      },
+      {
+        "id": "drive_S",
+        "shape": [
+          "time",
+          "batch",
+          128
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      }
+    ],
+    "populations": [
+      {
+        "id": "PING_R_E",
+        "size": 80,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 1.0,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.05,
+          "refractory": {
+            "value": 3.0,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 20.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 80.0
+        },
+        "spiking": true,
+        "group": "PING_R"
+      },
+      {
+        "id": "PING_R_I",
+        "size": 20,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 0.5,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.1,
+          "refractory": {
+            "value": 1.5,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 5.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 80.0
+        },
+        "spiking": true,
+        "group": "PING_R"
+      },
+      {
+        "id": "PING_S_E",
+        "size": 80,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 1.0,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.05,
+          "refractory": {
+            "value": 3.0,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 20.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 80.0
+        },
+        "spiking": true,
+        "group": "PING_S"
+      },
+      {
+        "id": "PING_S_I",
+        "size": 20,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 0.5,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.1,
+          "refractory": {
+            "value": 1.5,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 5.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 80.0
+        },
+        "spiking": true,
+        "group": "PING_S"
+      }
+    ],
+    "projections": [
+      {
+        "id": "PING_R_E_to_I",
+        "source": "PING_R_E.spikes",
+        "target": "PING_R_I.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 1.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.1,
+          "unit": "ms"
+        },
+        "parameters": [
+          "PING_R_E_to_I.weight"
+        ],
+        "group": "PING_R"
+      },
+      {
+        "id": "PING_R_I_to_E",
+        "source": "PING_R_I.spikes",
+        "target": "PING_R_E.inhibitory",
+        "synapse": {
+          "kind": "gaba",
+          "tau": {
+            "value": 9.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "inhibitory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.1,
+          "unit": "ms"
+        },
+        "parameters": [
+          "PING_R_I_to_E.weight"
+        ],
+        "group": "PING_R"
+      },
+      {
+        "id": "PING_R_input_to_E",
+        "source": "drive_R.value",
+        "target": "PING_R_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "PING_R_input_to_E.weight"
+        ],
+        "group": "PING_R"
+      },
+      {
+        "id": "PING_S_E_to_I",
+        "source": "PING_S_E.spikes",
+        "target": "PING_S_I.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 1.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.1,
+          "unit": "ms"
+        },
+        "parameters": [
+          "PING_S_E_to_I.weight"
+        ],
+        "group": "PING_S"
+      },
+      {
+        "id": "PING_S_E_to_PING_R_E",
+        "source": "PING_S_E.spikes",
+        "target": "PING_R_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedback",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 2.0,
+          "unit": "ms"
+        },
+        "parameters": [
+          "PING_S_E_to_PING_R_E.weight"
+        ],
+        "group": null,
+        "modulation": {
+          "kind": "step_gain",
+          "after": 1.0,
+          "at_ms": 500.0,
+          "before": 0.0
+        }
+      },
+      {
+        "id": "PING_S_E_to_PING_R_I",
+        "source": "PING_S_E.spikes",
+        "target": "PING_R_I.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedback",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 2.0,
+          "unit": "ms"
+        },
+        "parameters": [
+          "PING_S_E_to_PING_R_I.weight"
+        ],
+        "group": null,
+        "modulation": {
+          "kind": "step_gain",
+          "after": 1.0,
+          "at_ms": 500.0,
+          "before": 0.0
+        }
+      },
+      {
+        "id": "PING_S_I_to_E",
+        "source": "PING_S_I.spikes",
+        "target": "PING_S_E.inhibitory",
+        "synapse": {
+          "kind": "gaba",
+          "tau": {
+            "value": 9.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "inhibitory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.1,
+          "unit": "ms"
+        },
+        "parameters": [
+          "PING_S_I_to_E.weight"
+        ],
+        "group": "PING_S"
+      },
+      {
+        "id": "PING_S_input_to_E",
+        "source": "drive_S.value",
+        "target": "PING_S_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "PING_S_input_to_E.weight"
+        ],
+        "group": "PING_S"
+      }
+    ],
+    "operations": [],
+    "parameters": [
+      {
+        "id": "PING_R_E_to_I.weight",
+        "shape": [
+          20,
+          80
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.5,
+          "std": 0.05,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_R"
+      },
+      {
+        "id": "PING_R_I_to_E.weight",
+        "shape": [
+          80,
+          20
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 1.0,
+          "std": 0.1,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_R"
+      },
+      {
+        "id": "PING_R_input_to_E.weight",
+        "shape": [
+          80,
+          128
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.2,
+          "std": 0.03,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_R"
+      },
+      {
+        "id": "PING_S_E_to_I.weight",
+        "shape": [
+          20,
+          80
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.5,
+          "std": 0.05,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_S"
+      },
+      {
+        "id": "PING_S_E_to_PING_R_E.weight",
+        "shape": [
+          80,
+          80
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.9,
+          "mean": 0.12,
+          "std": 0.0,
+          "zeroing": "exact_k"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "PING_S_E_to_PING_R_I.weight",
+        "shape": [
+          20,
+          80
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.9,
+          "mean": 0.12,
+          "std": 0.0,
+          "zeroing": "exact_k"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "PING_S_I_to_E.weight",
+        "shape": [
+          80,
+          20
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 1.0,
+          "std": 0.1,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_S"
+      },
+      {
+        "id": "PING_S_input_to_E.weight",
+        "shape": [
+          80,
+          128
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.2,
+          "std": 0.03,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_S"
+      }
+    ],
+    "constants": [],
+    "outputs": [],
+    "observables": [
+      {
+        "id": "R_E",
+        "signal": "PING_R_E.spikes"
+      },
+      {
+        "id": "R_I",
+        "signal": "PING_R_I.spikes"
+      },
+      {
+        "id": "S_E",
+        "signal": "PING_S_E.spikes"
+      },
+      {
+        "id": "S_I",
+        "signal": "PING_S_I.spikes"
+      }
+    ],
+    "assets": [],
+    "groups": [
+      {
+        "id": "PING_R",
+        "members": [
+          "PING_R_E",
+          "PING_R_E_to_I",
+          "PING_R_I",
+          "PING_R_I_to_E",
+          "PING_R_input_to_E"
+        ],
+        "parent": null
+      },
+      {
+        "id": "PING_S",
+        "members": [
+          "PING_S_E",
+          "PING_S_E_to_I",
+          "PING_S_I",
+          "PING_S_I_to_E",
+          "PING_S_input_to_E"
+        ],
+        "parent": null
+      }
+    ]
+  },
+  "training": null,
+  "manifest": {
+    "schema": "snnlang.bundle/v1",
+    "compiler": {
+      "name": "snnlang",
+      "version": "0.2.0"
+    },
+    "graph_digest": "sha256:86bfbd17609b1b88a73b61156e869c4029210dad4fbeb9801235cfc63863f515",
+    "target": null,
+    "required_capabilities": {
+      "schema": "snnlang.capabilities/v1",
+      "elements": [
+        {
+          "element": "PING_R_E",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "PING_R_E_to_I",
+          "features": [
+            "synapse:ampa",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "PING_R_I",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "PING_R_I_to_E",
+          "features": [
+            "synapse:gaba",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "PING_R_input_to_E",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "PING_S_E",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "PING_S_E_to_I",
+          "features": [
+            "synapse:ampa",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "PING_S_E_to_PING_R_E",
+          "features": [
+            "synapse:ampa",
+            "connection:feedback",
+            "delay:explicit",
+            "modulation:step_gain"
+          ]
+        },
+        {
+          "element": "PING_S_E_to_PING_R_I",
+          "features": [
+            "synapse:ampa",
+            "connection:feedback",
+            "delay:explicit",
+            "modulation:step_gain"
+          ]
+        },
+        {
+          "element": "PING_S_I",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "PING_S_I_to_E",
+          "features": [
+            "synapse:gaba",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "PING_S_input_to_E",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "R_E",
+          "features": [
+            "recording:spikes"
+          ]
+        },
+        {
+          "element": "R_I",
+          "features": [
+            "recording:spikes"
+          ]
+        },
+        {
+          "element": "S_E",
+          "features": [
+            "recording:spikes"
+          ]
+        },
+        {
+          "element": "S_I",
+          "features": [
+            "recording:spikes"
+          ]
+        }
+      ]
+    },
+    "files": [
+      {
+        "path": "graph.json",
+        "digest": "sha256:86bfbd17609b1b88a73b61156e869c4029210dad4fbeb9801235cfc63863f515"
+      }
+    ],
+    "assets": []
+  }
+}

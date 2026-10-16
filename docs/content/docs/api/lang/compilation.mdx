@@ -74,10 +74,10 @@ Saving a custom callback that cannot be resolved through an importable module ra
 ### Bundle.visualise
 
 ```python
-bundle.visualise(path, *, view="circuit", scale=1, expand_groups=())
+bundle.visualise(path, *, view="circuit", scale=1)
 ```
 
-Renders one selected view to the given path and returns its `Path`. The suffix selects the output format; `expand_groups` applies to circuit/training views. This combines `lang.diagram` with `viz.render_diagram` without changing the bundle.
+Renders one selected view to the given path and returns its `Path`. The suffix selects the output format. All groups show their contents. This combines `lang.diagram` with `viz.render_diagram` without changing the bundle.
 
 ## migrate_refractory
 
@@ -129,11 +129,11 @@ Import it directly from `snnlab.lang`. It validates a compiled recipe against th
 
 ```python
 def diagram(
-    bundle: Bundle, *, view: str = "circuit", expand_groups: Collection[str] = ()
+    bundle: Bundle, *, view: str = "circuit"
 ) -> Diagram: ...
 ```
 
-`lang.diagram` returns a renderer-neutral `viz.Diagram`. `view` accepts `"circuit"`, `"training"` or `"expanded"`. Circuit/training views collapse groups; `expand_groups` selectively expands known groups in those views. Unknown groups and unsupported view combinations raise `ValueError`. Expanded static views reject graphs with more than 120 projections plus operations. See [diagram rendering](/api/viz/diagrams).
+`lang.diagram` returns a renderer-neutral `viz.Diagram`. `view` accepts `"circuit"`, `"training"` or `"expanded"`. Every view shows all populations, operations and projections explicitly; groups are labelled boundaries, never collapsed boxes. The training view additionally shows parameter groups and objectives. `"expanded"` remains an alias for the explicit circuit view. The former `expand_groups` argument has been removed. Unsupported views raise `ValueError`. All static views reject graphs with more than 120 projections plus operations. See [diagram rendering](/api/viz/diagrams).
 
 ## Diagnostic records and validation results
 

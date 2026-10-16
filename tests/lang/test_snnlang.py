@@ -94,13 +94,9 @@ def test_readouts_expand_to_serialisable_ops(kind):
         value = snn.SpikeCount(source=cell.E.spikes, classes=4, name="r")
     elif kind == "rate":
         mask = net.input("valid", shape=("time", "batch"), signal_type="mask")
-        value = snn.SpikeRate(
-            source=cell.E.spikes, classes=4, name="r", mask=mask
-        )
+        value = snn.SpikeRate(source=cell.E.spikes, classes=4, name="r", mask=mask)
     else:
-        value = snn.CumulativePotential(
-            source=cell.E.spikes, classes=4, name="r"
-        )
+        value = snn.CumulativePotential(source=cell.E.spikes, classes=4, name="r")
     net.output("scores", value)
     bundle = snn.compile(net)
     assert bundle.graph["operations"]
@@ -120,9 +116,7 @@ def test_spike_rate_rejects_ambiguous_duration():
 def test_validation_rejects_invalid_rate_mask_shape():
     net, cell = small_network()
     mask = net.input("valid", shape=("batch", 3), signal_type="mask")
-    rate = snn.SpikeRate(
-        source=cell.E.spikes, classes=4, name="rate", mask=mask
-    )
+    rate = snn.SpikeRate(source=cell.E.spikes, classes=4, name="rate", mask=mask)
     net.output("rates", rate)
     with pytest.raises(ValueError, match="valid-duration mask"):
         snn.compile(net)
@@ -130,9 +124,7 @@ def test_validation_rejects_invalid_rate_mask_shape():
 
 def test_validation_rejects_non_positive_rate_duration():
     net, cell = small_network()
-    rate = snn.SpikeRate(
-        source=cell.E.spikes, classes=4, name="rate", duration=0
-    )
+    rate = snn.SpikeRate(source=cell.E.spikes, classes=4, name="rate", duration=0)
     net.output("rates", rate)
     with pytest.raises(ValueError, match="positive seconds"):
         snn.compile(net)
@@ -279,9 +271,7 @@ def test_loss_and_duration_vocabulary_fail_closed():
         objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[snn.ParameterGroup(ids, name="all", lr=1e-3)],
         optimizer=snn.AdamW(),
-        regularizers=[
-            snn.SpikeBudgetPenalty(signals=(), ceiling_hz=-1, strength=-1)
-        ],
+        regularizers=[snn.SpikeBudgetPenalty(signals=(), ceiling_hz=-1, strength=-1)],
         presentation_duration=0.15 * snn.ms,
     )
     with pytest.raises(ValueError) as exc:
@@ -393,9 +383,7 @@ def test_disabled_trainable_projection_is_not_a_differentiable_route():
             "already selected",
         ),
         (
-            lambda ids: [
-                snn.ParameterGroup(ids, name="frozen", lr=1e-3, frozen=True)
-            ],
+            lambda ids: [snn.ParameterGroup(ids, name="frozen", lr=1e-3, frozen=True)],
             "frozen parameter group learning rate must be zero",
         ),
         (
@@ -514,7 +502,8 @@ def test_visualisation_is_deterministic_and_has_stable_ids(tmp_path):
     b = bundle.visualise(tmp_path / "b.svg", view="circuit")
     assert a.read_bytes() == b.read_bytes()
     assert "n_cell" in a.read_text()
-    assert 'class="node node component"' in a.read_text()
+    assert 'class="node node population spiking"' in a.read_text()
+    assert "cluster_n_cell" in a.read_text()
     png_a = bundle.visualise(tmp_path / "a.png", view="circuit", scale=2)
     png_b = bundle.visualise(tmp_path / "b.png", view="circuit", scale=2)
     assert png_a.read_bytes() == png_b.read_bytes()
@@ -527,7 +516,8 @@ def test_bundle_lowers_to_snnviz_diagram_before_rendering():
     visual = snn.diagram(snn.compile(net), view="circuit")
 
     assert visual.metadata == {"view": "circuit", "source": "snnlang"}
-    assert {node.id for node in visual.nodes} >= {"x", "cell", "out:spikes"}
+    assert {node.id for node in visual.nodes} >= {"x", "cell_E", "cell_I", "out:spikes"}
+    assert all(node.kind != "component" for node in visual.nodes)
 
 
 def test_expanded_diagram_groups_component_populations_in_target_columns():
@@ -552,9 +542,7 @@ def test_all_visual_views_render(tmp_path):
     spec = snn.TrainSpec(
         objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            snn.ParameterGroup(
-                [p["id"] for p in net.parameters], name="all", lr=1e-3
-            )
+            snn.ParameterGroup([p["id"] for p in net.parameters], name="all", lr=1e-3)
         ],
         optimizer=snn.AdamW(),
     )
@@ -584,7 +572,8 @@ def test_expanded_visualisation_retains_recurrent_self_projection(tmp_path):
     assert "n_E_to_E" in output.read_text()
 
 
-def test_circuit_visualisation_can_expand_selected_groups(tmp_path):
+@pytest.mark.parametrize("view", ["circuit", "training", "expanded"])
+def test_every_visual_view_shows_group_contents(tmp_path, view):
     if shutil.which("dot") is None:
         pytest.skip("Graphviz 'dot' is required for snnlang visualisation")
     net, cell = small_network()
@@ -593,8 +582,7 @@ def test_circuit_visualisation_can_expand_selected_groups(tmp_path):
 
     output = bundle.visualise(
         tmp_path / "selected.svg",
-        view="circuit",
-        expand_groups=("cell",),
+        view=view,
     )
     svg = output.read_text()
 
@@ -604,12 +592,12 @@ def test_circuit_visualisation_can_expand_selected_groups(tmp_path):
     assert "n_cell_E_to_I" in svg
 
 
-def test_circuit_visualisation_rejects_unknown_expanded_group(tmp_path):
+def test_visualisation_no_longer_accepts_selective_expansion(tmp_path):
     net, cell = small_network()
     net.output("spikes", cell.E.spikes)
     bundle = snn.compile(net)
 
-    with pytest.raises(ValueError, match="cannot expand unknown groups: missing"):
+    with pytest.raises(TypeError, match="expand_groups"):
         bundle.visualise(
             tmp_path / "selected.svg",
             view="circuit",

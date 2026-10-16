@@ -10,13 +10,13 @@ class DiagramTheme:
     """Shared colours and article-scale typography for structural diagrams."""
 
     background: str = "#FFFFFF"
-    ink: str = "#28323C"
-    muted: str = "#6B7680"
+    ink: str = "#24292F"
+    muted: str = "#59636E"
     line: str = "#D8DEE3"
-    neutral: str = "#FAFBFC"
-    output: str = "#F4F7FA"
+    neutral: str = "#F3F4F5"
+    output: str = "#F1F5F3"
     modulatory: str = "#92764B"
-    training: str = "#F4F8F7"
+    training: str = "#F6F5F0"
     inhibitory: str = "#AA5B63"
     signal: str = "#7A8690"
     output_line: str = "#58768F"
@@ -26,7 +26,20 @@ class DiagramTheme:
     label_size: float = 14
     secondary_size: float = 11
     wrap_columns: int = 26
-    font_name: str = "Helvetica"
+    font_name: str = "Helvetica Neue"
+
+    input_fill: str = "#F3F6F8"
+    input_border: str = "#536D82"
+    population_fill: str = "#F5F4F1"
+    population_border: str = "#756B5B"
+    operation_fill: str = "#F5F3F7"
+    operation_border: str = "#726581"
+    output_border: str = "#526F62"
+    training_border: str = "#7D7150"
+    objective_fill: str = "#F7F2F3"
+    objective_border: str = "#865F6B"
+    neutral_border: str = "#69717B"
+
 
 @dataclass(frozen=True)
 class DiagramNode:
@@ -41,6 +54,7 @@ class DiagramNode:
     classes: tuple[str, ...] = ()
     pen_width: float = 1.0
     margin: tuple[float, float] = (0.18, 0.14)
+
 
 @dataclass(frozen=True)
 class DiagramEdge:
@@ -57,6 +71,7 @@ class DiagramEdge:
     pen_width: float = 1.1
     frozen: bool = False
 
+
 @dataclass(frozen=True)
 class DiagramGroup:
     """A labelled visual boundary around existing nodes."""
@@ -66,6 +81,7 @@ class DiagramGroup:
     members: tuple[str, ...]
     same_rank: bool = False
     same_row: bool = False
+
 
 @dataclass(frozen=True)
 class Diagram:

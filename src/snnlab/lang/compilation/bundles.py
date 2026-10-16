@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -61,13 +60,12 @@ class Bundle:
         *,
         view: str = "circuit",
         scale: int = 1,
-        expand_groups: Collection[str] = (),
     ) -> Path:
         from snnlab.lang.diagrams import diagram
         from snnlab.viz import render_diagram
 
         return render_diagram(
-            diagram(self, view=view, expand_groups=expand_groups),
+            diagram(self, view=view),
             Path(path),
             scale=scale,
         )

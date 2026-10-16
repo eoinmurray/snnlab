@@ -5,7 +5,7 @@ Subpackages are imported on demand: from snnlab import lang, sim, viz, analysis,
 
 from importlib import import_module
 
-__version__ = "0.18.0"
+__version__ = "0.19.0"
 
 _SUBPACKAGES = ("lang", "sim", "viz", "analysis", "extensions")
 __all__ = [*_SUBPACKAGES, "__version__"]

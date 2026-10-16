@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator, Protocol, Sequence
@@ -95,6 +96,7 @@ class Projection:
     enabled: bool
     allow_autapses: bool = False
     modulation: Spec | None = None
+    connectivity: Spec | None = None
 
     @property
     def conductance(self) -> Signal:
@@ -158,7 +160,13 @@ class Network:
         return self._signals[signal_id]
 
     def input(
-        self, name: str, *, shape: Shape, signal_type: str, unit: str = "1"
+        self,
+        name: str,
+        *,
+        shape: Shape,
+        signal_type: str,
+        unit: str = "1",
+        spatial_shape: tuple[int, int, int] | None = None,
     ) -> Signal:
         self._claim(name)
         signal = Signal(
@@ -168,11 +176,35 @@ class Network:
         self.inputs.append(
             {"id": name, "shape": list(shape), "signal_type": signal_type, "unit": unit}
         )
+        if spatial_shape is not None:
+            from snnlab._shared.spatial import dimensions
+
+            spatial_shape = dimensions(spatial_shape)
+            if tuple(shape) != ("time", "batch", math.prod(spatial_shape)):
+                raise ValueError(
+                    "spatial input requires matching flat (time, batch, channels) shape"
+                )
+            self.inputs[-1]["spatial_shape"] = list(spatial_shape)
         return signal
 
     def population(
-        self, name: str, *, size: int, neuron: Spec, spiking: bool = True
+        self,
+        name: str,
+        *,
+        size: int | None = None,
+        neuron: Spec,
+        spiking: bool = True,
+        spatial_shape: tuple[int, int, int] | None = None,
     ) -> Population:
+        if spatial_shape is not None:
+            from snnlab._shared.spatial import dimensions
+
+            spatial_shape = dimensions(spatial_shape)
+            if size is not None and size != math.prod(spatial_shape):
+                raise ValueError("population size does not match spatial_shape")
+            size = math.prod(spatial_shape)
+        if size is None:
+            raise ValueError("population requires size or spatial_shape")
         self._claim(name)
         if size <= 0:
             raise ValueError("population size must be positive")
@@ -186,6 +218,8 @@ class Network:
                 "group": group,
             }
         )
+        if spatial_shape is not None:
+            self.populations[-1]["spatial_shape"] = list(spatial_shape)
         if spiking:
             self._signals[f"{name}.spikes"] = Signal(
                 self,
@@ -279,6 +313,7 @@ class Network:
         initialization_scaling: str | None = None,
         allow_autapses: bool = False,
         modulation: Spec | Callable | None = None,
+        connectivity: Spec | None = None,
     ) -> Projection:
         modulation_data = None
         if modulation is not None:
@@ -312,6 +347,21 @@ class Network:
             raise ValueError(f"invalid target port: {target}")
         if connection not in {"feedforward", "recurrent", "feedback", "modulatory"}:
             raise ValueError(f"invalid connection kind: {connection}")
+        from snnlab._shared.spatial import projection_shape
+
+        geometry_row = {
+            "id": name,
+            "source": source.id,
+            "target": target,
+            "allow_autapses": allow_autapses,
+        }
+        if connectivity is not None:
+            geometry_row["connectivity"] = connectivity.json()
+        expected_shape = (
+            projection_shape(vars(self), geometry_row)
+            if connectivity is not None
+            else [populations[target_pop]["size"], source.shape[-1]]
+        )
         if not isinstance(enabled, bool):
             raise TypeError("projection enabled must be boolean")
         if isinstance(weight, ParameterRef):
@@ -334,7 +384,7 @@ class Network:
             self.parameters.append(
                 {
                     "id": parameter_id,
-                    "shape": [populations[target_pop]["size"], source.shape[-1]],
+                    "shape": expected_shape,
                     "unit": synapse_unit(synapse.json()),
                     "initializer": weight.json(),
                     "initialization_scaling": initialization_scaling
@@ -357,6 +407,8 @@ class Network:
         }
         if not enabled:
             row["enabled"] = False
+        if connectivity is not None:
+            row["connectivity"] = connectivity.json()
         if modulation_data is not None:
             row["modulation"] = modulation_data
         self.projections.append(row)
@@ -398,6 +450,7 @@ class Network:
             enabled,
             allow_autapses,
             modulation,
+            connectivity,
         )
 
     def operation(

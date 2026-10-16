@@ -46,7 +46,7 @@ Named elements share a network namespace: inputs, populations, explicitly named 
 ## input
 
 ```python
-net.input(name, *, shape, signal_type, unit="1")
+net.input(name, *, shape, signal_type, unit="1", spatial_shape=None)
 ```
 
 Declares an external signal and returns a `Signal` with ID `"<name>.value"` that can be connected to populations or used by operations. It does not generate or load input data.
@@ -57,6 +57,7 @@ Declares an external signal and returns a `Signal` with ID `"<name>.value"` that
 | `shape` | `Shape`, required | Signal axes, commonly `("time", "batch", channels)`. Time and batch sizes are supplied by the binding. |
 | `signal_type` | `str`, required | Signal kind, for example `"spikes"`. Must be compatible with the receiving graph port. |
 | `unit` | `str = "1"` | Physical unit, for example `"spike"` for spikes. |
+| `spatial_shape` | `(channels, height, width)`, optional | Channel-major spatial geometry over a flat input. Requires `shape=("time", "batch", channels * height * width)`. |
 
 ```python
 inputs = net.input(
@@ -71,13 +72,14 @@ See [ExecutionSpec input bindings](/api/sim/execution-spec#input_bindings) for s
 ## population
 
 ```python
-net.population(name, *, size, neuron, spiking=True)
+net.population(name, *, size=None, neuron, spiking=True, spatial_shape=None)
 ```
 
 | Argument | Type / default | Meaning |
 | --- | --- | --- |
 | `name` | `str`, required | Unique population name. |
-| `size` | `int`, required | Positive number of neurons. |
+| `size` | `int`, optional with `spatial_shape` | Positive number of neurons. |
+| `spatial_shape` | `(channels, height, width)`, optional | Infers size from the product; an explicitly supplied size must match. State, recordings and spike tensors retain the flat final axis. |
 | `neuron` | `Spec`, required | Neuron dynamics; see [neuron models](#neuron-models). |
 | `spiking` | `bool = True` | Whether to declare a spikes port. |
 
@@ -110,6 +112,7 @@ net.connect(
     initialization_scaling=None,
     allow_autapses=False,
     modulation=None,
+    connectivity=None,
 )
 ```
 
@@ -127,12 +130,29 @@ net.connect(
 | `delay` | `Quantity` or `None`, default `None` | Additional transmission delay, expressed using `lang.ms`. |
 | `enabled` | `bool = True` | Whether this projection participates in execution. |
 | `modulation` | Gain specification, importable callable or `None` | Optional nonnegative scalar schedule applied to new arriving drive. See [Weight modulation](/api/lang/modulation). |
+| `connectivity` | `lang.Conv2d(...)` or `None` | Shared-kernel spatial projection, or the existing dense projection when omitted. |
 | `allow_autapses` | `bool = False` | Permit a neuron to feed its own output back to itself. Exclusion applies to same-population identity regardless of routing label; different populations retain matching-index connections. |
 | `initialization_scaling` | `str` or `None`, default `None` | `"direct"` or `"fan_in_normalized"`. Omission normalizes new weights or inherits an existing parameter policy; conflicting shared-parameter settings fail. See [Initialization scaling](/api/lang/parameters#initialization-scaling). |
 
 The connection kind describes graph routing; the target port determines excitatory, inhibitory or modulatory polarity. Feedback requires an explicit positive delay. Graph execution requires delays to be integer multiples of the network timestep. Recurrent and feedback connections from populations use at least one timestep of causal delay.
 
 Newly authored projections always serialize `allow_autapses`. The returned object exposes `projection.allow_autapses`. Exclusion is structural: forbidden diagonal entries remain ineffective during execution and are cleared after optimization and checkpoint restoration. Initially zero non-self entries remain trainable. Shared parameters requiring different exclusion masks fail compilation/planning. Historical graphs without the field retain permissive behaviour. See [Self-connections](/weights#self-connections-autapses) for initialization counts, normalization and compatibility.
+
+### Convolutional connectivity
+
+`lang.Conv2d(*, kernel_size, stride=1, padding=0)` declares shared-kernel 2D cross-correlation. Pass it to `connect(connectivity=...)`. Kernel size and stride accept a positive integer or `(height, width)` pair; padding accepts nonnegative integers in the same forms. Padding is symmetric zero padding, with floor output sizing. There is no bias, dilation, grouping or string-valued padding in this initial API.
+
+Both source and target need `spatial_shape=(channels, height, width)`. Tensor axes remain `(time, batch, flattened_channels)`, flattened in channel, row, column order. A downsampled two-polarity 32-by-32 sensor therefore declares input spatial shape `(2, 32, 32)` and flat width 2048. Dataset bindings continue to receive flat tensors or channel-indexed events.
+
+Target height and width must match the convolution output; its channel count specifies the number of filters. Authoring, graph validation and execution planning reject invalid geometry and incompatible shared-kernel shapes before simulation. Pooling outputs retain geometry and can feed either convolutional or dense projections. A pooled population source participates in the same timestep ordering and causal delay rules as its underlying spikes; temporal reduction and arbitrary custom-operation outputs cannot serve as projection sources.
+
+Connectivity is separate from synaptic dynamics. Use `ExponentialCurrent` with current neurons, AMPA/GABA with conductance neurons, or the existing leaky-integrator synapse/readout. Convolution computes the arriving drive before the existing synaptic filter, gain modulation and membrane update. Units and excitatory/inhibitory target ports retain their existing meanings.
+
+The compact kernel parameter has graph shape `(output_channels, input_channels * kernel_height * kernel_width)` and runtime shape `(input_channels * kernel_height * kernel_width, output_channels)`. Transpose the runtime matrix and reshape to `(output_channels, input_channels, kernel_height, kernel_width)` for PyTorch filter ordering. Kernels are shared across spatial positions without expanding to a dense neuron-to-neuron matrix. Default fan-in normalization divides by `input_channels * kernel_height * kernel_width`, including padded kernel positions; `"direct"` skips normalization. A compatible `ParameterRef` can share one kernel across projections with different spatial extents.
+
+Select `projection.weight` in a `TrainSpec` parameter group to train the kernel. Gradients, constraints, checkpoint loading and start/end snapshots use the same compact parameter. Authenticated graph data retains spatial metadata, connectivity and pooling configuration. Runtime continuation checks those definitions as well as dimensions.
+
+Same-population convolution currently requires explicit `allow_autapses=True`; structural removal of only a kernel's self-connections is not supported. Existing dense self-connection defaults are unchanged.
 
 ## Synapses
 
@@ -148,7 +168,7 @@ See [Parameters and constraints](/api/lang/parameters#constraints).
 
 ## Returned Projection
 
-The returned `Projection` records its `modulation` specification (or `None`), `id`, source and target IDs, synapse, connection kind, delay, parameter IDs, group and enabled flag. `projection.conductance` (conductance synapses) or `projection.current` (current synapses) is a signal you can expose with `net.expose(projection.conductance, name="input_conductance")` for diagnostic traces. `projection.weight` returns a `ParameterRef` for its weight parameter, useful when selecting trainable parameters.
+The returned `Projection` records its `modulation` and `connectivity` specifications (or `None`), `id`, source and target IDs, synapse, connection kind, delay, parameter IDs, group and enabled flag. `projection.conductance` (conductance synapses) or `projection.current` (current synapses) is a signal you can expose with `net.expose(projection.conductance, name="input_conductance")` for diagnostic traces. `projection.weight` returns a `ParameterRef` for its weight parameter, useful when selecting trainable parameters.
 
 ```python
 projection = net.connect(
@@ -171,7 +191,7 @@ net.parameter(name, *, shape, initializer, unit="1", constraint=None, initializa
 
 Declares a parameter and returns a `ParameterRef`. `shape` explicitly defines its axes, `initializer` specifies initial values, and `constraint` optionally constrains the parameter. See [weights](#weights) and [constraints](#constraints) for available constructors.
 
-Projection parameters require unit `"uS"` for conductance synapses or `"nA"` for current synapses and graph shape `(target_cells, source_channels)`. Use a returned reference as `connect(..., weight=weights)` to reuse that parameter. Set its initializer, constraint and optional `initialization_scaling` (`"direct"` or `"fan_in_normalized"`) here; the projection's `constraint` argument does not modify an existing parameter.
+Dense projection parameters require unit `"uS"` for conductance synapses or `"nA"` for current synapses and graph shape `(target_cells, source_channels)`. Use a returned reference as `connect(..., weight=weights)` to reuse that parameter. Set its initializer, constraint and optional `initialization_scaling` (`"direct"` or `"fan_in_normalized"`) here; the projection's `constraint` argument does not modify an existing parameter.
 
 ## constant
 

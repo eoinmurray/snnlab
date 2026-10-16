@@ -12,7 +12,9 @@ A weight sets the increment that a presynaptic event adds to a [synapse](/synaps
 | `ExponentialCurrent` into a current neuron | `nA` | Per-event current increment. |
 | AMPA or GABA into a conductance neuron | `uS` | Per-event conductance increment. |
 
-When `net.connect(..., weight=initializer)` creates a parameter, its graph shape is `(target_cells, source_channels)`. The executor stores the tensor transposed as `(source_channels, target_cells)`, so source events multiply it on the left. `projection.weight` is a symbolic `ParameterRef`; `model.parameter_map()[projection.weight.id]` is the live PyTorch tensor.
+When a dense `net.connect(..., weight=initializer)` creates a parameter, its graph shape is `(target_cells, source_channels)`. The executor stores the tensor transposed as `(source_channels, target_cells)`, so source events multiply it on the left. `projection.weight` is a symbolic `ParameterRef`; `model.parameter_map()[projection.weight.id]` is the live PyTorch tensor.
+
+With `connectivity=lang.Conv2d(...)`, weights instead form a compact shared kernel: graph shape `(output_channels, input_channels * kernel_height * kernel_width)` and transposed runtime shape. Fan-in normalization uses the kernel's input-channel and spatial extent, not the full image width or the number of output positions. Existing initializer, constraint and parameter-group policies apply to the kernel. See [Convolutional connectivity](/api/lang/network#convolutional-connectivity) for layout, sharing and limitations.
 
 Units are validated. SNNLab neither converts nA to uS nor interprets a weight's sign as a target port. For ordinary excitation/inhibition, use non-negative weights and choose `cells.excitatory` or `cells.inhibitory` explicitly.
 

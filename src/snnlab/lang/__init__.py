@@ -9,6 +9,8 @@ from importlib import import_module
 from ._version import __version__
 
 _EXPORTS = {
+    "Conv2d": "spatial",
+    "pool2d": "spatial",
     "duration_steps": "._shared.timing",
     "duration_metadata": "._shared.timing",
     "refractory_metadata": "._shared.timing",

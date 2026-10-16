@@ -14,6 +14,7 @@ def capability_report(graph: Mapping[str, Any], target: str | None) -> list[Diag
     if target is None:
         return []
     supported = {
+        "pool2d",
         "linear",
         "reduce_mean",
         "reduce_sum",
@@ -100,6 +101,7 @@ def capability_requirements(graph: Mapping[str, Any]) -> dict[str, Any]:
             {
                 "element": projection["id"],
                 "features": [
+                    *(["connectivity:conv2d"] if "connectivity" in projection else []),
                     f"synapse:{projection['synapse']['kind']}",
                     f"connection:{projection['connection']}",
                     "delay:none" if delay is None else "delay:explicit",

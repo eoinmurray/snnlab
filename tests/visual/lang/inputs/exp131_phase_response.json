@@ -1,0 +1,463 @@
+{
+  "source": {
+    "repository": "eoinmurray/pinglab",
+    "revision": "a9370bcc3bd085bc8490d30b2f5963505f531bd3",
+    "path": "experiments/exp131/recipe.py",
+    "sha256": "b5044d99cf70f1dedbf15bc639a8dbf45bc364d406fd52fe37047b00c508f1fe",
+    "variant": "phase_response"
+  },
+  "graph": {
+    "schema": "snnlang.graph/v1",
+    "voltage_sampling": "explicit",
+    "refractory_timing": "following_steps",
+    "name": "ping_phase_response",
+    "timebase": {
+      "dt": {
+        "value": 0.1,
+        "unit": "ms"
+      }
+    },
+    "inputs": [
+      {
+        "id": "coupling_matched_pulse_to_E",
+        "shape": [
+          "time",
+          "batch",
+          80
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      },
+      {
+        "id": "coupling_matched_pulse_to_I",
+        "shape": [
+          "time",
+          "batch",
+          80
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      },
+      {
+        "id": "drive_A_300_Hz",
+        "shape": [
+          "time",
+          "batch",
+          128
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      }
+    ],
+    "populations": [
+      {
+        "id": "PING_A_E",
+        "size": 80,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 1.0,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.05,
+          "refractory": {
+            "value": 3.0,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 20.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 80.0
+        },
+        "spiking": true,
+        "group": "PING_A"
+      },
+      {
+        "id": "PING_A_I",
+        "size": 20,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 0.5,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.1,
+          "refractory": {
+            "value": 1.5,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 5.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 80.0
+        },
+        "spiking": true,
+        "group": "PING_A"
+      }
+    ],
+    "projections": [
+      {
+        "id": "PING_A_E_to_I",
+        "source": "PING_A_E.spikes",
+        "target": "PING_A_I.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 1.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.1,
+          "unit": "ms"
+        },
+        "parameters": [
+          "PING_A_E_to_I.weight"
+        ],
+        "group": "PING_A"
+      },
+      {
+        "id": "PING_A_I_to_E",
+        "source": "PING_A_I.spikes",
+        "target": "PING_A_E.inhibitory",
+        "synapse": {
+          "kind": "gaba",
+          "tau": {
+            "value": 9.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "inhibitory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.1,
+          "unit": "ms"
+        },
+        "parameters": [
+          "PING_A_I_to_E.weight"
+        ],
+        "group": "PING_A"
+      },
+      {
+        "id": "PING_A_input_to_E",
+        "source": "drive_A_300_Hz.value",
+        "target": "PING_A_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "PING_A_input_to_E.weight"
+        ],
+        "group": "PING_A"
+      },
+      {
+        "id": "probe_E_to_PING_A_E_K_EE",
+        "source": "coupling_matched_pulse_to_E.value",
+        "target": "PING_A_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 2.0,
+          "unit": "ms"
+        },
+        "parameters": [
+          "probe_E_to_PING_A_E_K_EE.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "probe_E_to_PING_A_I_K_EI",
+        "source": "coupling_matched_pulse_to_I.value",
+        "target": "PING_A_I.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 2.0,
+          "unit": "ms"
+        },
+        "parameters": [
+          "probe_E_to_PING_A_I_K_EI.weight"
+        ],
+        "group": null
+      }
+    ],
+    "operations": [],
+    "parameters": [
+      {
+        "id": "PING_A_E_to_I.weight",
+        "shape": [
+          20,
+          80
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.5,
+          "std": 0.05,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_A"
+      },
+      {
+        "id": "PING_A_I_to_E.weight",
+        "shape": [
+          80,
+          20
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 1.0,
+          "std": 0.1,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_A"
+      },
+      {
+        "id": "PING_A_input_to_E.weight",
+        "shape": [
+          80,
+          128
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.2,
+          "std": 0.03,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": "PING_A"
+      },
+      {
+        "id": "probe_E_to_PING_A_E_K_EE.weight",
+        "shape": [
+          80,
+          80
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.9,
+          "mean": 0.08,
+          "std": 0.0,
+          "zeroing": "exact_k"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "probe_E_to_PING_A_I_K_EI.weight",
+        "shape": [
+          20,
+          80
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.9,
+          "mean": 0.08,
+          "std": 0.0,
+          "zeroing": "exact_k"
+        },
+        "initialization_scaling": "fan_in_normalized",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      }
+    ],
+    "constants": [],
+    "outputs": [],
+    "observables": [
+      {
+        "id": "PING_A_E_to_I.conductance",
+        "signal": "PING_A_E_to_I.conductance"
+      },
+      {
+        "id": "PING_A_I.voltage",
+        "signal": "PING_A_I.voltage"
+      },
+      {
+        "id": "population_0",
+        "signal": "PING_A_E.spikes"
+      },
+      {
+        "id": "population_1",
+        "signal": "PING_A_I.spikes"
+      },
+      {
+        "id": "probe_E_to_PING_A_I_K_EI.conductance",
+        "signal": "probe_E_to_PING_A_I_K_EI.conductance"
+      }
+    ],
+    "assets": [],
+    "groups": [
+      {
+        "id": "PING_A",
+        "members": [
+          "PING_A_E",
+          "PING_A_E_to_I",
+          "PING_A_E_to_I.conductance",
+          "PING_A_I",
+          "PING_A_I_to_E",
+          "PING_A_input_to_E"
+        ],
+        "parent": null
+      }
+    ]
+  },
+  "training": null,
+  "manifest": {
+    "schema": "snnlang.bundle/v1",
+    "compiler": {
+      "name": "snnlang",
+      "version": "0.2.0"
+    },
+    "graph_digest": "sha256:8f59e5e8327dd47a34da4ef302b7568f44a41b99928cdd8216c852e1313bbb20",
+    "target": null,
+    "required_capabilities": {
+      "schema": "snnlang.capabilities/v1",
+      "elements": [
+        {
+          "element": "PING_A_E",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "PING_A_E_to_I",
+          "features": [
+            "synapse:ampa",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "PING_A_E_to_I.conductance",
+          "features": [
+            "recording:conductance"
+          ]
+        },
+        {
+          "element": "PING_A_I",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "PING_A_I.voltage",
+          "features": [
+            "recording:voltage"
+          ]
+        },
+        {
+          "element": "PING_A_I_to_E",
+          "features": [
+            "synapse:gaba",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "PING_A_input_to_E",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "population_0",
+          "features": [
+            "recording:spikes"
+          ]
+        },
+        {
+          "element": "population_1",
+          "features": [
+            "recording:spikes"
+          ]
+        },
+        {
+          "element": "probe_E_to_PING_A_E_K_EE",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "probe_E_to_PING_A_I_K_EI",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "probe_E_to_PING_A_I_K_EI.conductance",
+          "features": [
+            "recording:conductance"
+          ]
+        }
+      ]
+    },
+    "files": [
+      {
+        "path": "graph.json",
+        "digest": "sha256:8f59e5e8327dd47a34da4ef302b7568f44a41b99928cdd8216c852e1313bbb20"
+      }
+    ],
+    "assets": []
+  }
+}

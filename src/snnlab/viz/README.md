@@ -49,7 +49,7 @@ schema interpretation outside the renderer. For example:
 import snnlab as snn
 
 bundle = snn.lang.compile(network)
-visual = snn.lang.diagram(bundle, view="circuit", expand_groups={"cell"})
+visual = snn.lang.diagram(bundle, view="circuit")
 snn.viz.render_diagram(visual, "circuit.svg")
 ```
 
@@ -60,10 +60,26 @@ Use `canvas_size=(1920, 900)` in `diagram_to_dot` or `render_diagram` for a
 common export canvas. Layouts are centred with their type and node scale retained.
 SVG and PNG dimensions match; PNG `scale` multiplies both dimensions.
 Rendering rejects a canvas smaller than the natural layout to prevent cropping.
+Diagram images require both Graphviz `dot` and `neato`. Wires use horizontal
+and vertical segments with right-angle bends. After `dot` lays out the graph,
+labels are moved clear of nodes, arrowheads, other labels, and wires;
+`neato -n2` exports the fixed layout without routing it again.
+Long-range feedback uses overhead lanes, spaced at least 32 points apart, with
+node attachment points spaced at least 18 points apart. Routes escape beside
+intervening populations before rising into their lane.
 
-The default diagram style uses a white canvas, pale node fills, fine borders,
-and Helvetica with a clear hierarchy: 18-point figure titles, 14-point bold node
-names, 11-point regular detail, and 10-point badges and edge labels. Original
+The default diagram style uses a white canvas, warm graphite text, subtly tinted
+neutral fills, and matching borders at half opacity for each box type (including
+frozen training groups). Helvetica Neue provides a clear hierarchy:
+18-point figure titles, 14-point bold node
+names, 11-point information lines, and 10-point type headers and edge labels. The
+type header comes first, followed by the bold name and one information field.
+Populations show two information fields: their size and neuron model.
+All card text is left aligned with consistent inset margins.
+Essential information uses the main ink colour; secondary detail is muted.
+Authored badges remain metadata; redundant category/state footers are omitted.
+Training groups show whether they are trainable or frozen.
+Original
 case and scientific acronyms are preserved. Cards wrap at 26 characters and
 respect explicit line breaks. `DiagramTheme.font_name` selects another font.
 
@@ -72,13 +88,14 @@ teal marks trainable parameters. Frozen training links are grey and dashed;
 trainable links are teal and dotted. Colours remain secondary to arrowheads,
 line styles and written labels. Ordinary forward flow remains dark grey.
 
-The longest acyclic forward path receives alignment priority. Feedback loops
-route beneath the signal path, and training annotations share the column of
-the last component they describe. External inputs share an entry column and
-terminal outputs share an exit column. Component details use short local names
+The longest acyclic forward path receives alignment priority. Long-range feedback loops
+use separate overhead lanes, and training annotations share the column of
+the population or operation they describe. External inputs share an entry column and
+terminal outputs share an exit column. Population and operation details use short local names
 and output cards show signal dimensions.
 
-Authored component membership becomes visible clustering. SNNLang places related
+Authored group membership becomes visible clustering. All groups are always
+explicit: there are no collapsed component boxes or selective-expansion options. SNNLang places related
 populations vertically using `same_rank`; `DiagramGroup.same_row` arranges them
 horizontally in their declared order. The two options are mutually exclusive.
 For publication, inspect the export at its intended display width and choose

@@ -55,6 +55,8 @@ Older graphs and bundles without the field retain normalized projection initiali
 
 Supply a `ParameterRef` to reuse a parameter declared with `net.parameter`. Its graph shape must match `(target_cells, source_channels)` and its unit must match the synapse (`"uS"` or `"nA"`).
 
+For a convolutional projection, the required graph shape is instead `(output_channels, input_channels * kernel_height * kernel_width)`. Sharing is valid across different image sizes when kernel dimensions, channel counts, physical unit and initialization policy match. See [Convolutional connectivity](/api/lang/network#convolutional-connectivity).
+
 ```python
 weights = net.parameter(
     "input_weights",
