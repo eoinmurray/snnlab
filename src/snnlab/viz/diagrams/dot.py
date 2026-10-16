@@ -152,6 +152,54 @@ def _forward_spine(diagram: Diagram) -> tuple[str, ...]:
     return max((paths[node] for node in queue), key=len, default=())
 
 
+def _group_entry_links(diagram: Diagram) -> tuple[tuple[str, str], ...]:
+    """Separate input-bearing circuit groups when their dependencies form a DAG.
+
+    Without these layout-only links, a downstream input shares a rank with its
+    upstream population. Overlapping cluster extents then force a staircase.
+    Restrict this layout to disjoint, fully grouped input/population circuits;
+    explicit row/column hints and annotation layouts retain their own rules.
+    """
+    nodes = {node.id: node for node in diagram.nodes}
+    membership, entries = {}, {}
+    for group in diagram.groups:
+        if group.same_rank or group.same_row:
+            return ()
+        inputs = [member for member in group.members if nodes[member].kind == "input"]
+        if len(inputs) != 1:
+            return ()
+        entries[group.id] = inputs[0]
+        for member in group.members:
+            if member in membership or nodes[member].kind not in {
+                "input",
+                "population",
+            }:
+                return ()
+            membership[member] = group.id
+    if set(membership) != set(nodes):
+        return ()
+    outgoing = {group.id: set() for group in diagram.groups}
+    incoming = dict.fromkeys(outgoing, 0)
+    links = set()
+    for edge in diagram.edges:
+        source, target = membership[edge.source], membership[edge.target]
+        if source == target:
+            continue
+        if edge.connection != "feedforward" or not edge.constraint:
+            return ()
+        if target not in outgoing[source]:
+            outgoing[source].add(target)
+            incoming[target] += 1
+        links.add((edge.source, entries[target]))
+    queue = [group for group, count in incoming.items() if count == 0]
+    for source in queue:
+        for target in sorted(outgoing[source]):
+            incoming[target] -= 1
+            if incoming[target] == 0:
+                queue.append(target)
+    return tuple(sorted(links)) if len(queue) == len(outgoing) else ()
+
+
 def diagram_to_dot(
     diagram: Diagram,
     *,
@@ -185,12 +233,15 @@ def diagram_to_dot(
     input_count = sum(
         node.kind == "input" and node.id not in incoming_nodes for node in diagram.nodes
     )
-    rank_spacing = "4.5" if input_count >= 3 else "1.1"
+    entry_links = _group_entry_links(diagram)
+    rank_spacing = "1.3" if entry_links else "4.5" if input_count >= 3 else "1.1"
+    # Local cluster ranking preserves E/I order in mixed input/population groups.
+    newrank = "false" if entry_links else "true"
     lines = [
         f"digraph {_q(diagram.name)} {{",
         f'graph [rankdir=LR{ratio}{viewport}, bgcolor="{theme.background}", pad="0.3", nodesep="0.65", ranksep="{rank_spacing}",',
         f'  splines=ortho, outputorder=edgesfirst, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}",',
-        f"  label=<<B>{html.escape(title)}</B>>, labelloc=t, labeljust=l, fontsize={theme.title_size:g}, compound=true, newrank=true];",
+        f"  label=<<B>{html.escape(title)}</B>>, labelloc=t, labeljust=l, fontsize={theme.title_size:g}, compound=true, newrank={newrank}];",
         f'node [shape=plain, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}"];',
         f'edge [fontname={_q(theme.font_name)}, fontsize={theme.secondary_size - 1:g}, fontcolor="{theme.muted}", color="{theme.ink}", penwidth=1.1, arrowsize=0.65];',
     ]
@@ -268,6 +319,8 @@ def diagram_to_dot(
                 edge.target
             )
     for excitatory, inhibitory in population_columns.items():
+        if entry_links:
+            continue
         grouped_column = any(
             group.same_rank and {excitatory, inhibitory} <= set(group.members)
             for group in diagram.groups
@@ -323,6 +376,7 @@ def diagram_to_dot(
             edge.connection == "feedforward"
             and edge.source in population_columns
             and edge.target in population_columns
+            and not entry_links
         ):
             lines.append(
                 f"{_q(population_columns[edge.source])} -> {_q(population_columns[edge.target])} "
@@ -337,6 +391,13 @@ def diagram_to_dot(
         if group.same_rank:
             lines.append("rank=same;")
         lines.extend(f"{_q(member)};" for member in group.members)
+        if entry_links:
+            for excitatory, inhibitory in population_columns.items():
+                if {excitatory, inhibitory} <= set(group.members):
+                    lines.append(
+                        f"{{ rank=same; {_q(excitatory)}; {_q(inhibitory)}; "
+                        f"{_q(inhibitory)} -> {_q(excitatory)} [style=invis, weight=10000]; }}"
+                    )
         if group.same_row:
             # Invisible ordering edges arrange the row without adding scientific links.
             row_membership.update((member, group.id) for member in group.members)
@@ -346,6 +407,8 @@ def diagram_to_dot(
                     "[style=invis, weight=100, constraint=true];"
                 )
         lines.append("}")
+    for source, entry in entry_links:
+        lines.append(f"{_q(source)} -> {_q(entry)} [style=invis, weight=100];")
     # Place training annotations below the last component they describe.
     path = _forward_spine(diagram)
     spine_order = {identifier: index for index, identifier in enumerate(path)}

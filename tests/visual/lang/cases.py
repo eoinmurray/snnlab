@@ -190,6 +190,7 @@ def cases() -> tuple[VisualCase, ...]:
         "exp131_phase_response": "One PING circuit with separate drive, E probe, and I probe inputs.",
         "exp133_coupled": "Two PING circuits with 1,024-channel drives and reciprocal, delayed, step-modulated coupling.",
         "exp133_sender_receiver": "Independently driven sender and receiver PING circuits with one-way, delayed E-to-E and E-to-I coupling.",
+        "exp136_sustained_cue_ping": "Two independently driven sender PING circuits converge on a receiver, each with its own non-recurrent neuronal cue population. Five authored groups include sensory and cue inputs. Uncalibrated circuit proposal; no simulation or training results.",
     }
     snapshots = []
     for name, description in descriptions.items():

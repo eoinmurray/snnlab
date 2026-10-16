@@ -6,6 +6,7 @@ import shlex
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,38 @@ def snapshot(name):
     path = Path(__file__).parents[1] / "visual" / "lang" / "inputs" / f"{name}.json"
     payload = json.loads(path.read_text())
     return lang.Bundle(payload["graph"], payload["training"], payload["manifest"], [])
+
+
+@pytest.mark.parametrize("view", ["circuit", "training", "expanded"])
+def test_sustained_cue_case_preserves_inputs_groups_and_pathways(view):
+    bundle = snapshot("exp136_sustained_cue_ping")
+    visual = lang.diagram(bundle, view=view)
+    assert {node.id for node in visual.nodes} == {
+        row["id"] for row in bundle.graph["inputs"] + bundle.graph["populations"]
+    }
+    assert {group.id: set(group.members) for group in visual.groups} == {
+        group["id"]: set(group["members"]) & {node.id for node in visual.nodes}
+        for group in bundle.graph["groups"]
+    }
+    assert {edge.id for edge in visual.edges} == {
+        row["id"] for row in bundle.graph["projections"]
+    }
+    assert len(visual.nodes) == 13
+    assert len(visual.groups) == 5
+    assert len(visual.edges) == 17
+    pathways = {(edge.source, edge.target) for edge in visual.edges}
+    for sender in ("S1", "S2"):
+        assert (f"cue_{sender}_E", f"{sender}_E") in pathways
+        assert (f"{sender}_E", "R_E") in pathways
+        assert (f"{sender}_E", "R_I") in pathways
+    assert not any(
+        source.startswith("R_") and target.startswith("S")
+        for source, target in pathways
+    )
+    assert not any(
+        source.startswith("cue_") and target.startswith("R_")
+        for source, target in pathways
+    )
 
 
 @pytest.mark.parametrize("view", ["circuit", "training", "expanded"])
@@ -129,7 +162,14 @@ def test_collapsed_component_box_is_rejected():
 
 
 @pytest.mark.parametrize(
-    "case_name", ["all_box_types", "exp124_ping", "exp133_coupled", "self_loop"]
+    "case_name",
+    [
+        "all_box_types",
+        "exp124_ping",
+        "exp133_coupled",
+        "exp136_sustained_cue_ping",
+        "self_loop",
+    ],
 )
 def test_arrowheads_are_visible_outside_every_box(case_name, tmp_path):
     if any(shutil.which(program) is None for program in ("dot", "neato")):
@@ -315,12 +355,70 @@ def test_gallery_networks_have_landscape_layouts(name, view):
     assert float(graph[2]) > 1.3 * float(graph[3])
 
 
+@pytest.mark.parametrize("view", ["circuit", "training", "expanded"])
+def test_grouped_fan_in_layout_separates_stages_and_keeps_e_above_i(view):
+    if shutil.which("dot") is None:
+        pytest.skip("Graphviz is required")
+    visual = lang.diagram(snapshot("exp136_sustained_cue_ping"), view=view)
+    # Rename every identifier: layout depends on topology, not experiment names.
+    ids = {node.id: f"node_{index}" for index, node in enumerate(visual.nodes)}
+    renamed = replace(
+        visual,
+        name="grouped_fan_in",
+        nodes=tuple(replace(node, id=ids[node.id]) for node in visual.nodes),
+        edges=tuple(
+            replace(edge, source=ids[edge.source], target=ids[edge.target])
+            for edge in visual.edges
+        ),
+        groups=tuple(
+            replace(
+                group,
+                id=f"group_{index}",
+                members=tuple(ids[member] for member in group.members),
+            )
+            for index, group in enumerate(visual.groups)
+        ),
+    )
+    layout = json.loads(
+        subprocess.check_output(
+            ["dot", "-Tjson"], input=viz.diagram_to_dot(renamed), text=True
+        )
+    )
+    nodes = {node["name"]: node for node in layout["objects"] if "pos" in node}
+    positions = {
+        name: tuple(map(float, nodes[identifier]["pos"].split(",")))
+        for name, identifier in ids.items()
+    }
+    clusters = {node["name"]: node for node in layout["objects"] if "bb" in node}
+    boxes = {
+        group.id: tuple(
+            map(float, clusters[f"cluster_n_group_{index}"]["bb"].split(","))
+        )
+        for index, group in enumerate(visual.groups)
+    }
+    for sender in ("S1", "S2"):
+        # Whole stages have separate columns; branches have separate rows.
+        assert boxes[f"cue_{sender}"][2] < boxes[sender][0]
+        assert boxes[sender][2] < boxes["R"][0]
+    assert boxes["S1"][1] > boxes["S2"][3]
+    assert positions["S2_E"][1] < positions["R_E"][1] < positions["S1_E"][1]
+    for circuit in ("S1", "S2", "R"):
+        ex, ey = positions[f"{circuit}_E"]
+        ix, iy = positions[f"{circuit}_I"]
+        assert ex == pytest.approx(ix, abs=0.01)
+        assert ey > iy
+    _, _, width, height = map(float, layout["bb"].split(","))
+    assert width > 1.5 * height
+
+
 @pytest.mark.parametrize(
     "name,view",
     [
         ("exp124_ping", "training"),
         ("exp133_coupled", "expanded"),
         ("exp131_phase_response", "expanded"),
+        ("exp136_sustained_cue_ping", "circuit"),
+        ("exp136_sustained_cue_ping", "training"),
     ],
 )
 def test_exported_wire_labels_clear_nodes_and_wires(name, view):

@@ -21,7 +21,14 @@ trainable and frozen parameter groups and an explicit E/I group boundary.
 A two-layer classifier follows it.
 The gallery also includes frozen authoring graphs from Pinglab's exp124
 (COBA and PING classifiers), exp131 (coupled PING and phase-response probes),
-and exp133 (coupled PING and one-way sender–receiver).
+exp133 (coupled PING and one-way sender–receiver), and exp136 (two senders
+converging on a receiver, with separate neuronal cue populations).
+The exp136 case exercises inputs inside five authored groups. Its two cue–sender
+branches occupy separate rows and converge on the receiver to their right.
+For fully grouped input/population circuits with acyclic connections between
+groups, layout-only links keep each downstream group's input beyond its upstream
+population. Local E/I columns keep I below E; these groups use compact spacing
+instead of the wide gaps needed by several independent external inputs.
 Inspect labels, group boundaries, arrow directions and routing, overlaps, and
 training annotations. This is a review aid, not an automated visual pass/fail test.
 Connections use only horizontal and vertical segments with right-angle bends.
@@ -63,6 +70,9 @@ The snapshots were captured by calling the recipes' authoring functions:
    For the latter, only the authoring function was extracted from the source;
    its constants and `recipe.add_ping` helper were supplied without importing
    the module's unrelated storage and execution helpers.
+4. exp136: `recipe.author_network()` only. The guarded CLI was not invoked;
+   no stimuli or simulations were run. This captures the uncalibrated network
+   proposal, including five inputs, eight populations and seventeen projections.
 
 Refresh these files explicitly when a source architecture changes, keeping the
 source metadata alongside it. Semantic regressions using these same inputs live
