@@ -8,6 +8,7 @@
     "../inference",
     "../pytorch-integration",
     "../current-lif",
-    "../custom-neurons-and-synapses"
+    "../custom-neurons-and-synapses",
+    "../animated-neuron"
   ]
 }

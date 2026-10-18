@@ -1,0 +1,141 @@
+---
+title: Animate a Simulation
+description: Record a spiking neuron in Python and replay its activity with PixiJS.
+---
+
+import NeuronReplay from '../../src/components/NeuronReplay.astro';
+
+A leaky integrate-and-fire neuron receives brief current pulses, accumulates voltage, and spikes at threshold. Run this Python example to save the recording; the PixiJS animation below replays its voltage and spike times without simulating the neuron in JavaScript.
+
+<NeuronReplay />
+
+## Further examples
+
+Explore the experiments in Pinglab's [animations collection](https://pinglab.eoinmurray.info/collections/animations):
+
+- [exp099 — Susin and Destexhe (2021): Gamma vs Input Drive](https://pinglab.eoinmurray.info/exp099)
+- [exp130 — Theta nested Gamma](https://pinglab.eoinmurray.info/exp130)
+- [exp127 — Introduction to Spiking Neural Networks](https://pinglab.eoinmurray.info/exp127)
+- [exp128 — Introduction to Conductance based Synapses](https://pinglab.eoinmurray.info/exp128)
+- [exp129 — Introduction to Capacitors](https://pinglab.eoinmurray.info/exp129)
+
+## To make your own
+
+Use the prompts below as starting points, not fixed recipes. Adapt the neuron model, inputs, duration, and recorded signals to your own snnlab simulation, then describe what you want the animation to show. Keep the simulation data authoritative: change the visual presentation, not the recorded results.
+
+Expect several iterations with your agent to get the animation right. Start with a simple replay, inspect it, and ask for specific changes to the layout, timing, labels, or controls. Check the animation against the recording as you go; a polished first attempt is not a guarantee that it represents the data correctly.
+
+## Agent instructions: generate the data
+
+Give your coding agent this prompt:
+
+```text
+Write a small Python script using snnlab's public lang and sim APIs to record
+one current-based leaky integrate-and-fire neuron.
+
+1. Build the simulation
+
+   - Inspect the installed API; do not implement the equations yourself.
+   - Neuron: lang.CUBA_LIF
+   - Membrane time constant: 30 ms
+   - Capacitance: 0.2 nF
+   - Rest/reset: −65 mV
+   - Threshold: −50 mV
+   - Refractory period: none
+   - Duration: 360 ms
+   - Timestep: 0.25 ms
+   - Device: CPU
+
+2. Apply the inputs
+
+   - One spike-input channel, bound with DenseArrayBinding.
+   - Arrival times: 14 ms, then every 12 ms.
+   - Synapse: lang.ExponentialCurrent, time constant 0.001 ms.
+   - Weight: constant 5.6 nA, with direct initialization scaling.
+   - Each input should produce a one-step current pulse.
+   - Compile the network and run it with simulate.
+
+3. Export recording.json
+
+   - Include timestep, duration, neuron parameters, input arrival times,
+     voltage samples, and output spike times.
+   - Add schematic departure times 6 ms before each input arrival.
+   - Use the schema and field names in the example code below.
+   - Export actual simulation results, using finite JSON numbers only.
+
+4. Keep time conventions explicit
+
+   - Voltage is recorded after integration/reset.
+   - Prepend the initial −65 mV state at time zero.
+   - Label result slot k at (k + 1) × dt.
+   - Keep input arrivals at their slot-start times.
+   - State this convention in the metadata.
+
+5. Run and verify
+
+   - Execute the script to produce the recording.
+   - Check applied current amplitudes and arrival slots.
+   - Check that output spikes coincide with voltage resets.
+   - Never invent pre-reset voltage samples or spike times.
+```
+
+## Agent instructions: animate the recording
+
+Give the agent the generated `recording.json` and this prompt:
+
+```text
+Create an index.html that uses PixiJS to replay this recording.
+
+1. Load the data
+
+   - Pin the PixiJS version and use its matching API.
+   - Fetch recording.json from beside index.html.
+   - Check the response, schema, array lengths, and time ordering.
+   - Serve the folder with:
+     python -m http.server 8000
+   - Do not open the page as a local file.
+   - Optional single-file version: embed JSON in a non-executable script
+     block of type application/json and parse its text content.
+     Escape < when serializing into HTML; base64 is unnecessary.
+
+2. Draw the scene
+
+   - Left: a circular neuron with a blue voltage gauge.
+   - Incoming dots: blue, moving from recorded departure to arrival.
+   - Outgoing dots: pink, emitted only at recorded output spike times.
+   - Right: a blue voltage trace in a scrolling 120 ms window.
+   - Threshold: a dashed pink line at −50 mV.
+   - Labels: current membrane voltage in mV and time in ms.
+
+3. Preserve the science
+
+   - Keep the neuron model in Python; JavaScript only replays the data.
+   - Never simulate the neuron or generate replacement spikes.
+   - Preserve recorded post-reset voltage samples.
+   - Label any threshold points at spikes as schematic event markers,
+     not measured pre-reset voltage. Pulse travel is also schematic.
+   - Do not change the data to make the animation look better.
+
+4. Add playback and accessibility
+
+   - Use one recording-time clock, independent of frame rate.
+   - Controls: play/pause, replay, speed, and a time scrubber.
+   - Backward seeking must reconstruct the scene without stale pulses.
+   - Use HTML labels and controls, with a responsive layout.
+   - Start paused for reduced-motion users.
+   - Pause rendering when hidden.
+   - Include loading/error text and a short explanatory caption.
+
+5. Run and verify
+
+   - Check for console errors.
+   - Compare the voltage display with recorded samples at selected times.
+   - Check that every output flash matches a recorded spike.
+   - Check that replay and backward seeking are repeatable.
+```
+
+## Code
+
+```python
+{{SCRIPT}}
+```
