@@ -34,7 +34,7 @@ The result class uses empty mappings/`None` for absent data. Attributes are popu
 
 ## Epoch metrics
 
-In dataset iteration mode (`epochs > 0`), `train` reuses pre-update minibatch scores for online training metrics after each completed epoch. Supplying `validation` evaluates the held-out split after each completed epoch, including the last. Initial evaluation is opt-in through `TrainingMetrics.initial`. Results are returned as `result.metrics["epochs"]`; the epoch-zero bookkeeping row has no split metrics unless requested:
+In dataset iteration mode (`epochs > 0`), `train` reuses pre-update minibatch scores for online training metrics after each completed epoch. Supplying `validation` evaluates the held-out split at epoch zero and after each completed epoch, including the last. Set `TrainingMetrics(initial=())` to skip the initial evaluation. Results are returned as `result.metrics["epochs"]`; the epoch-zero row contains validation metrics by default, while initial training metrics require an explicit request:
 
 | Field | Meaning |
 | --- | --- |

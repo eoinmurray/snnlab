@@ -6,6 +6,12 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-19
+
+### Fixed
+
+1. Restored epoch-zero validation by default with `TrainingMetrics.initial=("validation",)`. Validation still runs after every completed epoch, and held-out test evaluation still runs only after training finishes. Use `initial=()` to skip the initial validation pass.
+
 ## [0.20.0] - 2026-10-19
 
 ### Changed

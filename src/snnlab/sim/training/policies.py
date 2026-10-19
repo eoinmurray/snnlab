@@ -12,7 +12,7 @@ import torch
 class TrainingMetrics:
     train: Literal["online", "evaluate", "none"] = "online"
     validation: Literal["epoch", "none"] = "epoch"
-    initial: tuple[str, ...] = ()
+    initial: tuple[str, ...] = ("validation",)
     update_history: bool = False
     test: Literal["final", "none"] = "final"
 

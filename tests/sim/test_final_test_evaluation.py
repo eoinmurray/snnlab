@@ -62,6 +62,8 @@ def test_default_evaluation_order_and_best_validation_weights(
     )
     result = train(spec)
     assert events == [
+        "evaluate",
+        "evaluate",
         "train",
         "train",
         "train",
@@ -79,7 +81,9 @@ def test_default_evaluation_order_and_best_validation_weights(
         "evaluate",
         "evaluate",
     ]
-    assert "validation_loss" not in result.metrics["epochs"][0]
+    assert result.metrics["epochs"][0]["validation_loss"] == pytest.approx(
+        float(torch.log(torch.tensor(2.0)))
+    )
     rows = result.metrics["epochs"][1:]
     assert all("validation_loss" in row for row in rows)
     selected = result.selected_checkpoint

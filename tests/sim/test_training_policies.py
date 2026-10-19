@@ -541,13 +541,18 @@ def test_default_metrics_match_explicit_policy_and_resume(tmp_path):
     assert TrainingMetrics().to_dict() == {
         "train": "online",
         "validation": "epoch",
-        "initial": [],
+        "initial": ["validation"],
         "update_history": False,
         "test": "final",
     }
     assert implicit.metrics["epochs"] == explicit.metrics["epochs"]
     assert implicit.metrics["updates"] == []
     assert "train_loss" not in implicit.metrics["epochs"][0]
+    assert "validation_loss" in implicit.metrics["epochs"][0]
+    skipped = train(replace(spec, metrics=TrainingMetrics(initial=())))
+    assert "validation_loss" not in skipped.metrics["epochs"][0]
+    assert skipped.metrics["epochs"][1:] == implicit.metrics["epochs"][1:]
+    assert skipped.metrics["selection_record"] == implicit.metrics["selection_record"]
     assert [row.get("train_loss") for row in implicit.metrics["epochs"]] == [
         row.get("train_loss") for row in explicit.metrics["epochs"]
     ]

@@ -389,7 +389,7 @@ result = train(execution)
 test_metrics = result.metrics["test"]
 ```
 
-The default evaluates validation after each completed epoch, including the last, and selects the earliest checkpoint with the lowest total validation loss. Test evaluation uses that selected checkpoint; without selection it uses the final weights. Test labels never influence selection. The returned model and resumable training checkpoint retain the final training state.
+The default evaluates validation at epoch zero and after each completed epoch, including the last, and selects the earliest completed-epoch checkpoint with the lowest total validation loss. Test evaluation uses that selected checkpoint; without selection it uses the final weights. Test labels never influence selection. The returned model and resumable training checkpoint retain the final training state.
 
 Test evaluation runs without gradients or optimizer updates, in batches bounded by `batch_size`. `encoding_seeds` supports the same fixed stochastic draw sets as validation. Test inputs are resolved only when the requested final epoch has completed: an update-limited partial call leaves `result.metrics["test"] = None`, and a subsequent resume evaluates the test set when it reaches the end. Extending the requested epoch count in a later call triggers another test evaluation at that new end; keep the test set held out until model choices are complete.
 
@@ -467,13 +467,13 @@ The previous training keys in `options` are no longer accepted by graph `train`;
 
 ### metrics
 
-Import `TrainingMetrics` from `snnlab.sim`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it uses online training metrics, validation after every completed epoch, final test evaluation when supplied, and no initial evaluations or update history.
+Import `TrainingMetrics` from `snnlab.sim`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it uses online training metrics, validation at epoch zero and after every completed epoch, final test evaluation when supplied, and no update history.
 
 ```python
 metrics = TrainingMetrics(
     train="online",
     validation="epoch",
-    initial=(),
+    initial=("validation",),
     update_history=False,
     test="final",
 )
@@ -483,7 +483,7 @@ metrics = TrainingMetrics(
 | --- | --- |
 | `train` | `"evaluate"`: full training split at fixed current weights. `"online"` (default): reuse each pre-update minibatch's scores. `"none"`: no training metrics. |
 | `validation` | `"epoch"` (default): evaluate supplied held-out data after each completed epoch. `"none"`: no validation evaluation. |
-| `initial` | Unique train/validation split names; default `()`. Requesting initial train requires `train="evaluate"`; requesting initial validation requires `validation="epoch"`. An absent ValidationSpec produces absent validation metrics. Test cannot be an initial split. |
+| `initial` | Unique train/validation split names; default `("validation",)`. Use `()` to skip epoch-zero evaluation. Requesting initial train requires `train="evaluate"`; requesting initial validation requires `validation="epoch"`. An absent ValidationSpec produces absent validation metrics. Test cannot be an initial split. |
 | `update_history` | Boolean, default `False`. `False` returns an empty update history and omits per-update loss/component retention. |
 | `test` | `"final"` (default): evaluate supplied `TestSpec` once after all requested epochs, using the selected checkpoint or final weights. `"none"`: no test evaluation. |
 
