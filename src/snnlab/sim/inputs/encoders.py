@@ -6,9 +6,64 @@ of cli.py.
 
 from __future__ import annotations
 
+import inspect
+
 import torch
 
 EVAL_SEED = 20260415
+
+
+def transfer_compact(value, device):
+    """Stage compact rates/coordinates without a blocking CUDA host wait."""
+    device = torch.device(device)
+    if device.type == "cuda" and value.device.type == "cpu":
+        return value.pin_memory().to(device, non_blocking=True)
+    return value.to(device)
+
+
+def accepts_device(function):
+    """An explicit optional device keyword opts a registered encoder in."""
+    try:
+        parameter = inspect.signature(function).parameters.get("device")
+    except (TypeError, ValueError):
+        return False
+    return parameter is not None and parameter.kind in {
+        inspect.Parameter.KEYWORD_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    }
+
+
+def encoder_device_policy(device):
+    """Retain CPU encoder identities; bind accelerator callback preparation."""
+    backend = torch.device(device).type
+    return (
+        {
+            "preparation_device": backend,
+            "preparation_policy": "snnlab.encoder-device/v1",
+            "preparation_torch_version": str(torch.__version__),
+        }
+        if backend != "cpu"
+        else {}
+    )
+
+
+def poisson_device_policy(device):
+    """Record device RNG changes without changing historical CPU identities."""
+    backend = torch.device(device).type
+    return (
+        {
+            "random_policy": {
+                "schema": "snnlab.poisson-device/v1",
+                "backend": backend,
+                "random_dtype": "float32",
+                "torch_version": str(torch.__version__),
+                "rate_selection": "cpu",
+                "cross_device_bitwise": False,
+            }
+        }
+        if backend != "cpu"
+        else {}
+    )
 
 
 def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None):

@@ -60,7 +60,7 @@ save_training_checkpoint("final.checkpoint", trained.training_checkpoint)
 checkpoint = load_training_checkpoint("final.checkpoint", device="cpu")
 ```
 
-To resume built-in training, set `ExecutionSpec.checkpoint` to the directory path. To run inference, the same directory supplies authenticated weights; optimizer/iterator state is not restored. A standalone PyTorch state dictionary is supported for inference but is not a built-in training-resume checkpoint.
+To resume built-in training, set `checkpoint` to the directory path. To run inference, the same directory supplies authenticated weights; optimizer/iterator state is not restored. A standalone PyTorch state dictionary is supported for inference but is not a built-in training-resume checkpoint.
 
 ## RNG capture and restore
 
@@ -101,7 +101,7 @@ class CheckpointSelection:
 
 Epoch selection evaluates a fixed state on the full train or validation split. Validation requires `ValidationSpec`; epoch selection requires positive epochs. `kind="loss"` selects by total weighted objective and regularizer loss, supports nonclassification recipes, and requires the default `objective=0` because it measures the entire recipe. Cross entropy and accuracy identify a classification objective by zero-based index. Cross entropy is unweighted and excludes regularizers; accuracy uses that objective's predictions. Each metric explicitly chooses `direction="min"` or `"max"`; accuracy does not automatically switch to maximization.
 
-When `ExecutionSpec.checkpoint_selection` is omitted and validation evaluation is enabled, training uses `CheckpointSelection(metric=SelectionMetric("loss"))`. An explicitly constructed `CheckpointSelection()` retains its cross-entropy default. Test data is never eligible for selection; final test evaluation uses the selected checkpoint, falling back to final weights when selection is disabled or unavailable.
+When `checkpoint_selection` is omitted and validation evaluation is enabled, training uses `CheckpointSelection(metric=SelectionMetric("loss"))`. An explicitly constructed `CheckpointSelection()` retains its cross-entropy default. Test data is never eligible for selection; final test evaluation uses the selected checkpoint, falling back to final weights when selection is disabled or unavailable.
 
 Tie-break metrics are compared in order after exact ties; an exact tie retains the earliest candidate. `include_initial=True` admits epoch zero. A run ending before any eligible boundary can return `selected_checkpoint=None`.
 

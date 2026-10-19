@@ -20,7 +20,6 @@ from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     EpochReport,
-    ExecutionSpec,
     TrainingMetrics,
     ValidationSpec,
     save_training_checkpoint,
@@ -95,16 +94,16 @@ def main():
     recipe = lang.TrainSpec(
         objectives=(objective,),
         parameter_groups=(
-            lang.ParameterGroup(
-                ("scores_projection.weight",), name="readout", lr=0.01
-            ),
+            lang.ParameterGroup(("scores_projection.weight",), name="readout", lr=0.01),
         ),
         optimizer=lang.AdamW(weight_decay=0),
         presentation_duration=args.steps * lang.ms,
     )
     bundle = lang.compile(net, training=recipe)
     bundle.write(args.output / "network.bundle")
-    viz.render_diagram(lang.diagram(bundle, view="expanded"), args.output / "network.png", scale=2)
+    viz.render_diagram(
+        lang.diagram(bundle, view="expanded"), args.output / "network.png", scale=2
+    )
     encoder = DatasetEncoder(
         "rate_poisson", duration_ms=args.steps, max_rate_hz=500, seed=45
     )
@@ -121,8 +120,7 @@ def main():
             replace(binding, path=args.output / "validation.npz", split="validation"),
         )
     )
-    spec = ExecutionSpec(
-        kind="train",
+    training_kwargs = dict(
         graph=bundle.graph,
         training=bundle.training,
         input_bindings=(binding,),
@@ -150,7 +148,7 @@ def main():
     )
     # Persist a partial epoch, then resume the same schedule without replaying reports.
     partial_path = args.output / "partial.checkpoint"
-    partial = train(replace(spec, updates=1, save_final_checkpoint=partial_path))
+    partial = train(**training_kwargs, updates=1, save_final_checkpoint=partial_path)
     if partial.training_checkpoint.data_state["epoch"] == args.epochs:
         result = partial
         save_training_checkpoint(
@@ -161,12 +159,10 @@ def main():
         )
     else:
         result = train(
-            replace(
-                spec,
-                checkpoint=partial_path,
-                save_final_checkpoint=args.output / "final.checkpoint",
-                save_selected_checkpoint=args.output / "selected.checkpoint",
-            )
+            **training_kwargs,
+            checkpoint=partial_path,
+            save_final_checkpoint=args.output / "final.checkpoint",
+            save_selected_checkpoint=args.output / "selected.checkpoint",
         )
     payload = {
         "epochs": result.metrics["epochs"],

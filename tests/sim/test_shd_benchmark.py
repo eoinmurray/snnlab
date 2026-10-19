@@ -14,7 +14,9 @@ import numpy as np
 import pytest
 import torch
 
-from snnlab.sim import ExecutionSpec, build, load_training_checkpoint
+from snnlab.sim import load_training_checkpoint
+from snnlab.sim.requests.handlers import build
+from snnlab.sim.requests.spec import ExecutionSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = ROOT / "benchmarks/shd"
@@ -38,7 +40,7 @@ def test_default_recipe_and_full_data_tail():
     ]
     assert all(p["connection"] == "feedforward" for p in bundle.graph["projections"])
     assert bundle.training["resolved_parameters"]["frozen"] == ["score_gain.weight"]
-    spec = runner.execution_spec(
+    spec = runner.execution_kwargs(
         cfg,
         bundle,
         Path("spikes.npz"),
@@ -47,12 +49,12 @@ def test_default_recipe_and_full_data_tail():
         "cpu",
         None,
     )
-    assert spec.metrics.train == "online"
-    assert spec.batching.remainder == "merge_small"
-    assert spec.batching.min_batch_size == 20
+    assert spec["metrics"].train == "online"
+    assert spec["batching"].remainder == "merge_small"
+    assert spec["batching"].min_batch_size == 20
     assert divmod(7340, cfg.batch_size) == (28, 172)
-    assert spec.input_bindings[0].encoder.config["sample_offset"] == 0
-    assert spec.validation.input_bindings[0].encoder.config["sample_offset"] == 7340
+    assert spec["input_bindings"][0].encoder.config["sample_offset"] == 0
+    assert spec["validation"].input_bindings[0].encoder.config["sample_offset"] == 7340
 
 
 def test_split_retains_uneven_classes_without_overlap():
@@ -129,6 +131,59 @@ def test_encoder_noise_is_seeded_and_uses_original_occupancy():
     )
 
 
+@pytest.mark.parametrize(
+    "device",
+    [
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="MPS unavailable"
+            ),
+        ),
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_device_encoder_preserves_binning_offsets_and_original_occupancy(device):
+    arrays = {
+        "event_offsets": np.array([0, 1, 3, 3, 6]),
+        "event_time_ms": np.array([0.0, 1.0, 1.9, 0.0, 0.9, 3.0]),
+        "event_channel": np.array([0, 1, 1, 0, 0, 1]),
+    }
+    config = {
+        "steps": 3,
+        "sample_offset": 1,
+        "input_noise_hz": 0,
+        "spike_deletion_probability": 0,
+    }
+    selected = [2, 0, 1]
+    expected = data.encode_events(
+        arrays, selected, dt_ms=1, channels=2, config=config, seed=44
+    )
+    actual = data.encode_events(
+        arrays, selected, dt_ms=1, channels=2, config=config, seed=44, device=device
+    )
+    assert actual.device.type == device
+    torch.testing.assert_close(actual.cpu(), expected, atol=0, rtol=0)
+    noisy = {**config, "input_noise_hz": 1000, "spike_deletion_probability": 1}
+    value = data.encode_events(
+        arrays, selected, dt_ms=1, channels=2, config=noisy, seed=44, device=device
+    )
+    torch.testing.assert_close(value.cpu(), 1 - expected, atol=0, rtol=0)
+    noisy = {**config, "input_noise_hz": 100, "spike_deletion_probability": 0.1}
+    a = data.encode_events(
+        arrays, selected, dt_ms=1, channels=2, config=noisy, seed=44, device=device
+    )
+    b = data.encode_events(
+        arrays, selected, dt_ms=1, channels=2, config=noisy, seed=44, device=device
+    )
+    torch.testing.assert_close(a, b, atol=0, rtol=0)
+
+
 def test_bad_cached_archive_is_rejected_without_network(tmp_path):
     (tmp_path / "shd_train.h5.gz").write_bytes(b"not SHD")
     with pytest.raises(ValueError, match="cached SHD checksum mismatch"):
@@ -167,7 +222,7 @@ def test_native_smoke_updates_all_learned_weights_and_exports_portable_bundle(tm
     assert timing["training_s"] > 0
     assert timing["validation_s"] > 0
     assert timing["train_evaluation_s"] == 0
-    code = "from snnlab.sim import build,ExecutionSpec; import sys; r=build(ExecutionSpec(kind='build',bundle=sys.argv[1],device='cpu')); assert len(r.parameters)==4"
+    code = "from snnlab.sim import build; import sys; r=build(\n    bundle=sys.argv[1],\n    device='cpu',\n); assert len(r.parameters)==4"
     subprocess.run(
         [sys.executable, "-c", code, str(output / "network.bundle")],
         check=True,

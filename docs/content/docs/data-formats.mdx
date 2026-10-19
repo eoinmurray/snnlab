@@ -3,7 +3,7 @@ title: Output and Diagnostic Data
 description: Array names, shapes, units, time axes and saved formats for writing your own analysis code.
 ---
 
-This guide describes data returned by the **graph executor**, used by the current Python examples. Start here when writing NumPy, pandas or plotting code. [ExecutionResult](/api/sim/execution-result) lists every result field; [ExecutionSpec](/api/sim/execution-spec) configures retention and execution.
+This guide describes data returned by the **graph executor**, used by the current Python examples. Start here when writing NumPy, pandas or plotting code. [ExecutionResult](/api/sim/execution-result) lists every result field; [Execution Options](/api/sim/execution-spec) configure retention and execution.
 
 ## Three mappings, three naming rules
 
@@ -48,16 +48,7 @@ import numpy as np
 import torch
 
 from snnlab import lang
-from snnlab.sim import (
-    DenseArrayBinding,
-    ExecutionSpec,
-    RecordingSpec,
-    SignalRecording,
-    derive_inference_products,
-    simulate,
-    validate_inference_artifacts,
-    write_inference_artifacts,
-)
+from snnlab.sim import DenseArrayBinding, RecordingSpec, SignalRecording, derive_inference_products, simulate, validate_inference_artifacts, write_inference_artifacts
 
 net = lang.Network("analysis", dt=0.5 * lang.ms)
 inputs = net.input(
@@ -81,17 +72,16 @@ bundle = lang.compile(net, target="tools/snnsim")
 rng = np.random.default_rng(7)
 stimulus = (rng.random((100, 2, 2)) < 0.1).astype(np.float32)
 with torch.no_grad():
-    result = simulate(ExecutionSpec(
-        kind="simulate",
-        graph=bundle.graph,
-        input_bindings=(DenseArrayBinding("inputs", torch.from_numpy(stimulus)),),
-        seed=7,
-        device="cpu",
-        recording=RecordingSpec(signals=(
+    result = simulate(
+    graph=bundle.graph,
+    input_bindings=(DenseArrayBinding("inputs", torch.from_numpy(stimulus)),),
+    seed=7,
+    device="cpu",
+    recording=RecordingSpec(signals=(
             SignalRecording("E.spikes", kind="spike_events"),
             SignalRecording("E.voltage", cells=(3, 1)),
         )),
-    ))
+)
 
 data = result.numpy()
 for group, arrays in (("outputs", data.outputs), ("diagnostics", data.diagnostics)):

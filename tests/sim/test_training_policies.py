@@ -19,8 +19,8 @@ from snnlab.sim import (
     TrainingMetrics,
     load_training_checkpoint,
     save_training_checkpoint,
-    train,
 )
+from snnlab.sim.training.trainer import train
 from tests.sim.test_batch_encoding import training_request
 from tests.sim.test_epoch_observations import observations
 from tests.sim.test_epoch_observations import request as observation_request

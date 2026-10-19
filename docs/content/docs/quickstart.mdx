@@ -15,7 +15,7 @@ Import the authoring and execution APIs and choose the timing and seed:
 
 ```python
 from snnlab import lang, viz
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import PoissonInputBinding, simulate
 
 DT_MS = 0.1
 DURATION_MS = 300
@@ -55,7 +55,7 @@ Other input bindings are available for different input sources:
 2. [`EventStreamBinding`](/api/sim/execution-spec#eventstreambinding): sparse spike events specified by time-step, batch and channel coordinates.
 3. [`DatasetSnapshotBinding`](/api/sim/execution-spec#datasetsnapshotbinding): inputs from a saved NPZ dataset, with an encoder and optional training targets.
 
-All are supplied through `ExecutionSpec.input_bindings`. See the [input binding reference](/api/sim/execution-spec#input_bindings) for their fields and compatibility rules.
+All are supplied through `input_bindings`. See the [input binding reference](/api/sim/execution-spec#input_bindings) for their fields and compatibility rules.
 
 ## 3. Define the network
 
@@ -99,7 +99,7 @@ net.expose(cells.voltage, name="e_voltage")
 
 `net.output` declares the official network output. Here, excitatory spikes appear in `result.outputs["spikes"]`, even when diagnostics are disabled.
 
-`net.expose` exposes a diagnostic signal. Exposed signals are returned by default, so input spikes appear in `result.diagnostics["input_spikes"]` and membrane voltage appears in `result.diagnostics["e_voltage"]`. Set `diagnostics=False` in `ExecutionSpec` to disable them.
+`net.expose` exposes a diagnostic signal. Exposed signals are returned by default, so input spikes appear in `result.diagnostics["input_spikes"]` and membrane voltage appears in `result.diagnostics["e_voltage"]`. Set `diagnostics=False` in the execution call to disable them.
 
 ## 5. Bundle the network
 
@@ -125,22 +125,20 @@ You can also save the bundle for later use:
 bundle_path = bundle.write("quickstart.bundle")
 ```
 
-To run the saved bundle, pass `bundle=bundle_path` to `ExecutionSpec` in place of `graph=bundle.graph`. Choose either the in-memory graph or the saved bundle route.
+To run the saved bundle, pass `bundle=bundle_path` to `simulate` in place of `graph=bundle.graph`. Choose either the in-memory graph or the saved bundle route.
 
 ## 6. Configure execution and simulate
 
 ```python
-execution = ExecutionSpec(
-    kind="simulate",
+result = simulate(
     graph=bundle.graph,
     input_bindings=(poisson_input,),
     seed=SEED,
     device="cpu",
 )
-result = simulate(execution)
 ```
 
-The graph executor is the default. `input_bindings` supplies the Poisson stimulus by name, `device="cpu"` selects CPU execution, and exposed diagnostics are returned by default. `simulate` executes the request and returns the result. See the [ExecutionSpec reference](/api/sim/execution-spec) for every setting.
+The graph executor is the default. `input_bindings` supplies the Poisson stimulus by name, `device="cpu"` selects CPU execution, and exposed diagnostics are returned by default. `simulate` executes the request and returns the result. See the [Execution Options reference](/api/sim/execution-spec) for every setting.
 
 ## 7. Retrieve outputs and prepare plots
 
@@ -179,7 +177,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from snnlab import lang, viz
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import (
+    PoissonInputBinding,
+    simulate,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.1
@@ -229,15 +230,13 @@ def main():
         canvas_size=(1920, 900),
     )
 
-    # 6. Describe the execution and simulate.
-    execution = ExecutionSpec(
-        kind="simulate",
+    # 6. Simulate with explicit execution settings.
+    result = simulate(
         graph=bundle.graph,
         input_bindings=(poisson_input,),
         seed=SEED,
         device="cpu",
     )
-    result = simulate(execution)
     # 7. Retrieve named results and select the first (only) batch item.
     data = result.numpy(batch=0)
     input_spikes = data.diagnostics["input_spikes"]

@@ -9,6 +9,24 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-19
+
+### Changed
+
+1. Public `build`, `simulate`, `infer` and `train` now accept explicit keyword-only arguments with operation-specific signatures. Remove `ExecutionSpec(...)`, `kind` and `executor` from Python calls; pass `inference_overrides=` directly instead of `options["inference_overrides"]`. `ExecutionSpec` and `execute_request` are internal and no longer exported from `snnlab.sim`. The CLI and execution semantics are unchanged.
+2. Runtime `torch.compile` is now the default in `ExecutionSpec`, `GraphExecutor` and the CLI. Prepared kernels cover built-in/custom neuron and synapse updates, custom graph operations, surrogate derivatives and post-update weight constraints. Custom callback signatures are unchanged; definition/configuration lookup is moved out of timestep loops. Strict custom-surrogate checks retain an eager autograd boundary. Initialization and training orchestration stay eager. Select Python `compile_mode=None` or CLI `--compile-mode eager` for unsupported environments or debugging; compilation errors surface explicitly.
+3. Added PyTorch callback performance guidance to customisation, neurons, synapses, weights and the extension/API references, including vectorization, stable tensor state, avoiding host reads, compiler warmup and eager/compiled numerical comparisons.
+
+### Added
+
+1. Opt-in bounded network compilation through `compile_block_steps=2..64` and `--compile-block-steps`, reusing reference projection/synapse/neuron equations with ordered delays, spatial routing and modulation. Metrics expose selected paths and conservative compatibility fallbacks; blocks preserve internal gradient history and partial blocks. Added matched end-to-end benchmark tooling with numerical gates, cold/warm samples, profiler counts and provenance. MPS currently limits the opt-in path to four-step blocks after larger graphs exceeded compiler buffer bindings. Added Modal H100 validation and standalone fixed-shape CUDA Graph training replay experiments; public replay modes remain disabled.
+2. Device-local Poisson input/dataset generation from compact rates/features, with an explicit accelerator RNG policy and preserved CPU stream; indexed/vectorized event datasets; optional device-aware encoder callbacks and caller-thread custom prefetch preparation. Checkpoints bind the recorded encoding backend/policy.
+
+### Fixed
+
+1. Floating runtime state and built-in spike functions follow model dtype, fixing recurrent `.half()` matrix-multiplication failures. Added CPU/CUDA/MPS dtype, gradient, state and continuation regressions; MPS float64 remains unsupported. Bfloat16 runtime/checkpoint/NPZ recording tensors use lossless versioned bit storage; inference analysis caches record an explicit lossless float32 expansion. Portable MPS measurement states stage restored accumulators before stepping, and native custom losses validate the resolved tensor device.
+2. Replay windows/routing are staged before stepping, CUDA recording chunks transfer asynchronously to bounded pinned host buffers, decision counts transfer together after stepping, and strict state/constraint finite flags consolidate host reads without weakening validation. Unconstrained parameters avoid post-update copies. The SHD custom encoder now supports compact device binning/noise while preserving CPU NumPy draws and CPU protocol identity.
+
 ## [0.20.1] - 2026-10-19
 
 ### Fixed

@@ -12,20 +12,21 @@ from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     DenseArrayBinding,
-    ExecutionSpec,
     GraphExecutor,
     MeasurementWindow,
     RecordingSpec,
     SignalRecording,
+    TrainingMetrics,
     plan_graph,
     save_training_checkpoint,
-    simulate,
-    train,
 )
 from snnlab.sim.cli import execution_spec_from_args
 from snnlab.sim.inputs.provider import DatasetProvider, iter_batches
 from snnlab.sim.requests import handlers as execution_functions
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 from snnlab.sim.training import trainer as training_execution
+from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import direct_train_bundle
 
 DEVICES = [
@@ -222,9 +223,7 @@ def test_prefetched_training_and_resume_are_exact(tmp_path, device):
             reference.parameters[name], actual.parameters[name], atol=0, rtol=0
         )
     partial = train(replace(spec, dataset_prefetch=2, updates=2))
-    save_training_checkpoint(
-        tmp_path / "checkpoint", partial.training_checkpoint
-    )
+    save_training_checkpoint(tmp_path / "checkpoint", partial.training_checkpoint)
     resumed = train(
         replace(spec, checkpoint=tmp_path / "checkpoint", dataset_prefetch=2)
     )
@@ -257,6 +256,8 @@ def test_discarded_candidates_do_not_snapshot(tmp_path, monkeypatch):
             device="cpu",
             diagnostics=False,
             updates=4,
+            epochs=4,
+            metrics=TrainingMetrics(update_history=True),
         )
     )
     assert len(calls) == 2  # First selected candidate and final checkpoint.
@@ -376,3 +377,33 @@ def test_cli_efficiency_options_map_to_request():
     assert spec.compile_mode == "default"
     assert spec.dataset_prefetch == 2
     assert spec.timing_mode == "enqueue"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+@pytest.mark.parametrize("cells", [None, (2, 0)])
+def test_cuda_recording_stages_cell_indices_before_stepping(cells):
+    from snnlab.sim.runtime.recording import Recorder
+
+    values = torch.arange(11 * 2 * 3, device="cuda", dtype=torch.float32).reshape(
+        11, 2, 3
+    )
+    recorder = Recorder(
+        RecordingSpec((SignalRecording("cells.voltage", cells=cells),), block_steps=4),
+        axes={"cells.voltage": ("time", "batch", 3)},
+        start=0,
+        steps=11,
+        dt_ms=1,
+        device=values.device,
+    )
+    with torch.profiler.profile(
+        activities=[torch.profiler.ProfilerActivity.CPU]
+    ) as profile:
+        for step in range(11):
+            recorder.observe({"cells.voltage": values[step]}, step)
+        recorded = recorder.finish(2)
+    counts = {row.key: row.count for row in profile.key_averages()}
+    # Python-list indexing previously copied a fresh CPU index tensor to CUDA
+    # on every observation. Chunk copies use copy_ directly, without Tensor.to.
+    assert counts.get("aten::_to_copy", 0) == 0
+    expected = values.cpu() if cells is None else values.cpu()[:, :, list(cells)]
+    torch.testing.assert_close(recorded["cells.voltage"], expected, atol=0, rtol=0)

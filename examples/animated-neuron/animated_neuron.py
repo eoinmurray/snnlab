@@ -7,7 +7,10 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import (
+    DenseArrayBinding,
+    simulate,
+)
 
 DT_MS = 0.25
 DURATION_MS = 360
@@ -22,16 +25,18 @@ def record_neuron():
         "pulses", shape=("time", "batch", 1), signal_type="spikes", unit="spike"
     )
     cell = net.population(
-        "neuron", size=1,
-        neuron=lang.CUBA_LIF(
-            tau_mem=TAU_MS * lang.ms, capacitance_nf=CAPACITANCE_NF
-        ),
+        "neuron",
+        size=1,
+        neuron=lang.CUBA_LIF(tau_mem=TAU_MS * lang.ms, capacitance_nf=CAPACITANCE_NF),
     )
     # A very short synaptic time constant makes each pulse last one step.
     projection = net.connect(
-        inputs, cell.excitatory, name="drive",
+        inputs,
+        cell.excitatory,
+        name="drive",
         synapse=lang.ExponentialCurrent(tau=0.001 * lang.ms),
-        weight=lang.Constant(CURRENT_NA), initialization_scaling="direct",
+        weight=lang.Constant(CURRENT_NA),
+        initialization_scaling="direct",
     )
     net.output("spikes", cell.spikes)
     net.expose(cell.voltage, name="voltage")
@@ -43,10 +48,12 @@ def record_neuron():
     arrivals = departures + 6
     pulses = torch.zeros(round(DURATION_MS / DT_MS), 1, 1)
     pulses[np.rint(arrivals / DT_MS).astype(int), 0, 0] = 1
-    result = simulate(ExecutionSpec(
-        kind="simulate", graph=bundle.graph, device="cpu", seed=17,
+    result = simulate(
+        graph=bundle.graph,
+        device="cpu",
+        seed=17,
         input_bindings=(DenseArrayBinding("pulses", pulses),),
-    )).numpy(batch=0)
+    ).numpy(batch=0)
 
     # Slot k applies input at k*dt, then records the integrated/reset voltage.
     # Replay uses integration-end times, with the initial state prepended.
@@ -55,10 +62,13 @@ def record_neuron():
     spike_steps = np.flatnonzero(result.outputs["spikes"][:, 0])
     recording = {
         "schema": "snnlab.neuron-replay/v1",
-        "dt_ms": DT_MS, "duration_ms": DURATION_MS,
-        "rest_mv": -65, "threshold_mv": -50,
+        "dt_ms": DT_MS,
+        "duration_ms": DURATION_MS,
+        "rest_mv": -65,
+        "threshold_mv": -50,
         "capacitance_nf": CAPACITANCE_NF,
-        "tau_ms": TAU_MS, "current_na": CURRENT_NA,
+        "tau_ms": TAU_MS,
+        "current_na": CURRENT_NA,
         "time_convention": "Input at slot start; voltage and spikes at integration end.",
         "input_departures_ms": departures.tolist(),
         "input_arrivals_ms": arrivals.tolist(),

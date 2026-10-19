@@ -7,14 +7,10 @@ from dataclasses import replace
 import pytest
 import torch
 
-from snnlab.sim import (
-    CheckpointSelection,
-    SelectionMetric,
-    build,
-    load_training_checkpoint,
-    train,
-)
+from snnlab.sim import CheckpointSelection, SelectionMetric, load_training_checkpoint
 from snnlab.sim.cli import execution_spec_from_args, parse_args
+from snnlab.sim.requests.handlers import build
+from snnlab.sim.training.trainer import train
 from tests.sim.test_epoch_observations import observations, request
 
 

@@ -4,27 +4,24 @@ description: Optional bounded activity monitoring and PyTorch CPU/CUDA profiling
 ---
 
 `TraceSpec` adds diagnostics to native `train()` calls. Import it from
-`snnlab.sim` and pass it as `ExecutionSpec.tracing`. Tracing defaults to
+`snnlab.sim` and pass it as `tracing`. Tracing defaults to
 `None`; disabled tracing opens no profiler, samples no activity and adds no
 measurement clocks or device fences. It does not change the graph/training
 recipe or checkpoint compatibility identity.
 
 ```python
 from pathlib import Path
-from snnlab.sim import ExecutionSpec, TraceSpec, train
+from snnlab.sim import TraceSpec, train
 
 result = train(
-    ExecutionSpec(
-        kind="train",
-        bundle=Path("network.bundle"),
-        # Supply input_bindings, targets and normal training settings here.
-        tracing=TraceSpec(
-            output=Path("artifacts/run-001/tracing"),
-            mode="both",
-            skip_updates=1,
-            active_updates=3,
-        ),
-    )
+    bundle=Path("network.bundle"),
+    # Supply input_bindings, targets and normal training settings here.
+    tracing=TraceSpec(
+        output=Path("artifacts/run-001/tracing"),
+        mode="both",
+        skip_updates=1,
+        active_updates=3,
+    ),
 )
 summary = result.metrics["tracing"]
 ```

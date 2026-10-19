@@ -13,6 +13,7 @@ import numpy as np
 import torch
 
 from snnlab.sim.artifacts.integrity import _file_digest, _json_digest
+from snnlab.sim.artifacts.tensors import numpy_payload, tensor_payload
 
 TRAINING_CHECKPOINT_SCHEMA = "tools/snnsim.training-checkpoint/v1"
 
@@ -74,13 +75,14 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
     def append(group: str, name: str, value: torch.Tensor, state: str | None = None):
         key = f"tensor_{len(arrays):04d}"
         tensor = value.detach().cpu().contiguous()
-        arrays[key] = tensor.numpy()
+        arrays[key], storage = numpy_payload(tensor)
         row = {
             "group": group,
             "name": name,
             "key": key,
             "shape": list(tensor.shape),
             "dtype": str(tensor.dtype).removeprefix("torch."),
+            **storage,
         }
         if state is not None:
             row["state"] = state
@@ -197,11 +199,11 @@ def load_training_checkpoint(
             )
         for row in manifest["tensors"]:
             array = archive[row["key"]]
-            if list(array.shape) != row["shape"] or str(array.dtype) != row["dtype"]:
-                raise ValueError(
-                    f"training-checkpoint tensor {row['group']}.{row['name']} metadata does not match tensors.npz"
-                )
-            value = torch.from_numpy(array.copy())
+            value = tensor_payload(
+                array,
+                row,
+                label=f"training-checkpoint tensor {row['group']}.{row['name']}",
+            )
             if row["group"] == "parameters":
                 parameters[row["name"]] = value.to(device)
             elif row["group"] == "optimizer":

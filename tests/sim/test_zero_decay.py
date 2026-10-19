@@ -9,7 +9,6 @@ from snnlab import extensions as E
 from snnlab import lang
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     GraphExecutor,
     RecordingSpec,
     SignalRecording,
@@ -19,9 +18,10 @@ from snnlab.sim import (
     runtime_state_signature,
     save_runtime_state,
     save_training_checkpoint,
-    simulate,
-    train,
 )
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import direct_train_bundle
 
 DEVICES = [

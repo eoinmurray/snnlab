@@ -39,7 +39,7 @@ state_copy = result.runtime_state.detached(device="cpu")
 def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path: ...
 ```
 
-Writes `manifest.json` and compressed `tensors.npz` to a directory, publishing each file by replacement, and returns the directory `Path`. This is portable JSON/NumPy storage, not pickle. Use a dedicated destination; the pair is not a transactional directory replacement for concurrent readers. Save does not capture model weights.
+Writes `manifest.json` and compressed `tensors.npz` to a directory, publishing each file by replacement, and returns the directory `Path`. This is portable JSON/NumPy storage, not pickle. Use a dedicated destination; the pair is not a transactional directory replacement for concurrent readers. Save does not capture model weights. Bfloat16 rows use lossless uint16 bit storage tagged `tensor_storage="snnlab.bfloat16-bits/v1"`; loading restores the original dtype and bits. Other dtypes keep their existing representation.
 
 ## load_runtime_state
 
@@ -82,3 +82,5 @@ second = model(next_inputs, diagnostics=False, runtime_state=state)
 ```
 
 Here `model` is an existing CPU GraphExecutor and the two input mappings are consecutive chunks. Supply the same full [measurement](/api/sim/recording-measurement) and [decision](/api/sim/resets-decisions) policies on every call when used. A fresh call without state starts fresh dynamics. An execution timestep override cannot convert saved state. `retain_runtime_state=False` suppresses the returned continuation snapshot.
+
+Portable CPU copies of MPS measurement states are staged back to the execution device before stepping. Float64 reduction accumulators from CPU/CUDA cannot be restored on MPS; this raises an explicit error instead of silently lowering accumulation precision.

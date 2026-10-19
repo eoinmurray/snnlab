@@ -108,6 +108,27 @@ initializer = lang.LowerClampedNormal(
 
 This changes initialization. Initially zero weights can become nonzero during training; it does not create a permanent sparse mask. Likewise, a non-negative initializer does not constrain later optimizer updates. `lang.NonNegative()` clamps weights at initialization and after updates in built-in training. Use a [registered constraint](/api/lang/extensions) for other persistent restrictions.
 
+## Efficient custom initializers and constraints
+
+Write custom weight callbacks with whole-tensor torch operations. Initializers run eagerly during construction to preserve seeded draws, so they do not add a Python callback to every simulation timestep. Post-update constraints compile by default because training applies them repeatedly. Weight projection itself uses native PyTorch matrix or convolution kernels; there is no need to implement a Python loop over connections.
+
+Place these functions in an importable module and register them with `register_initializer` and `register_constraint` from `snnlab.extensions`:
+
+```python
+import torch
+
+def clipped_normal(shape, config, *, device, dtype):
+    values = torch.randn(shape, device=device, dtype=dtype)
+    return (values * config["std"] + config["mean"]).clamp(min=0)
+
+def bounded_weights(parameter, config):
+    return parameter.clamp(min=0, max=config["maximum"])
+```
+
+The initializer honors the requested runtime shape/device/dtype and uses PyTorch's seeded random stream. Fan-in scaling and constraints still apply afterwards. The constraint returns the same shape/device/dtype and uses a single vectorized expression. Put configuration checks in `validate(config)`. For GPU weights, avoid `.cpu()`, `.numpy()`, `.item()`, rebuilding tensors from lists or Python loops over entries; these add transfers, synchronization or graph breaks. Construct any required tensor constants with the parameter's device/dtype. A dense mask still uses dense storage and computation.
+
+No `@torch.compile` decorator is needed. Use `compile_mode=None` or CLI `--compile-mode eager` to debug unsupported callbacks, and compare warmed compiled execution with eager results before timing training. External training loops must still call `model.enforce_constraints()` after optimizer updates. See [Initializer and constraint contracts](/api/lang/extensions#initializers-and-constraints) and [efficient callback guidance](/api/lang/extensions#writing-efficient-pytorch-callbacks).
+
 ## Self-connections (autapses)
 
 An autapse feeds a neuron's output back into that same neuron. New `Network.connect` calls default to `allow_autapses=False`: same-population projections exclude the weight matrix's diagonal. Set `allow_autapses=True` to intentionally allow self-feedback. Different populations keep their matching-index connections even when both have the same size. The decision follows neuron identity, independently of whether the connection is labelled feedforward, recurrent or feedback.

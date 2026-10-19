@@ -63,14 +63,13 @@ use the request API:
 
 ```python
 from pathlib import Path
-from snnlab.sim import ExecutionSpec, build
+from snnlab.sim import build
 
-built = build(ExecutionSpec(
-    kind="build",
+built = build(
     bundle=Path("network.bundle"),
     device="cpu",
     seed=17,
-))
+)
 model = built.model
 ```
 
@@ -85,18 +84,17 @@ locations and optional exact package versions, with no Python source or pickled
 functions. Missing implementations and incompatible declared versions fail
 before execution. See the [Extensions reference](../../../docs/content/docs/api/lang/extensions.mdx).
 
-1. `ExecutionSpec` configures a build, simulation, inference, or training request.
-2. `build(spec)` constructs the model and returns it in `ExecutionResult.model`.
-3. `simulate(spec)` resolves input bindings and runs the graph.
-4. `infer(spec)` uses the simulation handler, including checkpoint loading.
-5. `train(spec)` runs training with the supplied recipe and targets.
-6. `execute_request(spec)` dispatches according to `spec.kind`.
-7. `GraphRuntimeState` carries simulation state between compatible runs.
-8. `ExecutionResult` holds outputs, diagnostics, selected recorded signals, decisions,
+1. `build(...)` loads and constructs a graph executor.
+2. `simulate(...)` resolves input bindings and runs the graph.
+3. `infer(...)` uses the simulation handler, including checkpoint loading.
+4. `train(...)` runs training with the supplied recipe and targets.
+5. Public functions take explicit keyword arguments; the CLI and handlers share an internal `ExecutionSpec`.
+6. `GraphRuntimeState` carries simulation state between compatible runs.
+7. `ExecutionResult` holds outputs, diagnostics, selected recorded signals, decisions,
    metrics, parameters and runtime state. `.numpy()` converts outputs/diagnostics;
    convert selected `recorded_signals` tensors separately.
 
-See the full [ExecutionSpec reference](../../../docs/content/docs/api/sim/execution-spec.mdx)
+See the full [Execution Options reference](../../../docs/content/docs/api/sim/execution-spec.mdx)
 and [ExecutionResult reference](../../../docs/content/docs/api/sim/execution-result.mdx)
 for fields, input bindings, and result handling.
 
@@ -108,8 +106,8 @@ from `snnlab.sim`. Each package initializer is deliberately minimal.
 
 | Package | Responsibility and source files | API reference |
 | --- | --- | --- |
-| `requests/` | [spec.py](requests/spec.py), [result.py](requests/result.py), [handlers.py](requests/handlers.py): requests, results, build/simulate/infer and dispatch. | ExecutionSpec, ExecutionResult, Execution Functions |
-| `inputs/` | [bindings.py](inputs/bindings.py), [resolution.py](inputs/resolution.py), datasets, encoders and providers. | ExecutionSpec input bindings and resolution |
+| `requests/` | [api.py](requests/api.py), [spec.py](requests/spec.py), [result.py](requests/result.py), [handlers.py](requests/handlers.py): requests, results, build/simulate/infer and dispatch. | Internal requests, ExecutionResult, Execution Functions |
+| `inputs/` | [bindings.py](inputs/bindings.py), [resolution.py](inputs/resolution.py), datasets, encoders and providers. | Input bindings and resolution |
 | `graph/` | [plan.py](graph/plan.py), [executor.py](graph/executor.py), dynamics, tensor kernels and extension helpers. | GraphExecutor, PyTorch Integration |
 | `runtime/` | [state.py](runtime/state.py), [recording.py](runtime/recording.py), [interventions.py](runtime/interventions.py), [resets_decisions.py](runtime/resets_decisions.py). | Runtime State, Recording and Measurement, Interventions, Resets and Decisions |
 | `training/` | [trainer.py](training/trainer.py), policies, observations, selection and [checkpoints.py](training/checkpoints.py). | Execution Functions, training policies, Training Checkpoints |
@@ -145,12 +143,18 @@ The installed `snnsim` command provides the same CLI. See the
 
 ## GPU performance controls
 
-`ExecutionSpec` and `GraphExecutor` accept `compile_mode=None` (eager),
-`"default"`. Built-in neuron/readout kernels compile;
-Python scheduling and custom callbacks remain eager. Compiler warmup and
-floating-point fusion must be assessed for the intended workload.
+Execution functions and `GraphExecutor` default to `compile_mode="default"`.
+Built-in/custom neuron and synapse updates, custom graph operations, surrogate
+derivatives and post-update weight constraints compile. Python scheduling,
+initialization and training orchestration stay eager. Use `compile_mode=None`
+or CLI `--compile-mode eager` to disable compilation. Callback signatures stay
+unchanged; write vectorized torch operations with stable tensor state and avoid
+host scalar reads, NumPy conversions and tensor-dependent Python branches.
+Strict custom surrogate diagnostics retain an eager autograd boundary.
+Measure compiler warmup and compare outputs/gradients against eager execution;
+fused floating-point arithmetic can differ slightly.
 
-`ExecutionSpec(dataset_prefetch=2)` overlaps built-in CPU dataset encoding and
+`dataset_prefetch=2` overlaps built-in CPU dataset encoding and
 CUDA transfers through a bounded queue; the default is 0. CPU seeds and batch
 order remain unchanged. Custom encoders retain caller-thread execution.
 `RecordingSpec(block_steps=32)` groups selected samples before CPU transfers;
@@ -160,7 +164,35 @@ Inference defaults to `timing_mode="synchronized"`, reporting completed
 input-resolution/execution time as `simulate_s`. `"enqueue"` reports host time
 as `simulate_enqueue_s` and omits explicit fences. `peak_python_bytes` is Python
 memory only. See the [performance reference](../../../docs/content/docs/api/sim/execution-spec.mdx)
-and `benchmarks/gpu_efficiency.py` for verification and measured limitations.
+and `benchmarks/execution/benchmark.py` for verification and measured limitations.
+
+For opt-in network compilation use `compile_block_steps=16` (1-64; default 1).
+Projection, synapse, ordered built-in neuron/readout, spatial and delay work then
+shares a bounded tensor graph. Internal blocks retain gradients and final partial
+blocks are included. `execution_path` reports the selected path and fallback
+reasons; native training retains all observed paths in `execution_paths`.
+Recording, online reductions, registered dynamics/surrogates, interventions,
+reset/decision schedules, tracing and incompatible parameter dependencies use the
+individual-kernel loop. `compile_mode=None` remains fully eager.
+
+Runtime floating state follows model dtype, including recurrent `.half()` and
+`.bfloat16()` execution with matching inputs. Counters remain integer; MPS cannot
+use float64. Precision changes remain explicit. Built-in Poisson inputs generate
+spikes on the selected device from compact rates/features. Accelerator encoding
+records `snnlab.poisson-device/v1`; CPU draws retain their stream, while
+cross-device bitwise equivalence is not promised. Event datasets are indexed once
+and vectorized per sample batch. Custom encoders can accept `device="cpu"` to
+opt into device preparation; legacy callbacks keep their arguments. Prefetched
+callbacks run on the caller thread under scoped RNG state.
+
+Replay transfers precede stepping. CUDA recordings use bounded asynchronous
+pinned-host chunks; decision reporting transfers counts after stepping. Run
+`uv run python benchmarks/execution/benchmark.py --devices cpu` for matched
+numerical gates, cold/warm complete-work timings and explicit measurement limits.
+Retained CPU/CUDA/MPS measurements and fixed-shape CUDA Graph training replay
+experiments are documented in [the benchmark guide](../../../benchmarks/execution/README.md).
+CUDA Graph replay remains a standalone experiment. Cell-selection indices for
+recordings are staged before stepping; recording all cells avoids index transfers.
 
 ## Projection arithmetic and snapshots
 
@@ -180,7 +212,7 @@ execution reference for migration and nonfinite/gradient semantics.
 ## Optional training tracing
 
 Pass `tracing=TraceSpec(output=Path("new-trace-directory"), mode="both")` to
-`ExecutionSpec(kind="train", ...)`. Import `TraceSpec` from `snnlab.sim`.
+`train(tracing=..., ...)`. Import `TraceSpec` from `snnlab.sim`.
 Modes `off`, `monitor`, `profile` and `both` support bounded selected-update
 measurements, detached activity/sparsity, phase timing, memory and PyTorch
 CPU/CUDA timelines. Tracing is disabled by default and does not change checkpoint
@@ -190,7 +222,7 @@ See [Tracing](../../../docs/content/docs/api/sim/tracing.mdx) and the
 
 ## Run snapshots
 
-Set `ExecutionSpec(snapshot="runs/example", ...)` to save `snapshot.json` and
+Set `snapshot="runs/example"` in an execution call to save `snapshot.json` and
 optional `parameters.npz` before simulation, inference or training. Use
 `SnapshotSpec(path="runs/example", stage="both", parameters=True)` for separate
 initial/final exports. Captured `RunSnapshot` objects are in `result.snapshots`;

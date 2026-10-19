@@ -11,7 +11,10 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import (
+    DenseArrayBinding,
+    simulate,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.25
@@ -68,13 +71,10 @@ def compare(input_family):
     stimulus = torch.zeros(steps, 1, 1)
     stimulus[::4] = 1  # One event each millisecond, identical for every model.
     result = simulate(
-        ExecutionSpec(
-            kind="simulate",
-            graph=bundle.graph,
-            device="cpu",
-            seed=17,
-            input_bindings=(DenseArrayBinding("events", stimulus),),
-        )
+        graph=bundle.graph,
+        device="cpu",
+        seed=17,
+        input_bindings=(DenseArrayBinding("events", stimulus),),
     ).numpy(batch=0)
     time = (np.arange(steps) + 1) * DT_MS
     colors = {"LIF": "#4c78a8", "ALIF": "#f58518", "AdEx": "#54a24b"}

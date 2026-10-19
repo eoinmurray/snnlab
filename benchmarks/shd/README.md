@@ -208,3 +208,16 @@ and aggregates only actual CUDA kernel events, excluding annotation spans.
 with source hashes. The report's spike/gradient measurements cover diagnostic
 batches 6–8, not the final trained checkpoint. `docs/scripts/sync-shd.ts` validates
 and copies the retained figures/data for the site.
+
+## Encoder device policy
+
+`encode_events` accepts an optional `device` keyword. CPU execution retains the
+existing NumPy `default_rng(seed)` stream and binning. CUDA/MPS transfer compact
+batch event coordinates, bin on the device, and draw insertion/deletion noise
+with a local seeded `torch.Generator` on that device. Original occupancy is
+captured before either noise operation; deleted occupied bins are not reinserted.
+The device stream is repeatable under the same backend/software policy, without
+claiming NumPy-equivalent draws. Accelerator protocols record
+`snnlab.encoder-device/v1`, preparation backend and PyTorch version; CPU encoder
+protocols keep their previous identity. A checkpoint with another preparation
+policy is rejected instead of silently switching its future inputs.

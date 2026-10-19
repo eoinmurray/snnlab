@@ -12,15 +12,15 @@ from snnlab import lang as snn
 from snnlab.lang.compilation.serialization import digest
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     GraphRuntimeState,
     load_runtime_state,
     plan_graph,
     runtime_state_signature,
     save_runtime_state,
-    simulate,
 )
 from snnlab.sim.cli import main
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 from tests.sim._execution_builders import (
     coupled_graph as _coupled_graph,
 )

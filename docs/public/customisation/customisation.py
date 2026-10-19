@@ -11,7 +11,10 @@ import numpy as np
 import torch
 
 from snnlab import extensions, lang, viz
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import (
+    DenseArrayBinding,
+    simulate,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.5
@@ -107,14 +110,12 @@ def main():
         height_to_width_ratio=None,
         canvas_size=(1920, 900),
     )
-    execution = ExecutionSpec(
-        kind="simulate",
+    result = simulate(
         bundle=bundle_path,
         input_bindings=(binding,),
         seed=SEED,
         device="cpu",
     )
-    result = simulate(execution)
     data = result.numpy(batch=0)
     assert data.time_ms is not None
 

@@ -18,8 +18,8 @@ const replacements: Record<string, string> = {
   INPUTS: section('# 2. Define the input and its stimulus binding.', '# 3. Define the excitatory layer'),
   NETWORK: section('# 3. Define the excitatory layer and its input projection.', '# 4. Choose outputs'),
   OUTPUTS: section('# 4. Choose outputs and exposed diagnostics.', '# 5. Compile the network'),
-  BUNDLE: section('# 5. Compile the network into a bundle.', '# 6. Describe the execution'),
-  EXECUTION: section('# 6. Describe the execution and simulate.', '# 7. Retrieve named results'),
+  BUNDLE: section('# 5. Compile the network into a bundle.', '# 6. Simulate with explicit execution settings.'),
+  EXECUTION: section('# 6. Simulate with explicit execution settings.', '# 7. Retrieve named results'),
   RETRIEVAL: section('# 7. Retrieve named results and select the first (only) batch item.', '# Plot the results'),
 };
 

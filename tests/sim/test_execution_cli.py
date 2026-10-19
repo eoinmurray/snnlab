@@ -7,15 +7,15 @@ import torch
 
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     GraphRuntimeState,
     PoissonInputBinding,
     graph_capability_issues,
     resolve_device,
-    simulate,
-    train,
 )
 from snnlab.sim.cli import execution_spec_from_args, parse_args
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim._bundle_builders import deep_network, ping_classifier
 from tests.sim._execution_builders import coupled_graph as _coupled_graph
 

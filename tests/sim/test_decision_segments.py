@@ -11,18 +11,18 @@ from snnlab.sim import (
     BoundarySchedule,
     DecisionSegments,
     DenseArrayBinding,
-    ExecutionSpec,
     GraphExecutor,
     ResetVoltage,
     load_runtime_state,
     plan_graph,
     save_runtime_state,
     segment_identity,
-    simulate,
     validate_inference_artifacts,
     write_inference_artifacts,
 )
 from snnlab.sim.cli import execution_spec_from_args, parse_args
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 from tests.sim.test_spike_replay import graph_fixture, stream
 
 
@@ -306,7 +306,8 @@ def test_reset_subset_only_changes_selected_batch():
 
 def test_unsupported_neuron_reset_and_training_rejected():
     from snnlab import lang as snn
-    from snnlab.sim import execute_request, train
+    from snnlab.sim.requests.handlers import execute_request
+    from snnlab.sim.training.trainer import train
 
     graph = graph_fixture(neuron=snn.CUBA_LIF())
     with pytest.raises(ValueError, match="leaky-integrator"):

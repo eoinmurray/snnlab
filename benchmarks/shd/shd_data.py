@@ -11,6 +11,7 @@ import numpy as np
 import torch
 
 from snnlab import extensions
+from snnlab.sim.inputs.encoders import transfer_compact
 
 URL = "https://zenkelab.org/datasets/shd/shd_train.h5.gz"
 # Published by the dataset authors in /datasets/md5sums.txt.
@@ -158,8 +159,44 @@ def synthetic_snapshot(output, cfg):
     }
 
 
-def encode_events(arrays, selected, *, dt_ms, channels, config, seed):
-    """Match source binning and insertion/deletion, using native indexed seeds."""
+def encode_events(arrays, selected, *, dt_ms, channels, config, seed, device="cpu"):
+    """Preserve CPU NumPy draws; device preparation uses a local Torch stream.
+
+    Accelerator calls record snnlab.encoder-device/v1 in execution provenance.
+    The device stream is repeatable on the same backend; it does not reproduce
+    NumPy's CPU draws. Occupancy is sampled before insertion/deletion on both.
+    """
+    device = torch.device(device)
+    if device.type != "cpu":
+        selected = np.asarray(selected, dtype=np.int64) + config["sample_offset"]
+        starts = np.asarray(arrays["event_offsets"])[selected]
+        lengths = np.asarray(arrays["event_offsets"])[selected + 1] - starts
+        columns = np.repeat(np.arange(len(selected)), lengths)
+        positions = np.repeat(
+            starts - (np.cumsum(lengths) - lengths), lengths
+        ) + np.arange(int(lengths.sum()))
+        steps = np.floor(arrays["event_time_ms"][positions] / dt_ms).astype(np.int64)
+        keep = (steps >= 0) & (steps < config["steps"])
+        linear = (steps[keep] * len(selected) + columns[keep]) * channels + arrays[
+            "event_channel"
+        ][positions][keep]
+        spikes = torch.zeros(
+            (config["steps"], len(selected), channels),
+            device=device,
+            dtype=torch.float32,
+        )
+        spikes.view(-1)[transfer_compact(torch.from_numpy(np.unique(linear)), device)] = 1
+        noise = torch.rand(
+            spikes.shape,
+            device=device,
+            dtype=torch.float32,
+            generator=torch.Generator(device=device).manual_seed(seed),
+        )
+        return torch.where(
+            spikes.bool(),
+            (noise >= config["spike_deletion_probability"]).float(),
+            (noise < config["input_noise_hz"] * dt_ms / 1000).float(),
+        )
     spikes = np.zeros((config["steps"], len(selected), channels), dtype=np.float32)
     for column, local_index in enumerate(selected):
         index = int(local_index) + config["sample_offset"]

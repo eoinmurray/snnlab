@@ -42,8 +42,7 @@ class _ScaledFastSigmoid(torch.autograd.Function):
         ctx.save_for_backward(u)
         ctx.slope = slope
         ctx.gradient_scale = gradient_scale
-        hard = ((u >= 0) if threshold_inclusive else (u > 0)).float()
-        return hard.double() if u.dtype == torch.float64 else hard
+        return ((u >= 0) if threshold_inclusive else (u > 0)).to(u.dtype)
 
     @staticmethod
     def backward(ctx, gradient):
@@ -68,7 +67,7 @@ def fast_sigmoid_spike(u, slope, gradient_scale=1.0, threshold_inclusive=True):
     """
     if gradient_scale != 1.0:
         return _ScaledFastSigmoid.apply(u, slope, gradient_scale, threshold_inclusive)
-    hard = ((u >= 0) if threshold_inclusive else (u > 0)).float()
+    hard = ((u >= 0) if threshold_inclusive else (u > 0)).to(u.dtype)
     proxy = slope * u / (1.0 + slope * u.abs())
     # Parenthesise so (proxy - proxy.detach()) collapses to bitwise zero
     # in the forward pass; otherwise (hard + proxy) then - proxy.detach()
@@ -123,7 +122,7 @@ def lif_step(
     v = v.clamp(min=V_floor) if V_max is None else v.clamp(min=V_floor, max=V_max)
     ref = (ref - 1).clamp(min=0)
     can_spike = ref == 0
-    s = spike_fn(v) * can_spike.float()
+    s = spike_fn(v) * can_spike.to(v.dtype)
     spiked_or_ref = s.bool() | (~can_spike)
     v = torch.where(spiked_or_ref, torch.full_like(v, V_reset), v)
     ref = torch.where(s.bool(), torch.full_like(ref, ref_steps), ref)
@@ -190,9 +189,9 @@ def lif_step_expeuler(
     ref = (ref - 1).clamp(min=0)
     can_spike = active if refractory_after_step else ref == 0
     if threshold_offset is None:
-        s = spike_fn(v) * can_spike.float()
+        s = spike_fn(v) * can_spike.to(v.dtype)
     else:
-        s = spike_fn(v, threshold_offset) * can_spike.float()
+        s = spike_fn(v, threshold_offset) * can_spike.to(v.dtype)
     spiked_or_ref = s.bool() | (~can_spike)
     v = torch.where(spiked_or_ref, torch.full_like(v, V_reset), v)
     ref = torch.where(s.bool(), torch.full_like(ref, ref_steps), ref)

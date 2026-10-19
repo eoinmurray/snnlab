@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Sequence
@@ -13,6 +14,7 @@ import numpy as np
 import torch
 
 from snnlab import extensions as E
+from snnlab.sim.artifacts.tensors import numpy_payload
 from snnlab.sim.training.observations import evaluation_rng
 
 
@@ -77,14 +79,16 @@ class NPZRecordingSink:
     def __call__(self, block: RecordingBlock):
         name = f"block-{self.index:08d}.npz"
         destination = self.directory / name
-        np.savez_compressed(destination, values=block.values.numpy())
+        values, storage = numpy_payload(block.values)
+        np.savez_compressed(destination, values=values)
         metadata = {
             key: value for key, value in asdict(block).items() if key != "values"
         }
         metadata.update(
             file=name,
             shape=list(block.values.shape),
-            dtype=str(block.values.numpy().dtype),
+            dtype=str(block.values.dtype).removeprefix("torch."),
+            **storage,
             sha256=hashlib.sha256(destination.read_bytes()).hexdigest(),
         )
         with (self.directory / "manifest.jsonl").open("a") as handle:
@@ -188,6 +192,7 @@ class Recorder:
         batch_offset=0,
         graph=None,
         dtype=torch.float32,
+        device="cpu",
     ):
         self.spec = spec
         self.dtype = dtype
@@ -234,9 +239,24 @@ class Recorder:
         self.batch_offset = batch_offset
         self.blocks = {}
         self.pending = {}
+        self.transfers = deque()
+        self.transfer_stream = None
         self.rows = {}
+        self.cell_indices = {}
+        self.selected_cells = {}
         if spec:
             self.rows = {row.signal: row for row in spec.signals}
+            self.selected_cells = {
+                row.signal: tuple(range(axes[row.signal][2]))
+                if row.cells is None
+                else tuple(row.cells)
+                for row in spec.signals
+            }
+            self.cell_indices = {
+                row.signal: torch.tensor(row.cells, device=device, dtype=torch.long)
+                for row in spec.signals
+                if row.cells is not None
+            }
 
     def send(self, block):
         # User sinks cannot perturb the executor's random streams or tensors.
@@ -251,10 +271,9 @@ class Recorder:
             return
         for name, row in self.rows.items():
             value = samples[name].detach()
-            cells = (
-                tuple(range(value.shape[1])) if row.cells is None else tuple(row.cells)
-            )
-            value = value[:, list(cells)]
+            cells = self.selected_cells[name]
+            if row.cells is not None:
+                value = value.index_select(1, self.cell_indices[name])
             self.queue(name, row.kind, value, step, cells)
 
     def queue(self, name, kind, value, step, cells=None):
@@ -272,7 +291,30 @@ class Recorder:
             return
         start, _, kind, cells = rows[0]
         end = rows[-1][0] + 1
-        host = torch.stack([value for _, value, _, _ in rows]).cpu()
+        source = torch.stack([value for _, value, _, _ in rows])
+        event = None
+        if source.device.type == "cuda":
+            if self.transfer_stream is None:
+                self.transfer_stream = torch.cuda.Stream(device=source.device)
+            self.transfer_stream.wait_stream(torch.cuda.current_stream(source.device))
+            host = torch.empty_like(source, device="cpu", pin_memory=True)
+            with torch.cuda.stream(self.transfer_stream):
+                host.copy_(source, non_blocking=True)
+                source.record_stream(self.transfer_stream)
+                event = torch.cuda.Event()
+                event.record(self.transfer_stream)
+        else:
+            host = source.cpu()
+        self.transfers.append((name, kind, host, start, end, cells, event, source))
+        # At most two in-flight host blocks; deliver completed older work while
+        # the next chunk is copied. Sinks still run on the caller thread.
+        if len(self.transfers) >= 2 or event is None:
+            self.deliver()
+
+    def deliver(self):
+        name, kind, host, start, end, cells, event, source = self.transfers.popleft()
+        if event is not None:
+            event.synchronize()
         if kind == "spike_events":
             indices = host.nonzero()
             original = torch.tensor(cells, dtype=torch.int64)
@@ -306,6 +348,8 @@ class Recorder:
     def flush_all(self):
         for name in tuple(self.pending):
             self.flush(name)
+        while self.transfers:
+            self.deliver()
 
     def output_step(self, name, value, step):
         if self.spec and self.spec.sink:
@@ -370,6 +414,7 @@ class OnlineReductions:
         tensors,
         recording_signals=(),
         dtype=torch.float32,
+        device=None,
     ):
         self.graph, self.axes, self.parameters = graph, axes, parameters
         self.window, self.start, self.steps = window, start, steps
@@ -463,8 +508,17 @@ class OnlineReductions:
             expected_keys.update(signal + "/duration" for signal in self.duration_masks)
             if set(tensors) != expected_keys:
                 raise ValueError("runtime measurement tensor keys do not match policy")
+            if (
+                device is not None
+                and torch.device(device).type == "mps"
+                and any(value.dtype == torch.float64 for value in tensors.values())
+            ):
+                raise ValueError(
+                    "runtime measurement float64 accumulators cannot be restored on MPS; continue on a float64-capable backend"
+                )
             self.tensors = {
-                name: value.detach().clone() for name, value in tensors.items()
+                name: value.detach().to(device=device).clone()
+                for name, value in tensors.items()
             }
         elif self.spec and start:
             raise ValueError(
@@ -568,11 +622,14 @@ class OnlineReductions:
             if (
                 not sequential
                 and op["kind"] != "select_final"
-                and sample.device.type != "mps"
-                and sample.dtype in {torch.float16, torch.float32, torch.float64}
+                and sample.dtype
+                in {torch.float16, torch.bfloat16, torch.float32, torch.float64}
             ):
-                sample = sample.to(torch.float64)
-                weight = weight.to(torch.float64)
+                accumulator_dtype = (
+                    torch.float32 if sample.device.type == "mps" else torch.float64
+                )
+                sample = sample.to(accumulator_dtype)
+                weight = weight.to(accumulator_dtype)
             if op["kind"] == "select_final":
                 self.add(
                     signal + "/value",

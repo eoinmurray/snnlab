@@ -208,6 +208,7 @@ class SnapshotSession:
                     "protocol": protocol,
                     "projection_mode": model.projection_mode,
                     "compile_mode": model.compile_mode,
+                    "compile_block_steps": model.compile_block_steps,
                     **resolved,
                 },
             }

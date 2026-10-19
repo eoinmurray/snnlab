@@ -27,7 +27,6 @@ from snnlab import extensions as E
 from snnlab import lang
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     GraphExecutor,
     ValidationSpec,
     plan_graph,
@@ -127,16 +126,26 @@ def configure(device):
 
 def require_optimized_runtime():
     """Reject older executors rather than silently retaining expensive snapshots."""
-    if tuple(map(int, snnlab_version.split("."))) < tuple(map(int, REQUIRED_RELEASE.split("."))):
+    if tuple(map(int, snnlab_version.split("."))) < tuple(
+        map(int, REQUIRED_RELEASE.split("."))
+    ):
         raise RuntimeError(
             f"This run requires SNNLab >= {REQUIRED_RELEASE}; found {snnlab_version}."
         )
     constructor = inspect.signature(GraphExecutor).parameters
     forward = inspect.signature(GraphExecutor.forward).parameters
-    request = inspect.signature(ExecutionSpec).parameters
-    if "training_timing" not in request or "projection_mode" not in constructor or not all(
-        name in forward
-        for name in ("retain_parameters", "retain_final_state", "retain_runtime_state")
+    request = inspect.signature(train).parameters
+    if (
+        "training_timing" not in request
+        or "projection_mode" not in constructor
+        or not all(
+            name in forward
+            for name in (
+                "retain_parameters",
+                "retain_final_state",
+                "retain_runtime_state",
+            )
+        )
     ):
         raise RuntimeError(
             "This benchmark requires projection/snapshot controls and training_timing support."
@@ -563,8 +572,7 @@ def run_lab_training(
             ),
         )
 
-    execution = ExecutionSpec(
-        kind="train",
+    result = train(
         graph=model.bundle.graph,
         training=model.bundle.training,
         input_bindings=bindings(tensors["train_images"]),
@@ -583,7 +591,6 @@ def run_lab_training(
     )
     synchronize(device)
     started = time.perf_counter()
-    result = train(execution)
     synchronize(device)
     elapsed = time.perf_counter() - started
     expected_updates = config.epochs * math.ceil(config.train_size / config.batch_size)

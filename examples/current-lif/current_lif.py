@@ -9,7 +9,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from snnlab import lang, viz
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import (
+    PoissonInputBinding,
+    simulate,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.5
@@ -62,15 +65,13 @@ def main():
         canvas_size=(1920, 900),
     )
 
-    # 6. Describe the execution and simulate.
-    execution = ExecutionSpec(
-        kind="simulate",
+    # 6. Simulate with explicit execution settings.
+    result = simulate(
         graph=bundle.graph,
         input_bindings=(poisson_input,),
         seed=SEED,
         device="cpu",
     )
-    result = simulate(execution)
     # 7. Retrieve named results and select the first (only) batch item.
     data = result.numpy(batch=0)
     input_spikes = data.diagnostics["input_spikes"]

@@ -17,14 +17,15 @@ from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     DenseArrayBinding,
-    ExecutionSpec,
     GraphExecutor,
+    TrainingMetrics,
     load_runtime_state,
     plan_graph,
     save_runtime_state,
-    simulate,
-    train,
 )
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim import _extension_callbacks as callbacks
 
 
@@ -281,9 +282,7 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
         parameter_groups=(lang.ParameterGroup((gain,), name="all", lr=0.2),),
         optimizer=lang.CustomOptimizer("test.sgd/v1", momentum=0.5),
         regularizers=(
-            lang.CustomRegularizer(
-                "test.energy/v1", signals=(scores,), strength=0.01
-            ),
+            lang.CustomRegularizer("test.energy/v1", signals=(scores,), strength=0.01),
         ),
         surrogate=lang.CustomSurrogate("test.triangle/v1"),
     )
@@ -298,6 +297,9 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
         device="cpu",
         epochs=2,
         batch_size=2,
+        metrics=TrainingMetrics(
+            train="evaluate", initial=("train",), update_history=True
+        ),
     )
     first = train(
         ExecutionSpec(**args, updates=2, save_final_checkpoint=tmp_path / "checkpoint")
@@ -314,17 +316,7 @@ def test_custom_initializer_constraint_operation_surrogate_and_regression_traini
         full.metrics["epochs"][-1]["train_loss"]
         < full.metrics["epochs"][0]["train_loss"]
     )
-    script = """
-import sys
-import torch
-from snnlab import extensions
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, train
-assert not extensions.definitions()
-result = train(ExecutionSpec(kind="train", bundle=sys.argv[1],
-    input_bindings=(DenseArrayBinding("inputs", torch.ones(3, 4, 1)),),
-    targets={"value": torch.ones(4, 1)}, device="cpu", epochs=2, batch_size=2))
-print(result.parameters["gain"].item())
-"""
+    script = '\nimport sys\nimport torch\nfrom snnlab import extensions\nfrom snnlab.sim import DenseArrayBinding, train\nassert not extensions.definitions()\nresult = train(\n    bundle=sys.argv[1],\n    input_bindings=(DenseArrayBinding("inputs", torch.ones(3, 4, 1)),),\n    targets={"value": torch.ones(4, 1)},\n    device="cpu",\n    epochs=2,\n    batch_size=2,\n)\nprint(result.parameters["gain"].item())\n'
     root = Path(__file__).resolve().parents[2]
     environment = dict(
         os.environ, PYTHONPATH=os.pathsep.join((str(root), str(root / "src")))
@@ -458,19 +450,7 @@ def test_saved_extensions_load_and_simulate_in_fresh_process(tmp_path, loader):
     environment = dict(os.environ)
     root = Path(__file__).resolve().parents[2]
     environment["PYTHONPATH"] = os.pathsep.join((str(root), str(root / "src")))
-    script = """
-import sys
-import numpy as np
-import torch
-from snnlab import extensions, lang
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
-assert not extensions.definitions()
-if sys.argv[3] == "lang":
-    bundle = lang.load_bundle(sys.argv[1])
-result = simulate(ExecutionSpec(kind="simulate", bundle=sys.argv[1],
-    input_bindings=(DenseArrayBinding("inputs", torch.ones(14, 2, 1)),), device="cpu"))
-np.savez(sys.argv[2], **result.numpy().outputs)
-"""
+    script = '\nimport sys\nimport numpy as np\nimport torch\nfrom snnlab import extensions, lang\nfrom snnlab.sim import DenseArrayBinding, simulate\nassert not extensions.definitions()\nif sys.argv[3] == "lang":\n    bundle = lang.load_bundle(sys.argv[1])\nresult = simulate(\n    bundle=sys.argv[1],\n    input_bindings=(DenseArrayBinding("inputs", torch.ones(14, 2, 1)),),\n    device="cpu",\n)\nnp.savez(sys.argv[2], **result.numpy().outputs)\n'
     output = tmp_path / "result.npz"
     command = [sys.executable, "-c", script, str(path), str(output), loader]
     if loader == "cli":

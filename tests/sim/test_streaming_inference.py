@@ -21,10 +21,10 @@ from snnlab.sim import (
     load_runtime_state,
     plan_graph,
     save_runtime_state,
-    simulate,
     validate_inference_artifacts,
     write_inference_artifacts,
 )
+from snnlab.sim.requests.handlers import simulate
 from tests.sim._execution_builders import standard_readout_graph
 from tests.sim.test_batch_encoding import dataset
 from tests.sim.test_epoch_observations import request
@@ -328,7 +328,8 @@ def test_actual_live_tensor_allocation_is_bounded_by_batch():
     peaks = []
     for steps in (20, 200):
         graph = request().graph
-        executor = model(graph)
+        # This Python dispatch tracker cannot observe compiled native kernels.
+        executor = GraphExecutor(plan_graph(graph), seed=13, compile_mode=None)
         events = torch.ones(steps, 2, 2)
         excluded = {events.untyped_storage().data_ptr()}
         excluded.update(
@@ -497,7 +498,8 @@ def test_actual_dataset_retention_allocation_is_bounded_by_batch(tmp_path):
         provider = DatasetProvider(
             graph, dataset(tmp_path, count=count, name=f"samples-{count}")
         )
-        executor = model(graph)
+        # TorchDispatchMode instrumentation requires eager tensor dispatch.
+        executor = GraphExecutor(plan_graph(graph), seed=13, compile_mode=None)
         tracker = LiveAllocations(set())
         with tracker:
             result = simulate_dataset(

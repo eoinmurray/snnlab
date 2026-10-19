@@ -4,7 +4,9 @@ import pytest
 import torch
 
 from snnlab import lang
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import DenseArrayBinding
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 
 
 def _network():

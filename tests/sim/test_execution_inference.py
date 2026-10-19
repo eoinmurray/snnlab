@@ -9,15 +9,14 @@ from snnlab.sim import (
     AddPoissonSpikes,
     DenseArrayBinding,
     DropSpikes,
-    ExecutionSpec,
     GraphExecutor,
     PoissonInputBinding,
-    build,
     plan_graph,
     resolve_poisson_input_bindings,
-    simulate,
-    train,
 )
+from snnlab.sim.requests.handlers import build, simulate
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import (
     coupled_graph as _coupled_graph,
 )

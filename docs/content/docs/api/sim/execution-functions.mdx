@@ -1,55 +1,155 @@
 ---
 title: Execution Functions
-description: Build, simulate, infer, train and dispatch graph execution requests.
+description: Build, simulate, infer and train graphs with explicit keyword arguments.
 ---
 
-Import these functions from `snnlab.sim`. They consume [ExecutionSpec](/api/sim/execution-spec) and return [ExecutionResult](/api/sim/execution-result).
+Import these functions from `snnlab.sim`. All arguments are keyword-only. Each function returns [ExecutionResult](/api/sim/execution-result); see [Execution Options](/api/sim/execution-spec) for binding types, defaults and validation rules. `ExecutionSpec` and the CLI dispatcher are internal.
 
 ## build
 
 ```python
-def build(spec: ExecutionSpec) -> ExecutionResult: ...
+def build(
+    *,
+    bundle: Path | None = None,
+    graph: Mapping[str, Any] | None = None,
+    training: Mapping[str, Any] | None = None,
+    seed: int = 0,
+    device: str = "auto",
+    retain_parameters: bool = True,
+    projection_mode: Literal["fast", "strict"] = "fast",
+    extension_validation: Literal["strict", "structural"] = "structural",
+    compile_mode: Literal["default"] | None = "default",
+    compile_block_steps: int = 1,
+) -> ExecutionResult: ...
 ```
 
-Validates and plans the supplied graph or bundle, initializes parameters and returns the model in `result.model`. It does not advance simulation time, load `spec.checkpoint`, train, or write output files. Bundle loading verifies declared digests and resolves extension imports. Without graph data or a bundle, execution fails.
+Validates and plans the graph or bundle, initializes parameters and returns the model in `result.model`. It does not advance simulation time or load learned weights. Bundle loading verifies declared digests and resolves extension imports. Supply `training` explicitly when building a model with trainable parameters for an external optimizer.
 
 ## simulate
 
 ```python
 def simulate(
-    spec: ExecutionSpec, *, runtime_state: GraphRuntimeState | None = None
+    *,
+    bundle: Path | None = None,
+    graph: Mapping[str, Any] | None = None,
+    training: Mapping[str, Any] | None = None,
+    input_bindings: Sequence[InputBinding] = (),
+    protocol: Mapping[str, Any] | None = None,
+    batch_size: int | None = None,
+    seed: int = 0,
+    device: str = "auto",
+    diagnostics: bool = True,
+    checkpoint: Path | None = None,
+    runtime_state: GraphRuntimeState | None = None,
+    interventions: Sequence[Intervention] = (),
+    resets: Sequence[ResetVoltage] = (),
+    decisions: DecisionSegments | None = None,
+    measurement: MeasurementWindow | None = None,
+    recording: RecordingSpec | None = None,
+    retain_outputs: bool = True,
+    retain_parameters: bool = True,
+    retain_final_state: bool = True,
+    retain_runtime_state: bool = True,
+    projection_mode: Literal["fast", "strict"] = "fast",
+    extension_validation: Literal["strict", "structural"] = "structural",
+    compile_mode: Literal["default"] | None = "default",
+    compile_block_steps: int = 1,
+    dataset_prefetch: int = 0,
+    timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
+    snapshot: str | Path | SnapshotSpec | None = None,
+    inference_overrides: Mapping[str, Any] | None = None,
 ) -> ExecutionResult: ...
 ```
 
-Builds a fresh model, resolves inputs/device and optional weight checkpoint, then executes the graph. Input bindings support dense tensors, sparse events, generated Poisson spikes and dataset snapshots. `runtime_state` supplies ongoing dynamics: a non-`None` keyword argument takes precedence over the request field. Parameters are loaded separately from dynamic state. See [continuation](/api/sim/runtime-state).
+Builds a fresh model, resolves bound inputs and the device, loads an optional weight checkpoint and executes the graph. Inputs support dense tensors, sparse events, generated Poisson spikes and dataset snapshots. Pass `runtime_state=previous.runtime_state` to continue compatible dynamics; parameters are loaded separately. Multiple dataset batches represent independent presentations and do not return one resumable trajectory.
 
-Simulation supports inference overrides, interventions, resets, measurement windows and recording. Timestep overrides cannot convert runtime state. Dataset batches are independent presentations; multiple batches do not produce a single resumable runtime trajectory. See [ExecutionSpec](/api/sim/execution-spec) for input and override validation.
+`inference_overrides` accepts duration, input rate, timestep and projection scaling overrides directly. Timestep changes cannot convert runtime state. See [override validation](/api/sim/execution-spec#inference_overrides).
 
 ## infer
 
 ```python
-def infer(spec: ExecutionSpec) -> ExecutionResult: ...
+def infer(
+    *,
+    bundle: Path | None = None,
+    graph: Mapping[str, Any] | None = None,
+    training: Mapping[str, Any] | None = None,
+    input_bindings: Sequence[InputBinding] = (),
+    protocol: Mapping[str, Any] | None = None,
+    batch_size: int | None = None,
+    seed: int = 0,
+    device: str = "auto",
+    diagnostics: bool = True,
+    checkpoint: Path | None = None,
+    runtime_state: GraphRuntimeState | None = None,
+    interventions: Sequence[Intervention] = (),
+    resets: Sequence[ResetVoltage] = (),
+    decisions: DecisionSegments | None = None,
+    measurement: MeasurementWindow | None = None,
+    recording: RecordingSpec | None = None,
+    retain_outputs: bool = True,
+    retain_parameters: bool = True,
+    retain_final_state: bool = True,
+    retain_runtime_state: bool = True,
+    projection_mode: Literal["fast", "strict"] = "fast",
+    extension_validation: Literal["strict", "structural"] = "structural",
+    compile_mode: Literal["default"] | None = "default",
+    compile_block_steps: int = 1,
+    dataset_prefetch: int = 0,
+    timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
+    snapshot: str | Path | SnapshotSpec | None = None,
+    inference_overrides: Mapping[str, Any] | None = None,
+) -> ExecutionResult: ...
 ```
 
-Delegates to `simulate(spec)` with the same checkpoint, input and result semantics. It does not train a model. Use `spec.runtime_state` for continuation through this function.
+Uses the simulation handler with the same input, checkpoint, runtime continuation and result semantics. Snapshot metadata records the operation as inference.
 
 ## train
 
 ```python
-def train(spec: ExecutionSpec) -> ExecutionResult: ...
+def train(
+    *,
+    bundle: Path | None = None,
+    graph: Mapping[str, Any] | None = None,
+    training: Mapping[str, Any] | None = None,
+    input_bindings: Sequence[InputBinding] = (),
+    protocol: Mapping[str, Any] | None = None,
+    targets: Mapping[str, torch.Tensor] | None = None,
+    target_bindings: Sequence[TargetArrayBinding] = (),
+    validation: ValidationSpec | None = None,
+    test: TestSpec | None = None,
+    epochs: int = 0,
+    batch_size: int | None = None,
+    shuffle: bool = False,
+    batching: Batching | None = None,
+    metrics: TrainingMetrics | None = None,
+    on_epoch_end: Callable[[EpochReport], None] | None = None,
+    updates: int | None = None,
+    save_final_checkpoint: str | Path | None = None,
+    save_selected_checkpoint: str | Path | None = None,
+    seed: int = 0,
+    device: str = "auto",
+    diagnostics: bool = True,
+    checkpoint: Path | None = None,
+    observations: EpochObservations | None = None,
+    checkpoint_selection: CheckpointSelection | None = None,
+    retain_parameters: bool = True,
+    retain_final_state: bool = True,
+    retain_runtime_state: bool = True,
+    projection_mode: Literal["fast", "strict"] = "fast",
+    extension_validation: Literal["strict", "structural"] = "structural",
+    compile_mode: Literal["default"] | None = "default",
+    compile_block_steps: int = 1,
+    dataset_prefetch: int = 0,
+    timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
+    training_timing: bool = False,
+    tracing: TraceSpec | None = None,
+    snapshot: str | Path | SnapshotSpec | None = None,
+) -> ExecutionResult: ...
 ```
 
-Runs the compiled training recipe with resolved named targets. The recipe selects parameters, objectives, optimizer, regularizers and surrogate; the execution request controls epochs, updates, batching, validation, final test evaluation and observations. By default, supplied validation data is evaluated after every epoch and selects the lowest-loss checkpoint; supplied test data is evaluated once after all requested epochs using that checkpoint or final weights. Use `checkpoint` for training resume and `save_final_checkpoint` / `save_selected_checkpoint` for optional persistence. Selection can return no winner if no eligible boundary was reached.
+Runs the compiled training recipe with named targets. The recipe selects parameters, objectives, optimizer, regularizers and surrogate; keyword arguments control the schedule, reporting and held-out evaluation. A bundle supplies its saved training recipe automatically; for an in-memory graph pass `training=bundle.training`.
 
-The result's outputs and diagnostics describe the final optimizer update, rather than all training samples. Epoch/update summaries are in `metrics`; retained checkpoints are separate fields. Training rejects inference interventions, reset/decision policies and explicit measurement/recording policies. It does not consume `runtime_state`.
-
-## execute_request
-
-```python
-def execute_request(spec: ExecutionSpec) -> ExecutionResult: ...
-```
-
-Dispatches by `spec.kind`: `"build"`, `"simulate"`, `"infer"` or `"train"`. Unknown kinds raise `ValueError`. Direct handler calls perform their named operation; prefer this dispatcher when the request kind should select the operation.
+By default, validation runs after each epoch and selects the lowest-loss checkpoint. Supplied test data is evaluated once after all requested epochs using the selected checkpoint or final weights. Use `checkpoint` to resume training and `save_final_checkpoint` / `save_selected_checkpoint` to persist it. Results describe the final optimizer update; epoch/update summaries appear in `metrics`. Training has no inference intervention, runtime continuation or recording keywords.
 
 ## resolve_device
 
@@ -63,28 +163,24 @@ Returns a device string. `"auto"` first honours `PINGLAB_DEVICE`, otherwise sele
 
 ```python
 from pathlib import Path
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, execute_request
+from snnlab.sim import PoissonInputBinding, simulate
 
-# network.bundle declares a spike input named inputs.
-result = execute_request(
-    ExecutionSpec(
-        kind="simulate",
-        bundle=Path("network.bundle"),
-        device="cpu",
-        input_bindings=(
-            PoissonInputBinding(
-                input_id="inputs",
-                steps_count=100,
-                rates_hz=(20.0,),
-                seed=17,
-            ),
+result = simulate(
+    bundle=Path("network.bundle"),
+    device="cpu",
+    input_bindings=(
+        PoissonInputBinding(
+            input_id="inputs",
+            steps_count=100,
+            rates_hz=(20.0,),
+            seed=17,
         ),
-    )
+    ),
 )
 data = result.numpy(batch=0)
 ```
 
-The Python handlers do not automatically write CLI artifact directories or plots. Use [inference artifact helpers](/api/sim/inference-artifacts) to persist a result. Invalid shapes, unsupported capabilities and incompatible saved state fail rather than being silently adapted.
+Python execution functions return results without writing CLI artifact directories or plots. Use [inference artifact helpers](/api/sim/inference-artifacts) to persist a result.
 
 ## Explicit source data
 
@@ -130,7 +226,7 @@ These supported reference primitives retain historical arithmetic for numerical 
 
 ## Optional run snapshots
 
-`simulate`, `infer` and `train` accept `ExecutionSpec.snapshot` to write the
+`simulate`, `infer` and `train` accept `snapshot=` to write the
 resolved network/settings and optional weight arrays. A path captures the start
 of execution; `SnapshotSpec` also supports end or both stages. The captured
 objects are available as `result.snapshots`. See

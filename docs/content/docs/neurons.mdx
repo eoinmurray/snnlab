@@ -191,6 +191,12 @@ Time constants, capacitance and AdEx slope factor must be positive. All values m
 
 Spikes use the configured surrogate derivative during [training](/training). Adaptation remains in the computation graph, allowing gradients to propagate through its history; biological neuron settings are graph configuration, not trainable weight tensors. Use [Customisation](/custom-neurons-and-synapses) and [Extensions](/api/lang/extensions) to define additional dynamics.
 
+## Efficient custom neurons
+
+A registered `lang.CustomNeuron` uses the same default runtime compilation as built-in neurons. Write an importable `step(context)` using vectorized torch operations over `(batch, cells)` tensors, return new state with stable keys/shapes/dtypes/devices, and call `context.spike` for the configured surrogate gradient. Use masks or `torch.where` for tensor-dependent choices; avoid per-neuron Python loops, `.item()`, `.cpu()` and NumPy conversions inside updates. No decorator or separate neuron language is needed.
+
+See [Customisation](/custom-neurons-and-synapses) for a full adaptive neuron, and [Writing efficient PyTorch callbacks](/api/lang/extensions#writing-efficient-pytorch-callbacks) for compilation, strict debugging, warmup and eager opt-out guidance. Runtime tensor compilation is separate from `lang.compile(net)`, which builds the portable graph.
+
 ## Runnable comparison
 
 The script runs two comparisons: one using CUBA neurons and current synapses, and one using COBA neurons and conductance synapses. Each comparison drives one LIF, one ALIF and one AdEx cell with the same event train and the same weights within that input family. It uses stronger adaptation than the constructor defaults so its effect is visible. Different firing patterns illustrate these chosen parameters; they do not compare model accuracy or learning performance.
@@ -241,7 +247,10 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import (
+    DenseArrayBinding,
+    simulate,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.25
@@ -298,13 +307,10 @@ def compare(input_family):
     stimulus = torch.zeros(steps, 1, 1)
     stimulus[::4] = 1  # One event each millisecond, identical for every model.
     result = simulate(
-        ExecutionSpec(
-            kind="simulate",
-            graph=bundle.graph,
-            device="cpu",
-            seed=17,
-            input_bindings=(DenseArrayBinding("events", stimulus),),
-        )
+        graph=bundle.graph,
+        device="cpu",
+        seed=17,
+        input_bindings=(DenseArrayBinding("events", stimulus),),
     ).numpy(batch=0)
     time = (np.arange(steps) + 1) * DT_MS
     colors = {"LIF": "#4c78a8", "ALIF": "#f58518", "AdEx": "#54a24b"}

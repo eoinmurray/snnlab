@@ -13,15 +13,15 @@ from snnlab import lang as snn
 from snnlab.sim import (
     DenseArrayBinding,
     EpochObservations,
-    ExecutionSpec,
     GraphExecutor,
     ObservationProbe,
     TrainingMetrics,
     ValidationSpec,
     load_training_checkpoint,
-    train,
 )
+from snnlab.sim.requests.spec import ExecutionSpec
 from snnlab.sim.training.observations import evaluation_rng
+from snnlab.sim.training.trainer import train
 
 
 def request():

@@ -5,13 +5,14 @@ import json
 import pytest
 
 from snnlab import lang
-from snnlab.sim import ExecutionSpec, simulate
 from snnlab.sim.artifacts.bundle import (
     BundleCompatibilityError,
     load_graph_bundle,
     load_training_recipe,
 )
 from snnlab.sim.cli import main
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 from tests.sim._bundle_builders import ping_classifier
 
 

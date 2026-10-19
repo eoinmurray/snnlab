@@ -334,7 +334,9 @@ def test_omission_preserves_graph_shape_and_unit_gain_execution():
 
 
 def test_native_training_matches_direct_pytorch_gradient_and_update():
-    from snnlab.sim import DenseArrayBinding, ExecutionSpec, train
+    from snnlab.sim import DenseArrayBinding
+    from snnlab.sim.requests.spec import ExecutionSpec
+    from snnlab.sim.training.trainer import train
 
     net = lang.Network("trained_schedule", dt=1 * lang.ms)
     events = net.input(

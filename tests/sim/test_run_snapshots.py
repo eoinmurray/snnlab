@@ -8,6 +8,9 @@ import pytest
 import torch
 
 from snnlab import sim
+from snnlab.sim.requests import handlers
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import coupled_graph, direct_train_bundle
 
 
@@ -38,7 +41,7 @@ def request(kind="infer", **options):
             input_bindings=(sim.DenseArrayBinding("events", inputs),),
         )
     values.update(options)
-    return sim.ExecutionSpec(**values)
+    return ExecutionSpec(**values)
 
 
 def read_snapshot(path):
@@ -55,7 +58,11 @@ def read_snapshot(path):
 
 @pytest.mark.parametrize(
     "handler,kind",
-    [(sim.simulate, "simulate"), (sim.infer, "infer"), (sim.execute_request, "infer")],
+    [
+        (handlers.simulate, "simulate"),
+        (handlers.infer, "infer"),
+        (handlers.execute_request, "infer"),
+    ],
 )
 def test_path_shorthand_exports_resolved_overrides(tmp_path, handler, kind):
     spec = request(
@@ -70,7 +77,7 @@ def test_path_shorthand_exports_resolved_overrides(tmp_path, handler, kind):
             }
         },
     )
-    baseline = sim.infer(replace(spec, snapshot=None, retain_parameters=True))
+    baseline = handlers.infer(replace(spec, snapshot=None, retain_parameters=True))
     result = handler(spec)
     metadata, arrays = read_snapshot(tmp_path / "run")
     assert metadata["kind"] == kind
@@ -90,8 +97,8 @@ def test_path_shorthand_exports_resolved_overrides(tmp_path, handler, kind):
 
 def test_training_both_stages_resume_and_independent_copies(tmp_path):
     spec = request("train", snapshot=sim.SnapshotSpec(tmp_path / "train", stage="both"))
-    baseline = sim.train(replace(spec, snapshot=None))
-    result = sim.train(spec)
+    baseline = train(replace(spec, snapshot=None))
+    result = train(spec)
     start, initial = read_snapshot(tmp_path / "train" / "start")
     end, final = read_snapshot(tmp_path / "train" / "end")
     assert start["execution"]["completed_updates"] == 0
@@ -103,7 +110,7 @@ def test_training_both_stages_resume_and_independent_copies(tmp_path):
         np.testing.assert_array_equal(final[name], tensor.numpy())
         torch.testing.assert_close(tensor, baseline.parameters[name], rtol=0, atol=0)
     sim.save_training_checkpoint(tmp_path / "checkpoint", result.training_checkpoint)
-    resumed = sim.train(
+    resumed = train(
         replace(
             spec,
             checkpoint=tmp_path / "checkpoint",
@@ -125,9 +132,9 @@ def test_training_both_stages_resume_and_independent_copies(tmp_path):
 
 
 def test_inference_snapshot_loads_checkpoint_weights(tmp_path):
-    trained = sim.train(request("train"))
+    trained = train(request("train"))
     sim.save_training_checkpoint(tmp_path / "checkpoint", trained.training_checkpoint)
-    result = sim.infer(
+    result = handlers.infer(
         request(snapshot=tmp_path / "infer", checkpoint=tmp_path / "checkpoint")
     )
     metadata, arrays = read_snapshot(tmp_path / "infer")
@@ -138,7 +145,7 @@ def test_inference_snapshot_loads_checkpoint_weights(tmp_path):
 
 
 def test_metadata_only_end_and_disabled(tmp_path):
-    result = sim.infer(
+    result = handlers.infer(
         request(
             snapshot=sim.SnapshotSpec(tmp_path / "meta", parameters=False, stage="end")
         )
@@ -149,7 +156,7 @@ def test_metadata_only_end_and_disabled(tmp_path):
     assert not arrays
     assert not (tmp_path / "meta" / "parameters.npz").exists()
     assert not result.snapshots["end"].parameters
-    assert sim.infer(request()).snapshots == {}
+    assert handlers.infer(request()).snapshots == {}
 
 
 def test_writer_refuses_overwrite_and_invalid_metadata(tmp_path):
@@ -181,7 +188,7 @@ def test_writer_preserves_bfloat16_bits(tmp_path):
 @pytest.mark.parametrize("option", [42, "", sim.SnapshotSpec("unused")])
 def test_snapshot_request_validation(option):
     with pytest.raises((TypeError, ValueError)):
-        sim.ExecutionSpec(kind="build", snapshot=option)
+        ExecutionSpec(kind="build", snapshot=option)
 
 
 def test_snapshot_stage_validation():
@@ -193,7 +200,7 @@ def test_snapshot_stage_validation():
 
 def test_projection_scales_are_captured_after_application(tmp_path):
     graph = coupled_graph()
-    spec = sim.ExecutionSpec(
+    spec = ExecutionSpec(
         kind="infer",
         graph=graph,
         device="cpu",
@@ -204,9 +211,9 @@ def test_projection_scales_are_captured_after_application(tmp_path):
             for name in ("drive_a", "drive_b")
         ),
     )
-    baseline = sim.infer(spec)
+    baseline = handlers.infer(spec)
     projection = graph["projections"][0]
-    result = sim.infer(
+    result = handlers.infer(
         replace(
             spec,
             snapshot=tmp_path / "scaled",
@@ -222,8 +229,8 @@ def test_projection_scales_are_captured_after_application(tmp_path):
 
 
 def test_both_simulation_stages_and_runtime_continuation(tmp_path):
-    first = sim.infer(request())
-    result = sim.simulate(
+    first = handlers.infer(request())
+    result = handlers.simulate(
         request(snapshot=sim.SnapshotSpec(tmp_path, stage="both")),
         runtime_state=first.runtime_state,
     )
@@ -251,7 +258,7 @@ def test_no_parameter_network_can_be_snapshotted(tmp_path):
     spec = replace(
         request(snapshot=tmp_path), graph=lang.compile(net, target=None).graph
     )
-    sim.infer(spec)
+    handlers.infer(spec)
     metadata, arrays = read_snapshot(tmp_path)
     assert metadata["parameters_included"] is True
     assert not arrays
@@ -276,7 +283,7 @@ def test_snapshot_supports_callable_recording_sinks(tmp_path):
             sink_id=sink.identity,
         ),
     )
-    sim.infer(spec)
+    handlers.infer(spec)
     metadata, _ = read_snapshot(tmp_path / "snapshot")
     recorded_sink = metadata["request"]["recording"]["sink"]
     assert recorded_sink["directory"] == str(tmp_path / "blocks")

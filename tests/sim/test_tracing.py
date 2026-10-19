@@ -7,8 +7,10 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from snnlab.sim import ExecutionSpec, GraphExecutor, TraceSpec, train
+from snnlab.sim import GraphExecutor, TraceSpec
 from snnlab.sim.diagnostics.tracing import TraceSession, current_trace, timeline_metrics
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim.test_execution_epochs import request
 
 

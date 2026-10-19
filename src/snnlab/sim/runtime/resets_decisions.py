@@ -216,6 +216,7 @@ class SegmentAccumulator:
                     (reset["population_id"], reset["value_mv"], selected)
                 )
         self.records = []
+        self._record_tensors = []
         self.counts = {}
         self.starts = [None] * batch
         self.last_boundary = -1
@@ -282,12 +283,16 @@ class SegmentAccumulator:
                         "start_step": start,
                         "end_step": step,
                         "duration_ms": (step - start) * dt_ms,
+                    }
+                )
+                self._record_tensors.append(
+                    {
                         "population_totals": {
-                            name: int(self.counts[name][batch].sum())
+                            name: self.counts[name][batch].sum().reshape(1).clone()
                             for name in self.policy["population_totals"]
                         },
                         "output_spike_counts": {
-                            name: self.counts[name][batch].tolist()
+                            name: self.counts[name][batch].clone()
                             for name in self.policy["output_spike_counts"]
                         },
                     }
@@ -305,9 +310,41 @@ class SegmentAccumulator:
 
     def observe(self, spikes):
         for name, counts in self.counts.items():
-            for batch, start in enumerate(self.starts):
-                if start is not None:
-                    counts[batch] += spikes[name][batch].detach().to(torch.int64)
+            active = [
+                batch for batch, start in enumerate(self.starts) if start is not None
+            ]
+            if active:
+                counts[active] += spikes[name][active].detach().to(torch.int64)
+
+    def finish_records(self):
+        """Copy all reporting counts together after numerical stepping."""
+        if not self._record_tensors:
+            return self.records
+        packed = (
+            torch.cat(
+                [
+                    value
+                    for row in self._record_tensors
+                    for group in row.values()
+                    for value in group.values()
+                ]
+            )
+            .cpu()
+            .tolist()
+        )
+        offset = 0
+        for record, tensors in zip(self.records, self._record_tensors, strict=True):
+            for kind, group in tensors.items():
+                record[kind] = {}
+                for name, value in group.items():
+                    count = value.numel()
+                    selected = packed[offset : offset + count]
+                    record[kind][name] = (
+                        selected[0] if kind == "population_totals" else selected
+                    )
+                    offset += count
+        self._record_tensors.clear()
+        return self.records
 
     def state(self):
         return (

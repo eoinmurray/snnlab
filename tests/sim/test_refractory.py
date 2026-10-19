@@ -10,15 +10,15 @@ from snnlab import lang
 from snnlab._shared.timing import refractory_steps
 from snnlab.lang.compilation.serialization import digest
 from snnlab.sim import (
-    ExecutionSpec,
     GraphExecutor,
     PoissonInputBinding,
     load_runtime_state,
     plan_graph,
     save_runtime_state,
-    simulate,
 )
 from snnlab.sim.artifacts.bundle import load_graph_bundle
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 
 MODELS = (
     lang.CUBA_LIF,

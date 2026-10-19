@@ -19,7 +19,6 @@ from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     EpochObservations,
-    ExecutionSpec,
     TraceSpec,
     TrainingMetrics,
     ValidationSpec,
@@ -43,7 +42,7 @@ def progress(report):
     )
 
 
-def execution_spec(cfg, bundle, snapshot, dataset, output, device, compile_mode):
+def execution_kwargs(cfg, bundle, snapshot, dataset, output, device, compile_mode):
     def binding(split):
         return DatasetSnapshotBinding(
             path=Path(snapshot),
@@ -65,8 +64,7 @@ def execution_spec(cfg, bundle, snapshot, dataset, output, device, compile_mode)
             ),
         )
 
-    return ExecutionSpec(
-        kind="train",
+    return dict(
         graph=bundle.graph,
         training=bundle.training,
         input_bindings=(binding("train"),),
@@ -188,7 +186,7 @@ def run(
         torch.cuda.synchronize(device)
         torch.cuda.reset_peak_memory_stats(device)
     result = train(
-        execution_spec(cfg, bundle, snapshot, dataset, output, str(device), mode)
+        **execution_kwargs(cfg, bundle, snapshot, dataset, output, str(device), mode)
     )
     if any(
         not torch.isfinite(value).all().item()
@@ -214,8 +212,8 @@ def run(
     if trace_mode != "off":
         # Release baseline model/graphs before building an independent diagnostic.
         del result
-        diagnostic = replace(
-            execution_spec(cfg, bundle, snapshot, dataset, output, str(device), mode),
+        diagnostic = dict(
+            execution_kwargs(cfg, bundle, snapshot, dataset, output, str(device), mode),
             tracing=trace_spec,
             updates=trace_skip_updates + trace_updates,
             validation=None,
@@ -226,7 +224,7 @@ def run(
             save_final_checkpoint=None,
             on_epoch_end=None,
         )
-        traced = train(diagnostic)
+        traced = train(**diagnostic)
         write_json(output / "diagnostic_metrics.json", traced.metrics)
         # Baseline timings and peaks above exclude this separate diagnostic call.
         summary["diagnostic_trace"] = {

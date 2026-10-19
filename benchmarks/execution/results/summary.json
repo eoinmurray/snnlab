@@ -1,0 +1,317 @@
+{
+  "schema": "snnlab.local-execution-validation/v1",
+  "date": "2026-10-19",
+  "hardware": {
+    "cpu_and_mps_model": "Apple M5",
+    "physical_memory_bytes": 34359738368,
+    "notes": [
+      "Local measurements; CUDA unavailable.",
+      "validated-sweep.json uses bounded diagnostic profiles that can include compilation for a new tail shape. Use a warmed-profile report for dispatch comparisons.",
+      "One CPU 1000-step/64-block timing case exceeded its 60-second wall-time limit. It has no throughput result."
+    ]
+  },
+  "software": {
+    "python": "3.12.12 (main, Nov 19 2025, 22:30:44) [Clang 21.1.4 ]",
+    "torch": "2.14.1",
+    "cuda": null,
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "threads": 1,
+    "matmul_precision": "highest"
+  },
+  "limits": [
+    "Synthetic workloads; no task-accuracy claim or universal speedup.",
+    "CUDA and CUDA Graph replay were unavailable/unvalidated.",
+    "MPS blocks above 4 select the kernel loop; tested larger compilation exceeded Metal buffer bindings.",
+    "One tiny CPU 1000-step/64-block timing case exceeded its 60-second deadline and has no throughput result.",
+    "Cold timing can reuse compiler caches; validation/first execution cost is reported separately.",
+    "CPU remains faster than MPS on some measured cases.",
+    "CPU and device Poisson streams differ; matched-spike numerical gates are separate from preparation timing.",
+    "Only warmed-profile.json.gz has an explicit profile-shape warmup; earlier bounded-profile counts may include shape compilation."
+  ],
+  "raw_reports": {
+    "validated-sweep": {
+      "file": "validated-sweep.json.gz",
+      "uncompressed_sha256": "31d42830bbef4afb89e6d344e77c769d271777f1b7ac5f6910f71cc079594276",
+      "numerical_gates_passed": 20,
+      "timed_cases": 35,
+      "failures": [
+        {
+          "device": "cpu",
+          "steps": 1000,
+          "batch": 2,
+          "block_steps": 64,
+          "phase": "timing",
+          "compile_mode": "default",
+          "preparation_device": "cpu",
+          "status": "timeout",
+          "limit_s": 60.0,
+          "error_type": "InductorError"
+        }
+      ],
+      "measured_source_hashes": "retained in compressed report",
+      "warmup_note": "CPU/MPS pipeline timings include input generation/transfer, forward, backward, Adam and constraints; requested recording is included in its separate report."
+    },
+    "coba-128-validation": {
+      "file": "coba-128-validation.json.gz",
+      "uncompressed_sha256": "7c2d7825e7b7dd7168b6f19847bdb160245bf6e3f8cbdd4bcf72f703c586c4ec",
+      "numerical_gates_passed": 12,
+      "timed_cases": 24,
+      "failures": [],
+      "measured_source_hashes": "retained in compressed report",
+      "warmup_note": "CPU/MPS pipeline timings include input generation/transfer, forward, backward, Adam and constraints; requested recording is included in its separate report."
+    },
+    "coba-batch32": {
+      "file": "coba-batch32.json.gz",
+      "uncompressed_sha256": "03aeafc5d73943d42cb74b3bfbe38b429774d11d49960cb3a87f44b197fb5a8a",
+      "numerical_gates_passed": 4,
+      "timed_cases": 9,
+      "failures": [],
+      "measured_source_hashes": "retained in compressed report",
+      "warmup_note": "CPU/MPS pipeline timings include input generation/transfer, forward, backward, Adam and constraints; requested recording is included in its separate report."
+    },
+    "warmed-profile": {
+      "file": "warmed-profile.json.gz",
+      "uncompressed_sha256": "d7525d0037769ace0c6bd60d8377d664807d343aa5978bb4af3d575826bbd1e8",
+      "numerical_gates_passed": 6,
+      "timed_cases": 12,
+      "failures": [],
+      "measured_source_hashes": "retained in compressed report",
+      "warmup_note": "CPU/MPS pipeline timings include input generation/transfer, forward, backward, Adam and constraints; requested recording is included in its separate report."
+    },
+    "recording-prefetch": {
+      "file": "recording-prefetch.json.gz",
+      "uncompressed_sha256": "023f61772783d5a1f7842fcacb18e259fe411133220b586d25c6d169144821cf",
+      "numerical_gates_passed": 4,
+      "timed_cases": 9,
+      "failures": [],
+      "measured_source_hashes": "retained in compressed report",
+      "warmup_note": "CPU/MPS pipeline timings include input generation/transfer, forward, backward, Adam and constraints; requested recording is included in its separate report."
+    }
+  },
+  "coba_one_second": [
+    {
+      "device": "mps",
+      "batch_size": 8,
+      "requested_block_steps": 1,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "warm_samples_per_s": 18.347587954040083,
+      "cold_epoch_s": 1.2722500000381842,
+      "warm_epoch_s": [
+        1.088080707937479,
+        1.1187527080764994,
+        1.0900615410646424
+      ],
+      "setup_s": 0.020151541917584836
+    },
+    {
+      "device": "mps",
+      "batch_size": 8,
+      "requested_block_steps": 4,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "warm_samples_per_s": 41.953729197691516,
+      "cold_epoch_s": 1.0296427080174908,
+      "warm_epoch_s": [
+        0.4821666249772534,
+        0.4759537499630824,
+        0.4767156670568511
+      ],
+      "setup_s": 0.014244207995943725
+    },
+    {
+      "device": "mps",
+      "batch_size": 8,
+      "requested_block_steps": 16,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 16,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "MPS block size above validated limit (4)"
+        ]
+      },
+      "warm_samples_per_s": 21.017911448943824,
+      "cold_epoch_s": 1.367478625033982,
+      "warm_epoch_s": [
+        0.9515693340217695,
+        1.0776977919740602,
+        0.9358972089830786
+      ],
+      "setup_s": 0.017084458959288895
+    },
+    {
+      "device": "cpu",
+      "batch_size": 8,
+      "requested_block_steps": 1,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "warm_samples_per_s": 35.20291620916239,
+      "cold_epoch_s": 0.9264424170833081,
+      "warm_epoch_s": [
+        0.5637686250265688,
+        0.760183957987465,
+        0.5681347500067204
+      ],
+      "setup_s": 0.013412332977168262
+    },
+    {
+      "device": "cpu",
+      "batch_size": 8,
+      "requested_block_steps": 4,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "warm_samples_per_s": 97.8676877234322,
+      "cold_epoch_s": 0.6747848750092089,
+      "warm_epoch_s": [
+        0.20486208400689065,
+        0.2043575409334153,
+        0.2036005420377478
+      ],
+      "setup_s": 0.01685870799701661
+    },
+    {
+      "device": "cpu",
+      "batch_size": 8,
+      "requested_block_steps": 16,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "warm_samples_per_s": 110.91903138426757,
+      "cold_epoch_s": 10.043575749965385,
+      "warm_epoch_s": [
+        0.19019566604401916,
+        0.17970020894426852,
+        0.18031170801259577
+      ],
+      "setup_s": 0.012097208993509412
+    },
+    {
+      "device": "mps",
+      "batch_size": 32,
+      "requested_block_steps": 1,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "warm_samples_per_s": 81.69474031540454,
+      "cold_epoch_s": 1.266514000017196,
+      "warm_epoch_s": [
+        1.0056040410418063,
+        0.9280323339626193,
+        0.9792552089784294
+      ],
+      "setup_s": 0.01662187499459833
+    },
+    {
+      "device": "mps",
+      "batch_size": 32,
+      "requested_block_steps": 4,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "warm_samples_per_s": 165.58747310316798,
+      "cold_epoch_s": 1.0418031249428168,
+      "warm_epoch_s": [
+        0.4960257080383599,
+        0.48312833392992616,
+        0.4762802920304239
+      ],
+      "setup_s": 0.019414125010371208
+    },
+    {
+      "device": "cpu",
+      "batch_size": 32,
+      "requested_block_steps": 1,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "warm_samples_per_s": 104.26799302612663,
+      "cold_epoch_s": 6.600281541002914,
+      "warm_epoch_s": [
+        0.7672536669997498,
+        0.8192979160230607,
+        0.723817833000794
+      ],
+      "setup_s": 0.01862470794003457
+    },
+    {
+      "device": "cpu",
+      "batch_size": 32,
+      "requested_block_steps": 4,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "warm_samples_per_s": 215.32076814702285,
+      "cold_epoch_s": 10.135402749991044,
+      "warm_epoch_s": [
+        0.37219091691076756,
+        0.35502404102589935,
+        0.37153870798647404
+      ],
+      "setup_s": 0.019135666894726455
+    }
+  ],
+  "native_shd_smoke": {
+    "kind": "synthetic-smoke",
+    "completed_updates": 2,
+    "wall_s": 3.474490541033447,
+    "wall_scope": "data preparation, graph authoring, native train call and result verification; excludes process/Modal startup",
+    "peak_cuda_allocated_bytes": null,
+    "peak_cuda_reserved_bytes": null,
+    "memory_scope": "native training including validation/checkpointing and final parameter verification; allocator reserved pool may predate reset"
+  },
+  "native_shd_configuration": {
+    "file": "native-shd-configuration.json.gz",
+    "uncompressed_sha256": "ec03ce21018be41006306b89db4131e64ee1551537e086ec3c4b97162c28ce72"
+  }
+}

@@ -5,14 +5,10 @@ import pytest
 import torch
 
 from snnlab import lang
-from snnlab.sim import (
-    DenseArrayBinding,
-    ExecutionResult,
-    ExecutionSpec,
-    PoissonInputBinding,
-    simulate,
-    train,
-)
+from snnlab.sim import DenseArrayBinding, ExecutionResult, PoissonInputBinding
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import direct_train_bundle
 
 

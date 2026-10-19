@@ -5,7 +5,7 @@ description: PyTorch module for executing a compiled spiking-network graph, acce
 
 `GraphExecutor` is a `torch.nn.Module` that executes a prepared graph plan. Import it from `snnlab.sim`.
 
-Use this class when composing a spiking network with ordinary PyTorch layers or writing an external optimization loop. For bundle loading, input bindings and execution provenance, use [ExecutionSpec](/api/sim/execution-spec) with `build`, `simulate`, `infer` or `train`.
+Use this class when composing a spiking network with ordinary PyTorch layers or writing an external optimization loop. For bundle loading, input bindings and execution provenance, use [Execution Options](/api/sim/execution-spec) with `build`, `simulate`, `infer` or `train`.
 
 ## Constructor
 
@@ -20,7 +20,8 @@ GraphExecutor(
     surrogate_slope=5.0,
     surrogate=None,
     extension_validation="structural",
-    compile_mode=None,
+    compile_mode="default",
+    compile_block_steps=1,
     projection_mode="fast",
 )
 ```
@@ -32,15 +33,19 @@ GraphExecutor(
 | `trainable_parameters` | `Sequence[str]` | Graph parameter IDs whose tensors require gradients. The default selects none. |
 | `surrogate_slope` | `float` | Default slope for the executor's surrogate spike derivative. Neuron definitions can also specify their own slope. |
 | `surrogate` | `Mapping[str, Any]` or `None` | Serialized `FastSigmoid` or custom surrogate configuration. Built-in settings override `surrogate_slope`; registered implementations must be imported before use. |
-| `compile_mode` | `None` or `"default"` | Opt-in `torch.compile` for prepared built-in neuron/readout kernels. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls). |
+| `compile_mode` | `None` or `"default"` | Default `torch.compile` for built-in/custom dynamics, custom graph operations, surrogate derivatives and post-update weight constraints; `None` disables compilation. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls). |
+
+`compile_block_steps` is an integer from 1 to 64 (default 1). Values above 1 opt into bounded network compilation for compatible graphs. Forward metrics report `execution_path` with selected block size and fallback reasons. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls).
 
 `extension_validation` accepts `"structural"` (default) or `"strict"`. Opt into strict mode while developing custom callbacks or investigating numerical failures. Structural mode skips custom neuron/synapse step value checks and surrogate derivative finite checks while retaining tensor contracts; initialization and restored state stay strict. Invalid values may propagate silently. See [validation policy](/api/sim/execution-spec#custom-dynamics-validation) for details. Surrogate dispatch is cached per executor; reconstruct the executor after changing its surrogate configuration. Resolved surrogate settings and `compile_mode` appear in build and forward metrics. Non-default built-in threshold conventions bind runtime-state compatibility; changing between inclusive and exclusive built-in thresholds rejects continuation. Default and registered-callback state identities retain their historical convention.
 
 `projection_mode="fast"` defaults to direct drive for built-in exactly-zero-decay projections. `"strict"` preserves historical zero multiplication and IEEE nonfinite propagation. This is independent of custom extension value validation. See [projection arithmetic and result snapshots](/api/sim/execution-spec#projection-arithmetic-and-result-snapshots) for gradients, caches and continuation compatibility.
 
-Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Selecting trainable parameters enables gradients; it does not create an optimizer or perform training.
+Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Floating voltage, spike, synaptic and adaptive state follow the model dtype, including `.half()`, `.bfloat16()` and `.double()` with matching inputs. Refractory counters remain integer. MPS has no float64 support. Runtime/checkpoint/recording storage supports bfloat16 through versioned lossless bit payloads. NumPy inference-analysis caches instead widen bfloat16 values exactly to float32 and record `snnlab.inference-bfloat16/v1` in their manifest. Precision changes are explicit and can change spike decisions; reduced precision does not establish accuracy equivalence. CPU/CUDA support float16, bfloat16, float32 and float64; actual kernel/compiler support also depends on installed PyTorch and hardware.
 
-When using a compiled training recipe, pass its `resolved_parameters.trainable` and complete `surrogate` configuration explicitly, or let `build(ExecutionSpec(...))` configure the executor.
+Selecting trainable parameters enables gradients; it does not create an optimizer or perform training.
+
+When using a compiled training recipe, pass its `resolved_parameters.trainable` and complete `surrogate` configuration explicitly, or let `build(graph=bundle.graph, training=bundle.training)` configure the executor.
 
 ## plan_graph and GraphPlan
 

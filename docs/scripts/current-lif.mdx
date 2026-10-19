@@ -19,7 +19,7 @@ The script saves `network.png` and `current-lif.png` beside itself. Graphviz's `
 
 ```python
 from snnlab import lang, viz
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import PoissonInputBinding, simulate
 
 DT_MS = 0.5
 DURATION_MS = 500
@@ -37,7 +37,7 @@ SEED = 17
 {{INPUTS}}
 ```
 
-The network input declares four spike channels. The binding supplies 500 ms of Poisson spikes at 80 Hz per channel, using a fixed seed. See [ExecutionSpec input bindings](/api/sim/execution-spec#inputs) for dense arrays/tensors, event streams and dataset inputs.
+The network input declares four spike channels. The binding supplies 500 ms of Poisson spikes at 80 Hz per channel, using a fixed seed. See [Execution input bindings](/api/sim/execution-spec#inputs) for dense arrays/tensors, event streams and dataset inputs.
 
 ## 3. Define the current-based network
 

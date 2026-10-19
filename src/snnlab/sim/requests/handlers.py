@@ -47,6 +47,27 @@ def _projection_protocol(protocol, mode):
     return result
 
 
+def _compilation_protocol(protocol, spec):
+    """Bind opt-in block policy for exact optimizer/checkpoint replay."""
+    result = dict(protocol)
+    expected = (
+        {
+            "schema": "snnlab.network-blocks/v1",
+            "compile_mode": spec.compile_mode,
+            "block_steps": spec.compile_block_steps,
+        }
+        if spec.compile_block_steps > 1
+        else None
+    )
+    if result.get("network_blocks", expected) != expected:
+        raise ValueError("execution protocol network_blocks does not match request")
+    if expected is not None:
+        result["network_blocks"] = expected
+    else:
+        result.pop("network_blocks", None)
+    return result
+
+
 def _synchronize_device(device):
     device = torch.device(device)
     if device.type == "cuda":
@@ -114,6 +135,7 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
         surrogate=surrogate,
         extension_validation=spec.extension_validation,
         compile_mode=spec.compile_mode,
+        compile_block_steps=spec.compile_block_steps,
         projection_mode=spec.projection_mode,
     ).to(device)
     return ExecutionResult(
@@ -128,14 +150,17 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
             "extension_validation": model.extension_validation,
             "projection_mode": model.projection_mode,
             "compile_mode": model.compile_mode,
+            "compile_block_steps": model.compile_block_steps,
             "surrogate": copy.deepcopy(model.surrogate_config),
             "compiled_populations": [
                 row["id"]
                 for row in model.plan.populations
                 if model.compile_mode is not None
-                and model.surrogate is None
                 and model._neuron_steps[row["id"]] is not None
             ],
+            "compiled_projections": (
+                list(model._synapse_steps) if model.compile_mode is not None else []
+            ),
             "training_schema": training.get("schema") if training else None,
         },
     )
@@ -319,6 +344,7 @@ def simulate(
             protocol=spec.protocol,
         )
     protocol = _projection_protocol(resolved_inputs.protocol, spec.projection_mode)
+    protocol = _compilation_protocol(protocol, spec)
     resolved_inputs = (
         resolved_inputs.with_protocol(protocol)
         if isinstance(resolved_inputs, DatasetProvider)

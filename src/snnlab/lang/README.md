@@ -213,18 +213,16 @@ still data-only and does not import this authoring package.
 
 ```python
 import torch
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import DenseArrayBinding, simulate
 
-result = simulate(ExecutionSpec(
-    kind="simulate",
-    executor="graph",
+result = simulate(
     bundle="small_ping.bundle",
     input_bindings=(DenseArrayBinding("events", torch.zeros(100, 1, 128)),),
-))
+)
 ```
 
 Pass dense tensors, sparse events, generated Poisson spikes or dataset snapshots
-as typed binding objects through the single `ExecutionSpec.input_bindings`
+as typed binding objects through the single `input_bindings`
 sequence. Dense bindings can include explicit provenance in their `source`
 mapping.
 
@@ -263,7 +261,7 @@ copies stored values without rescaling. See the documentation Parameters
 reference for examples and compatibility rules.
 
 The typed graph API supports deterministic single-batch AdamW updates for the
-validated cross-entropy and spike-budget vocabulary. `ExecutionSpec` supplies
+validated cross-entropy and spike-budget vocabulary. Execution keywords supply
 resolved inputs and external targets; a bundle may authenticate and supply its
 training recipe. Results expose per-update loss components, named gradients,
 parameters, and optimizer state.
@@ -299,18 +297,16 @@ state is not converted. Checkpoints authenticate against the source graph
 before named, same-shaped parameters load into the effective graph.
 
 ```python
-result = simulate(ExecutionSpec(
-    kind="simulate",
-    executor="graph",
+result = simulate(
     bundle="small_ping.bundle",
     checkpoint="train-run/selected.checkpoint",
     input_bindings=(binding,),
-    options={"inference_overrides": {
+    inference_overrides={
         "duration_ms": 400.0,
         "input_rate_hz": 25.0,
         "projection_scales": {"cell_I_to_E": 0.5},
-    }},
-))
+    },
+)
 ```
 
 The CLI accepts repeatable `--scale-projection ID=FACTOR`; generated Poisson
@@ -360,7 +356,7 @@ acceptance thresholds remain campaign decisions rather than executor defaults.
 
 ### Diagnostic retention
 
-`net.output` declares results returned in `result.outputs`. `net.expose` declares diagnostics returned by default in `result.diagnostics`; pass `diagnostics=False` to `ExecutionSpec` to disable those tensors without affecting outputs or training regularizers. There are no `recording` or `recording_fields` request arguments. Population signals and `projection.conductance` must be explicitly exposed to collect their diagnostic histories.
+`net.output` declares results returned in `result.outputs`. `net.expose` declares diagnostics returned by default in `result.diagnostics`; pass `diagnostics=False` to the execution function to disable those tensors without affecting outputs or training regularizers. There are no `recording` or `recording_fields` request arguments. Population signals and `projection.conductance` must be explicitly exposed to collect their diagnostic histories.
 
 Custom specifications (`CustomNeuron`, `CustomSynapse`, `CustomInitializer`, `CustomConstraint` and custom operations/training helpers) refer to versioned definitions registered through `snnlab.extensions` when authoring. Supply importable module functions or `module:function` callback strings. Compiled graphs and training recipes retain those references, units and optional exact distribution versions under `extensions`; their digests cover this metadata. Saved bundles automatically resolve the callbacks in a fresh process from modules available in its environment. They contain no Python source or pickled functions. Saving closures, lambdas or functions defined in `__main__` fails; move them into a module. Missing bundle paths raise `FileNotFoundError`, and unavailable callbacks or incompatible declared package versions fail explicitly. Older name-only bundles retain their manual-registration requirement.
 

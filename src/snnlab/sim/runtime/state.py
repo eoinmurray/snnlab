@@ -15,6 +15,7 @@ import numpy as np
 import torch
 
 from snnlab.sim.artifacts.integrity import _file_digest, _json_digest
+from snnlab.sim.artifacts.tensors import numpy_payload, tensor_payload
 from snnlab.sim.graph.plan import GraphPlan
 
 RUNTIME_STATE_SCHEMA = "tools/snnsim.graph-runtime-state/v1"
@@ -231,7 +232,7 @@ def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path:
         for name in sorted(values):
             key = f"tensor_{len(arrays):04d}"
             value = values[name].detach().cpu().contiguous()
-            arrays[key] = value.numpy()
+            arrays[key], storage = numpy_payload(value)
             tensors.append(
                 {
                     "group": group_name,
@@ -239,6 +240,7 @@ def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path:
                     "key": key,
                     "shape": list(value.shape),
                     "dtype": str(value.dtype).removeprefix("torch."),
+                    **storage,
                 }
             )
     fd, temporary_name = tempfile.mkstemp(prefix=".tensors-", suffix=".npz", dir=root)
@@ -327,13 +329,9 @@ def load_runtime_state(
             )
         for row in manifest["tensors"]:
             array = archive[row["key"]]
-            if list(array.shape) != row["shape"] or str(array.dtype) != row["dtype"]:
-                raise ValueError(
-                    f"runtime-state tensor {row['group']}.{row['name']} metadata does not match tensors.npz"
-                )
-            groups[row["group"]][row["name"]] = torch.from_numpy(array.copy()).to(
-                device
-            )
+            groups[row["group"]][row["name"]] = tensor_payload(
+                array, row, label=f"runtime-state tensor {row['group']}.{row['name']}"
+            ).to(device)
     return GraphRuntimeState(
         signature=manifest["signature"],
         compatibility=manifest["compatibility"],

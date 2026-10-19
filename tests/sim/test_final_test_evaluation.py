@@ -13,12 +13,10 @@ from snnlab.sim import (
     GraphExecutor,
     SelectionMetric,
     TrainingMetrics,
-    build,
-    train,
 )
-from snnlab.sim import (
-    TestSpec as HeldOutTestSpec,
-)
+from snnlab.sim import TestSpec as HeldOutTestSpec
+from snnlab.sim.requests.handlers import build
+from snnlab.sim.training.trainer import train
 from tests.sim.test_execution_epochs import request
 
 

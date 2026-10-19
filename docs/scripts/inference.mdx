@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, infer
+from snnlab.sim import DenseArrayBinding, infer
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 TRAINING_DIR = OUTPUT_DIR.parent / "training"
@@ -73,7 +73,7 @@ Labels are used to assess predictions after inference. They are not passed to `i
 {{INFER}}
 ```
 
-[`ExecutionSpec.checkpoint`](/api/sim/execution-spec#checkpoint) loads the Training checkpoint's named parameters. Inference checks the graph identity and parameter compatibility. It does not restore the optimizer or resume training.
+[`checkpoint`](/api/sim/execution-spec#checkpoint) loads the Training checkpoint's named parameters. Inference checks the graph identity and parameter compatibility. It does not restore the optimizer or resume training.
 
 `torch.no_grad()` prevents gradient tracking. There is no optimizer step or training call. Diagnostics are enabled by default, so the signals exposed in Training are available for the plots: input spikes, E spikes and readout voltages.
 

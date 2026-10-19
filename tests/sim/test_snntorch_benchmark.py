@@ -3,6 +3,7 @@
 import importlib
 import json
 import sys
+from functools import wraps
 from pathlib import Path
 
 import pytest
@@ -111,8 +112,9 @@ def test_two_epoch_training_and_plot_artifacts_keep_partial_batches(
     native_train = comparison.train
     calls = []
 
-    def capture_train(execution):
-        result = native_train(execution)
+    @wraps(native_train)
+    def capture_train(**execution):
+        result = native_train(**execution)
         calls.append((execution, result))
         return result
 
@@ -123,11 +125,10 @@ def test_two_epoch_training_and_plot_artifacts_keep_partial_batches(
     ]
     assert len(calls) == 1
     execution, native_result = calls[0]
-    assert isinstance(execution, comparison.ExecutionSpec)
-    assert execution.epochs == 2 and execution.batch_size == 8 and execution.shuffle
-    assert execution.validation is not None
-    assert execution.training_timing
-    assert execution.training["optimizer"]["kind"] == "custom_optimizer"
+    assert execution["epochs"] == 2 and execution["batch_size"] == 8 and execution["shuffle"]
+    assert execution["validation"] is not None
+    assert execution["training_timing"]
+    assert execution["training"]["optimizer"]["kind"] == "custom_optimizer"
     assert native_result.training_checkpoint.completed_updates == 6
     assert [row["epoch"] for row in native_result.metrics["epochs"]] == [0, 1, 2]
     assert results[1]["training_api"] == "snnlab.sim.train"
@@ -228,6 +229,6 @@ def test_runtime_gate_accepts_newer_release_and_checks_timing_api(monkeypatch):
     with pytest.raises(RuntimeError, match="requires SNNLab"):
         comparison.require_optimized_runtime()
     monkeypatch.setattr(comparison, "snnlab_version", "0.13.0")
-    monkeypatch.setattr(comparison, "ExecutionSpec", lambda: None)
+    monkeypatch.setattr(comparison, "train", lambda: None)
     with pytest.raises(RuntimeError, match="training_timing"):
         comparison.require_optimized_runtime()

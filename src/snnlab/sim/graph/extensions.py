@@ -50,15 +50,32 @@ def checked_state(value, template, name, *, required=(), check_values=True):
                 device=previous.device,
                 dtype=previous.dtype,
                 name=f"{name}.{key}",
-                check_values=check_values,
+                check_values=False,
             )
-        elif check_values and not torch.isfinite(tensor).all():
-            raise ValueError(f"{name}.{key} must be a finite tensor")
+    if check_values:
+        # Structural validation above retains useful errors. On valid states,
+        # reduce finite flags per device before asking Python for a scalar.
+        by_device = {}
+        for key, tensor in value.items():
+            by_device.setdefault(tensor.device, []).append(
+                (key, torch.isfinite(tensor).all())
+            )
+        for flags in by_device.values():
+            if not torch.stack([flag for _, flag in flags]).all():
+                for key, flag in flags:
+                    if not flag:
+                        raise ValueError(f"{name}.{key} must be a finite tensor")
     return dict(value)
 
 
 def make_spike(
-    *, slope, custom=None, check_values=True, gradient_scale=1.0, threshold_inclusive=True
+    *,
+    slope,
+    custom=None,
+    check_values=True,
+    gradient_scale=1.0,
+    threshold_inclusive=True,
+    compile_mode=None,
 ):
     """Resolve a surrogate and create its autograd dispatch once per executor."""
     if custom is None:
@@ -71,6 +88,16 @@ def make_spike(
 
     config = copy.deepcopy(custom.get("config", {}))
 
+    def derivative(value):
+        return definition.function(value, config)
+
+    # Strict diagnostics cross an eager autograd boundary; the derivative's
+    # numerical work can still compile independently of the host value checks.
+    if compile_mode is not None:
+        from snnlab.sim.graph.kernels import prepare_kernel
+
+        derivative = prepare_kernel(derivative, compile_mode)
+
     class RegisteredSpike(torch.autograd.Function):
         @staticmethod
         def forward(ctx, x):
@@ -80,17 +107,19 @@ def make_spike(
         @staticmethod
         def backward(ctx, gradient):
             (x,) = ctx.saved_tensors
-            derivative = definition.function(x, config)
+            values = derivative(x)
             checked_tensor(
-                derivative,
+                values,
                 shape=x.shape,
                 device=x.device,
                 dtype=x.dtype,
                 name=definition.name,
                 check_values=check_values,
             )
-            return gradient * derivative
+            return gradient * values
 
+    if compile_mode is not None and check_values:
+        return torch.compiler.disable(RegisteredSpike.apply)
     return RegisteredSpike.apply
 
 

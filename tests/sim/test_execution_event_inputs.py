@@ -13,13 +13,13 @@ from snnlab.lang.compilation.serialization import digest
 from snnlab.sim import (
     DenseArrayBinding,
     EventStreamBinding,
-    ExecutionSpec,
     load_event_stream_bindings,
     resolve_event_stream_bindings,
     resolve_input_bindings,
-    simulate,
 )
 from snnlab.sim.cli import main
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 from tests.sim._execution_builders import (
     coupled_graph as _coupled_graph,
 )

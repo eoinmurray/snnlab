@@ -5,7 +5,7 @@ description: Export the effective network, execution settings and optional param
 
 Import `SnapshotSpec`, `RunSnapshot` and `write_run_snapshot` from `snnlab.sim`.
 Snapshots are optional inspection/provenance artifacts for `simulate`, `infer`,
-`train` and their `execute_request` dispatch paths. They capture the compiled
+`train`. They capture the compiled
 network and effective settings, rather than only the original request.
 
 ## Enable an export
@@ -14,18 +14,17 @@ network and effective settings, rather than only the original request.
 from snnlab import sim
 
 result = sim.infer(
-    sim.ExecutionSpec(
-        kind="infer",
-        bundle="network.bundle",
-        checkpoint="checkpoints/selected",
-        input_bindings=(
-            sim.PoissonInputBinding(
-                input_id="inputs", steps_count=100,
-                rates_hz=(20.0,), seed=17,
-            ),
+    bundle="network.bundle",
+    checkpoint="checkpoints/selected",
+    input_bindings=(
+        sim.PoissonInputBinding(
+            input_id="inputs",
+            steps_count=100,
+            rates_hz=(20.0,),
+            seed=17,
         ),
-        snapshot="runs/example",
-    )
+    ),
+    snapshot="runs/example",
 )
 ```
 

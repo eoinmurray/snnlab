@@ -1,92 +1,27 @@
 ---
-title: ExecutionSpec
-description: Complete reference for configuring graph construction, simulation, inference and training.
+title: Execution Options
+description: Keyword arguments for graph construction, simulation, inference and training.
 ---
 
-`ExecutionSpec` describes one execution request. It selects the graph, input data, device, diagnostics and optional training or inference settings. Creating the object does not run anything; pass it to `build`, `simulate`, `infer`, `train` or `execute_request`.
-
-Import it from `snnlab.sim`. This reference describes the current request contract in [requests/spec.py](https://github.com/eoinmurray/snnlab/blob/main/src/snnlab/sim/requests/spec.py). The [quickstart](/quickstart) demonstrates its simulation use.
-
-## Constructor
+Call `build`, `simulate`, `infer` or `train` from `snnlab.sim` with explicit keyword arguments. The function selects the operation; there is no public request object, `kind` or `executor` argument. Each function returns [ExecutionResult](/api/sim/execution-result).
 
 ```python
-from snnlab.sim import ExecutionSpec
+from snnlab.sim import simulate
 
-ExecutionSpec(
-    kind: Literal["build", "simulate", "train", "infer"],
-    snapshot: str | Path | SnapshotSpec | None = None,
-    executor: Literal["graph"] = "graph",
-    bundle: Path | None = None,
-    graph: Mapping[str, Any] | None = None,
-    input_bindings: Sequence[InputBinding] = (),
-    protocol: Mapping[str, Any] = {},
-    training: Mapping[str, Any] | None = None,
-    targets: Mapping[str, torch.Tensor] = {},
-    target_bindings: Sequence[TargetArrayBinding] = (),
-    validation: ValidationSpec | None = None,
-    test: TestSpec | None = None,
-    epochs: int = 0,
-    batch_size: int | None = None,
-    shuffle: bool = False,
-    batching: Batching | None = None,
-    metrics: TrainingMetrics | None = None,
-    on_epoch_end: Callable[[EpochReport], None] | None = None,
-    updates: int | None = None,
-    save_final_checkpoint: str | Path | None = None,
-    save_selected_checkpoint: str | Path | None = None,
-    seed: int = 0,
-    device: str = "auto",
-    diagnostics: bool = True,
-    checkpoint: Path | None = None,
-    runtime_state: GraphRuntimeState | None = None,
-    options: Mapping[str, Any] = {},
-    observations: EpochObservations | None = None,
-    checkpoint_selection: CheckpointSelection | None = None,
-    interventions: Sequence[Intervention] = (),
-    resets: Sequence[ResetVoltage] = (),
-    decisions: DecisionSegments | None = None,
-    measurement: MeasurementWindow | None = None,
-    recording: RecordingSpec | None = None,
-    retain_outputs: bool = True,
-    retain_parameters: bool = True,
-    retain_final_state: bool = True,
-    retain_runtime_state: bool = True,
-    projection_mode: Literal["fast", "strict"] = "fast",
-    extension_validation: Literal["strict", "structural"] = "structural",
-    compile_mode: Literal["default"] | None = None,
-    dataset_prefetch: int = 0,
-    timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
-    training_timing: bool = False,
-    tracing: TraceSpec | None = None,
-)
+result = simulate(graph=bundle.graph, input_bindings=(poisson_input,), device="cpu")
 ```
 
-This is a signature display, not executable construction code. `Path`, `Mapping`, `Sequence`, `Literal`, `Any` and `torch.Tensor` denote Python types. Empty mappings and sequences are created by dataclass factories for each instance; the displayed `{}` defaults are not shared mutable defaults.
+This reference describes the available keyword arguments and binding types. See [Execution Functions](/api/sim/execution-functions) for complete signatures. `ExecutionSpec` is an internal implementation detail shared by the CLI and handlers.
 
-The class is a frozen dataclass. You cannot reassign its fields, but nested mappings, tensors and objects are not deeply frozen. Construction validates execution-control enums, boolean retention/timing flags, recording/measurement types and supported tracing use. Handlers and input resolvers perform additional graph-dependent checks described below.
-
-## Request and graph
-
-### kind
-
-**Type:** `Literal["build", "simulate", "train", "infer"]`. **Required.**
-
-Chooses the handler when using `execute_request(spec)`:
-
-| Value | Operation |
+| Function | Supported options |
 | --- | --- |
-| `"build"` | Validate/lower the graph and initialize a `GraphExecutor`. No input execution. |
-| `"simulate"` | Build and execute the graph using resolved inputs. |
-| `"infer"` | Currently delegates to the graph simulation handler, including checkpoint loading. |
-| `"train"` | Build the graph and perform optimizer updates using a training recipe and targets. |
+| `build` | Graph/bundle, optional training recipe, initialization seed, device, parameter retention and compilation controls. |
+| `simulate`, `infer` | Build options plus input bindings, protocol, dataset batch size, checkpoint, runtime continuation, diagnostics, interventions, recording, retention, snapshots and inference overrides. |
+| `train` | Build options plus training inputs/targets, schedule, batching, metrics, validation/test data, checkpoint resume/selection, observations, tracing and snapshots. |
 
-Calling a handler directly selects that operation independently of `kind`: `simulate(spec)` does not dispatch on `spec.kind`. Keep `kind` consistent with the handler. In particular, `build` only automatically loads bundle training metadata when `kind="train"`. An unsupported `kind` raises `ValueError` in the dispatcher.
+Unsupported keywords raise `TypeError`; for example, `simulate(epochs=10)` is rejected. Shared controls and operation-specific validation run before execution; graph-dependent validation occurs during planning and input resolution. Optional mapping arguments default to `None` and are normalized to independent empty mappings internally.
 
-### executor
-
-**Type:** `Literal["graph"]`. **Default:** `"graph"`.
-
-The Python API and CLI execute graphs. `ExecutionSpec` rejects every executor value except `"graph"` with `ValueError`. `execute_request(spec)` dispatches directly to the graph handler.
+## Graph source
 
 ### bundle
 
@@ -96,7 +31,7 @@ Path to a compiled bundle directory containing the graph and its authenticated m
 
 For graph execution, supply `bundle` or `graph`. When `graph` is provided, it takes precedence for construction. If both are supplied, training can still read its recipe from `bundle`; prefer one graph source to avoid ambiguity.
 
-With `kind="train"`, a bundle can supply its `training.json` recipe when the `training` field is absent.
+With `train`, a bundle can supply its `training.json` recipe when the `training` field is absent.
 
 ### graph
 
@@ -124,7 +59,7 @@ All graph inputs must be covered exactly once by name. Names refer to IDs declar
 
 ### InputBinding
 
-[`ExecutionSpec.input_bindings`](/api/sim/execution-spec#input_bindings) is the sole input field on the execution request. `InputBinding` is a public type alias from `snnlab.sim`:
+[`input_bindings`](/api/sim/execution-spec#input_bindings) is the sole input field on the execution request. `InputBinding` is a public type alias from `snnlab.sim`:
 
 ```python
 InputBinding = (
@@ -203,9 +138,9 @@ A dataset snapshot must be the only element of `input_bindings`. During training
 
 ### Automatic batch encoding
 
-Dataset bindings resolve content identity, sample selection, labels and ordering without constructing the whole time-by-sample spike tensor. The provider verifies source-file stability while extracting arrays once into private temporary NPY files, then uses read-only memory mappings. Built-in encoders produce only the current batch on CPU and transfer it to the execution device; custom encoders retain their registered backend/configuration. Temporary mappings live with the provider; they are not a dataset registry. Dataset download and split construction remain caller responsibilities.
+Dataset bindings resolve content identity, sample selection, labels and ordering without constructing the whole time-by-sample spike tensor. The provider verifies source-file stability while extracting arrays once into private temporary NPY files, then uses read-only memory mappings. Built-in rate encoders transfer compact features/rates and generate the current batch on the selected device. Event snapshots are validated/indexed by sample once, then vectorized binary binning visits only the selected samples and transfers compact bin coordinates to the execution device. Prebinned tensors retain CPU preparation and transfer. Custom encoders retain their registered backend/configuration and can opt into a device keyword. Temporary mappings live with the provider; they are not a dataset registry. Dataset download and split construction remain caller responsibilities.
 
-`ExecutionSpec.batch_size` controls the encoded batch size. When omitted for a dataset binding, the default is 32, bounded by sample count. Snapshot training with `epochs=0` automatically runs one epoch; positive epochs and `updates` retain the normal schedule/truncation semantics, including a smaller tail batch. Dense/event/Poisson input bindings retain their existing direct replay/full-batch interfaces.
+`batch_size` controls the encoded batch size. When omitted for a dataset binding, the default is 32, bounded by sample count. Snapshot training with `epochs=0` automatically runs one epoch; positive epochs and `updates` retain the normal schedule/truncation semantics, including a smaller tail batch. Dense/event/Poisson input bindings retain their existing direct replay/full-batch interfaces.
 
 For `rate_poisson`, features must have `(samples, channels)` shape and floating values in `[0, 1]`. Specify a positive timestep-aligned `duration_ms` and **either** `max_rate_hz` for a fixed feature-scaled rate **or** `rates_hz` for categorical rates:
 
@@ -222,9 +157,9 @@ Categorical selection is uniform and independent per presentation: one maximum-p
 
 `prebinned_spikes` and `event_bin` preserve exact supplied spikes with no stochastic re-encoding. Sparse events are binned only for selected samples; unlisted bins are zero. Custom registered encoders receive the same read-only arrays and callback signature as before, but `selected` identifies only the current batch and `seed` is a derived batch/draw seed. Custom callbacks must preserve presentation duration and must not mutate the snapshot or retain full-dataset encoded tensors. Their global Python/NumPy/Torch randomness is scoped to that seed without perturbing model RNG streams.
 
-`result.metrics["execution_protocol"]["batch_encoding"]` uses `snnlab.batch-encoding/v1` and records the encoder backend (CPU for built-ins), fresh-training/fixed-evaluation policy, selected draw seeds and separate ordering/rate/spike stream roots. Derived rate/spike seeds bind phase, epoch, ordered absolute sample indices and draw seed. Epoch order remains `execution_seed + epoch`. Per-update `encoding` metadata records coordinates, stream seeds and selected categorical rates. Input memory scales with presentation steps, batch size and channels; retained outputs and requested diagnostics can still grow with dataset size.
+`result.metrics["execution_protocol"]["batch_encoding"]` uses `snnlab.batch-encoding/v1` and records the encoder backend (the selected device for rate/event encoders), fresh-training/fixed-evaluation policy, selected draw seeds and separate ordering/rate/spike stream roots. Derived rate/spike seeds bind phase, epoch, ordered absolute sample indices and draw seed. Epoch order remains `execution_seed + epoch`. Per-update `encoding` metadata records coordinates, stream seeds and selected categorical rates. Input memory scales with presentation steps, batch size and channels; retained outputs and requested diagnostics can still grow with dataset size.
 
-Checkpoints retain this versioned encoding protocol with epoch/next-batch coordinates and model/optimizer/RNG state. Coordinate-derived streams regenerate the next batch exactly on resume. Changed source contents, encoder settings, seeds, sample selection or batch schedule are rejected. Earlier checkpoints with eagerly encoded/reused dataset spikes cannot silently resume under the new protocol. Exact dense/event input bindings remain available for explicitly retained replay.
+Checkpoints retain this versioned encoding protocol with epoch/next-batch coordinates and model/optimizer/RNG state. Coordinate-derived streams regenerate the next batch on resume under the same recorded backend and software policy. Accelerator rate encoding records `snnlab.poisson-device/v1`, device type, float32 draw dtype and PyTorch version in the encoder identity. CPU draws retain the historical stream; CPU, CUDA and MPS are not claimed to be bitwise equivalent. Categorical rate selection stays on its independent CPU stream. A checkpoint from another encoding backend/policy is rejected instead of silently changing its next input. Changed source contents, encoder settings, seeds, sample selection or batch schedule are rejected. Earlier checkpoints with eagerly encoded/reused dataset spikes cannot silently resume under the new protocol. Exact dense/event input bindings remain available for explicitly retained replay.
 
 Dataset simulation/inference also encodes successive batches using one model/checkpoint load and fixed inference draws, concatenating outputs along the sample axis. `encoding_batches` records each encoded batch. Separate batches start with fresh dynamic neuron state. Multiple-batch results have `runtime_state=None`; dataset runtime continuation requires a single complete batch. Full-batch dense/sparse replay interventions are authenticated before execution and sliced along the selected sample axis for each batch.
 
@@ -249,7 +184,7 @@ Custom training callbacks are documented in [Extensions](/api/lang/extensions#ob
 
 A compiled training recipe, typically `bundle.training`, rather than an authoring `TrainSpec` instance. It describes objectives, parameter groups, optimizer, surrogate gradients and regularizers. When omitted, a training bundle can supply the recipe.
 
-Graph training requires a recipe with resolved trainable parameters and external targets. The trainer supports cross entropy, spike budgets and AdamW, plus registered custom objectives, regularizers, optimizers and surrogates. Unsupported recipes, missing trainable parameters or unsupported optimizers fail. Direct training fields control iteration as described below; the recipe's epoch count is not automatically used by direct `train(spec)`.
+Graph training requires a recipe with resolved trainable parameters and external targets. The trainer supports cross entropy, spike budgets and AdamW, plus registered custom objectives, regularizers, optimizers and surrogates. Unsupported recipes, missing trainable parameters or unsupported optimizers fail. Direct training fields control iteration as described below; the recipe's epoch count is not automatically used by direct `train(...)`.
 
 `build` uses recipe trainable parameter IDs and surrogate slope when present. For a normal simulation request, training objectives and targets are not evaluated.
 
@@ -269,7 +204,7 @@ Explicit target vectors with provenance. Each binding has required `target_id: s
 
 ### training_timing
 
-**Type:** `bool`. **Default:** `False`. Requires `kind="train"`.
+**Type:** `bool`. **Default:** `False`. Available on `train`.
 
 Set `training_timing=True` to return `result.metrics["training_timing"]`. The CLI
 provides `--training-timing`. Timing does not change the recipe, data order, loss,
@@ -277,8 +212,7 @@ checkpoint identity or resume protocol. The metric is absent when disabled, and
 no timing clocks or timing fences are used.
 
 ```python
-execution = ExecutionSpec(
-    kind="train",
+result = train(
     bundle=bundle_path,
     input_bindings=(train_input,),
     targets={"class": train_labels},
@@ -288,7 +222,6 @@ execution = ExecutionSpec(
     shuffle=True,
     training_timing=True,
 )
-result = train(execution)
 timing = result.metrics["training_timing"]
 print(timing["total_s"], timing["training_s"])
 for row in timing["epochs"]:
@@ -342,8 +275,7 @@ validation = ValidationSpec(
     input_bindings=(validation_input,),
     targets={"class": validation_labels},
 )
-execution = ExecutionSpec(
-    kind="train",
+result = train(
     bundle=bundle_path,
     input_bindings=(train_input,),
     targets={"class": train_labels},
@@ -352,7 +284,6 @@ execution = ExecutionSpec(
     batch_size=32,
     shuffle=True,
 )
-result = train(execution)
 history = result.metrics["epochs"]
 ```
 
@@ -362,7 +293,7 @@ Validation uses the same graph, current parameters, execution seed and device. I
 
 For stochastic dataset validation, `encoding_seeds=(101, 103)` requests explicit repeatable draw sets; omission uses the encoder seed for one fixed draw. Each draw evaluates all selected samples in bounded batches, and loss/components/accuracies are sample-weighted across all draws. Epoch rows report `validation_encoding_draws`; observations count each draw's presentations. Encoding seeds require a stochastic dataset encoder, must be distinct non-negative integers, and are bound into validation/selection/audit identity.
 
-This field is used only by graph `train`, and requires positive effective `epochs`. Other handlers do not evaluate validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
+This field is used only by graph `train`, and requires positive effective `epochs`. Only `train` accepts validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
 
 ### test
 
@@ -371,21 +302,21 @@ This field is used only by graph `train`, and requires positive effective `epoch
 Supply a separate held-out test set for one evaluation after all requested epochs finish. Import `TestSpec` from `snnlab.sim`; it has the same fields and input/target binding rules as `ValidationSpec`.
 
 ```python
-execution = ExecutionSpec(
-    kind="train",
+result = train(
     bundle=bundle_path,
     input_bindings=(train_input,),
     targets={"class": train_labels},
     validation=ValidationSpec(
-        input_bindings=(validation_input,), targets={"class": validation_labels},
+        input_bindings=(validation_input,),
+        targets={"class": validation_labels},
     ),
     test=TestSpec(
-        input_bindings=(test_input,), targets={"class": test_labels},
+        input_bindings=(test_input,),
+        targets={"class": test_labels},
     ),
     epochs=20,
     batch_size=32,
 )
-result = train(execution)
 test_metrics = result.metrics["test"]
 ```
 
@@ -416,8 +347,7 @@ observations = EpochObservations(
         ),
     },
 )
-execution = ExecutionSpec(
-    kind="train",
+result = train(
     graph=bundle.graph,
     training=bundle.training,
     input_bindings=train_inputs,
@@ -446,7 +376,7 @@ Audited checkpoints use checkpoint schema version 3, which requires this feature
 
 ### Training controls
 
-These are direct `ExecutionSpec` constructor fields, used by graph `train`:
+These keyword arguments are available on `train`:
 
 | Field | Type and default | Behaviour |
 | --- | --- | --- |
@@ -463,7 +393,7 @@ A resumed dataset schedule starts at the checkpoint's next coordinates and is tr
 
 Dataset bindings automatically use one epoch when `epochs=0` and a maximum default batch size of 32 when `batch_size=None`.
 
-The previous training keys in `options` are no longer accepted by graph `train`; move them to the constructor fields. Inference-specific mappings remain under `options`.
+Pass training settings directly as keyword arguments. Simulation and inference accept overrides through `inference_overrides=`.
 
 ### metrics
 
@@ -508,7 +438,7 @@ batching = Batching(
 )
 ```
 
-`order` is `"sequential"`, `"shuffle"` or `"stratified"`. Sequential preserves input order; shuffle retains the historical CPU `randperm` path. Stratification requires a named training target with one nonnegative integer label per example. Only represented labels form queues; missing classes and scarce classes never create samples. Each sorted class queue is shuffled with a private CPU generator seeded by `ExecutionSpec.seed + zero_based_epoch`. Its examples get fractional positions `(j + 0.5) / class_count`, where `j` is the zero-based queue index. Queues merge by increasing position; a seeded permutation supplies random tie order before stable sorting. The generator is separate from training/encoding RNG streams. Natural unequal class counts remain unchanged; no validation labels are used.
+`order` is `"sequential"`, `"shuffle"` or `"stratified"`. Sequential preserves input order; shuffle retains the historical CPU `randperm` path. Stratification requires a named training target with one nonnegative integer label per example. Only represented labels form queues; missing classes and scarce classes never create samples. Each sorted class queue is shuffled with a private CPU generator seeded by `seed + zero_based_epoch`. Its examples get fractional positions `(j + 0.5) / class_count`, where `j` is the zero-based queue index. Queues merge by increasing position; a seeded permutation supplies random tie order before stable sorting. The generator is separate from training/encoding RNG streams. Natural unequal class counts remain unchanged; no validation labels are used.
 
 With explicit batching, `shuffle=False` is neutral; `shuffle=True` is allowed only with `order="shuffle"`. Contradictory settings raise an error. `stratify_by` requires stratified order.
 
@@ -552,7 +482,9 @@ With `training_timing=True`, `report.timing` contains wall seconds, `mode` and `
 
 Execution seed used for graph parameter initialization and provenance. Training's shuffled epoch ordering uses `seed + epoch`. Interventions default to this seed when their own seed is absent.
 
-Poisson bindings have their own explicit seeds. Dataset bindings separately declare `order_seed`, and rate encoders have an encoder seed. Setting `ExecutionSpec.seed` does not replace these independently configured seeds. A fixed seed supports repeatable runs under the same execution conditions; cross-device numerical equality is a separate question.
+Poisson bindings have their own explicit seeds. Dataset bindings separately declare `order_seed`, and rate encoders have an encoder seed. Setting `seed` does not replace these independently configured seeds. A fixed seed supports repeatable runs under the same execution conditions; cross-device numerical equality is a separate question.
+
+Direct PyTorch executors can use matching float16/bfloat16/float32/float64 weights and inputs; native execution requests retain float32. Runtime state and spike tensors follow the model dtype. Bfloat16 runtime/checkpoint/NPZ recording rows use lossless `snnlab.bfloat16-bits/v1` storage, preserving bits and dtype on load. Inference analysis caches widen those values exactly to NumPy float32 and record `snnlab.inference-bfloat16/v1`. Existing float32 artifact representations stay unchanged. MPS does not support float64.
 
 ### device
 
@@ -575,15 +507,15 @@ net.output("spikes", cells.spikes)
 net.expose(cells.voltage, name="e_voltage")
 bundle = lang.compile(net, target="tools/snnsim")
 
-execution = ExecutionSpec(
-    kind="simulate", graph=bundle.graph, input_bindings=(poisson_input,)
+result = simulate(
+    graph=bundle.graph,
+    input_bindings=(poisson_input,),
 )
-result = simulate(execution)
 spikes = result.outputs["spikes"]
 voltages = result.diagnostics["e_voltage"]
 ```
 
-Compile the network after declaring its outputs and exposed diagnostics. To disable diagnostics for a run, pass `diagnostics=False` to `ExecutionSpec`; outputs, training objectives/regularizers and continuation state are unaffected. The runtime requires a boolean value.
+Compile the network after declaring its outputs and exposed diagnostics. To disable diagnostics for a run, pass `diagnostics=False` to the execution function; outputs, training objectives/regularizers and continuation state are unaffected. The runtime requires a boolean value.
 
 For leaky integrators, expose `.voltage` for post-reset membrane diagnostics or `.pre_reset_voltage` for pre-reset integration samples. See [Voltage sampling](/api/lang/operations-readouts#voltage-sampling) for reductions and older-graph compatibility.
 
@@ -607,7 +539,7 @@ checkpoint_selection = CheckpointSelection(
 )
 ```
 
-Pass this object as `ExecutionSpec.checkpoint_selection`. `split` is `"train"` or `"validation"`; validation selection requires `ValidationSpec`. Epoch selection requires positive `epochs`. `SelectionMetric("loss")` measures total weighted objective and regularizer loss, supports nonclassification recipes, and requires the default `objective=0`. For `"cross_entropy"` and `"accuracy"`, `objective` is the zero-based training objective index and must identify a classification objective (built-in cross entropy or a custom objective registered with `classification=True`). These metrics are measured from that objective's predictions; cross-entropy is **unweighted**, excludes regularizers, and is reported in epoch `*_cross_entropies` mappings. Metrics are sample-weighted across the entire resolved split, with a fixed evaluation seed and minibatch size.
+Pass this object as `checkpoint_selection`. `split` is `"train"` or `"validation"`; validation selection requires `ValidationSpec`. Epoch selection requires positive `epochs`. `SelectionMetric("loss")` measures total weighted objective and regularizer loss, supports nonclassification recipes, and requires the default `objective=0`. For `"cross_entropy"` and `"accuracy"`, `objective` is the zero-based training objective index and must identify a classification objective (built-in cross entropy or a custom objective registered with `classification=True`). These metrics are measured from that objective's predictions; cross-entropy is **unweighted**, excludes regularizers, and is reported in epoch `*_cross_entropies` mappings. Metrics are sample-weighted across the entire resolved split, with a fixed evaluation seed and minibatch size.
 
 `direction` supports `"min"` and `"max"`. Tie-break metrics are checked in declared order after an exact primary-score tie. An exact tie across all metrics retains the earliest candidate. Duplicate metrics, unknown indices, incompatible objectives, missing scores and non-finite scores fail explicitly. Only `cadence="completed_epoch"` is supported. The saved parameters, optimizer/RNG state and epoch coordinates belong to the weights actually evaluated.
 
@@ -643,7 +575,7 @@ Dynamic state for continuing a simulation trajectory. Obtain it from `result.run
 
 This is distinct from `checkpoint`: a weight checkpoint supplies parameters; runtime state supplies ongoing neuron/synapse/delay state. Continuation validates graph/state compatibility, names, shapes, dtypes and device.
 
-`simulate(spec, runtime_state=state)` can also supply state as a keyword argument. A non-`None` keyword state takes precedence over `spec.runtime_state`. The timestep override cannot be combined with either form of runtime state. `build` and `train` do not consume this field.
+Pass `runtime_state=state` to `simulate` or `infer`. Timestep overrides cannot be combined with runtime continuation. `build` and `train` have no runtime-state argument.
 
 ## interventions
 
@@ -665,15 +597,11 @@ Replay must cover the complete current absolute execution window with matching t
 
 `save_spike_replay` / `load_spike_replay` persist and authenticate replay bytes. `intervention_identity` resolves expected policy/window metadata for cache checking. See [replay persistence and cache checks](/api/sim/interventions#replay-files-and-cache-checks) and [Inference Artifacts](/api/sim/inference-artifacts).
 
-## options
+## inference_overrides
 
-**Type:** `Mapping[str, Any]`. **Default:** empty mapping.
+**Type:** `Mapping[str, Any] | None`. **Default:** `None`.
 
-Inference and compatibility options. Training controls are explicit fields described above. The top-level mapping is not a universally validated configuration schema: unknown top-level keys can be ignored. Only the keys consumed below affect direct graph handlers. CLI adapters may carry additional CLI fields here; that does not make them supported typed graph options.
-
-### inference_overrides
-
-`options["inference_overrides"]` is a mapping applied by simulation/inference. Supported keys are:
+`inference_overrides` is a keyword argument applied by simulation/inference. Supported keys are:
 
 | Key | Value | Effect |
 | --- | --- | --- |
@@ -691,7 +619,7 @@ Timestep recompilation rejects runtime continuation state. When using a checkpoi
 The named objects below follow the same structure as Quickstart. Here, `compiled_graph` is an already compiled graph declaring a spike input named `"inputs"` with `(time, batch, 16)` axes; its graph timestep determines physical duration.
 
 ```python
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import PoissonInputBinding, simulate
 
 poisson_input = PoissonInputBinding(
     input_id="inputs",
@@ -700,18 +628,15 @@ poisson_input = PoissonInputBinding(
     seed=17,
 )
 
-execution = ExecutionSpec(
-    kind="simulate",
+result = simulate(
     graph=compiled_graph,
     input_bindings=(poisson_input,),
     seed=17,
     device="cpu",
 )
-
-result = simulate(execution)
 ```
 
-`build(spec)`, `simulate(spec)`, `infer(spec)` and `train(spec)` return `ExecutionResult`. `execute_request(spec)` dispatches to them using `kind` for graph execution. None of the direct simulation handlers automatically writes CLI output directories or PNGs; save the returned tensors or render them explicitly.
+`build(...)`, `simulate(...)`, `infer(...)` and `train(...)` return `ExecutionResult`. Call the function for the operation you want; no request kind is required. None of the direct simulation handlers automatically writes CLI output directories or PNGs; save the returned tensors or render them explicitly.
 
 ## Returned result
 
@@ -719,14 +644,14 @@ Every execution handler returns [ExecutionResult](/api/sim/execution-result). Th
 
 ## Validation summary
 
-1. Use the default graph executor (or set `executor="graph"` explicitly), a supported operation, and either compiled graph data or a bundle.
+1. Call the appropriate execution function with either compiled graph data or a bundle.
 2. Cover every graph input by its exact ID, with no duplicates or overlapping binding routes.
 3. Keep time/batch axes consistent; satisfy declared feature shapes, binary spike/mask rules and finite-value checks.
 4. Supply all input sources through `input_bindings`. Dense/event bindings may coexist for different inputs; Poisson and dataset snapshot bindings follow the [input compatibility rules](/api/sim/execution-spec#inputbinding).
 5. For training, supply a compiled recipe and exactly matching named targets, or a dataset snapshot carrying its target binding.
 6. Use valid devices, the diagnostics flag and handler-specific options. Respect checkpoint and runtime-state compatibility.
 
-Validation happens when a handler resolves the request. Frozen dataclass construction alone is not proof that a request is executable.
+Execution functions validate options and resolve graph-dependent requirements before stepping. Binding construction alone does not establish compatibility with a graph.
 
 
 ## resets
@@ -764,15 +689,27 @@ The same keyword is accepted by `GraphExecutor`; the CLI uses `--extension-valid
 
 ## GPU performance controls
 
-`compile_mode=None` retains eager execution. `"default"` prepares separate full-graph `torch.compile` kernels for built-in LIF, ALIF, AdEx and leaky-integrator updates. Projection matrix products, timestep scheduling, delays, interventions, recordings and custom neuron/synapse callbacks remain eager. Registered custom surrogates use eager neuron dispatch to preserve their validation contract. Build metrics report `compile_mode` and `compiled_populations`. Prepared kernels capture the neuron configuration at construction; construct a new executor after changing it. Compilation is lazy: first calls, training/inference switches and new shapes can compile additional variants. Include that cost when assessing short jobs. Compiler failures on a requested compiled kernel are surfaced rather than silently falling back. Use `compile_mode=None` for environments without a compatible compiler. Compare outputs and gradients before adopting compilation for a scientific workload, since fused floating-point arithmetic can differ slightly.
+`compile_mode="default"` is the default for the execution function and `GraphExecutor`. It prepares `torch.compile` kernels for built-in and custom neuron/synapse updates, custom graph operations, surrogate derivatives and post-update weight constraints. Existing `step(context)` callback signatures are unchanged; no decorator or special neuron language is needed. Registration/configuration resolution happens outside the timestep loop, and returned tensor contracts are checked outside the compiled updates. Weight and state initialization, projection matrix products, other graph operations, timestep scheduling, delays, interventions, recording, objectives, regularizers, optimizer factories and dataset encoders retain eager orchestration. Matrix products already use PyTorch's native device kernels.
 
-`dataset_prefetch=0` preserves synchronous batch preparation. Values from 1 to 8 enable bounded lookahead for built-in dataset encoders in training, validation and dataset inference. A single worker prepares CPU batches in order with the existing per-batch seeds. CUDA uses pinned CPU buffers, a transfer stream, events and consumer-stream lifetime tracking; other devices retain synchronous transfers. Custom encoders run synchronously on the caller thread because callbacks can consume global random state. Prefetch buffers are released when iteration completes or fails. These execution controls do not alter dataset identity, generated spikes or checkpoint data order. Larger lookahead increases host and device memory use; start with 2 and measure the complete workload.
+`compile_block_steps=1` keeps the individual-kernel loop. Values from 2 to 64 opt into the bounded network path from issue #22, combining projection products, synaptic updates, input accumulation, ordered built-in neuron/readout updates, pooling/convolution, modulation and causal delay histories in a tensor graph. Internal blocks preserve autograd; final partial blocks compile their own shape. Post-block readout operations retain the reference reductions. This is an internal execution choice: graph bundles and runtime-state signatures keep their numerical definitions. Training/simulation protocols bind opt-in block settings as `network_blocks` with `snnlab.network-blocks/v1`; training checkpoints reject changed block sizes or compile modes. The default one-step protocol keeps its existing identity. Build/snapshot metrics record the requested size; forward `execution_path` and training `execution_paths` record the selected path and reasons for eager orchestration.
+
+Blocks currently fall back for registered neurons/synapses/surrogates, recording, online reductions, spike interventions, resets/decision segments and tracing. Autograd also falls back when multiple inputs require input-gradient handling, retained/required signals have different projection-parameter dependencies or when a delayed trajectory is too short for the conservative reachability check. This prevents compiler-created zero gradients from updating parameters that eager execution leaves unused. Custom callbacks keep their prepared individual kernels and strict diagnostics. Set `compile_mode=None` for the fully eager debugging path. Compilation failures surface explicitly. Blocks remain opt-in until representative CPU/CUDA/MPS measurements justify a default; larger blocks are not assumed faster. CUDA Graph replay is not enabled.
+
+MPS blocks above four timesteps currently select the kernel loop with an explicit fallback reason: larger Inductor training graphs exceeded Metal buffer bindings during local PyTorch 2.14.1 validation. Four-step MPS blocks remain opt-in; this is a conservative validated limit, not a promise for arbitrary graph sizes. CPU/CUDA requests retain the 1-64 range.
+
+The normal tensor kernels use `fullgraph=True, dynamic=False`. Strict validation with a registered custom surrogate permits graph breaks at its eager spike/autograd boundary so derivative value checks still raise errors; its numerical derivative is compiled separately. Structural validation allows the surrogate to participate in the neuron graph. Strict checks still scan values and can synchronize accelerators. Build metrics report `compile_mode`, `compiled_populations` and `compiled_projections`; these list prepared kernels, which compile lazily on first use.
+
+Prepared kernels capture callback definitions and configuration at construction; construct a new executor after changing them. First calls, training/inference switches, new batch shapes, dtypes or devices can compile additional variants. Reuse the executor and measure both startup and warmed execution for the intended workload. Compilation errors surface rather than silently disabling compilation. For unsupported environments or callbacks, select `compile_mode=None` in Python or `--compile-mode eager` in the CLI. Compare outputs, gradients and continuation against eager execution with appropriate floating-point tolerances: fusion can change rounding. See [Writing efficient PyTorch callbacks](/api/lang/extensions#writing-efficient-pytorch-callbacks).
+
+`dataset_prefetch=0` preserves synchronous batch preparation. Values from 1 to 8 enable bounded lookahead in training, validation and dataset inference. A single worker prepares isolated CPU batches in order. CUDA uses pinned CPU buffers, a transfer stream, events and consumer-stream lifetime tracking; device rate/event generation runs directly on the preparation stream. Custom encoders prepare lookahead on the caller thread under scoped RNG state, then use the same transfer queue, avoiding a background race with process-global randomness. An encoder with an explicit optional `device` keyword receives the selected device. Accelerator callback preparation records `snnlab.encoder-device/v1`, backend and PyTorch version, while CPU encoder identities stay unchanged. Other devices retain synchronous transfers. Prefetch does not change spikes or checkpoint data order within the same recorded encoding policy. Larger queues consume more memory; start with 2 and measure the whole workload.
+
+Replay stages its active dense window or compact sparse routing on the execution device before stepping. Sparse replay keeps integer slice bounds on the host and performs no per-step transfer. CUDA recording stages bounded chunks to pinned host buffers with a copy stream and at most two pending transfers, delivering host sinks after each transfer completes. CPU/MPS recording remains synchronous at chunk boundaries. Final partial blocks, event coordinates and sink invocation order are preserved. Decision counts stay on the device and are copied together after stepping. Strict custom-state and post-update custom-constraint finite checks combine flags per device before a host read, retaining named errors for invalid tensors. Unconstrained weights are not copied after an optimizer step. Unrequested snapshots retain their existing controls.
 
 For simulation/inference, `timing_mode="synchronized"` brackets input resolution and completed execution with device synchronisation and reports `metrics["simulate_s"]`. This includes encoding, transfers and recording, but excludes model construction and checkpoint loading; `timing_scope` records that boundary. CPU requires no device fence. MPS uses its device synchronisation API. `timing_mode="enqueue"` omits these fences and reports `simulate_enqueue_s` instead: this is host elapsed time and may exclude queued accelerator work. Existing internal validation, recordings and other operations may still synchronise. `peak_python_bytes` measures Python allocations only, not GPU tensor memory.
 
-The CLI exposes `--compile-mode default`, `--dataset-prefetch N` and `--timing-mode synchronized|enqueue`. Use `--no-diagnostics` when dense diagnostics are unnecessary. Gradient reporting copies only the final update or explicitly observed gradients, metric reporting batches host reads, and batch-loss selection snapshots only improving candidates. Selection still requires its loss read; requested gradient-norm observations still have measurement overhead.
+The CLI exposes `--compile-mode default|eager`, `--compile-block-steps N`, `--dataset-prefetch N` and `--timing-mode synchronized|enqueue`. Use `--no-diagnostics` when dense diagnostics are unnecessary. Gradient reporting copies only the final update or explicitly observed gradients, metric reporting batches host reads, and batch-loss selection snapshots only improving candidates. Selection still requires its loss read; requested gradient-norm observations still have measurement overhead.
 
-For a complete CUDA benchmark with score/gradient checks, cold/warm timings, operator counts and allocated memory, run `uv run python benchmarks/gpu_efficiency.py --output gpu-results.json` from a repository checkout. [Benchmark source](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/gpu_efficiency.py) and [Modal runner](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/modal_gpu.py) are provided. The benchmark disables TF32 and separates profiling from timing. Measure your actual batch size, graph and recording policy before drawing throughput conclusions.
+For matched numerical gates, cold/warm end-to-end timings, operator counts and memory provenance, run `uv run python benchmarks/execution/benchmark.py --devices cpu --output artifacts/execution/results.json`. [Benchmark source](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/execution/benchmark.py) and [protocol/limits](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/execution/README.md) cover CPU, CUDA and MPS, optional recordings, batch sizes and timestep blocks. GPU RNG timing uses matched features, with separate identical-spike numerical checks. Measure your actual graph and recording policy before drawing throughput conclusions.
 
 
 ## Projection arithmetic and result snapshots

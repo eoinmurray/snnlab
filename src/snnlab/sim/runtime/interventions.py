@@ -201,11 +201,44 @@ Intervention: TypeAlias = ReplaySpikes | DropSpikes | AddPoissonSpikes
 class PreparedIntervention:
     metadata: dict
     tensors: tuple[torch.Tensor, ...] = ()
+    offsets: tuple[int, ...] = ()
+    staged_start: int | None = None
+
+    def stage(self, *, device, dtype, start_step, steps_count):
+        """Stage only the active replay window; keep sparse slice bounds on host."""
+        if self.metadata["kind"] != "replay_spikes":
+            return
+        replay = self.metadata["replay"]
+        if replay["representation"] == "dense":
+            begin = start_step - replay["start_step"]
+            self.tensors = (
+                self.tensors[0][begin : begin + steps_count].to(
+                    device=device, dtype=dtype
+                ),
+            )
+        else:
+            steps, batches, cells = self.tensors
+            bounds = torch.searchsorted(
+                steps, torch.arange(start_step, start_step + steps_count + 1)
+            )
+            begin, end = int(bounds[0]), int(bounds[-1])
+            self.offsets = tuple((bounds - begin).tolist())
+            self.tensors = (batches[begin:end].to(device), cells[begin:end].to(device))
+        self.staged_start = start_step
 
     def apply(self, spikes, absolute_step, index):
         row = self.metadata
         if row["kind"] == "replay_spikes":
             replay = row["replay"]
+            if self.staged_start is not None:
+                local = absolute_step - self.staged_start
+                if replay["representation"] == "dense":
+                    return self.tensors[0][local]
+                batches, cells = self.tensors
+                begin, end = self.offsets[local : local + 2]
+                replacement = torch.zeros_like(spikes)
+                replacement[batches[begin:end], cells[begin:end]] = 1
+                return replacement
             if replay["representation"] == "dense":
                 return self.tensors[0][absolute_step - replay["start_step"]].to(
                     device=spikes.device, dtype=spikes.dtype

@@ -6,7 +6,10 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, execute_request, train
+from snnlab.sim import DenseArrayBinding
+from snnlab.sim.requests.handlers import execute_request
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests._circuits import author_ping
 
 

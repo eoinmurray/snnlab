@@ -7,13 +7,13 @@ import torch
 
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     TargetArrayBinding,
     TrainingMetrics,
     ValidationSpec,
     save_training_checkpoint,
-    train,
 )
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import direct_train_bundle
 
 

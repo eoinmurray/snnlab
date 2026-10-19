@@ -43,6 +43,8 @@ class TestSpec(ValidationSpec):
 
 @dataclass(frozen=True)
 class ExecutionSpec:
+    """Internal execution request; public callers use keyword arguments."""
+
     kind: RequestKind
     executor: ExecutorName = "graph"
     bundle: Path | None = None
@@ -81,13 +83,14 @@ class ExecutionSpec:
     retain_runtime_state: bool = True
     projection_mode: Literal["fast", "strict"] = "fast"
     extension_validation: Literal["strict", "structural"] = "structural"
-    compile_mode: Literal["default"] | None = None
+    compile_mode: Literal["default"] | None = "default"
     dataset_prefetch: int = 0
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized"
     training_timing: bool = False
     tracing: TraceSpec | None = None
 
     snapshot: str | Path | SnapshotSpec | None = None
+    compile_block_steps: int = 1
     test: TestSpec | None = None
 
     def __post_init__(self):
@@ -110,6 +113,11 @@ class ExecutionSpec:
                 raise TypeError(f"{name} must be boolean")
         if self.compile_mode not in {None, "default"}:
             raise ValueError("compile_mode must be None or default")
+        if (
+            type(self.compile_block_steps) is not int
+            or not 1 <= self.compile_block_steps <= 64
+        ):
+            raise ValueError("compile_block_steps must be an integer from 1 to 64")
         if (
             type(self.dataset_prefetch) is not int
             or not 0 <= self.dataset_prefetch <= 8

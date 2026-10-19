@@ -10,18 +10,18 @@ import torch
 
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     capture_training_rng_state,
     load_training_checkpoint,
     restore_training_rng_state,
     save_training_checkpoint,
-    simulate,
-    train,
 )
 from snnlab.sim.diagnostics.conformance import (
     canonical_json_tensor,
     compare_conformance_layers,
 )
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import (
     direct_train_bundle as _direct_train_bundle,
 )

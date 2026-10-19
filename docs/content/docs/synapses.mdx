@@ -97,3 +97,9 @@ net.connect(
 ```
 
 This connection fragment assumes conductance populations `source` and `target` in a network with `dt=0.25 * lang.ms`. For additional synaptic state or kinetics, register a [CustomSynapse](/api/lang/extensions) with the correct input/output family; its extra state also supports recording and saved continuation.
+
+## Efficient custom synapses
+
+Register an importable `step(SynapseContext)` and use `lang.CustomSynapse` when additional kinetics or tensor state are needed. The ordinary callback compiles by default. `context.drive` already contains delayed source activity multiplied by weights; update whole `(batch, target_cells)` tensors instead of iterating over edges or redoing the projection. For exponential kinetics, a step can return `{**context.state, "value": decay * context.state["value"] + context.drive}`, where `decay = math.exp(-context.dt_ms / context.config["tau_ms"])` depends only on fixed scalar configuration.
+
+Preserve every state key and its shape/device/dtype, create new state tensors, and allocate initialization tensors directly on the supplied device/dtype. Avoid host scalar reads, NumPy conversions, per-cell Python loops and tensor-dependent Python `if` statements in updates. No compilation decorator is needed. See the [custom synapse contract and example](/api/lang/extensions#synapses), [efficient callback guidance](/api/lang/extensions#writing-efficient-pytorch-callbacks) and [runtime compilation controls](/api/sim/execution-spec#gpu-performance-controls).

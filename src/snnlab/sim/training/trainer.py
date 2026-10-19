@@ -34,6 +34,7 @@ from snnlab.sim.inputs.resolution import (
     resolve_target_array_bindings,
 )
 from snnlab.sim.requests.handlers import (
+    _compilation_protocol,
     _projection_protocol,
     _synchronize_device,
     build,
@@ -340,6 +341,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             device=device,
         )
         protocol = _projection_protocol(inputs.protocol, spec.projection_mode)
+        protocol = _compilation_protocol(protocol, spec)
         inputs = (
             inputs.with_protocol(protocol)
             if isinstance(inputs, DatasetProvider)
@@ -947,7 +949,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 X.checked_tensor(
                     raw,
                     shape=(),
-                    device=device,
+                    device=prediction.device,
                     dtype=prediction.dtype,
                     name=definition.name,
                 )
@@ -978,7 +980,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 X.checked_tensor(
                     raw,
                     shape=(),
-                    device=device,
+                    device=values[0].device,
                     dtype=values[0].dtype,
                     name=definition.name,
                 )
@@ -1671,6 +1673,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             **built.metrics,
             "diagnostics": spec.diagnostics,
             "dataset_prefetch": spec.dataset_prefetch,
+            "execution_paths": copy.deepcopy(model._execution_paths),
             "updates": history,
             "epochs": epoch_history,
             "test": test_metrics,

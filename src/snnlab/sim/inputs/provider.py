@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import zipfile
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import replace
 from numbers import Integral
@@ -18,6 +18,11 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from snnlab.sim.inputs.encoders import (
+    accepts_device,
+    encoder_device_policy,
+    poisson_device_policy,
+)
 from snnlab.sim.training.observations import evaluation_rng
 
 SCHEMA = "snnlab.batch-encoding/v1"
@@ -56,6 +61,18 @@ class DatasetProvider:
 
         binding = copy.deepcopy(binding)
         self.graph, self.binding, self.device = graph, binding, device
+        self.device_aware_encoder = False
+        if binding.encoder.kind == "custom":
+            from snnlab import extensions as E
+
+            definition = E.resolve(
+                "encoder",
+                {
+                    "definition": binding.encoder.definition,
+                    "config": binding.encoder.config,
+                },
+            )
+            self.device_aware_encoder = accepts_device(definition.function)
         self.execution_seed = _integer("execution seed", execution_seed)
         _integer("encoder seed", binding.encoder.seed)
         _integer("order seed", binding.order_seed)
@@ -142,6 +159,20 @@ class DatasetProvider:
                         )
                 elif not np.all((chunk == 0) | (chunk == 1)):
                     raise ValueError("prebinned dataset spikes must be binary")
+        self.event_index = None
+        if binding.encoder.kind == "event_bin":
+            from snnlab.sim.inputs.events import EventIndex
+
+            input_spec = next(
+                row for row in graph["inputs"] if row["id"] == binding.input_id
+            )
+            self.event_index = EventIndex(
+                arrays,
+                sample_count=total,
+                channels=int(input_spec["shape"][2]),
+                duration_ms=float(binding.encoder.duration_ms or 0),
+                dt_ms=float(graph["timebase"]["dt"]["value"]),
+            )
         first, _ = resolve_dataset_snapshot_binding(
             graph,
             binding,
@@ -150,6 +181,7 @@ class DatasetProvider:
             _snapshot=self.snapshot,
             _indices=self.selected[:1],
             _validated=True,
+            _event_index=self.event_index,
         )
         self.steps_count = next(iter(first.tensors.values())).shape[0]
         self.protocol = copy.deepcopy(first.protocol)
@@ -160,10 +192,16 @@ class DatasetProvider:
         encoder_row.pop("selected_rates_hz", None)
         encoder_row.pop("retained_events", None)
         encoder_row.pop("binary_collisions", None)
+        if binding.encoder.kind == "rate_poisson":
+            encoder_row.update(poisson_device_policy(device))
+        if self.device_aware_encoder:
+            encoder_row.update(encoder_device_policy(device))
         self.protocol["batch_encoding"] = {
             "schema": SCHEMA,
             "backend": "registered_encoder"
             if binding.encoder.kind == "custom"
+            else torch.device(device).type
+            if binding.encoder.kind in {"rate_poisson", "event_bin"}
             else "cpu",
             "random_dtype": "float32"
             if binding.encoder.kind == "rate_poisson"
@@ -248,6 +286,7 @@ class DatasetProvider:
                 _spike_seed=spike_seed,
                 _rate_seed=rate_seed,
                 _validated=True,
+                _event_index=self.event_index,
             )
         if next(iter(resolved.tensors.values())).shape[0] != self.steps_count:
             raise ValueError(
@@ -299,15 +338,12 @@ def batch_tensors(inputs, indices, *, phase="evaluation", epoch=0, draw_seed=Non
 def iter_batches(inputs, requests, *, prefetch=0):
     """Yield (request, tensors, encoding metadata), with bounded CPU/CUDA lookahead.
 
-    Requests are (indices, phase, epoch, draw_seed). Custom encoders stay on the
-    caller thread because callbacks may consume process-global RNG state.
+    Requests are (indices, phase, epoch, draw_seed). Custom encoders and device
+    generation stay on the caller thread. Only isolated CPU preparation uses
+    the worker; callbacks may consume process-global RNG state.
     """
     _integer("prefetch", prefetch)
-    if (
-        not isinstance(inputs, DatasetProvider)
-        or not prefetch
-        or inputs.binding.encoder.kind == "custom"
-    ):
+    if not isinstance(inputs, DatasetProvider) or not prefetch:
         for request in requests:
             indices, phase, epoch, draw_seed = request
             tensors = batch_tensors(
@@ -327,14 +363,23 @@ def iter_batches(inputs, requests, *, prefetch=0):
     pending = deque()
     staged = deque()
     requests = iter(requests)
+    device_encoding = device.type != "cpu" and (
+        inputs.binding.encoder.kind in {"rate_poisson", "event_bin"}
+        or inputs.device_aware_encoder
+    )
+    caller_preparation = device_encoding or inputs.binding.encoder.kind == "custom"
 
     def prepare(request):
         indices, phase, epoch, draw_seed = request
         resolved, metadata = inputs._batch(
-            indices, phase=phase, epoch=epoch, draw_seed=draw_seed, device="cpu"
+            indices,
+            phase=phase,
+            epoch=epoch,
+            draw_seed=draw_seed,
+            device=device if device_encoding else "cpu",
         )
         tensors = resolved.tensors
-        if stream is not None:
+        if stream is not None and not device_encoding:
             tensors = {name: value.pin_memory() for name, value in tensors.items()}
         return tensors, metadata
 
@@ -343,7 +388,15 @@ def iter_batches(inputs, requests, *, prefetch=0):
             request = next(requests)
         except StopIteration:
             return False
-        pending.append((request, pool.submit(prepare, request)))
+        if caller_preparation:
+            future = Future()
+            # Preparation happens only on the caller. evaluation_rng in _batch
+            # restores callback RNG state before numerical execution resumes.
+            with torch.cuda.stream(stream) if stream is not None else nullcontext():
+                future.set_result(prepare(request))
+        else:
+            future = pool.submit(prepare, request)
+        pending.append((request, future))
         return True
 
     def stage(pool):

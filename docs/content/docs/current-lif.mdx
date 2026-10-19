@@ -19,7 +19,7 @@ The script saves `network.png` and `current-lif.png` beside itself. Graphviz's `
 
 ```python
 from snnlab import lang, viz
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import PoissonInputBinding, simulate
 
 DT_MS = 0.5
 DURATION_MS = 500
@@ -45,7 +45,7 @@ poisson_input = PoissonInputBinding(
 )
 ```
 
-The network input declares four spike channels. The binding supplies 500 ms of Poisson spikes at 80 Hz per channel, using a fixed seed. See [ExecutionSpec input bindings](/api/sim/execution-spec#inputs) for dense arrays/tensors, event streams and dataset inputs.
+The network input declares four spike channels. The binding supplies 500 ms of Poisson spikes at 80 Hz per channel, using a fixed seed. See [Execution input bindings](/api/sim/execution-spec#inputs) for dense arrays/tensors, event streams and dataset inputs.
 
 ## 3. Define the current-based network
 
@@ -102,14 +102,12 @@ The bundle stays in a Python variable here. You can also save it with `bundle.wr
 ## 6. Configure execution and simulate
 
 ```python
-execution = ExecutionSpec(
-    kind="simulate",
+result = simulate(
     graph=bundle.graph,
     input_bindings=(poisson_input,),
     seed=SEED,
     device="cpu",
 )
-result = simulate(execution)
 ```
 
 `simulate` uses the graph executor by default. This example runs on CPU; no training recipe is needed.
@@ -144,7 +142,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from snnlab import lang, viz
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import (
+    PoissonInputBinding,
+    simulate,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.5
@@ -197,15 +198,13 @@ def main():
         canvas_size=(1920, 900),
     )
 
-    # 6. Describe the execution and simulate.
-    execution = ExecutionSpec(
-        kind="simulate",
+    # 6. Simulate with explicit execution settings.
+    result = simulate(
         graph=bundle.graph,
         input_bindings=(poisson_input,),
         seed=SEED,
         device="cpu",
     )
-    result = simulate(execution)
     # 7. Retrieve named results and select the first (only) batch item.
     data = result.numpy(batch=0)
     input_spikes = data.diagnostics["input_spikes"]

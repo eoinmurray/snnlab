@@ -11,15 +11,15 @@ from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     EpochObservations,
-    ExecutionSpec,
     GraphExecutor,
     ValidationSpec,
     load_training_checkpoint,
     save_training_checkpoint,
-    simulate,
-    train,
 )
 from snnlab.sim.inputs.provider import DatasetProvider
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim.test_epoch_observations import request
 
 

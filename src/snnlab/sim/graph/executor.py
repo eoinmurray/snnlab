@@ -17,7 +17,13 @@ from snnlab.sim.artifacts.inference import retention_identity
 from snnlab.sim.diagnostics.tracing import current_trace
 from snnlab.sim.graph import dynamics as M
 from snnlab.sim.graph import extensions as X
-from snnlab.sim.graph.kernels import neuron_kernel
+from snnlab.sim.graph.blocks import network_block, signal_parameters
+from snnlab.sim.graph.kernels import (
+    constraint_kernel,
+    neuron_kernel,
+    operation_kernel,
+    synapse_kernel,
+)
 from snnlab.sim.graph.plan import GraphPlan, PlannedProjection, _signal_axes
 from snnlab.sim.requests.result import ExecutionResult
 from snnlab.sim.runtime.interventions import Intervention, prepare_interventions
@@ -81,7 +87,8 @@ class GraphExecutor(nn.Module):
         surrogate_slope: float = M.SURROGATE_SLOPE,
         surrogate: Mapping[str, Any] | None = None,
         extension_validation: Literal["strict", "structural"] = "structural",
-        compile_mode: Literal["default"] | None = None,
+        compile_mode: Literal["default"] | None = "default",
+        compile_block_steps: int = 1,
         projection_mode: Literal["fast", "strict"] = "fast",
     ):
         super().__init__()
@@ -91,11 +98,17 @@ class GraphExecutor(nn.Module):
         if compile_mode not in {None, "default"}:
             raise ValueError("compile_mode must be None or default")
         self.compile_mode = compile_mode
+        if type(compile_block_steps) is not int or not 1 <= compile_block_steps <= 64:
+            raise ValueError("compile_block_steps must be an integer from 1 to 64")
+        self.compile_block_steps = compile_block_steps
+        self._block_kernels = {}
+        self._execution_paths = []
         if extension_validation not in ("strict", "structural"):
             raise ValueError("extension_validation must be strict or structural")
         self.extension_validation = extension_validation
         self._check_extension_values = extension_validation == "strict"
         self.plan = plan
+        self._signal_parameters = signal_parameters(plan)
         self.seed = int(seed)
         self.surrogate = (
             surrogate if (surrogate or {}).get("kind") == "custom_surrogate" else None
@@ -145,17 +158,56 @@ class GraphExecutor(nn.Module):
             threshold_inclusive=self.surrogate_threshold_inclusive,
             custom=self.surrogate,
             check_values=self._check_extension_values,
+            compile_mode=compile_mode,
         )
-        # Registered surrogates/callbacks retain eager dispatch and validation.
+        self._neuron_definitions = {
+            row["id"]: E.resolve("neuron", row["neuron"])
+            for row in plan.populations
+            if row["neuron"]["kind"] == "custom_neuron"
+        }
+        self._synapse_definitions = {
+            row["id"]: E.resolve("synapse", row["synapse"])
+            for row in plan.graph["projections"]
+            if row["synapse"]["kind"] == "custom_synapse"
+        }
+        self._state_ports = {
+            category: {
+                row["id"]: tuple(E.state_units(category, row[category])) for row in rows
+            }
+            for category, rows in (
+                ("neuron", plan.populations),
+                ("synapse", plan.graph["projections"]),
+            )
+        }
         self._neuron_steps = {
             row["id"]: neuron_kernel(
                 row,
                 dt_ms=plan.dt_ms,
                 refractory=plan.refractory.get(row["id"], {}),
                 spike_function=self._spike_function,
-                compile_mode=compile_mode if self.surrogate is None else None,
+                compile_mode=compile_mode,
+                definition=self._neuron_definitions.get(row["id"]),
+                # Strict custom surrogate diagnostics require host value reads.
+                fullgraph=not (self.surrogate and self._check_extension_values),
             )
             for row in plan.populations
+        }
+        projection_rows = {row["id"]: row for row in plan.graph["projections"]}
+        self._synapse_steps = {
+            row.id: synapse_kernel(
+                row,
+                spec=projection_rows[row.id]["synapse"],
+                dt_ms=plan.dt_ms,
+                compile_mode=compile_mode,
+                projection_mode=projection_mode,
+                definition=self._synapse_definitions.get(row.id),
+            )
+            for row in plan.projections
+        }
+        self._operation_steps = {
+            row["id"]: operation_kernel(row, compile_mode=compile_mode)
+            for row in plan.graph.get("operations", [])
+            if row["kind"] == "custom_operation"
         }
         self._incoming_projections = {
             row["id"]: tuple(
@@ -165,6 +217,18 @@ class GraphExecutor(nn.Module):
         }
         torch.manual_seed(seed)
         rows = {row["id"]: row for row in plan.graph.get("parameters", [])}
+        self._constraints = {
+            name: constraint_kernel(
+                row["constraint"], compile_mode=compile_mode, check_values=False
+            )
+            for name, row in rows.items()
+            if row.get("constraint")
+        }
+        self._custom_constraint_names = {
+            name: E.resolve("constraint", row["constraint"]).name
+            for name, row in rows.items()
+            if (row.get("constraint") or {}).get("kind") == "custom_constraint"
+        }
         self.weights = nn.ParameterDict()
         self.initialization_metadata: dict[str, dict[str, Any]] = {}
         self.autapse_metadata = dict(plan.autapses)
@@ -427,12 +491,27 @@ class GraphExecutor(nn.Module):
 
     def enforce_constraints(self) -> None:
         """Apply declared constraints after an external optimizer step."""
-        rows = {row["id"]: row for row in self.plan.graph.get("parameters", [])}
         with torch.no_grad():
-            for name, parameter in self.parameter_map().items():
-                parameter.copy_(
-                    X.apply_constraint(parameter, rows[name].get("constraint"))
+            parameters = self.parameter_map()
+            updates = {
+                name: constraint(parameters[name])
+                for name, constraint in self._constraints.items()
+            }
+            flags = {}
+            for name in self._custom_constraint_names:
+                value = updates[name]
+                flags.setdefault(value.device, []).append(
+                    (name, torch.isfinite(value).all())
                 )
+            for group in flags.values():
+                if not torch.stack([flag for _, flag in group]).all():
+                    for name, flag in group:
+                        if not flag:
+                            raise ValueError(
+                                f"{self._custom_constraint_names[name]} tensor must be finite"
+                            )
+            for name, value in updates.items():
+                parameters[name].copy_(value)
         self._enforce_autapses()
 
     def forward(
@@ -510,6 +589,22 @@ class GraphExecutor(nn.Module):
         parameter_dtype = (
             next(iter(self.weights.values())).dtype if self.weights else first.dtype
         )
+        if (self.weights or self.plan.populations) and parameter_dtype not in {
+            torch.float16,
+            torch.bfloat16,
+            torch.float32,
+            torch.float64,
+        }:
+            raise ValueError(
+                f"graph execution requires a floating dtype, got {parameter_dtype}"
+            )
+        if device.type == "mps" and parameter_dtype == torch.float64:
+            raise ValueError("MPS graph execution does not support torch.float64")
+        for name, parameter in self.parameter_map().items():
+            if parameter.device != device or parameter.dtype != parameter_dtype:
+                raise ValueError(
+                    f"parameter {name} must use execution device {device} and dtype {parameter_dtype}"
+                )
         input_specs = {row["id"]: row for row in self.plan.graph.get("inputs", [])}
         for name, value in inputs.items():
             if value.shape[:2] != (steps, batch):
@@ -569,7 +664,9 @@ class GraphExecutor(nn.Module):
         if runtime_state is None:
             voltage = {
                 name: (
-                    torch.zeros((batch, p["size"]), device=device)
+                    torch.zeros(
+                        (batch, p["size"]), device=device, dtype=parameter_dtype
+                    )
                     if p["neuron"]["kind"] == "leaky_integrator"
                     else torch.full(
                         (batch, p["size"]),
@@ -578,6 +675,7 @@ class GraphExecutor(nn.Module):
                         or p["neuron"]["kind"] in N.ADAPTIVE_KINDS
                         else M.E_L,
                         device=device,
+                        dtype=parameter_dtype,
                     )
                 )
                 for name, p in populations.items()
@@ -587,13 +685,16 @@ class GraphExecutor(nn.Module):
                 for name, p in populations.items()
             }
             spikes = {
-                name: torch.zeros((batch, p["size"]), device=device)
+                name: torch.zeros(
+                    (batch, p["size"]), device=device, dtype=parameter_dtype
+                )
                 for name, p in populations.items()
             }
             conductance = {
                 (p.id, p.polarity): torch.zeros(
                     (batch, populations[p.target.partition(".")[0]]["size"]),
                     device=device,
+                    dtype=parameter_dtype,
                 )
                 for p in self.plan.projections
             }
@@ -741,6 +842,13 @@ class GraphExecutor(nn.Module):
             batch_size=batch,
         )
         resolved_interventions = [item.metadata for item in prepared_interventions]
+        for item in prepared_interventions:
+            item.stage(
+                device=device,
+                dtype=parameter_dtype,
+                start_step=completed_steps,
+                steps_count=steps,
+            )
 
         def intervene(name, emitted, absolute_step):
             for index, item in enumerate(prepared_interventions):
@@ -789,7 +897,11 @@ class GraphExecutor(nn.Module):
                         ),
                     }
                 else:
-                    definition = E.resolve(category, spec)
+                    definition = (
+                        self._neuron_definitions
+                        if category == "neuron"
+                        else self._synapse_definitions
+                    )[owner]
                     label = definition.name
                     context = E.StateContext(
                         shape,
@@ -833,7 +945,7 @@ class GraphExecutor(nn.Module):
                         raise ValueError(
                             f"{label}.{key}: state must use execution device {device}"
                         )
-                for port in E.state_units(category, spec):
+                for port in self._state_ports[category][owner]:
                     if port not in state:
                         raise ValueError(f"{label}: declared state port {port} missing")
                     X.checked_tensor(
@@ -897,6 +1009,7 @@ class GraphExecutor(nn.Module):
             batch_offset=batch_offset,
             graph=self.plan.graph,
             dtype=parameter_dtype,
+            device=device,
         )
         inference_only = not (
             torch.is_grad_enabled()
@@ -924,6 +1037,7 @@ class GraphExecutor(nn.Module):
             else {},
             recording_signals=(*recorder.rows, *streamed_outputs.values()),
             dtype=parameter_dtype,
+            device=device,
         )
         external_signals = set(required_signals)
         external_signals.update(
@@ -986,173 +1100,344 @@ class GraphExecutor(nn.Module):
             for row in self.plan.graph.get("operations", [])
             if row["kind"] == "pool2d"
         }
-        for t in range(steps):
-            segments.boundary(completed_steps + t, self.plan.dt_ms)
-            segments.reset(completed_steps + t, voltage)
-            step_pre_reset = {}
-            new_spikes: dict[str, torch.Tensor] = {}
-            source_cache = {}
-
-            def projection_source(signal, delay):
-                key = (signal, delay)
-                if key in source_cache:
-                    return source_cache[key]
-                pending = []
-                while signal in spatial_operations:
-                    operation = spatial_operations[signal]
-                    pending.append(operation)
-                    signal = operation["sources"][0]
-                owner = signal.partition(".")[0]
-                if owner in populations:
-                    result = (
-                        new_spikes[owner]
-                        if delay == 0
-                        else histories[owner]._values[-delay]
+        block_reasons = []
+        block_trainable = {
+            projection.parameter
+            for projection in self.plan.projections
+            if projection.enabled
+            and effective_weights[projection.parameter].requires_grad
+        }
+        partial_dependencies = not inference_only and any(
+            self._signal_parameters.get(signal, set()) & block_trainable
+            != block_trainable
+            for signal in external_signals
+            if signal in self._signal_parameters
+        )
+        for condition, reason in (
+            (self.compile_block_steps == 1, "block execution not requested"),
+            (self.compile_mode is None, "compilation disabled"),
+            (
+                device.type == "mps" and self.compile_block_steps > 4,
+                "MPS block size above validated limit (4)",
+            ),
+            (
+                bool(
+                    self._neuron_definitions
+                    or self._synapse_definitions
+                    or self.surrogate
+                ),
+                "registered neuron, synapse or surrogate",
+            ),
+            (capture_steps, "online reductions or recording"),
+            (bool(prepared_interventions), "spike interventions"),
+            (bool(segments.identity), "voltage resets or decision segments"),
+            (trace is not None, "execution tracing"),
+            (
+                len(inputs) > 1
+                and any(value.requires_grad for value in inputs.values()),
+                "multiple inputs with input gradients",
+            ),
+            (
+                partial_dependencies,
+                "partial parameter dependencies in retained signals",
+            ),
+            (
+                not inference_only
+                and steps
+                <= sum(
+                    p.delay_steps
+                    for p in self.plan.projections
+                    if p.enabled and p.root_source.partition(".")[0] in populations
+                ),
+                "short delayed autograd trajectory",
+            ),
+        ):
+            if condition:
+                block_reasons.append(reason)
+        if not block_reasons:
+            block_signals = tuple(
+                sorted(
+                    {
+                        *(
+                            f"{name}.spikes"
+                            for name in (*spike_traces, *observation_counts)
+                        ),
+                        *(f"{name}.voltage" for name in voltage_traces),
+                        *(
+                            f"{name}.pre_reset_voltage"
+                            for name in pre_reset_voltage_traces
+                        ),
+                        *(
+                            f"{name}.{projection_ports[name]}"
+                            for name in conductance_traces
+                        ),
+                        *(
+                            f"{name}.{port}"
+                            for name in neuron_states
+                            for port in self._state_ports["neuron"][name]
+                            if f"{name}.{port}" in needed_signals
+                        ),
+                    }
+                )
+            )
+            if block_signals not in self._block_kernels:
+                self._block_kernels[block_signals] = network_block(
+                    self.plan,
+                    spike_function=self._spike_function,
+                    projection_mode=self.projection_mode,
+                    signals=block_signals,
+                    compile_mode=self.compile_mode,
+                )
+            kernel = self._block_kernels[block_signals]
+            history_values = {
+                name: history._values for name, history in histories.items()
+            }
+            block_input_histories = input_histories
+            gain_tensors = {
+                name: torch.as_tensor(values, device=device, dtype=parameter_dtype)
+                for name, values in projection_gains.items()
+            }
+            for begin in range(0, steps, self.compile_block_steps):
+                end = min(begin + self.compile_block_steps, steps)
+                (
+                    voltage,
+                    refractory,
+                    neuron_states,
+                    conductance,
+                    history_values,
+                    block_input_histories,
+                    spikes,
+                    integrator_sum,
+                    samples,
+                ) = kernel(
+                    {name: value[begin:end] for name, value in inputs.items()},
+                    voltage,
+                    refractory,
+                    neuron_states,
+                    conductance,
+                    history_values,
+                    block_input_histories,
+                    effective_weights,
+                    {name: value[begin:end] for name, value in gain_tensors.items()},
+                    integrator_sum,
+                )
+                for name in spike_traces:
+                    spike_traces[name].extend(samples[f"{name}.spikes"].unbind())
+                for name in voltage_traces:
+                    voltage_traces[name].extend(samples[f"{name}.voltage"].unbind())
+                for name in pre_reset_voltage_traces:
+                    pre_reset_voltage_traces[name].extend(
+                        samples[f"{name}.pre_reset_voltage"].unbind()
                     )
-                else:
-                    source_t = t - delay
-                    result = (
-                        inputs[owner][source_t]
-                        if source_t >= 0
-                        else input_histories[owner][source_t]
+                for name in conductance_traces:
+                    conductance_traces[name].extend(
+                        samples[f"{name}.{projection_ports[name]}"].unbind()
                     )
-                for operation in reversed(pending):
-                    result = pool_tensor(
-                        result,
-                        signal_spatial_shape(self.plan.graph, operation["sources"][0]),
-                        operation["config"],
-                    )
-                source_cache[key] = result
-                return result
-
-            for pop in self.plan.populations:
-                name = pop["id"]
-                incoming = {
-                    "excitatory": torch.zeros_like(voltage[name]),
-                    "inhibitory": torch.zeros_like(voltage[name]),
-                }
-                for projection in self._incoming_projections[name]:
-                    key = (projection.id, projection.polarity)
-                    if not projection.enabled:
-                        conductance[key].zero_()
-                        continue
-                    source = projection_source(
-                        projection.source, projection.delay_steps
-                    )
-
-                    def project():
-                        config = projection_rows[projection.id].get("connectivity")
-                        if config is not None:
-                            return convolution_drive(
-                                source,
-                                effective_weights[projection.parameter],
-                                signal_spatial_shape(
-                                    self.plan.graph, projection.source
-                                ),
-                                config,
+                for name, state in neuron_states.items():
+                    for port in self._state_ports["neuron"][name]:
+                        signal = f"{name}.{port}"
+                        if signal in samples:
+                            state_traces.setdefault(signal, []).extend(
+                                samples[signal].unbind()
                             )
-                        return source @ effective_weights[projection.parameter]
+                for name in observation_counts:
+                    observation_counts[name] += (
+                        samples[f"{name}.spikes"].detach().to(torch.int64).sum(dim=0)
+                    )
+            for name, values in history_values.items():
+                histories[name]._values = values
+            for name, state in neuron_states.items():
+                for key, value in state.items():
+                    custom_state[f"neuron/{name}/{key}"] = value
+        else:
+            for t in range(steps):
+                segments.boundary(completed_steps + t, self.plan.dt_ms)
+                segments.reset(completed_steps + t, voltage)
+                step_pre_reset = {}
+                new_spikes: dict[str, torch.Tensor] = {}
+                source_cache = {}
 
-                    if trace is None:
-                        drive = project()
-                    else:
-                        with trace.detail(f"projection/{projection.id}"):
-                            drive = project()
-                    if projection.id in projection_gains:
-                        drive = drive * projection_gains[projection.id][t]
-                    spec = projection_rows[projection.id]["synapse"]
-                    if spec["kind"] == "custom_synapse":
-                        definition = E.resolve("synapse", spec)
-                        previous = synapse_states[projection.id]
-                        context = E.SynapseContext(
-                            previous, drive, self.plan.dt_ms, spec.get("config", {})
+                def projection_source(signal, delay):
+                    key = (signal, delay)
+                    if key in source_cache:
+                        return source_cache[key]
+                    pending = []
+                    while signal in spatial_operations:
+                        operation = spatial_operations[signal]
+                        pending.append(operation)
+                        signal = operation["sources"][0]
+                    owner = signal.partition(".")[0]
+                    if owner in populations:
+                        result = (
+                            new_spikes[owner]
+                            if delay == 0
+                            else histories[owner]._values[-delay]
                         )
+                    else:
+                        source_t = t - delay
+                        result = (
+                            inputs[owner][source_t]
+                            if source_t >= 0
+                            else input_histories[owner][source_t]
+                        )
+                    for operation in reversed(pending):
+                        result = pool_tensor(
+                            result,
+                            signal_spatial_shape(
+                                self.plan.graph, operation["sources"][0]
+                            ),
+                            operation["config"],
+                        )
+                    source_cache[key] = result
+                    return result
+
+                for pop in self.plan.populations:
+                    name = pop["id"]
+                    incoming = {
+                        "excitatory": torch.zeros_like(voltage[name]),
+                        "inhibitory": torch.zeros_like(voltage[name]),
+                    }
+                    for projection in self._incoming_projections[name]:
+                        key = (projection.id, projection.polarity)
+                        if not projection.enabled:
+                            conductance[key].zero_()
+                            continue
+                        source = projection_source(
+                            projection.source, projection.delay_steps
+                        )
+
+                        def project():
+                            config = projection_rows[projection.id].get("connectivity")
+                            if config is not None:
+                                return convolution_drive(
+                                    source,
+                                    effective_weights[projection.parameter],
+                                    signal_spatial_shape(
+                                        self.plan.graph, projection.source
+                                    ),
+                                    config,
+                                )
+                            return source @ effective_weights[projection.parameter]
+
+                        if trace is None:
+                            drive = project()
+                        else:
+                            with trace.detail(f"projection/{projection.id}"):
+                                drive = project()
+                        if projection.id in projection_gains:
+                            drive = drive * projection_gains[projection.id][t]
+                        spec = projection_rows[projection.id]["synapse"]
+                        if spec["kind"] == "custom_synapse":
+                            definition = self._synapse_definitions[projection.id]
+                            previous = synapse_states[projection.id]
+                            state = X.checked_state(
+                                self._synapse_steps[projection.id](previous, drive),
+                                previous,
+                                definition.name,
+                                check_values=self._check_extension_values,
+                            )
+                            synapse_states[projection.id] = state
+                            conductance[key] = state["value"]
+                        else:
+                            conductance[key] = self._synapse_steps[projection.id](
+                                conductance[key], drive
+                            )
+                        incoming[projection.polarity] += conductance[key]
+                    neuron = pop["neuron"]
+
+                    if neuron["kind"] == "custom_neuron":
+                        definition = self._neuron_definitions[name]
+                        previous = neuron_states[name]
+                        response = self._neuron_steps[name](
+                            previous,
+                            incoming["excitatory"],
+                            incoming["inhibitory"],
+                        )
+                        if not isinstance(response, tuple) or len(response) != 2:
+                            raise TypeError(
+                                f"{definition.name} must return (state, spikes)"
+                            )
+                        state, spike_values = response
                         state = X.checked_state(
-                            definition.function(context),
+                            state,
                             previous,
                             definition.name,
                             check_values=self._check_extension_values,
                         )
-                        synapse_states[projection.id] = state
-                        conductance[key] = state["value"]
-                    elif self.projection_mode == "fast" and projection.decay == 0.0:
-                        conductance[key] = drive
-                    else:
-                        conductance[key] = conductance[key] * projection.decay + drive
-                    incoming[projection.polarity] += conductance[key]
-                neuron = pop["neuron"]
-
-                spike_function = self._spike_function
-
-                if neuron["kind"] == "custom_neuron":
-                    definition = E.resolve("neuron", neuron)
-                    previous = neuron_states[name]
-                    context = E.NeuronContext(
-                        previous,
-                        incoming["excitatory"],
-                        incoming["inhibitory"],
-                        self.plan.dt_ms,
-                        neuron.get("config", {}),
-                        spike_function,
-                    )
-                    response = definition.function(context)
-                    if not isinstance(response, tuple) or len(response) != 2:
-                        raise TypeError(
-                            f"{definition.name} must return (state, spikes)"
+                        X.checked_tensor(
+                            spike_values,
+                            shape=voltage[name].shape,
+                            device=device,
+                            dtype=parameter_dtype,
+                            name=f"{definition.name}.spikes",
+                            check_values=self._check_extension_values,
                         )
-                    state, spike_values = response
-                    state = X.checked_state(
-                        state,
-                        previous,
-                        definition.name,
-                        check_values=self._check_extension_values,
-                    )
-                    X.checked_tensor(
-                        spike_values,
-                        shape=voltage[name].shape,
-                        device=device,
-                        dtype=parameter_dtype,
-                        name=f"{definition.name}.spikes",
-                        check_values=self._check_extension_values,
-                    )
-                    if self._check_extension_values and torch.any(
-                        (spike_values != 0) & (spike_values != 1)
-                    ):
-                        raise ValueError(f"{definition.name} spikes must be binary")
-                    neuron_states[name] = state
-                    voltage[name], refractory[name] = (
-                        state["voltage"],
-                        state["refractory"],
-                    )
-                    new_spikes[name] = (
-                        spike_values
-                        if pop["spiking"]
-                        else torch.zeros_like(spike_values)
-                    )
-                    new_spikes[name] = intervene(
-                        name, new_spikes[name], completed_steps + t
-                    )
-                    continue
-                if neuron["kind"] in N.ADAPTIVE_KINDS:
-                    state, spike_values = self._neuron_steps[name](
-                        neuron_states[name],
-                        incoming["excitatory"],
-                        incoming["inhibitory"],
-                    )
-                    neuron_states[name] = state
-                    voltage[name], refractory[name] = (
-                        state["voltage"],
-                        state["refractory"],
-                    )
-                    new_spikes[name] = intervene(
-                        name,
-                        spike_values
-                        if pop["spiking"]
-                        else torch.zeros_like(spike_values),
-                        completed_steps + t,
-                    )
-                    continue
-                if neuron["kind"] == "cuba_lif":
+                        if self._check_extension_values and torch.any(
+                            (spike_values != 0) & (spike_values != 1)
+                        ):
+                            raise ValueError(f"{definition.name} spikes must be binary")
+                        neuron_states[name] = state
+                        voltage[name], refractory[name] = (
+                            state["voltage"],
+                            state["refractory"],
+                        )
+                        new_spikes[name] = (
+                            spike_values
+                            if pop["spiking"]
+                            else torch.zeros_like(spike_values)
+                        )
+                        new_spikes[name] = intervene(
+                            name, new_spikes[name], completed_steps + t
+                        )
+                        continue
+                    if neuron["kind"] in N.ADAPTIVE_KINDS:
+                        state, spike_values = self._neuron_steps[name](
+                            neuron_states[name],
+                            incoming["excitatory"],
+                            incoming["inhibitory"],
+                        )
+                        neuron_states[name] = state
+                        voltage[name], refractory[name] = (
+                            state["voltage"],
+                            state["refractory"],
+                        )
+                        new_spikes[name] = intervene(
+                            name,
+                            spike_values
+                            if pop["spiking"]
+                            else torch.zeros_like(spike_values),
+                            completed_steps + t,
+                        )
+                        continue
+                    if neuron["kind"] == "cuba_lif":
+                        voltage[name], new_spikes[name], refractory[name] = (
+                            self._neuron_steps[name](
+                                voltage[name],
+                                refractory[name],
+                                incoming["excitatory"],
+                                incoming["inhibitory"],
+                            )
+                        )
+                        new_spikes[name] = intervene(
+                            name, new_spikes[name], completed_steps + t
+                        )
+                        continue
+                    if neuron["kind"] == "leaky_integrator":
+                        pre_reset, post_reset, new_spikes[name] = self._neuron_steps[
+                            name
+                        ](voltage[name], incoming["excitatory"])
+                        if name in pre_reset_voltage_traces:
+                            pre_reset_voltage_traces[name].append(pre_reset)
+                        step_pre_reset[f"{name}.pre_reset_voltage"] = pre_reset
+                        integrator_sum[name] = (
+                            integrator_sum.get(name, torch.zeros_like(pre_reset))
+                            + pre_reset
+                        )
+                        voltage[name] = post_reset
+                        new_spikes[name] = intervene(
+                            name, new_spikes[name], completed_steps + t
+                        )
+                        continue
                     voltage[name], new_spikes[name], refractory[name] = (
                         self._neuron_steps[name](
                             voltage[name],
@@ -1164,103 +1449,69 @@ class GraphExecutor(nn.Module):
                     new_spikes[name] = intervene(
                         name, new_spikes[name], completed_steps + t
                     )
-                    continue
-                if neuron["kind"] == "leaky_integrator":
-                    pre_reset, post_reset, new_spikes[name] = self._neuron_steps[name](
-                        voltage[name], incoming["excitatory"]
-                    )
-                    if name in pre_reset_voltage_traces:
-                        pre_reset_voltage_traces[name].append(pre_reset)
-                    step_pre_reset[f"{name}.pre_reset_voltage"] = pre_reset
-                    integrator_sum[name] = (
-                        integrator_sum.get(name, torch.zeros_like(pre_reset))
-                        + pre_reset
-                    )
-                    voltage[name] = post_reset
-                    new_spikes[name] = intervene(
-                        name, new_spikes[name], completed_steps + t
-                    )
-                    continue
-                voltage[name], new_spikes[name], refractory[name] = self._neuron_steps[
-                    name
-                ](
-                    voltage[name],
-                    refractory[name],
-                    incoming["excitatory"],
-                    incoming["inhibitory"],
-                )
-                new_spikes[name] = intervene(
-                    name, new_spikes[name], completed_steps + t
-                )
-            for category, states, rows in (
-                ("neuron", neuron_states, populations),
-                ("synapse", synapse_states, projection_rows),
-            ):
-                for owner, state in states.items():
-                    spec = rows[owner][category]
-                    for key, value in state.items():
-                        custom_state[f"{category}/{owner}/{key}"] = value
-                    for port in E.state_units(category, spec):
-                        signal = f"{owner}.{port}"
-                        if signal in needed_signals:
-                            state_traces.setdefault(signal, []).append(state[port])
-            if capture_steps:
-                step_signals = {
-                    f"{name}.value": value[t] for name, value in inputs.items()
-                }
-                step_signals.update(
-                    {f"{name}.spikes": value for name, value in new_spikes.items()}
-                )
-                step_signals.update(
-                    {f"{name}.voltage": value for name, value in voltage.items()}
-                )
-                step_signals.update(step_pre_reset)
-                step_signals.update(
-                    {
-                        f"{p.id}.{projection_ports[p.id]}": conductance[
-                            (p.id, p.polarity)
-                        ]
-                        for p in self.plan.projections
-                    }
-                )
                 for category, states in (
                     ("neuron", neuron_states),
                     ("synapse", synapse_states),
                 ):
                     for owner, state in states.items():
-                        spec = (
-                            populations[owner][category]
-                            if category == "neuron"
-                            else projection_rows[owner][category]
-                        )
-                        for port in E.state_units(category, spec):
-                            step_signals[f"{owner}.{port}"] = state[port]
-                step_signals = online.samples(step_signals)
-                online.observe(step_signals, completed_steps + t)
-                recorder.observe(step_signals, completed_steps + t)
-                for output_id, signal in streamed_outputs.items():
-                    recorder.output_step(
-                        output_id, step_signals[signal], completed_steps + t
+                        for key, value in state.items():
+                            custom_state[f"{category}/{owner}/{key}"] = value
+                        for port in self._state_ports[category][owner]:
+                            signal = f"{owner}.{port}"
+                            if signal in needed_signals:
+                                state_traces.setdefault(signal, []).append(state[port])
+                if capture_steps:
+                    step_signals = {
+                        f"{name}.value": value[t] for name, value in inputs.items()
+                    }
+                    step_signals.update(
+                        {f"{name}.spikes": value for name, value in new_spikes.items()}
                     )
-            if trace is not None:
-                trace.observe_spikes(new_spikes)
-            spikes = new_spikes
-            segments.observe(spikes)
-            for name in observation_counts:
-                observation_counts[name] += spikes[name].detach().to(torch.int64)
-            for name in spike_traces:
-                spike_traces[name].append(spikes[name])
-            for name in voltage_traces:
-                voltage_traces[name].append(voltage[name])
-            for name in populations:
-                histories[name].push(spikes[name])
-            for projection_id in conductance_traces:
-                projection = next(
-                    p for p in self.plan.projections if p.id == projection_id
-                )
-                conductance_traces[projection_id].append(
-                    conductance[(projection.id, projection.polarity)]
-                )
+                    step_signals.update(
+                        {f"{name}.voltage": value for name, value in voltage.items()}
+                    )
+                    step_signals.update(step_pre_reset)
+                    step_signals.update(
+                        {
+                            f"{p.id}.{projection_ports[p.id]}": conductance[
+                                (p.id, p.polarity)
+                            ]
+                            for p in self.plan.projections
+                        }
+                    )
+                    for category, states in (
+                        ("neuron", neuron_states),
+                        ("synapse", synapse_states),
+                    ):
+                        for owner, state in states.items():
+                            for port in self._state_ports[category][owner]:
+                                step_signals[f"{owner}.{port}"] = state[port]
+                    step_signals = online.samples(step_signals)
+                    online.observe(step_signals, completed_steps + t)
+                    recorder.observe(step_signals, completed_steps + t)
+                    for output_id, signal in streamed_outputs.items():
+                        recorder.output_step(
+                            output_id, step_signals[signal], completed_steps + t
+                        )
+                if trace is not None:
+                    trace.observe_spikes(new_spikes)
+                spikes = new_spikes
+                segments.observe(spikes)
+                for name in observation_counts:
+                    observation_counts[name] += spikes[name].detach().to(torch.int64)
+                for name in spike_traces:
+                    spike_traces[name].append(spikes[name])
+                for name in voltage_traces:
+                    voltage_traces[name].append(voltage[name])
+                for name in populations:
+                    histories[name].push(spikes[name])
+                for projection_id in conductance_traces:
+                    projection = next(
+                        p for p in self.plan.projections if p.id == projection_id
+                    )
+                    conductance_traces[projection_id].append(
+                        conductance[(projection.id, projection.polarity)]
+                    )
 
         outputs: dict[str, torch.Tensor] = {}
         signal_values: dict[str, torch.Tensor] = {
@@ -1434,21 +1685,12 @@ class GraphExecutor(nn.Module):
             elif kind == "divide":
                 signal_values[f"{op['id']}.value"] = sources[0] / sources[1]
             elif kind == "custom_operation":
-                config = op.get("config", {})
-                definition = E.resolve(
-                    "operation",
-                    {
-                        "definition": config["definition"],
-                        "config": config.get("settings", {}),
-                    },
-                )
+                definition, update = self._operation_steps[op["id"]]
                 parameters = {
                     name: self.parameter_map()[name]
                     for name in op.get("parameters", [])
                 }
-                value = definition.function(
-                    tuple(sources), parameters, config.get("settings", {})
-                )
+                value = update(tuple(sources), parameters)
                 shape = tuple(
                     steps if d == "time" else batch if d == "batch" else d
                     for d in op["shape"]
@@ -1480,6 +1722,7 @@ class GraphExecutor(nn.Module):
             else {}
         )
         segments.boundary(completed_steps + steps, self.plan.dt_ms)
+        segments.finish_records()
         next_runtime_state = None
         if retain_runtime_state:
             next_input_histories = {
@@ -1584,6 +1827,13 @@ class GraphExecutor(nn.Module):
                 "extension_validation": self.extension_validation,
                 "projection_mode": self.projection_mode,
                 "compile_mode": self.compile_mode,
+                "execution_path": {
+                    "schema": "snnlab.network-blocks/v1",
+                    "selected": "kernel_loop" if block_reasons else "compiled_blocks",
+                    "requested_block_steps": self.compile_block_steps,
+                    "block_steps": 1 if block_reasons else self.compile_block_steps,
+                    "fallback_reasons": block_reasons,
+                },
                 "surrogate": copy.deepcopy(self.surrogate_config),
                 "result_snapshots": {
                     "parameters": retain_parameters,
@@ -1613,4 +1863,8 @@ class GraphExecutor(nn.Module):
             _batch_size=batch,
             model=self,
         )
+        if result.metrics["execution_path"] not in self._execution_paths:
+            self._execution_paths.append(
+                copy.deepcopy(result.metrics["execution_path"])
+            )
         return result, signal_values

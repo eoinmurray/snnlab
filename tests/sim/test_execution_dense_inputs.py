@@ -16,13 +16,13 @@ from snnlab.sim import (
     DatasetSnapshotBinding,
     DenseArrayBinding,
     EventStreamBinding,
-    ExecutionSpec,
     PoissonInputBinding,
     load_dense_array_bindings,
     resolve_dense_array_bindings,
-    simulate,
 )
 from snnlab.sim.cli import main
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 
 
 @pytest.mark.parametrize(

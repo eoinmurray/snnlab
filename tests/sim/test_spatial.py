@@ -10,6 +10,9 @@ import torch
 import torch.nn.functional as F
 
 from snnlab import lang, sim
+from snnlab.sim.requests import handlers
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 
 
 def circuit(*, current=True, inhibitory=False, delay=0, mode="avg", pooled=False):
@@ -184,8 +187,8 @@ def test_spiking_chain_trains_and_checkpoint_snapshot_roundtrip(tmp_path, mode):
     torch.manual_seed(9)
     events = torch.randint(2, (4, 2, 16)).float()
     checkpoint = tmp_path / "trained.checkpoint"
-    result = sim.train(
-        sim.ExecutionSpec(
+    result = train(
+        ExecutionSpec(
             kind="train",
             bundle=path,
             device="cpu",
@@ -201,8 +204,8 @@ def test_spiking_chain_trains_and_checkpoint_snapshot_roundtrip(tmp_path, mode):
         assert not torch.equal(
             result.snapshots["start"].parameters[name], result.parameters[name]
         )
-    inferred = sim.infer(
-        sim.ExecutionSpec(
+    inferred = handlers.infer(
+        ExecutionSpec(
             kind="infer",
             bundle=path,
             checkpoint=checkpoint,
@@ -363,8 +366,8 @@ def test_spatial_input_works_with_existing_sparse_event_binding():
     graph = lang.compile(net).graph
     values = torch.arange(120).reshape(3, 1, 40).remainder(5).eq(0).float()
     steps, batches, channels = values.nonzero(as_tuple=True)
-    sparse = sim.infer(
-        sim.ExecutionSpec(
+    sparse = handlers.infer(
+        ExecutionSpec(
             kind="infer",
             graph=graph,
             device="cpu",
@@ -373,8 +376,8 @@ def test_spatial_input_works_with_existing_sparse_event_binding():
             ),
         )
     )
-    dense = sim.infer(
-        sim.ExecutionSpec(
+    dense = handlers.infer(
+        ExecutionSpec(
             kind="infer",
             graph=graph,
             device="cpu",

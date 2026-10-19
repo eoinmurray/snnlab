@@ -5,7 +5,9 @@ from __future__ import annotations
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import DenseArrayBinding
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 
 
 def _standard_readout_graph(

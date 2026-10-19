@@ -35,22 +35,15 @@ class DecisionSegments:
 
 ## resets
 
-`ExecutionSpec.resets` accepts a sequence of `ResetVoltage(population_id, boundaries, value_mv=0.0)` objects. Only leaky-integrator populations are supported. Resets replace voltage before that population's update at the specified absolute timestep. Other populations, refractory counters, synaptic state and delayed spike histories continue normally. Overlapping resets for the same population, batch member and timestep are rejected.
+`resets` accepts a sequence of `ResetVoltage(population_id, boundaries, value_mv=0.0)` objects. Only leaky-integrator populations are supported. Resets replace voltage before that population's update at the specified absolute timestep. Other populations, refractory counters, synaptic state and delayed spike histories continue normally. Overlapping resets for the same population, batch member and timestep are rejected.
 
 ```python
 from pathlib import Path
 
-from snnlab.sim import (
-    Boundary,
-    BoundarySchedule,
-    DecisionSegments,
-    ExecutionSpec,
-    ResetVoltage,
-)
+from snnlab.sim import Boundary, BoundarySchedule, DecisionSegments, ResetVoltage, infer
 
 boundaries = BoundarySchedule(steps=(0, 200, 400))
-request = ExecutionSpec(
-    kind="infer",
+result = infer(
     bundle=Path("network.bundle"),
     input_bindings=input_bindings,
     resets=(ResetVoltage("out", boundaries, value_mv=0.0),),

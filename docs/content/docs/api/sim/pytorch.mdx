@@ -20,7 +20,7 @@ Checks backend capabilities, timebase, projection units and delays, then prepare
 ## GraphExecutor
 
 ```python
-GraphExecutor(plan: GraphPlan, *, seed: int=0, trainable_parameters: Sequence[str]=(), surrogate_slope: float=5.0, surrogate: Mapping[str, Any] | None=None, extension_validation: Literal['strict', 'structural']='structural', compile_mode: Literal['default'] | None=None, projection_mode: Literal['fast', 'strict']='fast')
+GraphExecutor(plan: GraphPlan, *, seed: int=0, trainable_parameters: Sequence[str]=(), surrogate_slope: float=5.0, surrogate: Mapping[str, Any] | None=None, extension_validation: Literal['strict', 'structural']='structural', compile_mode: Literal['default'] | None='default', projection_mode: Literal['fast', 'strict']='fast')
 ```
 
 `plan` is the result of `plan_graph`. `seed` seeds PyTorch initialization. `trainable_parameters` selects graph parameter IDs whose tensors require gradients; by default none are selected. `surrogate_slope` supplies the default spike backward slope. A serialized built-in `surrogate` overrides it and supplies gradient amplitude and threshold convention. When loading a training bundle, pass its resolved trainable IDs and compiled surrogate configuration explicitly. Construction calls `torch.manual_seed`, so it affects the global PyTorch RNG.
@@ -58,7 +58,7 @@ def forward(
 
 `inputs` maps declared input names to tensors with `(time, batch, channels)` leading layout. Inputs must share time length, batch size and device; use a compatible module device/dtype. This call returns [ExecutionResult](/api/sim/execution-result), whose official output tensors retain gradients. Diagnostics and continuation state are detached. Runtime state continues a trajectory when explicitly passed; otherwise each call starts with fresh dynamic state.
 
-`interventions` accepts an ordered sequence of typed `DropSpikes`, `AddPoissonSpikes` and `ReplaySpikes` objects, matching [ExecutionSpec.interventions](/api/sim/execution-spec#interventions). Replay replaces emitted spikes after the ordinary neuron update; authenticated absolute coverage supports runtime continuation. Intervention mappings are no longer accepted.
+`interventions` accepts an ordered sequence of typed `DropSpikes`, `AddPoissonSpikes` and `ReplaySpikes` objects, matching [interventions](/api/sim/execution-spec#interventions). Replay replaces emitted spikes after the ordinary neuron update; authenticated absolute coverage supports runtime continuation. Intervention mappings are no longer accepted.
 
 ## Parameter map
 

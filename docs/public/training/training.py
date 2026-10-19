@@ -13,7 +13,6 @@ import torch
 from snnlab import lang, viz
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     ValidationSpec,
     save_training_checkpoint,
     train,
@@ -139,8 +138,7 @@ def main():
         input_bindings=(validation_input,),
         targets={"class": validation_labels},
     )
-    execution = ExecutionSpec(
-        kind="train",
+    result = train(
         bundle=bundle_path,
         input_bindings=(train_input,),
         targets={"class": train_labels},
@@ -152,7 +150,6 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=True,
     )
-    result = train(execution)
     assert result.training_checkpoint is not None
     save_training_checkpoint(checkpoint_path, result.training_checkpoint)
     history = result.metrics["epochs"]

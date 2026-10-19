@@ -148,7 +148,7 @@ def timeline_metrics(events, wall_s):
 
 
 class TraceSession:
-    """Internal native-trainer integration; prefer ExecutionSpec(tracing=...)."""
+    """Internal native-trainer integration; prefer train(tracing=...)."""
 
     def __init__(self, spec, device):
         self.spec = spec

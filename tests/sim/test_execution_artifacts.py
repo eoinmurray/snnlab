@@ -8,13 +8,13 @@ import torch
 
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     derive_inference_products,
-    simulate,
     validate_derived_inference_products,
     validate_inference_artifacts,
     write_inference_artifacts,
 )
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 from tests.sim._bundle_builders import ping_classifier
 from tests.sim._execution_builders import (
     standard_readout_graph as _standard_readout_graph,

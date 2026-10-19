@@ -7,7 +7,7 @@ The supported reference covers authoring (`snnlab.lang`), graph execution (`snnl
 
 ```python
 from snnlab import lang, sim, viz, analysis, extensions
-from snnlab.sim import ExecutionSpec, simulate
+from snnlab.sim import simulate
 ```
 
 Each package's `__init__.py` is its central public export location. All supported functions and types are accessible through `import snnlab as snn` and `snn.lang`, `snn.sim`, `snn.viz` or `snn.analysis`, without submodule imports. All four packages resolve exports lazily, and subpackages are imported on demand. The former `snnlab.sim.execution` import path has been retired; import its supported functions and types from `snnlab.sim`. `snnlab.__version__`, `lang.__version__`, `sim.__version__` and `viz.__version__` are version strings.
@@ -15,7 +15,7 @@ Each package's `__init__.py` is its central public export location. All supporte
 ## Finding an API
 
 1. [Lang](/api/lang/network) creates declarations; [Compilation](/api/lang/compilation) validates and writes architecture bundles.
-2. [Execution Functions](/api/sim/execution-functions) runs [ExecutionSpec](/api/sim/execution-spec) requests and returns [ExecutionResult](/api/sim/execution-result).
+2. [Execution Functions](/api/sim/execution-functions) accept [keyword execution options](/api/sim/execution-spec) and return [ExecutionResult](/api/sim/execution-result).
 3. [Training Checkpoints](/api/sim/training-checkpoints) stores weights/optimizer progress; [Runtime State](/api/sim/runtime-state) stores ongoing dynamics.
 4. [Viz](/api/viz/plotting) composes figures and animations; [Analysis](/api/analysis) measures recorded arrays.
 5. [Extensions](/api/lang/extensions) registers versioned callback implementations shared by authoring and execution.
@@ -133,7 +133,7 @@ Import all supported authoring constructors, operations, readouts and recipe hel
 
 ### Sim
 
-Import all supported simulation functions and types from `snnlab.sim`, for example `from snnlab.sim import ExecutionSpec, simulate`. The package export map in `sim/__init__.py` keeps these import paths stable when implementation files move. Paths below are shown relative to `snnlab`.
+Import all supported simulation functions and types from `snnlab.sim`, for example `from snnlab.sim import simulate`. The package export map in `sim/__init__.py` keeps these import paths stable when implementation files move. Paths below are shown relative to `snnlab`.
 
 | Symbol | Reference |
 | --- | --- |
@@ -144,7 +144,6 @@ Import all supported simulation functions and types from `snnlab.sim`, for examp
 | `sim.lif_step_expeuler` | [Numerical reference helpers](/api/sim/execution-functions#numerical-reference-helpers) |
 | `sim.init_lif_state` | [Numerical reference helpers](/api/sim/execution-functions#numerical-reference-helpers) |
 | `sim.__version__` | Package version string. |
-| `sim.ExecutionSpec` | [Reference](/api/sim/execution-spec) |
 | `sim.ValidationSpec` | [Reference](/api/sim/execution-spec) |
 | `sim.TestSpec` | [Reference](/api/sim/execution-spec#test) |
 | `sim.InputBinding` | [Reference](/api/sim/execution-spec) |
@@ -163,7 +162,6 @@ Import all supported simulation functions and types from `snnlab.sim`, for examp
 | `sim.simulate` | [Reference](/api/sim/execution-functions) |
 | `sim.infer` | [Reference](/api/sim/execution-functions) |
 | `sim.train` | [Reference](/api/sim/execution-functions) |
-| `sim.execute_request` | [Reference](/api/sim/execution-functions) |
 | `sim.resolve_device` | [Reference](/api/sim/execution-functions) |
 | `sim.GraphExecutor` | [Reference](/api/sim/graph-executor) |
 | `sim.GraphPlan` | [Reference](/api/sim/graph-executor) |
@@ -306,7 +304,7 @@ Import all supported simulation functions and types from `snnlab.sim`, for examp
 
 | Internal package | Responsibility | Reference |
 | --- | --- | --- |
-| `requests/` | Request specifications, result types and execution handlers. | [ExecutionSpec](/api/sim/execution-spec), [ExecutionResult](/api/sim/execution-result), [Execution Functions](/api/sim/execution-functions) |
+| `requests/` | Request specifications, result types and execution handlers. | [Execution Options](/api/sim/execution-spec), [ExecutionResult](/api/sim/execution-result), [Execution Functions](/api/sim/execution-functions) |
 | `inputs/` | Binding declarations, file resolution, datasets, encoders and batch providers. | [Input bindings](/api/sim/execution-spec#input_bindings), [resolution helpers](/api/sim/execution-spec#input-resolution-helpers) |
 | `graph/` | Planning, PyTorch graph execution, numerical dynamics, kernels and extension helpers. | [GraphExecutor](/api/sim/graph-executor), [PyTorch Integration](/api/sim/pytorch) |
 | `runtime/` | Trajectory state, recording, measurement, interventions, resets and decisions. | [Runtime State](/api/sim/runtime-state), [Recording and Measurement](/api/sim/recording-measurement), [Interventions](/api/sim/interventions), [Resets and Decisions](/api/sim/resets-decisions) |

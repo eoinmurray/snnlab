@@ -31,8 +31,10 @@ def test_documented_exports_are_the_public_package_api():
 @pytest.mark.parametrize(
     "module, name",
     [
-        ("requests.spec", "ExecutionSpec"),
-        ("requests.handlers", "simulate"),
+        ("requests.api", "build"),
+        ("requests.api", "simulate"),
+        ("requests.api", "infer"),
+        ("requests.api", "train"),
         ("graph.executor", "GraphExecutor"),
         ("runtime.recording", "RecordingSpec"),
         ("runtime.interventions", "SpikeReplay"),
@@ -57,9 +59,9 @@ def test_package_import_is_lazy_in_a_fresh_process():
             "from snnlab import sim; import sys; "
             "assert 'torch' not in sys.modules; "
             "assert 'snnlab.sim.execution' not in sys.modules; "
-            "assert 'ExecutionSpec' in dir(sim); "
-            "from snnlab.sim import ExecutionSpec; "
-            "assert sim.ExecutionSpec is ExecutionSpec; "
+            "assert 'ExecutionSpec' not in dir(sim); "
+            "from snnlab.sim import simulate; "
+            "assert sim.simulate is simulate; "
             "exports = {name: getattr(sim, name) for name in sim.__all__}; "
             "assert 'snnlab.sim.execution' not in sys.modules",
         ],
@@ -70,7 +72,6 @@ def test_package_import_is_lazy_in_a_fresh_process():
 @pytest.mark.parametrize(
     "name",
     [
-        "ExecutionSpec",
         "ExecutionResult",
         "GraphPlan",
         "GraphRuntimeState",

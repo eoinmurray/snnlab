@@ -27,6 +27,12 @@ from snnlab.sim.inputs.bindings import (
     ResolvedDenseInputs,
     TargetArrayBinding,
 )
+from snnlab.sim.inputs.encoders import (
+    accepts_device,
+    encoder_device_policy,
+    poisson_device_policy,
+    transfer_compact,
+)
 
 DENSE_ARRAY_BINDING_SCHEMA = "tools/snnsim.dense-array-binding/v1"
 
@@ -304,6 +310,7 @@ def resolve_dense_array_bindings(
     device: str | torch.device = "cpu",
     seed: int = 0,
     protocol: Mapping[str, Any] | None = None,
+    _validated: bool = False,
 ) -> ResolvedDenseInputs:
     """Validate dense arrays, resolve symbolic axes, and freeze run provenance."""
     if bindings and inputs:
@@ -368,9 +375,17 @@ def resolve_dense_array_bindings(
             masks.append(input_id)
         elif not (value.is_floating_point() or value.dtype == torch.bool):
             value = value.float()
-        if value.is_floating_point() and not torch.isfinite(value).all():
+        if (
+            not _validated
+            and value.is_floating_point()
+            and not torch.isfinite(value).all()
+        ):
             raise ValueError(f"input {input_id} contains non-finite values")
-        if signal_type == "spikes" and not torch.all((value == 0) | (value == 1)):
+        if (
+            not _validated
+            and signal_type == "spikes"
+            and not torch.all((value == 0) | (value == 1))
+        ):
             raise ValueError(
                 f"input {input_id} spike values must be boolean or zero/one"
             )
@@ -812,7 +827,12 @@ def resolve_poisson_input_bindings(
             realized = torch.tensor(rates, dtype=torch.float32)[indices]
         else:
             realized = torch.full((binding.batch_size,), rates[0], dtype=torch.float32)
-        probability = realized.reshape(1, -1, 1) * dt_ms / 1000.0
+        probability = transfer_compact(
+            realized.reshape(1, -1, 1) * dt_ms / 1000.0, device
+        )
+        # Keep categorical selection's CPU stream, then draw spikes locally.
+        if torch.device(device).type != "cpu":
+            generator = torch.Generator(device=device).manual_seed(int(binding.seed))
         value = (
             (
                 torch.rand(
@@ -820,6 +840,8 @@ def resolve_poisson_input_bindings(
                     binding.batch_size,
                     int(declared[2]),
                     generator=generator,
+                    device=device,
+                    dtype=torch.float32,
                 )
                 < probability
             )
@@ -839,6 +861,7 @@ def resolve_poisson_input_bindings(
                 "rates_hz": list(rates),
                 "realized_rates_hz": realized.tolist(),
                 "seed": int(binding.seed),
+                **poisson_device_policy(device),
                 "selection": "uniform_independent_per_presentation"
                 if binding.categorical
                 else "constant",
@@ -899,6 +922,7 @@ def resolve_dataset_snapshot_binding(
     _spike_seed=None,
     _rate_seed=None,
     _validated=False,
+    _event_index=None,
 ) -> tuple[ResolvedDenseInputs, tuple[TargetArrayBinding, ...]]:
     """Load, select, and encode one immutable MNIST/SHD-style NPZ snapshot."""
     specs = {row["id"]: row for row in graph.get("inputs", [])}
@@ -1024,8 +1048,10 @@ def resolve_dataset_snapshot_binding(
             raise ValueError(
                 "rate-Poisson encoder requires timestep-aligned positive duration and a supported finite non-negative max rate"
             )
-        rates = torch.as_tensor(features[selected], dtype=torch.float32)
-        generator = torch.Generator(device="cpu").manual_seed(
+        rates = transfer_compact(
+            torch.as_tensor(features[selected], dtype=torch.float32), device
+        )
+        generator = torch.Generator(device=device).manual_seed(
             int(encoder.seed if _spike_seed is None else _spike_seed)
         )
         if choices is not None:
@@ -1036,7 +1062,10 @@ def resolve_dataset_snapshot_binding(
                 torch.randint(len(choices), (cap,), generator=rate_generator)
             ]
             probability = (
-                rates.unsqueeze(0) * selected_rates.reshape(1, cap, 1) * dt_ms / 1000.0
+                rates.unsqueeze(0)
+                * transfer_compact(selected_rates, device).reshape(1, cap, 1)
+                * dt_ms
+                / 1000.0
             )
         else:
             selected_rates = None
@@ -1048,6 +1077,7 @@ def resolve_dataset_snapshot_binding(
                 channels,
                 generator=generator,
                 dtype=torch.float32,
+                device=device,
             )
             < probability
         ).float()
@@ -1056,6 +1086,7 @@ def resolve_dataset_snapshot_binding(
             "duration_ms": duration_ms,
             "max_rate_hz": max_rate_hz,
             "seed": int(encoder.seed),
+            **poisson_device_policy(device),
             "distribution": "Bernoulli discretization of feature-scaled homogeneous Poisson",
             **(
                 {
@@ -1080,59 +1111,17 @@ def resolve_dataset_snapshot_binding(
             "seed": None,
         }
     elif encoder.kind == "event_bin":
-        event_keys = ("event_sample", "event_time_ms", "event_channel")
-        missing = [key for key in event_keys if key not in arrays]
-        if missing:
-            raise ValueError(f"event dataset snapshot is missing keys {missing}")
-        samples = np.asarray(arrays["event_sample"])
-        times = np.asarray(arrays["event_time_ms"])
-        event_channels = np.asarray(arrays["event_channel"])
-        if (
-            samples.ndim != 1
-            or times.ndim != 1
-            or event_channels.ndim != 1
-            or not (len(samples) == len(times) == len(event_channels))
-            or not np.issubdtype(samples.dtype, np.integer)
-            or not np.issubdtype(event_channels.dtype, np.integer)
-            or not np.issubdtype(times.dtype, np.floating)
-        ):
-            raise ValueError(
-                "event dataset coordinates must be equal-length sample/channel integer and time floating arrays"
-            )
+        from snnlab.sim.inputs.events import EventIndex
+
         duration_ms = float(encoder.duration_ms or 0)
-        raw_steps = duration_ms / dt_ms
-        if duration_ms <= 0 or not math.isclose(
-            raw_steps, round(raw_steps), abs_tol=1e-9
-        ):
-            raise ValueError(
-                "event-bin encoder duration must be a positive integer number of timesteps"
-            )
-        if (
-            not np.isfinite(times).all()
-            or np.any(samples < 0)
-            or np.any(samples >= sample_count)
-            or np.any(event_channels < 0)
-            or np.any(event_channels >= channels)
-            or np.any(times < 0)
-            or np.any(times >= duration_ms)
-        ):
-            raise ValueError("event dataset coordinates are out of snapshot bounds")
-        selected_position = {
-            int(sample): index for index, sample in enumerate(selected)
-        }
-        spikes = torch.zeros(int(round(raw_steps)), cap, channels)
-        retained = 0
-        collisions = 0
-        for sample, time_ms, channel in zip(
-            samples, times, event_channels, strict=True
-        ):
-            batch = selected_position.get(int(sample))
-            if batch is None:
-                continue
-            step = min(int(float(time_ms) / dt_ms), spikes.shape[0] - 1)
-            collisions += int(spikes[step, batch, int(channel)] != 0)
-            spikes[step, batch, int(channel)] = 1
-            retained += 1
+        index = _event_index or EventIndex(
+            arrays,
+            sample_count=sample_count,
+            channels=channels,
+            duration_ms=duration_ms,
+            dt_ms=dt_ms,
+        )
+        spikes, retained, collisions = index.encode(selected, device=device)
         encoder_row = {
             "kind": encoder.kind,
             "duration_ms": duration_ms,
@@ -1145,6 +1134,7 @@ def resolve_dataset_snapshot_binding(
     elif encoder.kind == "custom":
         spec_row = {"definition": encoder.definition, "config": dict(encoder.config)}
         definition = E.resolve("encoder", spec_row)
+        device_aware = accepts_device(definition.function)
         trace = current_trace()
         with trace.region("encoding") if trace is not None else nullcontext():
             spikes = definition.function(
@@ -1154,6 +1144,7 @@ def resolve_dataset_snapshot_binding(
                 channels=channels,
                 config=encoder.config,
                 seed=encoder.seed if _spike_seed is None else _spike_seed,
+                **({"device": torch.device(device)} if device_aware else {}),
             )
         if (
             not isinstance(spikes, torch.Tensor)
@@ -1168,6 +1159,7 @@ def resolve_dataset_snapshot_binding(
             "definition": encoder.definition,
             "config": dict(encoder.config),
             "seed": encoder.seed,
+            **(encoder_device_policy(device) if device_aware else {}),
         }
     else:
         raise ValueError(f"unsupported dataset encoder {encoder.kind!r}")
@@ -1193,6 +1185,7 @@ def resolve_dataset_snapshot_binding(
         bindings=(DenseArrayBinding(binding.input_id, spikes, source),),
         device=device,
         seed=execution_seed,
+        _validated=encoder.kind != "custom",
         protocol={
             "dataset": {
                 "identity": binding.dataset_id,

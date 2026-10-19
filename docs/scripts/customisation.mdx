@@ -28,6 +28,8 @@ A custom neuron has an initial tensor state and a step function. Put these funct
 
 The initial state provides voltage and adaptation. The executor adds a zero-valued integer refractory tensor when absent. The step returns the updated state and binary spikes. Here adaptation subtracts from the net current and increases by `adaptation_na` after each spike; its exponential decay is controlled by `tau_adapt_ms`.
 
+The ordinary `adaptive_step(context)` compiles by default alongside the built-in neuron update. Its torch expressions operate on the whole batch/population; `torch.where` resets voltage without a Python branch on tensor data. The scalar exponential factors depend only on fixed configuration and can specialize during tracing. Keep state keys/shapes/devices/dtypes stable, use `context.spike` for gradients, and avoid `.item()`, `.cpu()`, NumPy conversions or loops over cells inside the step. No compilation decorator is required. See [Writing efficient PyTorch callbacks](/api/lang/extensions#writing-efficient-pytorch-callbacks) for compiler, validation and timing guidance.
+
 `state_units` makes adaptation available through `population.state("adaptation")`. For callback contracts and additional extension categories, see [Extensions](/api/lang/extensions).
 
 ## 2. Define a custom weight distribution
@@ -37,6 +39,8 @@ The initial state provides voltage and adaptation. The executor adds a zero-valu
 ```
 
 The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. Keep this function in `custom_neurons.py` too.
+
+This initializer draws the whole weight tensor on the requested device with the requested dtype. Initialization runs eagerly during setup to preserve seeded draws; speeding up per-timestep dynamics is separate. Repeated custom weight constraints compile after optimizer updates. Prefer whole-tensor expressions such as `parameter.clamp(...)` to loops over weights; see [Weights](/weights#efficient-custom-initializers-and-constraints).
 
 Register the callbacks by their `module:function` references when building the network:
 

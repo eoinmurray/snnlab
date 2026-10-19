@@ -1,0 +1,77 @@
+{
+  "schema": "snnlab.execution-verification/v1",
+  "date": "2026-10-19",
+  "git_head": "c141a6f987ec28b4e83f19d3d5c1f817ae908e88",
+  "local_simulator": {
+    "passed": 1167,
+    "skipped": 71,
+    "failed": 16,
+    "elapsed_s": 208.71,
+    "command": "OMP_NUM_THREADS=1 MPLBACKEND=Agg .venv/bin/python -m pytest -q tests/sim"
+  },
+  "clean_baseline": {
+    "failed": 16,
+    "elapsed_s": 1.06,
+    "method": "git archive HEAD; same failed node IDs, same venv, isolated source path",
+    "same_failures": true,
+    "failed_node_ids": [
+      "tests/sim/test_batch_encoding.py::test_changed_encoder_draws_and_old_protocol_cannot_resume",
+      "tests/sim/test_batch_encoding.py::test_cli_dataset_encoding_is_automatic_and_categorical_rates_are_recorded",
+      "tests/sim/test_cli_policy.py::test_training_uses_recipe_epochs_and_honors_explicit_zero[0]",
+      "tests/sim/test_cli_policy.py::test_training_uses_recipe_epochs_and_honors_explicit_zero[1]",
+      "tests/sim/test_cli_policy.py::test_training_uses_recipe_epochs_and_honors_explicit_zero[None]",
+      "tests/sim/test_execution_checkpoints.py::test_graph_inference_loads_portable_selected_checkpoint_with_provenance",
+      "tests/sim/test_execution_checkpoints.py::test_training_checkpoint_round_trip_and_resume_are_exact",
+      "tests/sim/test_execution_cli.py::test_production_shaped_deep_shd_recipe_trains_all_recurrent_layers",
+      "tests/sim/test_execution_datasets.py::test_prebinned_dataset_snapshot_trains_with_bound_labels",
+      "tests/sim/test_execution_targets.py::test_graph_training_cli_loads_targets_and_writes_resume_checkpoint",
+      "tests/sim/test_execution_training.py::test_graph_training_authenticates_recipe_from_bundle",
+      "tests/sim/test_execution_training.py::test_graph_training_backpropagates_through_recurrence_and_spike_budget",
+      "tests/sim/test_execution_training.py::test_graph_training_updates_named_parameters_and_optimizer_state_deterministically",
+      "tests/sim/test_numeric_conformance.py::test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly",
+      "tests/sim/test_numeric_conformance.py::test_shuffled_dataset_trajectory_matches_independent_pytorch_loop",
+      "tests/sim/test_snntorch_benchmark.py::test_two_epoch_training_and_plot_artifacts_keep_partial_batches"
+    ]
+  },
+  "software": {
+    "python": "3.12.12 (main, Nov 19 2025, 22:30:44) [Clang 21.1.4 ]",
+    "torch": "2.14.1",
+    "cuda_available": false,
+    "mps_available": true
+  },
+  "docs": {
+    "types": "passed, 0 errors/warnings/hints",
+    "root_build": "passed, 52 pages",
+    "base_build": "passed, 52 pages, SITE_BASE_PATH=/snnlab"
+  },
+  "ruff": "passed",
+  "diff_check": "passed",
+  "logs": {
+    "local-simulator.log": {
+      "file": "verification/local-simulator.log.gz",
+      "uncompressed_sha256": "1ce495449470b09d9c51e88ec5c832c81327e4428569075851a7f52b0edb3014"
+    },
+    "clean-baseline.log": {
+      "file": "verification/clean-baseline.log.gz",
+      "uncompressed_sha256": "ef052b11662c5bf3ded93f9fe4f1867b216cab019613c237076f06c8a8095ba6"
+    },
+    "docs-types.log": {
+      "file": "verification/docs-types.log.gz",
+      "uncompressed_sha256": "eca2170dbf4384055ed2c1521fea215270fefd7d27cd9d1bb36fef1d43173738"
+    },
+    "docs-root.log": {
+      "file": "verification/docs-root.log.gz",
+      "uncompressed_sha256": "8d9bd1d593cc3ec97100a4603683bf93aaa0bfe4c48566874dc50614d2374d45"
+    },
+    "docs-base.log": {
+      "file": "verification/docs-base.log.gz",
+      "uncompressed_sha256": "a4f81c7e859378f22e23c9f68db223574f69cc7f601feb90cb7d612003ef047d"
+    }
+  },
+  "limits": [
+    "The simulator suite is not fully green: all 16 failures reproduce on the clean release baseline. No unrelated training-policy assertions were changed for this issue.",
+    "Remote CUDA checks and exact measured source snapshots are retained separately in cuda-summary.json.",
+    "These checks describe the retained validation snapshot. Concurrent changes to the public execution API started after this run and are separate work."
+  ],
+  "source_snapshot_reference": "cuda-h100/cuda-5b5595aa1bf3/cuda-profile.json.gz contains the library source hashes from the same pre-API-refactor validation interval."
+}

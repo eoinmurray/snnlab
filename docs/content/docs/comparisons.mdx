@@ -68,17 +68,16 @@ The description makes several useful choices visible:
 Continue the example with a short simulation of the saved bundle:
 
 ```python
-from snnlab.sim import ExecutionSpec, PoissonInputBinding, simulate
+from snnlab.sim import PoissonInputBinding, simulate
 
-result = simulate(ExecutionSpec(
-    kind="simulate",
+result = simulate(
     bundle=bundle_path,
     input_bindings=(PoissonInputBinding(
         input_id="inputs", steps_count=1000, rates_hz=(80,), seed=17,
     ),),
     seed=17,
     device="cpu",
-))
+)
 data = result.numpy(batch=0)
 print(data.outputs["spikes"].shape)  # (1000, 16)
 print(data.diagnostics["e_voltage"].shape)  # (1000, 16)

@@ -1,4 +1,4 @@
-"""Prepared tensor kernels; graph orchestration and callbacks remain eager."""
+"""Prepared tensor kernels; graph orchestration and validation remain eager."""
 
 from __future__ import annotations
 
@@ -7,16 +7,50 @@ import math
 
 import torch
 
+from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab.sim.graph import dynamics as M
 from snnlab.sim.graph import extensions as X
 
 
-def neuron_kernel(population, *, dt_ms, refractory, spike_function, compile_mode=None):
+def prepare_kernel(step, compile_mode, *, fullgraph=True):
+    if compile_mode is not None:
+        # Each prepared closure owns its compiler guards. Sharing a code object
+        # across unrelated configurations exhausts Dynamo's cache limit.
+        step.__code__ = step.__code__.replace(co_name=f"tensor_step_{id(step)}")
+        return torch.compile(
+            step, mode=compile_mode, fullgraph=fullgraph, dynamic=False
+        )
+    return step
+
+
+def neuron_kernel(
+    population,
+    *,
+    dt_ms,
+    refractory,
+    spike_function,
+    compile_mode="default",
+    definition=None,
+    fullgraph=True,
+):
     config = copy.deepcopy(population["neuron"])
     kind = config["kind"]
     ref_steps = refractory.get("refractory_steps", 0)
-    if kind == "cuba_lif":
+    if kind == "custom_neuron":
+
+        def step(state, excitatory, inhibitory):
+            return definition.function(
+                E.NeuronContext(
+                    state,
+                    excitatory,
+                    inhibitory,
+                    dt_ms,
+                    config.get("config", {}),
+                    spike_function,
+                )
+            )
+    elif kind == "cuba_lif":
 
         def step(voltage, ref, excitatory, inhibitory):
             return X.current_lif(
@@ -81,9 +115,69 @@ def neuron_kernel(population, *, dt_ms, refractory, spike_function, compile_mode
             )
     else:
         return None
-    if compile_mode is not None:
-        # Each prepared closure owns its compiler guards. Sharing a code object
-        # across unrelated neuron configurations exhausts Dynamo's cache limit.
-        step.__code__ = step.__code__.replace(co_name=f"neuron_step_{id(step)}")
-        step = torch.compile(step, mode=compile_mode, fullgraph=True, dynamic=False)
-    return step
+    return prepare_kernel(step, compile_mode, fullgraph=fullgraph)
+
+
+def synapse_kernel(
+    projection, *, spec, dt_ms, compile_mode, projection_mode, definition=None
+):
+    config = copy.deepcopy(spec.get("config", {}))
+    if definition is not None:
+
+        def step(state, drive):
+            return definition.function(E.SynapseContext(state, drive, dt_ms, config))
+    elif projection_mode == "fast" and projection.decay == 0.0:
+
+        def step(previous, drive):
+            return drive
+    else:
+        decay = projection.decay
+
+        def step(previous, drive):
+            return previous * decay + drive
+
+    return prepare_kernel(step, compile_mode)
+
+
+def constraint_kernel(spec, *, compile_mode, check_values=True):
+    if not spec:
+        return lambda value: value
+    spec = copy.deepcopy(spec)
+    if spec["kind"] == "non_negative":
+
+        def step(value):
+            return value.clamp(min=0)
+
+        return prepare_kernel(step, compile_mode)
+    definition = E.resolve("constraint", spec)
+    config = spec.get("config", {})
+
+    def step(value):
+        return definition.function(value, config)
+
+    update = prepare_kernel(step, compile_mode)
+
+    def checked(value):
+        return X.checked_tensor(
+            update(value),
+            shape=value.shape,
+            device=value.device,
+            dtype=value.dtype,
+            name=definition.name,
+            check_values=check_values,
+        )
+
+    return checked
+
+
+def operation_kernel(operation, *, compile_mode):
+    spec = copy.deepcopy(operation["config"])
+    config = spec.get("settings", {})
+    definition = E.resolve(
+        "operation", {"definition": spec["definition"], "config": config}
+    )
+
+    def step(sources, parameters):
+        return definition.function(sources, parameters, config)
+
+    return definition, prepare_kernel(step, compile_mode)

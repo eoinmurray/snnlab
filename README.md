@@ -26,6 +26,11 @@ flag-built networks and config replay have been removed; see the
 
 Native training also supports online minibatch metrics, validation-only epoch evaluation, stratified schedules with configurable tails, and immutable epoch progress callbacks. See `examples/native-training/progress.py` for partial checkpoint resume and final/selected checkpoints, and the [execution policies](docs/content/docs/api/sim/execution-spec.mdx) for measurement and RNG contracts.
 
+For a quick offline training benchmark with conductance-based LIF neurons, run
+`uv run python benchmarks/scikit-digits/benchmark.py`. See the
+[scikit-learn digits benchmark](benchmarks/scikit-digits/README.md) for the
+protocol, smoke mode and saved metrics/checkpoints.
+
 Spatial inputs and populations can declare `spatial_shape=(channels, height, width)` while retaining flat execution tensors. `lang.Conv2d` supplies shared-kernel connectivity for current or conductance projections, and `lang.pool2d` supplies average/max spatial pooling. See the [spatial API](docs/content/docs/api/lang/network.mdx#convolutional-connectivity) for geometry, compact kernel layout and training support.
 
 ## Simulator commands

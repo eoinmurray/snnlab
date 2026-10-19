@@ -5,7 +5,7 @@ description: Complete reference for authoring networks, populations, connections
 
 All supported authoring symbols are exported directly by `snnlab.lang`. You can use `from snnlab import lang`, or `import snnlab as snn` followed by `snn.lang.Network(...)`; no implementation-module imports are required.
 
-`lang.Network` is the mutable authoring object for a spiking network. Its methods declare a graph; they do not execute it. Compile the network with `lang.compile`, then pass the compiled graph or bundle to [ExecutionSpec](/api/sim/execution-spec).
+`lang.Network` is the mutable authoring object for a spiking network. Its methods declare a graph; they do not execute it. Compile the network with `lang.compile`, then pass the compiled graph or bundle to [Execution Options](/api/sim/execution-spec).
 
 ```python
 from snnlab import lang
@@ -67,7 +67,7 @@ inputs = net.input(
 
 The network timestep determines the physical duration of each time step. Sixteen channels means sixteen input signals per time step and batch item; it does not specify the number of neurons in the receiving population.
 
-See [ExecutionSpec input bindings](/api/sim/execution-spec#input_bindings) for supplying dense tensors, sparse events, Poisson spike trains or datasets.
+See [Execution input bindings](/api/sim/execution-spec#input_bindings) for supplying dense tensors, sparse events, Poisson spike trains or datasets.
 
 ## population
 
@@ -181,7 +181,7 @@ projection = net.connect(
 )
 ```
 
-See [Quickstart](/quickstart) for a complete simulation and [ExecutionSpec](/api/sim/execution-spec) for execution settings.
+See [Quickstart](/quickstart) for a complete simulation and [Execution Options](/api/sim/execution-spec) for execution settings.
 
 ## parameter
 
@@ -244,7 +244,7 @@ net.expose(projection.conductance, name="input_conductance")
 
 With one signal and an explicit name, that name becomes the diagnostic key. With multiple signals and a name, keys are `"<name>_0"`, `"<name>_1"`, and so on. Without a name, each key is `"<signal-owner>_<signal-port>"`, for example `"E_voltage"`. These names must be unique in the network.
 
-Exposed signals return by default as detached tensors in `result.diagnostics`. Set `ExecutionSpec(diagnostics=False, ...)` to disable them for one run without changing official outputs. Use [result.numpy](/api/sim/execution-result#numpy) to retrieve independent NumPy arrays for plotting.
+Exposed signals return by default as detached tensors in `result.diagnostics`. Set `diagnostics=False` to disable them for one run without changing official outputs. Use [result.numpy](/api/sim/execution-result#numpy) to retrieve independent NumPy arrays for plotting.
 
 ## asset
 

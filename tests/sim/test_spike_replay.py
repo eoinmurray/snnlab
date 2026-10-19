@@ -11,7 +11,6 @@ from snnlab.sim import (
     DenseArrayBinding,
     DenseSpikeReplay,
     DropSpikes,
-    ExecutionSpec,
     GraphExecutor,
     ReplaySpikes,
     SparseSpikeReplay,
@@ -19,11 +18,12 @@ from snnlab.sim import (
     load_spike_replay,
     plan_graph,
     save_spike_replay,
-    simulate,
     validate_inference_artifacts,
     write_inference_artifacts,
 )
 from snnlab.sim.cli import execution_spec_from_args, parse_args
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 from tests._circuits import author_ping
 from tests.sim._execution_builders import expose_graph_diagnostics
 

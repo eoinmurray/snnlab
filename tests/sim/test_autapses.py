@@ -12,15 +12,15 @@ from snnlab.lang import validate_graph
 from snnlab.lang.compilation.serialization import graph_dict
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     GraphExecutor,
     load_runtime_state,
     load_training_checkpoint,
     plan_graph,
     save_runtime_state,
-    simulate,
-    train,
 )
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 
 
 def recurrent_network(

@@ -12,7 +12,6 @@ from scipy.integrate import solve_ivp
 from snnlab import lang
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     GraphExecutor,
     NPZRecordingSink,
     RecordingSpec,
@@ -20,9 +19,10 @@ from snnlab.sim import (
     load_runtime_state,
     plan_graph,
     save_runtime_state,
-    simulate,
 )
 from snnlab.sim.graph import extensions as X
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 
 MODELS = (lang.CUBA_ALIF, lang.COBA_ALIF, lang.CUBA_ADEX, lang.COBA_ADEX)
 

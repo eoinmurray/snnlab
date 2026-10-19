@@ -11,7 +11,7 @@ import torch
 
 from snnlab import lang as snn
 from snnlab.lang.compilation.serialization import digest
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, GraphExecutor, build, train
+from snnlab.sim import DenseArrayBinding, GraphExecutor
 from snnlab.sim.diagnostics.conformance import (
     CONFORMANCE_REPORT_SCHEMA,
     ComparisonPolicy,
@@ -20,6 +20,9 @@ from snnlab.sim.diagnostics.conformance import (
     remap_named_tensors,
     write_conformance_report,
 )
+from snnlab.sim.requests.handlers import build
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests._circuits import author_ping
 from tests.sim._execution_builders import expose_graph_diagnostics
 

@@ -76,6 +76,8 @@ projection = net.connect(
 
 With an existing parameter, set its initializer and constraint on `net.parameter`. The `constraint` argument to `connect` does not modify that parameter.
 
+For custom distributions and restrictions, see [efficient custom initializers and constraints](/weights#efficient-custom-initializers-and-constraints). Initializers run eagerly at setup; repeated post-update constraint calculations compile by default. Use vectorized torch operations and the supplied device/dtype, with no host scalar reads or per-weight Python loops.
+
 ## Constraints
 
 | Value | Behavior |

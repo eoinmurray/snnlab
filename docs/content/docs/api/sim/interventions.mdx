@@ -29,7 +29,7 @@ class AddPoissonSpikes:
 
 ## Execution semantics
 
-`ExecutionSpec.interventions` is an ordered sequence of typed objects, defaulting to `()`. It is supported by graph `simulate` / `infer` and directly by `GraphExecutor.forward`. Graph training rejects interventions. Import the types from `snnlab.sim`:
+`interventions` is an ordered sequence of typed objects, defaulting to `()`. It is supported by graph `simulate` / `infer` and directly by `GraphExecutor.forward`. Graph training rejects interventions. Import the types from `snnlab.sim`:
 
 ```python
 DropSpikes(population_id="E", probability=0.25, seed=None)
@@ -56,15 +56,14 @@ class DenseSpikeReplay:
 For a caller-owned stream, create an independent, authenticated snapshot:
 
 ```python
-from snnlab.sim import DenseSpikeReplay, ReplaySpikes
+from snnlab.sim import DenseSpikeReplay, ReplaySpikes, infer
 
 payload = DenseSpikeReplay.from_tensor(
     baseline_spikes,
     start_step=0,
     dt_ms=0.1,
 )
-request = ExecutionSpec(
-    kind="infer",
+result = infer(
     graph=bundle.graph,
     input_bindings=input_bindings,
     interventions=(ReplaySpikes("I", payload),),

@@ -23,13 +23,7 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.sim import (
-    DenseArrayBinding,
-    ExecutionSpec,
-    ValidationSpec,
-    save_training_checkpoint,
-    train,
-)
+from snnlab.sim import DenseArrayBinding, ValidationSpec, save_training_checkpoint, train
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.5
@@ -90,7 +84,7 @@ validation_input = DenseArrayBinding(input_id="inputs", value=validation_spikes)
 
 Input tensors have `(400, samples, 4)` axes: time, sample/batch and input channel. Labels are integer class IDs `0` or `1`. Training and validation use different random seeds and share no samples.
 
-[`DenseArrayBinding`](/api/sim/execution-spec#densearraybinding) supplies these custom spike tensors. The training label vector is supplied separately through `ExecutionSpec.targets`, under the name used by the loss.
+[`DenseArrayBinding`](/api/sim/execution-spec#densearraybinding) supplies these custom spike tensors. The training label vector is supplied separately through `targets`, under the name used by the loss.
 
 ## 3. Define the network and readout
 
@@ -175,7 +169,7 @@ recipe = lang.TrainSpec(
 
 `lang.FastSigmoid(slope=1.0)` explicitly enables the fast-sigmoid surrogate for the E neurons. The forward pass still emits discrete spikes; the backward pass uses a smooth approximation to the threshold derivative so gradients reach `w_in`. Small nonzero initial `w_out` values allow this gradient path to carry a signal from the first update. `gradient_clip=1.0` caps the combined gradient norm before the optimizer step.
 
-`AdamW(weight_decay=0.0)` updates both connections. `TrainSpec` declares the loss and optimization rules. The direct `ExecutionSpec` fields below determine the epoch and minibatch schedule.
+`AdamW(weight_decay=0.0)` updates both connections. `TrainSpec` declares the loss and optimization rules. The execution keyword arguments below determine the epoch and minibatch schedule.
 
 ## 6. Bundle the network and recipe
 
@@ -197,15 +191,14 @@ Compilation validates both the graph and training recipe. `network.bundle` conta
 
 ## 7. Train and evaluate in one call
 
-[`ValidationSpec`](/api/sim/execution-spec#validation) supplies held-out input bindings and labels. Pass it to `ExecutionSpec.validation`, then call `train` once:
+[`ValidationSpec`](/api/sim/execution-spec#validation) supplies held-out input bindings and labels. Pass it as `validation=validation` when calling `train`:
 
 ```python
 validation = ValidationSpec(
     input_bindings=(validation_input,),
     targets={"class": validation_labels},
 )
-execution = ExecutionSpec(
-    kind="train",
+result = train(
     bundle=bundle_path,
     input_bindings=(train_input,),
     targets={"class": train_labels},
@@ -217,7 +210,6 @@ execution = ExecutionSpec(
     batch_size=BATCH_SIZE,
     shuffle=True,
 )
-result = train(execution)
 assert result.training_checkpoint is not None
 save_training_checkpoint(checkpoint_path, result.training_checkpoint)
 history = result.metrics["epochs"]
@@ -235,7 +227,7 @@ for row in history:
 `result.metrics["epochs"]` contains loss and accuracy measured **after each epoch on the whole training and validation split**, plus epoch 0 before learning. These are evaluations of fixed weights, not the last minibatch's loss or an average collected while weights were changing. Accuracy is the fraction of samples whose highest-scoring class matches the label.
 
 To measure training and evaluation separately, add `training_timing=True` to the
-`ExecutionSpec` above before calling `train`. Read
+`train` call above. Read
 `result.metrics["training_timing"]["training_s"]` for training-loop seconds and
 `result.metrics["training_timing"]["epochs"]` for per-epoch phase durations.
 The default synchronized mode measures completed GPU work at phase boundaries;
@@ -247,38 +239,51 @@ for the complete scopes and host-only enqueue timing.
 To select completed-epoch weights by validation cross-entropy, breaking ties with accuracy, configure your execution request before calling `train`:
 
 ```python
-from dataclasses import replace
 from snnlab.sim import CheckpointSelection, SelectionMetric
 
-execution = replace(execution, checkpoint_selection=CheckpointSelection(
-    metric=SelectionMetric("cross_entropy", objective=0, direction="min"),
-    tie_break=(SelectionMetric("accuracy", objective=0, direction="max"),),
-))
-result = train(execution)
+result = train(
+    graph=bundle.graph,
+    training=bundle.training,
+    input_bindings=(train_input,),
+    targets={"class": train_labels},
+    validation=validation,
+    epochs=20,
+    batch_size=32,
+    checkpoint_selection=CheckpointSelection(
+        metric=SelectionMetric("cross_entropy", objective=0, direction="min"),
+        tie_break=(SelectionMetric("accuracy", objective=0, direction="max"),),
+    ),
+)
 selected = result.selected_checkpoint
 print(selected.selection_record)
 save_training_checkpoint(OUTPUT_DIR / "selected.checkpoint", selected)
 ```
 
-`execution` is your request containing the graph, recipe, training bindings and `ValidationSpec`. This optional alternative can select an earlier epoch than the final state. Initial weights are excluded; exact ties retain the earliest winner. The final checkpoint retains the winner for resume. See [Checkpoint selection](/api/sim/execution-spec#checkpoint_selection) for policy and compatibility rules. The downloadable example below keeps its existing final-checkpoint workflow.
+Pass the same graph, recipe, training bindings and `ValidationSpec` as in the main training call. This optional alternative can select an earlier epoch than the final state. Initial weights are excluded; exact ties retain the earliest winner. The final checkpoint retains the winner for resume. See [Checkpoint selection](/api/sim/execution-spec#checkpoint_selection) for policy and compatibility rules. The downloadable example below keeps its existing final-checkpoint workflow.
 
 For an external NPZ dataset, use `DatasetSnapshotBinding` in `input_bindings` and its `target_id` for labels. Encoding is automatically batchwise; no additional switch is needed. With `DatasetEncoder("rate_poisson", duration_ms=200, max_rate_hz=100, seed=17)`, training receives fresh spikes per epoch while validation reuses deterministic draws. `rates_hz=(40, 80, 120)` can replace `max_rate_hz` for one categorical rate per presentation. Set `ValidationSpec.encoding_seeds=(101, 103)` when multiple explicit validation draws are required. See [automatic batch encoding](/api/sim/execution-spec#automatic-batch-encoding) for source format, memory, streams and resume compatibility. This downloadable example continues to replay its explicitly constructed dense spike arrays.
 
 Optional named epoch observations can be requested without enabling diagnostic traces:
 
 ```python
-from dataclasses import replace
 from snnlab.sim import EpochObservations
 
-# `execution` is your ExecutionSpec for the graph and training inputs.
-execution = replace(execution, observations=EpochObservations(
-    population_rates=("E",),
-    parameter_norms=("w_out",),
-    gradient_norms=("w_out",),
-))
+result = train(
+    graph=bundle.graph,
+    training=bundle.training,
+    input_bindings=(train_input,),
+    targets={"class": train_labels},
+    epochs=20,
+    batch_size=32,
+    observations=EpochObservations(
+        population_rates=("E",),
+        parameter_norms=("w_out",),
+        gradient_norms=("w_out",),
+    ),
+)
 ```
 
-Use your graph's exact IDs (this example declares `E` and `w_out`). See [Epoch observations](/api/sim/execution-result#epoch-observations) for units, output-neuron activity, reference probes and resumable histories, and [ExecutionSpec](/api/sim/execution-spec#observations) for configuration. Observations measure fixed epoch states and preserve evaluation RNG streams; they do not supply new checkpoint-selection rules.
+Use your graph's exact IDs (this example declares `E` and `w_out`). See [Epoch observations](/api/sim/execution-result#epoch-observations) for units, output-neuron activity, reference probes and resumable histories, and [Execution Options](/api/sim/execution-spec#observations) for configuration. Observations measure fixed epoch states and preserve evaluation RNG streams; they do not supply new checkpoint-selection rules.
 
 The final checkpoint is saved once for later inference. There is no external epoch loop or intermediate checkpoint management.
 
@@ -329,7 +334,6 @@ import torch
 from snnlab import lang, viz
 from snnlab.sim import (
     DenseArrayBinding,
-    ExecutionSpec,
     ValidationSpec,
     save_training_checkpoint,
     train,
@@ -455,8 +459,7 @@ def main():
         input_bindings=(validation_input,),
         targets={"class": validation_labels},
     )
-    execution = ExecutionSpec(
-        kind="train",
+    result = train(
         bundle=bundle_path,
         input_bindings=(train_input,),
         targets={"class": train_labels},
@@ -468,7 +471,6 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=True,
     )
-    result = train(execution)
     assert result.training_checkpoint is not None
     save_training_checkpoint(checkpoint_path, result.training_checkpoint)
     history = result.metrics["epochs"]
@@ -555,7 +557,7 @@ python progress.py --output /tmp/native-weighted --equal-class-loss
 
 The script prints natural class counts and a report after each completed epoch: online train accuracy, held-out validation accuracy, global update/example counts and measured seconds. It saves a partial checkpoint after the first update, resumes the same schedule, then writes final and validation-selected checkpoints plus `results.json`. Online training has no epoch-zero measurement and no extra training evaluation. The optional equal-class objective uses only training counts; unweighted classification CE is retained separately. Synthetic accuracy does not establish performance on real SHD.
 
-For a larger SHD-shaped scheduling demonstration, add `--samples 8156 --batch-size 256 --steps 1000 --device cuda`. This needs an available CUDA device and substantial runtime; sample counts and rates here remain synthetic. The [ExecutionSpec reference](/api/sim/execution-spec#metrics) specifies aggregation, RNG, conflict, timing and resume rules.
+For a larger SHD-shaped scheduling demonstration, add `--samples 8156 --batch-size 256 --steps 1000 --device cuda`. This needs an available CUDA device and substantial runtime; sample counts and rates here remain synthetic. The [Execution Options reference](/api/sim/execution-spec#metrics) specifies aggregation, RNG, conflict, timing and resume rules.
 
 ```python
 """Native online metrics, unequal-class batching and resumable epoch progress.
@@ -580,7 +582,6 @@ from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     EpochReport,
-    ExecutionSpec,
     TrainingMetrics,
     ValidationSpec,
     save_training_checkpoint,
@@ -655,16 +656,16 @@ def main():
     recipe = lang.TrainSpec(
         objectives=(objective,),
         parameter_groups=(
-            lang.ParameterGroup(
-                ("scores_projection.weight",), name="readout", lr=0.01
-            ),
+            lang.ParameterGroup(("scores_projection.weight",), name="readout", lr=0.01),
         ),
         optimizer=lang.AdamW(weight_decay=0),
         presentation_duration=args.steps * lang.ms,
     )
     bundle = lang.compile(net, training=recipe)
     bundle.write(args.output / "network.bundle")
-    viz.render_diagram(lang.diagram(bundle, view="expanded"), args.output / "network.png", scale=2)
+    viz.render_diagram(
+        lang.diagram(bundle, view="expanded"), args.output / "network.png", scale=2
+    )
     encoder = DatasetEncoder(
         "rate_poisson", duration_ms=args.steps, max_rate_hz=500, seed=45
     )
@@ -681,8 +682,7 @@ def main():
             replace(binding, path=args.output / "validation.npz", split="validation"),
         )
     )
-    spec = ExecutionSpec(
-        kind="train",
+    training_kwargs = dict(
         graph=bundle.graph,
         training=bundle.training,
         input_bindings=(binding,),
@@ -710,7 +710,7 @@ def main():
     )
     # Persist a partial epoch, then resume the same schedule without replaying reports.
     partial_path = args.output / "partial.checkpoint"
-    partial = train(replace(spec, updates=1, save_final_checkpoint=partial_path))
+    partial = train(**training_kwargs, updates=1, save_final_checkpoint=partial_path)
     if partial.training_checkpoint.data_state["epoch"] == args.epochs:
         result = partial
         save_training_checkpoint(
@@ -721,12 +721,10 @@ def main():
         )
     else:
         result = train(
-            replace(
-                spec,
-                checkpoint=partial_path,
-                save_final_checkpoint=args.output / "final.checkpoint",
-                save_selected_checkpoint=args.output / "selected.checkpoint",
-            )
+            **training_kwargs,
+            checkpoint=partial_path,
+            save_final_checkpoint=args.output / "final.checkpoint",
+            save_selected_checkpoint=args.output / "selected.checkpoint",
         )
     payload = {
         "epochs": result.metrics["epochs"],

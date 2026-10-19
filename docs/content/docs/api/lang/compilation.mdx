@@ -93,7 +93,7 @@ Returns a validated graph copy whose built-in neurons define refractory periods 
 
 Migration retains old COBA decrement-before-release scheduling through `refractory_timing="legacy_coba"`; other built-in models retain their following-step scheduling. For freshly authored replay bundles, use the [historical COBA compilation option](#historical-coba-replay). New authoring defaults to `"following_steps"`. Changing a migrated graph's timestep resolves its physical durations exactly and rejects non-divisible durations.
 
-The source graph, bundle files and authenticated identity are unchanged. The migrated copy has a new digest; pass it through `ExecutionSpec.graph` for fresh execution. Checkpoints and runtime state are not converted or rebound. Keep them paired with the original graph. Do not replace `Bundle.graph` alone: the manifest and any training recipe authenticate its original digest. Built-in timestep inference overrides perform the same conversion before changing the timestep, preserving source checkpoint authentication.
+The source graph, bundle files and authenticated identity are unchanged. The migrated copy has a new digest; pass it through `graph` for fresh execution. Checkpoints and runtime state are not converted or rebound. Keep them paired with the original graph. Do not replace `Bundle.graph` alone: the manifest and any training recipe authenticate its original digest. Built-in timestep inference overrides perform the same conversion before changing the timestep, preserving source checkpoint authentication.
 
 ## load_bundle
 
@@ -103,7 +103,7 @@ Loading verifies saved file digests before resolving external extension modules.
 def load_bundle(path: str | Path) -> Bundle: ...
 ```
 
-Loads the directory, validates graph/recipe data and checks declared file digests. Missing or invalid files fail rather than silently recompiling the network. It returns a `Bundle` for inspection or reuse; supply its path to `ExecutionSpec.bundle` or its graph to `ExecutionSpec.graph`.
+Loads the directory, validates graph/recipe data and checks declared file digests. Missing or invalid files fail rather than silently recompiling the network. It returns a `Bundle` for inspection or reuse; supply its path to `bundle` or its graph to `graph`.
 
 A bundle stores architecture, initializers and recipes. A training checkpoint stores learned parameters, optimizer state and resume metadata. Loading a bundle alone initializes fresh weights when executed; [Inference](/inference) also supplies a checkpoint. An external PyTorch model uses its own `state_dict`, as shown in [PyTorch Integration](/pytorch-integration).
 

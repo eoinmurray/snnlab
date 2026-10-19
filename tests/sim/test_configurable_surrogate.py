@@ -7,8 +7,10 @@ import torch
 
 from snnlab import extensions, lang
 from snnlab import lang as training
-from snnlab.sim import ExecutionSpec, GraphExecutor, build, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 from snnlab.sim.graph.dynamics import fast_sigmoid_spike
+from snnlab.sim.requests.handlers import build
+from snnlab.sim.requests.spec import ExecutionSpec
 from tests.sim.test_gpu_efficiency import circuit
 
 
@@ -212,7 +214,7 @@ def test_runtime_threshold_policy_and_provenance(inclusive):
         result = model({"events": torch.ones(5, 2, 2)}, diagnostics=False)
         assert result.metrics["surrogate"]["threshold_inclusive"] is inclusive
         assert result.metrics["surrogate"]["gradient_scale"] == 0.01
-        assert result.metrics["compile_mode"] is None
+        assert result.metrics["compile_mode"] == "default"
         if inclusive:
             assert (
                 "builtin_spike_threshold_inclusive"

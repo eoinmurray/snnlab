@@ -13,13 +13,13 @@ from snnlab.lang.compilation.serialization import digest
 from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
-    ExecutionSpec,
     PoissonInputBinding,
     resolve_dataset_snapshot_binding,
     resolve_poisson_input_bindings,
-    train,
 )
 from snnlab.sim.cli import main
+from snnlab.sim.requests.spec import ExecutionSpec
+from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import (
     direct_train_bundle as _direct_train_bundle,
 )

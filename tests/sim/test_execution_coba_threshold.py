@@ -3,7 +3,9 @@
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, simulate
+from snnlab.sim import DenseArrayBinding
+from snnlab.sim.requests.handlers import simulate
+from snnlab.sim.requests.spec import ExecutionSpec
 
 
 def test_coba_threshold_is_population_specific():

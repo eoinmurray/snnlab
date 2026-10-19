@@ -11,7 +11,10 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.sim import DenseArrayBinding, ExecutionSpec, infer
+from snnlab.sim import (
+    DenseArrayBinding,
+    infer,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 TRAINING_DIR = OUTPUT_DIR.parent / "training"
@@ -70,16 +73,14 @@ def main():
     test_input = DenseArrayBinding(input_id="inputs", value=input_spikes)
 
     # 4. Load learned weights and run inference.
-    execution = ExecutionSpec(
-        kind="infer",
-        bundle=bundle_path,
-        checkpoint=checkpoint_path,
-        input_bindings=(test_input,),
-        seed=MODEL_SEED,
-        device="cpu",
-    )
     with torch.no_grad():
-        result = infer(execution)
+        result = infer(
+            bundle=bundle_path,
+            checkpoint=checkpoint_path,
+            input_bindings=(test_input,),
+            seed=MODEL_SEED,
+            device="cpu",
+        )
 
     # 5. Retrieve scores, choose classes and measure accuracy.
     data = result.numpy()

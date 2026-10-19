@@ -3,7 +3,7 @@ title: Training
 description: Training recipes, objectives, parameter groups, optimizers and surrogate gradients.
 ---
 
-Import all recipe helpers directly from `snnlab.lang`, including `TrainSpec`, `CrossEntropy`, `ParameterGroup`, `AdamW` and `FastSigmoid`. A recipe declares what should learn and how; [ExecutionSpec](/api/sim/execution-spec#training-controls) controls the actual epochs, minibatches and checkpoint paths. Compile it with [lang.compile](/api/lang/compilation#compile).
+Import all recipe helpers directly from `snnlab.lang`, including `TrainSpec`, `CrossEntropy`, `ParameterGroup`, `AdamW` and `FastSigmoid`. A recipe declares what should learn and how; [Execution Options](/api/sim/execution-spec#training-controls) controls the actual epochs, minibatches and checkpoint paths. Compile it with [lang.compile](/api/lang/compilation#compile).
 
 ## TrainSpec
 
@@ -27,7 +27,7 @@ class TrainSpec:
 | `optimizer` | Serializable optimizer specification; graph training supports AdamW and registered optimizer factories. |
 | `regularizers` | Optional additional loss terms. |
 | `stop_gradients` | Signal locations where the training graph should detach. |
-| `epochs` | Recipe metadata; specify run iteration using `ExecutionSpec.epochs`. |
+| `epochs` | Recipe metadata; specify run iteration using `epochs`. |
 | `gradient_clip` | Optional global gradient norm limit. |
 | `surrogate` | Spike backward rule; `FastSigmoid(slope=1.0)` is the public helper. |
 | `presentation_duration` | Time quantity used by the recipe, including rate regularizers. |
@@ -116,7 +116,7 @@ surrogate = lang.FastSigmoid(
 )
 ```
 
-This is a configuration of the existing fast-sigmoid derivative. Choose the threshold convention to match your original model. Both extra fields serialize through the training recipe and its resolved gradient contract; omitted fields in historical recipes mean scale 1 and inclusive threshold. Default authoring retains the historical serialized recipe identity. Runtime states from the exclusive built-in threshold carry that forward policy; continuing them with an inclusive built-in executor, or vice versa, fails explicitly. Gradient amplitude and slope affect the backward pass, so they do not change forward-state compatibility. Build and forward metrics report the resolved surrogate and compilation policy. Built-in training applies the complete configuration automatically. For an external [GraphExecutor](/api/sim/graph-executor), pass `surrogate=bundle.training["surrogate"]`. This built-in remains eligible for `compile_mode="default"`; registered custom derivatives retain eager dispatch and validation, even when written using tensor operations.
+This is a configuration of the existing fast-sigmoid derivative. Choose the threshold convention to match your original model. Both extra fields serialize through the training recipe and its resolved gradient contract; omitted fields in historical recipes mean scale 1 and inclusive threshold. Default authoring retains the historical serialized recipe identity. Runtime states from the exclusive built-in threshold carry that forward policy; continuing them with an inclusive built-in executor, or vice versa, fails explicitly. Gradient amplitude and slope affect the backward pass, so they do not change forward-state compatibility. Build and forward metrics report the resolved surrogate and compilation policy. Built-in training applies the complete configuration automatically. For an external [GraphExecutor](/api/sim/graph-executor), pass `surrogate=bundle.training["surrogate"]`. Built-in and registered custom surrogate derivatives participate in default compilation. Strict custom-surrogate validation keeps an eager autograd boundary for diagnostic value checks while compiling the derivative calculation separately; structural mode allows the surrogate inside the compiled neuron graph.
 
 ## Regularizers
 
@@ -160,7 +160,7 @@ class StopGradient:
 
 ## Execution and validation
 
-Call `train(ExecutionSpec(...))` once to run the built-in loop. Use positive `epochs`, optional `batch_size`, and `shuffle` for dataset iteration. [ValidationSpec](/api/sim/execution-spec#validation) supplies held-out inputs and targets; it evaluates without updates. [ExecutionResult metrics](/api/sim/execution-result#epoch-metrics) distinguish initial baseline, completed epochs and per-update losses.
+Call `train(graph=bundle.graph, training=bundle.training, ...)` once to run the built-in loop. Use positive `epochs`, optional `batch_size`, and `shuffle` for dataset iteration. [ValidationSpec](/api/sim/execution-spec#validation) supplies held-out inputs and targets; it evaluates without updates. [ExecutionResult metrics](/api/sim/execution-result#epoch-metrics) distinguish initial baseline, completed epochs and per-update losses.
 
 See [Training](/training) for a complete recipe and [PyTorch Integration](/pytorch-integration) for an external optimizer loop.
 

@@ -14,7 +14,6 @@ from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     PoissonInputBinding,
-    execute_request,
     load_dense_array_bindings,
     load_event_stream_bindings,
     load_runtime_state,
@@ -23,7 +22,7 @@ from snnlab.sim import (
     write_inference_artifacts,
 )
 from snnlab.sim.artifacts.bundle import load_graph_bundle, load_training_recipe
-from snnlab.sim.requests.handlers import resolve_device
+from snnlab.sim.requests.handlers import execute_request, resolve_device
 from snnlab.sim.requests.spec import ExecutionSpec, RequestKind
 from snnlab.sim.runtime.interventions import parse_intervention
 from snnlab.sim.runtime.recording import MeasurementWindow, RecordingSpec
@@ -34,7 +33,7 @@ from snnlab.sim.training.selection import CheckpointSelection
 def execution_spec_from_args(
     args: Any, *, kind: RequestKind | None = None
 ) -> ExecutionSpec:
-    """Compatibility adapter: resolved CLI arguments become one typed request."""
+    """Internal adapter: resolved CLI arguments become one execution request."""
     if getattr(args, "save_runtime_state", None) and not getattr(
         args, "retain_runtime_state", True
     ):
@@ -50,7 +49,12 @@ def execution_spec_from_args(
         device=resolve_device(getattr(args, "device", "auto")),
         diagnostics=getattr(args, "diagnostics", True),
         extension_validation=getattr(args, "extension_validation", "structural"),
-        compile_mode=getattr(args, "compile_mode", None),
+        compile_mode=(
+            None
+            if getattr(args, "compile_mode", "default") == "eager"
+            else getattr(args, "compile_mode", "default")
+        ),
+        compile_block_steps=getattr(args, "compile_block_steps", 1),
         dataset_prefetch=getattr(args, "dataset_prefetch", 0),
         timing_mode=getattr(args, "timing_mode", "synchronized"),
         training_timing=bool(getattr(args, "training_timing", False)),
@@ -136,9 +140,15 @@ def _add_common_arguments(parser):
     )
     parser.add_argument(
         "--compile-mode",
-        choices=("default",),
-        default=None,
-        help="Opt-in torch.compile for built-in neuron kernels; callbacks remain eager.",
+        choices=("default", "eager"),
+        default="default",
+        help="Compile built-in/custom dynamics and weight constraints by default; eager disables compilation.",
+    )
+    parser.add_argument(
+        "--compile-block-steps",
+        type=int,
+        default=1,
+        help="Opt-in network timestep block size (1-64; default 1 keeps the kernel loop).",
     )
     parser.add_argument(
         "--dataset-prefetch",

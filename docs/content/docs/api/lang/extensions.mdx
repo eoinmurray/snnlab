@@ -31,6 +31,23 @@ All registrations accept optional `validate(config)`. It should raise `ValueErro
 
 All registrations also accept `package=None, package_version=None`. `package` is the installed distribution name, which may differ from the import-module name. Supplying it records the installed version, or checks an explicitly supplied `package_version`. Every subsequent load checks the exact version, including when a definition is already cached. Missing packages and mismatches raise `ValueError`. Local project modules can omit this metadata; their compatibility is managed through the versioned definition name and the execution environment.
 
+## Writing efficient PyTorch callbacks
+
+Simulation compiles tensor updates by default with `compile_mode="default"`. Keep the ordinary importable Python callback signatures documented below; SNNLab prepares the compiled functions, so callbacks do not need `@torch.compile`. The graph-authoring `lang.compile(net)` is separate from this runtime tensor compilation. Use `compile_mode=None` on execution options or `GraphExecutor`, or CLI `--compile-mode eager`, to debug an unsupported callback.
+
+- Operate on whole tensors with PyTorch broadcasting, reductions and elementwise operations. A neuron step receives all `(batch, cells)` values together; a synapse step receives a weight-projected drive for all target cells. Avoid Python loops over cells, samples or edges.
+- Keep tensor shapes, state keys, dtypes and devices stable. Return new state tensors without modifying the previous state in place. Use `zeros_like`, `full_like` or the supplied initialization device/dtype rather than creating CPU tensors during an accelerator update.
+- Keep tensor data on the device. Avoid `.item()`, `float(tensor)`, `bool(tensor)`, `.tolist()`, `.cpu()`, `.numpy()` and rebuilding tensors from Python lists in the update. Host reads can synchronize GPUs and prevent graph capture.
+- Use `torch.where`, masks and other tensor expressions for decisions based on tensor values. An `if` on fixed JSON configuration is usually traceable; an `if` on `voltage.any()` is data-dependent Python control flow. Both branches of `torch.where` are evaluated, so make each numerically safe, for example by clamping a denominator before division.
+- Put configuration checks in `validate(config)`, outside numerical updates. Fixed scalar math such as `math.exp(-context.dt_ms / config["tau_ms"])` can specialize during tracing. Avoid logging, file access, registry calls, global mutable state and random draws from Python/NumPy inside compiled updates.
+- Preserve autograd for dynamics and operations. Use `context.spike` for the configured surrogate; avoid detaching state or converting it back into `torch.tensor(...)`. Keep trajectory state in the supplied mapping so saved continuation reproduces the dynamics.
+
+Compilation prepares separate kernels per population/projection and captures their configuration. Reuse the executor across calls; new batch shapes, devices, dtypes or gradient modes can trigger compilation again. Measure the first call separately from repeated calls, and synchronize the accelerator when measuring completed work. Compilation can fuse elementwise work, but it does not compile the entire timestep loop or guarantee faster short runs.
+
+Test new callbacks with `extension_validation="strict"`, comparing compiled and eager outputs, gradients and split-run continuation with appropriate floating-point tolerances. Strict value scans remain outside compiled updates and can synchronize GPUs. Structural mode is the default for steady execution and retains shape/device/dtype/state-key checks. Registered custom surrogates in strict mode keep an eager spike/autograd boundary for derivative checks; their derivative calculations still compile separately. Compiler errors are surfaced; opt out explicitly while adapting unsupported code.
+
+Weight/state initializers run eagerly during setup, preserving seeded initialization. Repeated weight constraints and custom graph operations compile; their validation remains outside the compiled calculation. Training objectives, regularizers, optimizer factories, dataset encoders and scalar weight-modulation callbacks are outside this compilation scope. Their code should still use vectorized PyTorch whenever it processes tensors.
+
 ## Neurons
 
 ```python
@@ -75,7 +92,7 @@ class NeuronContext:
 neuron = lang.CustomNeuron("my_lab.adaptive/v1", tau_ms=20.0)
 ```
 
-See [Customisation](/custom-neurons-and-synapses) for a complete adaptive neuron definition and its response plots.
+The existing `step(context)` interface compiles directly when the body follows the [efficient callback guidance](#writing-efficient-pytorch-callbacks). Preserve auxiliary state with `{**context.state, "voltage": next_voltage, ...}`. See [Customisation](/custom-neurons-and-synapses) for a complete adaptive neuron definition and its response plots.
 
 ## Synapses
 
@@ -108,6 +125,18 @@ class SynapseContext:
 synapse = lang.CustomSynapse("my_lab.synapse/v1", tau_ms=5.0)
 ```
 
+A vectorized step for an exponential custom synapse can be written as:
+
+```python
+import math
+
+def exponential_step(context):
+    decay = math.exp(-context.dt_ms / context.config["tau_ms"])
+    return {**context.state, "value": context.state["value"] * decay + context.drive}
+```
+
+Register this importable function with `register_synapse`; omitting `initialize` supplies the zero-valued `value` state. There is no per-cell loop or host read, and the fixed scalar decay can specialize during compilation. The weighted drive is already supplied: do not multiply weights or loop over source edges again.
+
 ## Initializers and constraints
 
 ```python
@@ -123,7 +152,7 @@ def register_constraint(
 
 Initializer callback: `function(shape, config, *, device, dtype) -> Tensor`. Return finite values with the exact requested shape/device/dtype. Use PyTorch's seeded generator for reproducible draws, rather than hidden random state. Projection runtime shape is `(source, target)`; ordinary custom-operation parameters retain their declared shape.
 
-Constraint callback: `function(parameter, config) -> Tensor`. Return the constrained tensor with unchanged shape/device/dtype. Constraints apply after initialization and the selected scaling policy, and after built-in training optimizer steps. An external PyTorch loop should call `module.enforce_constraints()` after its optimizer step. A masking constraint can enforce persistent zero connections; execution still uses dense matrices.
+Constraint callback: `function(parameter, config) -> Tensor`. Return the constrained tensor with unchanged shape/device/dtype. Constraints apply after initialization and the selected scaling policy, and after built-in training optimizer steps. An external PyTorch loop should call `module.enforce_constraints()` after its optimizer step. A masking constraint can enforce persistent zero connections; execution still uses dense matrices. Initializers run eagerly at construction, while constraints compile for repeated post-update use. Vectorize both across the full weight tensor, allocate directly with the requested device/dtype, and avoid scalar loops over connections. See [efficient custom weights](/weights#efficient-custom-initializers-and-constraints) for examples.
 
 ```python
 initializer = lang.CustomInitializer("my_lab.distribution/v1", scale=1.0)
@@ -212,6 +241,8 @@ def register_encoder(
 
 Callback: `function(arrays, selected, *, dt_ms, channels, config, seed) -> Tensor`. Return binary `(time, selected_samples, channels)` spikes. Use `DatasetEncoder(kind="custom", definition="my_lab.encoder/v1", config={...}, seed=...)` inside `DatasetSnapshotBinding`. The resolved protocol retains the definition, configuration, seed and snapshot identity. Dataset snapshot labels remain integer labels.
 
+Encoders can opt into device preparation by adding an explicit optional keyword, `device="cpu"`, to that signature. The resolver passes the execution device; generate tensors and local seeded `torch.Generator(device=device)` draws there when supported. Legacy callbacks receive their original arguments. Accelerator preparation records `snnlab.encoder-device/v1`, backend and PyTorch version in encoder provenance; CPU identities remain unchanged. use a new versioned definition if the random stream changes. Encoders still run on the caller thread, including prefetched lookahead, so scoped global RNG restoration cannot race training. CPU encoder outputs use bounded pinned/asynchronous transfer queues on CUDA.
+
 Dataset encoders belong to external execution bindings, so the network bundle does not carry their definitions. Register the encoder's import reference when constructing that binding in each process.
 
 For arbitrary generators, temporal patterns or preprocessing, a normal Python function can instead produce a tensor supplied through [DenseArrayBinding](/api/sim/execution-spec#densearraybinding). This also supports non-spike continuous inputs. No new generator interface is necessary.
@@ -224,7 +255,7 @@ The graph executor keeps `runtime_state.currents` separate from `.conductances`;
 
 ## Runtime validation policy
 
-Custom neuron/synapse steps and surrogate derivatives use structural validation by default. Opt into `extension_validation="strict"` while developing custom callbacks or investigating numerical failures. `ExecutionSpec(..., extension_validation="structural")` or the same keyword on `GraphExecutor` keeps tensor contracts but skips per-step finite and binary-spike checks and backward derivative finite checks. Test callback numerical behaviour with strict mode before relying on structural mode. Invalid values may propagate silently. Initialization and restored state remain strictly checked. See [ExecutionSpec](/api/sim/execution-spec) for the exact scope and CLI option.
+Custom neuron/synapse steps and surrogate derivatives use structural validation by default. Opt into `extension_validation="strict"` while developing custom callbacks or investigating numerical failures. `simulate(..., extension_validation="structural")` or the same keyword on `GraphExecutor` keeps tensor contracts but skips per-step finite and binary-spike checks and backward derivative finite checks. Test callback numerical behaviour with strict mode before relying on structural mode. Invalid values may propagate silently. Initialization and restored state remain strictly checked. See [Execution Options](/api/sim/execution-spec) for the exact scope and CLI option.
 
 ## Registry and definition records
 
@@ -284,3 +315,5 @@ def restore(data): ...
 ```
 
 `required(graph, training=None)` returns descriptors for used custom definitions, combining saved metadata and registered definitions; conflicting saved descriptors fail. `restore(data)` loads descriptor callbacks, validates exact declared dependency versions and populates the registry. Existing conflicting registrations fail. Normal bundle loading calls restoration after integrity checks; applications ordinarily do not call these helpers directly. Import references identify functions, not immutable source-code digests.
+
+Native custom objectives and regularizers validate results against the prediction/signal tensor’s resolved device, including indexed MPS/CUDA devices. Returning a tensor on another device still raises a contract error.

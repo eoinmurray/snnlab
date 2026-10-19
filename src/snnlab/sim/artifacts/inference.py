@@ -117,11 +117,21 @@ def write_inference_artifacts(
     if result.recorded_signals:
         payloads["recordings.npz"] = result.recorded_signals
     files = []
+    expanded_bfloat16 = {}
     for filename, tensors in payloads.items():
         arrays = {
-            name: value.detach().cpu().numpy()
+            name: (
+                value.detach().cpu().float()
+                if value.dtype == torch.bfloat16
+                else value.detach().cpu()
+            ).numpy()
             for name, value in sorted(tensors.items())
         }
+        names = [
+            name for name, value in tensors.items() if value.dtype == torch.bfloat16
+        ]
+        if names:
+            expanded_bfloat16[filename] = sorted(names)
         destination = root / filename
         np.savez_compressed(destination, **arrays)
         files.append(
@@ -165,6 +175,15 @@ def write_inference_artifacts(
         "request_digest": _json_digest(request),
         "files": files,
     }
+    if expanded_bfloat16:
+        # Analysis caches use NumPy floating arithmetic. Widen bfloat16 values
+        # exactly; resumable checkpoints/runtime state retain their raw bits.
+        manifest["tensor_storage"] = {
+            "schema": "snnlab.inference-bfloat16/v1",
+            "logical_dtype": "bfloat16",
+            "stored_dtype": "float32",
+            "arrays": expanded_bfloat16,
+        }
     manifest["artifact_digest"] = _json_digest(manifest)
     (root / "inference-manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n"

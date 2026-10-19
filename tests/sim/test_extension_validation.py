@@ -5,8 +5,10 @@ import torch
 
 from snnlab import extensions as E
 from snnlab import lang
-from snnlab.sim import ExecutionSpec, GraphExecutor, build, plan_graph
+from snnlab.sim import GraphExecutor, plan_graph
 from snnlab.sim.graph import extensions as X
+from snnlab.sim.requests.handlers import build
+from snnlab.sim.requests.spec import ExecutionSpec
 from tests.sim.test_execution_extensions import custom_network
 
 
