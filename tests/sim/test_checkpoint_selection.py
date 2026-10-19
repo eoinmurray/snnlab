@@ -193,7 +193,10 @@ def test_resume_rejects_changed_policy_or_validation_and_authenticates_winner(tm
             ),
         ),
     ]:
-        with pytest.raises(ValueError, match="selection policy or evaluation identity|reporting metric/data identity"):
+        with pytest.raises(
+            ValueError,
+            match="selection policy or evaluation identity|reporting metric/data identity",
+        ):
             train(replace(changed, checkpoint=tmp_path / "final"))
     child = tmp_path / "final" / "selected" / "manifest.json"
     manifest = json.loads(child.read_text())
@@ -220,14 +223,19 @@ def test_selected_checkpoint_itself_can_resume(tmp_path, audited):
     assert first.selected_checkpoint.best_checkpoint is None
 
 
-def test_serialized_cli_policy_and_named_legacy_default():
+def test_serialized_cli_policy_and_explicit_named_legacy_policy():
     selection = policy()
     value = json.dumps(selection.to_dict())
     spec = execution_spec_from_args(
         parse_args(["train", "--executor", "graph", "--checkpoint-selection", value])
     )
     assert spec.checkpoint_selection.to_dict() == selection.to_dict()
-    result = train(request())
+    result = train(
+        replace(
+            request(),
+            checkpoint_selection=CheckpointSelection.legacy_training_batch_loss(),
+        )
+    )
     assert (
         result.selected_checkpoint.selection_record["policy"]["mode"]
         == "legacy_training_batch_loss"

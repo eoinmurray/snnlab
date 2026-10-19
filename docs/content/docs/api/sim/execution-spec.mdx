@@ -24,6 +24,7 @@ ExecutionSpec(
     targets: Mapping[str, torch.Tensor] = {},
     target_bindings: Sequence[TargetArrayBinding] = (),
     validation: ValidationSpec | None = None,
+    test: TestSpec | None = None,
     epochs: int = 0,
     batch_size: int | None = None,
     shuffle: bool = False,
@@ -304,6 +305,7 @@ to `total_s`.
 | `training_s` | Minibatch preparation, forward/loss/backward, optimizer updates, constraints, update bookkeeping and in-loop batch-loss checkpoint selection. Excludes epoch evaluations. |
 | `train_evaluation_s` | Fixed-weight training-split evaluations, including epoch 0 when evaluated. |
 | `validation_s` | Held-out evaluations and optional named observation probes. |
+| `test_s` | Final test input/target resolution and evaluation of the selected checkpoint or final weights. |
 | `checkpoint_s` | Final checkpoint construction and any requested `save_final_checkpoint` / `save_selected_checkpoint` writes. |
 | `reporting_s` | Epoch metric/observation bookkeeping, epoch-selection checkpoints and final result construction outside the other phases. |
 
@@ -361,6 +363,37 @@ Validation uses the same graph, current parameters, execution seed and device. I
 For stochastic dataset validation, `encoding_seeds=(101, 103)` requests explicit repeatable draw sets; omission uses the encoder seed for one fixed draw. Each draw evaluates all selected samples in bounded batches, and loss/components/accuracies are sample-weighted across all draws. Epoch rows report `validation_encoding_draws`; observations count each draw's presentations. Encoding seeds require a stochastic dataset encoder, must be distinct non-negative integers, and are bound into validation/selection/audit identity.
 
 This field is used only by graph `train`, and requires positive effective `epochs`. Other handlers do not evaluate validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
+
+### test
+
+**Type:** `TestSpec | None`. **Default:** `None`.
+
+Supply a separate held-out test set for one evaluation after all requested epochs finish. Import `TestSpec` from `snnlab.sim`; it has the same fields and input/target binding rules as `ValidationSpec`.
+
+```python
+execution = ExecutionSpec(
+    kind="train",
+    bundle=bundle_path,
+    input_bindings=(train_input,),
+    targets={"class": train_labels},
+    validation=ValidationSpec(
+        input_bindings=(validation_input,), targets={"class": validation_labels},
+    ),
+    test=TestSpec(
+        input_bindings=(test_input,), targets={"class": test_labels},
+    ),
+    epochs=20,
+    batch_size=32,
+)
+result = train(execution)
+test_metrics = result.metrics["test"]
+```
+
+The default evaluates validation after each completed epoch, including the last, and selects the earliest checkpoint with the lowest total validation loss. Test evaluation uses that selected checkpoint; without selection it uses the final weights. Test labels never influence selection. The returned model and resumable training checkpoint retain the final training state.
+
+Test evaluation runs without gradients or optimizer updates, in batches bounded by `batch_size`. `encoding_seeds` supports the same fixed stochastic draw sets as validation. Test inputs are resolved only when the requested final epoch has completed: an update-limited partial call leaves `result.metrics["test"] = None`, and a subsequent resume evaluates the test set when it reaches the end. Extending the requested epoch count in a later call triggers another test evaluation at that new end; keep the test set held out until model choices are complete.
+
+Set `TrainingMetrics(test="none")` to skip test evaluation. This field requires positive effective `epochs` and is used only by `train`. No test split is inferred or created automatically; callers supply independent training, validation and test data.
 
 ### observations
 
@@ -434,14 +467,15 @@ The previous training keys in `options` are no longer accepted by graph `train`;
 
 ### metrics
 
-Import `TrainingMetrics` from `snnlab.sim`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it uses online training metrics, validation evaluation at initialization and every completed epoch, and no update history.
+Import `TrainingMetrics` from `snnlab.sim`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it uses online training metrics, validation after every completed epoch, final test evaluation when supplied, and no initial evaluations or update history.
 
 ```python
 metrics = TrainingMetrics(
     train="online",
     validation="epoch",
-    initial=("validation",),
+    initial=(),
     update_history=False,
+    test="final",
 )
 ```
 
@@ -449,14 +483,15 @@ metrics = TrainingMetrics(
 | --- | --- |
 | `train` | `"evaluate"`: full training split at fixed current weights. `"online"` (default): reuse each pre-update minibatch's scores. `"none"`: no training metrics. |
 | `validation` | `"epoch"` (default): evaluate supplied held-out data after each completed epoch. `"none"`: no validation evaluation. |
-| `initial` | Unique split names; default `("validation",)`. Requesting initial train requires `train="evaluate"`; requesting initial validation requires `validation="epoch"`. An absent ValidationSpec produces absent validation metrics. |
+| `initial` | Unique train/validation split names; default `()`. Requesting initial train requires `train="evaluate"`; requesting initial validation requires `validation="epoch"`. An absent ValidationSpec produces absent validation metrics. Test cannot be an initial split. |
 | `update_history` | Boolean, default `False`. `False` returns an empty update history and omits per-update loss/component retention. |
+| `test` | `"final"` (default): evaluate supplied `TestSpec` once after all requested epochs, using the selected checkpoint or final weights. `"none"`: no test evaluation. |
 
 Online metrics accumulate detached objective/regularizer loss sums, unweighted classification cross-entropy sums and correct counts on-device. They transfer at completed epochs or explicitly saved checkpoint boundaries, without another training forward or retained autograd graph. Loss is the example-weighted mean of minibatch mean objectives (including objective weights and regularizers). For custom classification losses this is the custom objective's minibatch aggregation, which may differ from a full-dataset class-normalized objective. Reported cross-entropy always uses ordinary unweighted per-example CE, separately from that custom objective. Accuracy weights actual examples, including unequal tails.
 
 Initial online training metrics are absent. Rows label online results `train_measurement="online_pre_update"` and evaluated results `*_measurement="fixed_weight_evaluation"`, with presentation counts in `*_examples`. Online values describe changing weights throughout an epoch.
 
-`update_history=False` also disables **implicit** historical update-loss checkpoint selection. Set an explicit validation `CheckpointSelection()` to retain a winner without update loss reads, or explicitly request `CheckpointSelection.legacy_training_batch_loss()` to preserve update selection and its host scalar decisions. `CheckpointSelection.disabled()` disables selection independently of history. Saving a selected checkpoint requires an enabled selection policy. Selection by epoch metrics requires fixed-weight evaluation of its split; online train metrics cannot silently stand in for evaluated train metrics. `include_initial=True` also requires that initial split measurement. Split activity observations require their normal evaluations; parameter/gradient observations and separately declared probes remain available.
+With validation data and `validation="epoch"`, omitted checkpoint selection chooses the minimum total validation loss, independently of update history. Otherwise `update_history=False` disables implicit historical update-loss selection, while `update_history=True` retains that legacy fallback. Set an explicit `CheckpointSelection()` to select by unweighted validation cross-entropy, or explicitly request `CheckpointSelection.legacy_training_batch_loss()` for update selection and its host scalar decisions. `CheckpointSelection.disabled()` disables selection independently of history and makes final test evaluation use the final weights. Saving a selected checkpoint requires an enabled selection policy. Selection by epoch metrics requires fixed-weight evaluation of its split; online train metrics cannot silently stand in for evaluated train metrics. `include_initial=True` also requires that initial split measurement. Split activity observations require their normal evaluations; parameter/gradient observations and separately declared probes remain available.
 
 Default online metrics, explicit metrics, batching or callbacks retain contiguous available epoch history and partial online sums in authenticated training checkpoint schema version 5. Resume requires the same measurement policy and protocol identities, restores partial sums and next coordinates, and emits only newly completed epochs. Online metrics and explicit metric or batching policies additionally bind input/target contents; callback-only reporting uses existing protocol metadata without transferring input tensors. Older checkpoint versions still load under their original contracts. Changing measurement or schedule policy rejects resume.
 
@@ -572,17 +607,17 @@ checkpoint_selection = CheckpointSelection(
 )
 ```
 
-Pass this object as `ExecutionSpec.checkpoint_selection`. `split` is `"train"` or `"validation"`; validation selection requires `ValidationSpec`. Epoch selection requires positive `epochs`. `objective` is the zero-based training objective index and must identify a classification objective (built-in cross entropy or a custom objective registered with `classification=True`). Both metrics are measured from that objective's predictions; cross-entropy is **unweighted**, excludes regularizers, and is reported in epoch `*_cross_entropies` mappings. Metrics are sample-weighted across the entire resolved split, with a fixed evaluation seed and minibatch size.
+Pass this object as `ExecutionSpec.checkpoint_selection`. `split` is `"train"` or `"validation"`; validation selection requires `ValidationSpec`. Epoch selection requires positive `epochs`. `SelectionMetric("loss")` measures total weighted objective and regularizer loss, supports nonclassification recipes, and requires the default `objective=0`. For `"cross_entropy"` and `"accuracy"`, `objective` is the zero-based training objective index and must identify a classification objective (built-in cross entropy or a custom objective registered with `classification=True`). These metrics are measured from that objective's predictions; cross-entropy is **unweighted**, excludes regularizers, and is reported in epoch `*_cross_entropies` mappings. Metrics are sample-weighted across the entire resolved split, with a fixed evaluation seed and minibatch size.
 
 `direction` supports `"min"` and `"max"`. Tie-break metrics are checked in declared order after an exact primary-score tie. An exact tie across all metrics retains the earliest candidate. Duplicate metrics, unknown indices, incompatible objectives, missing scores and non-finite scores fail explicitly. Only `cadence="completed_epoch"` is supported. The saved parameters, optimizer/RNG state and epoch coordinates belong to the weights actually evaluated.
 
 `include_initial=False` excludes epoch 0. Setting it to `True` admits the initial state, including a zero-update winner. An update limit that ends before any eligible boundary returns `selected_checkpoint=None`; requesting `save_selected_checkpoint` then fails. There is no partial-epoch selection or early stopping.
 
-Omitting the field preserves historical behavior, explicitly named `CheckpointSelection.legacy_training_batch_loss()`: lowest weighted pre-update training-batch loss selects post-update weights. This compatibility policy retains the historical metric/weight timing mismatch. Epoch selection corrects it for opt-in requests.
+Omitting the field selects the lowest total validation loss when validation data and epoch validation metrics are enabled. Otherwise selection is disabled by default, with the historical batch-loss fallback retained when `TrainingMetrics.update_history=True`. Explicit `CheckpointSelection.disabled()` always disables selection. The named `CheckpointSelection.legacy_training_batch_loss()` policy selects post-update weights using the lowest weighted pre-update training-batch loss and retains that historical metric/weight timing mismatch.
 
 `CheckpointSelection.to_dict()` / `.from_dict()` round-trip the policy as JSON-compatible data. The resolved policy and evaluation contract are stored in checkpoint metadata, alongside the winning record and a separate best-candidate snapshot. Final checkpoints retain that winner across resume, including invocations without improvement. Selected checkpoints can themselves resume. Resume rejects changes to policy, evaluation seed/batch size, protocol, or resolved input/label contents. A checkpoint from before selection metadata existed cannot start epoch selection retrospectively; legacy resume retains its historical invocation-local baseline.
 
-Epoch-selection checkpoints use schema version 4 (or version 5 when reporting state is retained) and require a compatible reader. Default legacy checkpoints keep schema version 2 (3 with observations), with additional selection metadata readable by this implementation. See [Checkpoint selection results](/api/sim/execution-result#checkpoint-selection) and [CLI](/api/sim/cli#checkpoint-selection).
+Epoch-selection checkpoints use schema version 4 (or version 5 when reporting state is retained) and require a compatible reader. Legacy checkpoints without reporting keep schema version 2 (3 with observations), with additional selection metadata readable by this implementation. See [Checkpoint selection results](/api/sim/execution-result#checkpoint-selection) and [CLI](/api/sim/cli#checkpoint-selection).
 
 ### checkpoint
 
@@ -840,6 +875,10 @@ class ValidationSpec:
     target_bindings: Sequence[TargetArrayBinding] = field(default_factory=tuple)
     protocol: Mapping[str, Any] = field(default_factory=dict)
     encoding_seeds: Sequence[int] = ()
+
+
+class TestSpec(ValidationSpec):
+    pass
 ```
 
 ## Input resolution helpers

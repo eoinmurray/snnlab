@@ -12,14 +12,17 @@ import torch
 class TrainingMetrics:
     train: Literal["online", "evaluate", "none"] = "online"
     validation: Literal["epoch", "none"] = "epoch"
-    initial: tuple[str, ...] = ("validation",)
+    initial: tuple[str, ...] = ()
     update_history: bool = False
+    test: Literal["final", "none"] = "final"
 
     def __post_init__(self):
         if self.train not in {"online", "evaluate", "none"}:
             raise ValueError("metrics train must be online, evaluate or none")
         if self.validation not in {"epoch", "none"}:
             raise ValueError("metrics validation must be epoch or none")
+        if self.test not in {"final", "none"}:
+            raise ValueError("metrics test must be final or none")
         if (
             isinstance(self.initial, str)
             or any(split not in {"train", "validation"} for split in self.initial)

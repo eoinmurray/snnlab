@@ -40,7 +40,7 @@ from snnlab.sim.requests.handlers import (
     resolve_device,
 )
 from snnlab.sim.requests.result import ExecutionResult
-from snnlab.sim.requests.spec import ExecutionSpec, ValidationSpec
+from snnlab.sim.requests.spec import ExecutionSpec, TestSpec, ValidationSpec
 from snnlab.sim.training.checkpoints import (
     TRAINING_CHECKPOINT_SCHEMA,
     TrainingCheckpoint,
@@ -64,7 +64,7 @@ from snnlab.sim.training.policies import (
     FrozenValues,
     TrainingMetrics,
 )
-from snnlab.sim.training.selection import CheckpointSelection
+from snnlab.sim.training.selection import CheckpointSelection, SelectionMetric
 
 
 def _host_metrics(values):
@@ -131,6 +131,7 @@ class _TrainingTiming:
             "training",
             "train_evaluation",
             "validation",
+            "test",
             "checkpoint",
             "reporting",
         )
@@ -210,6 +211,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         "metrics",
         "batching",
         "on_epoch_end",
+        "test",
     }
     if moved_options:
         raise ValueError(
@@ -232,6 +234,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     metric_policy = spec.metrics or TrainingMetrics()
     if not isinstance(metric_policy, TrainingMetrics):
         raise TypeError("metrics must be TrainingMetrics")
+    # Final testing is independent of the authenticated training/resume policy.
+    training_metric_contract = metric_policy.to_dict()
+    training_metric_contract.pop("test")
     if spec.batching is not None and not isinstance(spec.batching, Batching):
         raise TypeError("batching must be Batching")
     if spec.batching is not None and spec.shuffle and spec.batching.order != "shuffle":
@@ -280,6 +285,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             raise TypeError("validation must be a ValidationSpec")
         if not dataset_mode:
             raise ValueError("validation requires training with positive epochs")
+    if spec.test is not None:
+        if not isinstance(spec.test, TestSpec):
+            raise TypeError("test must be a TestSpec")
+        if not dataset_mode:
+            raise ValueError("test requires training with positive epochs")
 
     def resolve_data(
         data: ExecutionSpec | ValidationSpec | ObservationProbe,
@@ -343,7 +353,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         resolve_data(spec.validation) if spec.validation is not None else None
     )
     selection = spec.checkpoint_selection or (
-        CheckpointSelection.legacy_training_batch_loss()
+        CheckpointSelection(metric=SelectionMetric("loss"))
+        if validation_data is not None and metric_policy.validation == "epoch"
+        else CheckpointSelection.legacy_training_batch_loss()
         if metric_policy.update_history
         else CheckpointSelection.disabled()
     )
@@ -460,7 +472,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             },
         }
     if spec.metrics is not None:
-        protocol["training_metrics"] = metric_policy.to_dict()
+        protocol["training_metrics"] = training_metric_contract
     if spec.batching is not None:
         protocol["training_iteration"]["batching"] = {
             **batching.to_dict(),
@@ -687,7 +699,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
     if persist_reporting:
         bind_data = spec.metrics is not None or spec.batching is not None
         reporting_contract = {
-            "metrics": metric_policy.to_dict(),
+            "metrics": training_metric_contract,
             "train_inputs": evaluation_tensor_identity(resolved_inputs)
             if bind_data
             else resolved_inputs.protocol,
@@ -1009,14 +1021,18 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         )
     )
 
-    def evaluate_split(inputs, targets, *, probe_name=None):
+    def evaluate_split(inputs, targets, *, probe_name=None, test=False):
         sample_count = dataset_sample_count(inputs)
         draws = inputs.draw_seeds if isinstance(inputs, DatasetProvider) else (None,)
         presentation_count = sample_count * len(draws)
         phase = (
-            "train_evaluation"
-            if inputs is resolved_inputs
-            else ("validation" if probe_name is None else f"probe:{probe_name}")
+            "test"
+            if test
+            else (
+                "train_evaluation"
+                if inputs is resolved_inputs
+                else ("validation" if probe_name is None else f"probe:{probe_name}")
+            )
         )
         total_loss = torch.zeros(
             (),
@@ -1037,7 +1053,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 dataset_steps_count(inputs) * model.plan.dt_ms / 1000,
                 presentation_count,
             )
-            if observation_spec is not None
+            if observation_spec is not None and not test
             else None
         )
         was_training = model.training
@@ -1073,7 +1089,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                             required_signals=required_signals
                             if probe_name is None
                             else (),
-                            observation_populations=observation_populations,
+                            observation_populations=()
+                            if test
+                            else observation_populations,
                             automatic_reductions=True,
                             retain_parameters=False,
                             retain_final_state=False,
@@ -1589,6 +1607,47 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             )
         save_training_checkpoint(save_selected, selected_checkpoint)
 
+    test_metrics = None
+    if (
+        spec.test is not None
+        and metric_policy.test == "final"
+        and next_data_state == {"epoch": dataset_epochs, "batch": 0}
+    ):
+        timing.switch("test")
+        # The test split is never used for selection, and is not even resolved
+        # for an interrupted run. Preserve the final model for exact resume.
+        with evaluation_rng(spec.seed):
+            test_inputs, test_targets, test_target_rows = resolve_data(spec.test)
+            if isinstance(test_inputs, DatasetProvider):
+                test_inputs.protocol["dataset"]["batch_size"] = batch_size
+            candidate = selected_checkpoint or final_checkpoint
+            try:
+                with torch.no_grad():
+                    for name, parameter in parameter_map.items():
+                        parameter.copy_(candidate.parameters[name])
+                test_metrics = {
+                    **evaluate_split(test_inputs, test_targets, test=True),
+                    "measurement": "fixed_weight_evaluation",
+                    "examples": dataset_sample_count(test_inputs)
+                    * (
+                        len(test_inputs.draw_seeds)
+                        if isinstance(test_inputs, DatasetProvider)
+                        else 1
+                    ),
+                    "checkpoint": "selected"
+                    if selected_checkpoint is not None
+                    else "final",
+                    "epoch": candidate.data_state["epoch"],
+                    "update": candidate.completed_updates,
+                    "selection_record": copy.deepcopy(candidate.selection_record),
+                    "evaluation_seed": spec.seed,
+                    "protocol": {**test_inputs.protocol, "targets": test_target_rows},
+                }
+            finally:
+                with torch.no_grad():
+                    for name, parameter in parameter_map.items():
+                        parameter.copy_(final_checkpoint.parameters[name])
+
     timing.switch("reporting")
     result = ExecutionResult(
         executor="graph",
@@ -1614,6 +1673,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             "dataset_prefetch": spec.dataset_prefetch,
             "updates": history,
             "epochs": epoch_history,
+            "test": test_metrics,
             "validation_protocol": (
                 {**validation_data[0].protocol, "targets": validation_data[2]}
                 if validation_data is not None

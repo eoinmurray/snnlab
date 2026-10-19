@@ -17,6 +17,7 @@ _EXPORTS = {
     "init_lif_state": "graph.dynamics",
     "ExecutionSpec": "requests.spec",
     "ValidationSpec": "requests.spec",
+    "TestSpec": "requests.spec",
     "InputBinding": "inputs.bindings",
     "DenseArrayBinding": "inputs.bindings",
     "TargetArrayBinding": "inputs.bindings",

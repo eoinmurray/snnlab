@@ -39,7 +39,7 @@ Delegates to `simulate(spec)` with the same checkpoint, input and result semanti
 def train(spec: ExecutionSpec) -> ExecutionResult: ...
 ```
 
-Runs the compiled training recipe with resolved named targets. The recipe selects parameters, objectives, optimizer, regularizers and surrogate; the execution request controls epochs, updates, batching, validation and observations. Use `checkpoint` for training resume and `save_final_checkpoint` / `save_selected_checkpoint` for optional persistence. Selection can return no winner if no eligible boundary was reached.
+Runs the compiled training recipe with resolved named targets. The recipe selects parameters, objectives, optimizer, regularizers and surrogate; the execution request controls epochs, updates, batching, validation, final test evaluation and observations. By default, supplied validation data is evaluated after every epoch and selects the lowest-loss checkpoint; supplied test data is evaluated once after all requested epochs using that checkpoint or final weights. Use `checkpoint` for training resume and `save_final_checkpoint` / `save_selected_checkpoint` for optional persistence. Selection can return no winner if no eligible boundary was reached.
 
 The result's outputs and diagnostics describe the final optimizer update, rather than all training samples. Epoch/update summaries are in `metrics`; retained checkpoints are separate fields. Training rejects inference interventions, reset/decision policies and explicit measurement/recording policies. It does not consume `runtime_state`.
 

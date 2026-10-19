@@ -6,6 +6,12 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-19
+
+### Changed
+
+1. Epoch training now defaults to validation after every completed epoch, selection by lowest total validation loss, and one final test evaluation when `ExecutionSpec.test=TestSpec(...)` is supplied. Test evaluation uses the selected checkpoint or final weights, never informs selection, and waits until all requested epochs complete across resume. Results appear in `metrics["test"]` without changing the final model/optimizer/checkpoint. `TrainingMetrics.initial` now defaults to `()`; `test="none"` disables testing. Added total-loss checkpoint selection for classification and regression recipes.
+
 ## [0.19.2] - 2026-10-19
 
 ### Changed

@@ -9,7 +9,7 @@ from snnlab.sim.graph.extensions import classification
 
 @dataclass(frozen=True)
 class SelectionMetric:
-    kind: Literal["cross_entropy", "accuracy"]
+    kind: Literal["loss", "cross_entropy", "accuracy"]
     objective: int = 0
     direction: Literal["min", "max"] = "min"
 
@@ -96,10 +96,18 @@ class CheckpointSelection:
                     "checkpoint selection metrics must be SelectionMetric instances"
                 )
             if metric.kind not in {
+                "loss",
                 "cross_entropy",
                 "accuracy",
             } or metric.direction not in {"min", "max"}:
                 raise ValueError("unsupported checkpoint selection metric or direction")
+            if metric.kind == "loss":
+                if type(metric.objective) is not int or metric.objective != 0:
+                    raise ValueError("total loss selection requires objective=0")
+                if ("loss", 0) in seen:
+                    raise ValueError("duplicate checkpoint selection metric")
+                seen.add(("loss", 0))
+                continue
             index = metric.objective
             if (
                 isinstance(index, bool)
@@ -122,7 +130,11 @@ class CheckpointSelection:
             group = (
                 "cross_entropies" if metric.kind == "cross_entropy" else "accuracies"
             )
-            value = metrics.get(group, {}).get(f"objective[{metric.objective}]")
+            value = (
+                metrics.get("loss")
+                if metric.kind == "loss"
+                else metrics.get(group, {}).get(f"objective[{metric.objective}]")
+            )
             if value is None or not math.isfinite(value):
                 raise ValueError(
                     f"checkpoint selection metric {metric.kind} objective[{metric.objective}] is missing or non-finite"

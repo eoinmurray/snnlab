@@ -107,7 +107,10 @@ def test_online_reuses_forwards_and_matches_manual_unequal_batches(
         assert row["train_accuracy"] == correct / 5
         assert row["train_examples"] == 5
         assert row["train_measurement"] == "online_pre_update"
-    assert result.selected_checkpoint is None
+    assert (
+        result.selected_checkpoint.selection_record["policy"]["metric"]["kind"]
+        == "loss"
+    )
 
 
 @pytest.mark.parametrize("order", ["sequential", "shuffle", "stratified"])
@@ -459,7 +462,8 @@ def test_explicit_legacy_selection_online_partial_candidate_can_resume(tmp_path)
         {"train": "none", "initial": ("train",)},
         {"initial": ("train", "train")},
         {"initial": "train"},
-        {"validation": "none"},
+        {"validation": "none", "initial": ("validation",)},
+        {"test": "epoch"},
         {"update_history": 1},
     ],
 )
@@ -537,8 +541,9 @@ def test_default_metrics_match_explicit_policy_and_resume(tmp_path):
     assert TrainingMetrics().to_dict() == {
         "train": "online",
         "validation": "epoch",
-        "initial": ["validation"],
+        "initial": [],
         "update_history": False,
+        "test": "final",
     }
     assert implicit.metrics["epochs"] == explicit.metrics["epochs"]
     assert implicit.metrics["updates"] == []

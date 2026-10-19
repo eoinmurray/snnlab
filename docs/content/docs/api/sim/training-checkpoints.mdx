@@ -83,7 +83,7 @@ def restore_training_rng_state(
 
 ```python
 class SelectionMetric:
-    kind: Literal["cross_entropy", "accuracy"]
+    kind: Literal["loss", "cross_entropy", "accuracy"]
     objective: int = 0
     direction: Literal["min", "max"] = "min"
 
@@ -99,7 +99,9 @@ class CheckpointSelection:
     )
 ```
 
-Epoch selection evaluates a fixed state on the full train or validation split. Validation requires `ValidationSpec`; epoch selection requires positive epochs. Metrics identify a classification objective by zero-based index. Cross entropy is unweighted and excludes regularizers; accuracy uses that objective's predictions. Each metric explicitly chooses `direction="min"` or `"max"`; accuracy does not automatically switch to maximization.
+Epoch selection evaluates a fixed state on the full train or validation split. Validation requires `ValidationSpec`; epoch selection requires positive epochs. `kind="loss"` selects by total weighted objective and regularizer loss, supports nonclassification recipes, and requires the default `objective=0` because it measures the entire recipe. Cross entropy and accuracy identify a classification objective by zero-based index. Cross entropy is unweighted and excludes regularizers; accuracy uses that objective's predictions. Each metric explicitly chooses `direction="min"` or `"max"`; accuracy does not automatically switch to maximization.
+
+When `ExecutionSpec.checkpoint_selection` is omitted and validation evaluation is enabled, training uses `CheckpointSelection(metric=SelectionMetric("loss"))`. An explicitly constructed `CheckpointSelection()` retains its cross-entropy default. Test data is never eligible for selection; final test evaluation uses the selected checkpoint, falling back to final weights when selection is disabled or unavailable.
 
 Tie-break metrics are compared in order after exact ties; an exact tie retains the earliest candidate. `include_initial=True` admits epoch zero. A run ending before any eligible boundary can return `selected_checkpoint=None`.
 

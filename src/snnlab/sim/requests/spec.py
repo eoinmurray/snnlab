@@ -37,6 +37,11 @@ class ValidationSpec:
 
 
 @dataclass(frozen=True)
+class TestSpec(ValidationSpec):
+    """Held-out inputs and labels evaluated once after all requested epochs."""
+
+
+@dataclass(frozen=True)
 class ExecutionSpec:
     kind: RequestKind
     executor: ExecutorName = "graph"
@@ -83,6 +88,7 @@ class ExecutionSpec:
     tracing: TraceSpec | None = None
 
     snapshot: str | Path | SnapshotSpec | None = None
+    test: TestSpec | None = None
 
     def __post_init__(self):
         if self.snapshot is not None:

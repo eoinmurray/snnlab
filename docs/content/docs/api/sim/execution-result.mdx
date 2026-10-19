@@ -34,7 +34,7 @@ The result class uses empty mappings/`None` for absent data. Attributes are popu
 
 ## Epoch metrics
 
-In dataset iteration mode (`epochs > 0`), `train` reuses pre-update minibatch scores for online training metrics after each completed epoch. Supplying `validation` evaluates the held-out split at initialization and after each completed epoch. Results are returned as `result.metrics["epochs"]`:
+In dataset iteration mode (`epochs > 0`), `train` reuses pre-update minibatch scores for online training metrics after each completed epoch. Supplying `validation` evaluates the held-out split after each completed epoch, including the last. Initial evaluation is opt-in through `TrainingMetrics.initial`. Results are returned as `result.metrics["epochs"]`; the epoch-zero bookkeeping row has no split metrics unless requested:
 
 | Field | Meaning |
 | --- | --- |
@@ -49,7 +49,15 @@ Each evaluation uses fixed weights and minibatches bounded by `batch_size`. The 
 
 Default online reporting restores completed history and adds newly completed epochs on resume. Explicit fixed-weight reporting without retained history evaluates the starting epoch boundary and subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. Default online reporting retains completed history and partial epoch sums in the checkpoint. With observations enabled, history is retained and resumed as described below. Full-batch update mode without positive epochs returns an empty epoch history.
 
-Epoch evaluations do not replace the final update's returned outputs or diagnostics. Explicit `checkpoint_selection` can select these evaluated states; the default disables implicit update-loss selection. Validation does not perform early stopping. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
+Epoch evaluations do not replace the final update's returned outputs or diagnostics. With validation enabled, the default checkpoint selection chooses the lowest total validation loss; explicit `checkpoint_selection` overrides it. Validation does not perform early stopping. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
+
+### Final test metrics
+
+Supplying `ExecutionSpec.test=TestSpec(...)` evaluates the test set once after all requested epochs finish. `result.metrics["test"]` contains `loss`, `components`, `cross_entropies`, `accuracies`, and `accuracy` when there is one classification objective. Loss and accuracy use the same sample-weighted aggregation as validation, including smaller batches and optional fixed encoding draws.
+
+The entry also records `checkpoint` (`"selected"` or `"final"`), the evaluated checkpoint's `epoch` and `update`, its `selection_record`, `examples` (including all encoding draws), `measurement="fixed_weight_evaluation"`, `evaluation_seed`, and input/target `protocol`. Dataset tests additionally record `encoding_draws`. Test results are separate from epoch history and cannot influence checkpoint selection. The model, parameters, optimizer state, outputs and training checkpoint continue to describe the final training state.
+
+The entry is `None` when no test set is supplied, test metrics are disabled, or the run stops before the requested final epoch. Resume evaluates the test split when training reaches that epoch.
 
 [TrainingMetrics, Batching and epoch callbacks](/api/sim/execution-spec#metrics) configure measurement and reporting. Online train metrics reuse pre-update scores; missing split fields are absent, not zero. `*_measurement` distinguishes online from fixed-weight measurements; `*_examples` counts contributing presentations. With these reporting policies enabled, `phase`, absolute `update`, cumulative `examples`, actual `epoch_updates`/`epoch_examples`, and `dropped_examples` accompany available metrics. Completed history and partial online accumulators survive checkpoint resume without duplicate rows. `update_history=False` returns `updates=[]` independently of explicit checkpoint selection. Callback timing snapshots appear in the corresponding row's `timing` mapping when enabled, while full call timing includes callback overhead.
 
@@ -57,7 +65,7 @@ Epoch evaluations do not replace the final update's returned outputs or diagnost
 
 `result.training_checkpoint` contains the final training state. `result.selected_checkpoint` contains the winner under [ExecutionSpec.checkpoint_selection](/api/sim/execution-spec#checkpoint_selection), or `None` when no eligible candidate was evaluated. Their parameters can differ; inference uses whichever checkpoint directory you supply.
 
-`selected_checkpoint.selection_record` and `result.metrics["selection_record"]` expose the winner's serialized `policy`, ordered metric `values`, absolute `update`, completed `epoch`, `phase` and `evaluation` identity. Epoch selection records unweighted cross-entropy and accuracy in policy order; exact ties retain the earliest winner. `phase` is `"initial"` or `"completed_epoch"`. The evaluation identity includes split protocol, seed, batch size, sample-weighted aggregation and content digests of resolved inputs and labels. `result.metrics["checkpoint_selection"]` contains the resolved contract.
+`selected_checkpoint.selection_record` and `result.metrics["selection_record"]` expose the winner's serialized `policy`, ordered metric `values`, absolute `update`, completed `epoch`, `phase` and `evaluation` identity. Epoch selection records total loss, unweighted cross-entropy or accuracy in policy order; exact ties retain the earliest winner. `phase` is `"initial"` or `"completed_epoch"`. The evaluation identity includes split protocol, seed, batch size, sample-weighted aggregation and content digests of resolved inputs and labels. `result.metrics["checkpoint_selection"]` contains the resolved contract.
 
 The final checkpoint's `best_checkpoint` retains a complete separate winning snapshot (parameters, optimizer/RNG state, coordinates and optional observations), with no recursive nesting. Saving the final state writes its candidate to `selected/` and authenticates that candidate's manifest and tensors. Resuming the final checkpoint preserves the earlier winner; returning history remains governed by the independent observation setting.
 
@@ -178,7 +186,7 @@ Inference metrics expose automatic `online_reductions`, remaining `retained_sign
 ### Optional training timing
 
 When `ExecutionSpec.training_timing=True`, `result.metrics["training_timing"]`
-contains disjoint setup, training, train-evaluation, validation/probe, checkpoint
+contains disjoint setup, training, train-evaluation, validation/probe, test, checkpoint
 and reporting durations, their `total_s`, the measurement mode and per-epoch phase
 rows. These are elapsed seconds for the current call, including resumed partial
 epochs. They do not change or persist into checkpoint identity. See
