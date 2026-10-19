@@ -434,7 +434,7 @@ The previous training keys in `options` are no longer accepted by graph `train`;
 
 ### metrics
 
-Import `TrainingMetrics` from `snnlab.sim`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it preserves full train/validation evaluation at initialization and every completed epoch, and update history.
+Import `TrainingMetrics` from `snnlab.sim`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it uses online training metrics, validation evaluation at initialization and every completed epoch, and no update history.
 
 ```python
 metrics = TrainingMetrics(
@@ -447,10 +447,10 @@ metrics = TrainingMetrics(
 
 | Field | Values and semantics |
 | --- | --- |
-| `train` | `"evaluate"` (default): full training split at fixed current weights. `"online"`: reuse each pre-update minibatch's scores. `"none"`: no training metrics. |
+| `train` | `"evaluate"`: full training split at fixed current weights. `"online"` (default): reuse each pre-update minibatch's scores. `"none"`: no training metrics. |
 | `validation` | `"epoch"` (default): evaluate supplied held-out data after each completed epoch. `"none"`: no validation evaluation. |
-| `initial` | Unique split names; default `("train", "validation")`. Requesting initial train requires `train="evaluate"`; requesting initial validation requires `validation="epoch"`. An absent ValidationSpec produces absent validation metrics. |
-| `update_history` | Boolean, default `True`. `False` returns an empty update history and omits per-update loss/component retention. |
+| `initial` | Unique split names; default `("validation",)`. Requesting initial train requires `train="evaluate"`; requesting initial validation requires `validation="epoch"`. An absent ValidationSpec produces absent validation metrics. |
+| `update_history` | Boolean, default `False`. `False` returns an empty update history and omits per-update loss/component retention. |
 
 Online metrics accumulate detached objective/regularizer loss sums, unweighted classification cross-entropy sums and correct counts on-device. They transfer at completed epochs or explicitly saved checkpoint boundaries, without another training forward or retained autograd graph. Loss is the example-weighted mean of minibatch mean objectives (including objective weights and regularizers). For custom classification losses this is the custom objective's minibatch aggregation, which may differ from a full-dataset class-normalized objective. Reported cross-entropy always uses ordinary unweighted per-example CE, separately from that custom objective. Accuracy weights actual examples, including unequal tails.
 
@@ -458,7 +458,7 @@ Initial online training metrics are absent. Rows label online results `train_mea
 
 `update_history=False` also disables **implicit** historical update-loss checkpoint selection. Set an explicit validation `CheckpointSelection()` to retain a winner without update loss reads, or explicitly request `CheckpointSelection.legacy_training_batch_loss()` to preserve update selection and its host scalar decisions. `CheckpointSelection.disabled()` disables selection independently of history. Saving a selected checkpoint requires an enabled selection policy. Selection by epoch metrics requires fixed-weight evaluation of its split; online train metrics cannot silently stand in for evaluated train metrics. `include_initial=True` also requires that initial split measurement. Split activity observations require their normal evaluations; parameter/gradient observations and separately declared probes remain available.
 
-Explicit metrics, batching or callbacks retain contiguous available epoch history and partial online sums in authenticated training checkpoint schema version 5. Resume requires the same measurement policy and protocol identities, restores partial sums and next coordinates, and emits only newly completed epochs. Explicit metric or batching policies additionally bind input/target contents; callback-only reporting uses existing protocol metadata without transferring input tensors. Older checkpoint versions still load under their original contracts. Changing measurement or schedule policy rejects resume.
+Default online metrics, explicit metrics, batching or callbacks retain contiguous available epoch history and partial online sums in authenticated training checkpoint schema version 5. Resume requires the same measurement policy and protocol identities, restores partial sums and next coordinates, and emits only newly completed epochs. Online metrics and explicit metric or batching policies additionally bind input/target contents; callback-only reporting uses existing protocol metadata without transferring input tensors. Older checkpoint versions still load under their original contracts. Changing measurement or schedule policy rejects resume.
 
 ### batching
 

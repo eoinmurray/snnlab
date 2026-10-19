@@ -113,7 +113,7 @@ def test_resume_keeps_best_so_far_and_matches_uninterrupted(tmp_path, updates, a
         assert resumed.selected_checkpoint.completed_updates == 3
     assert (
         json.loads((tmp_path / "final" / "manifest.json").read_text())["schema_version"]
-        == 4
+        == 5
     )
 
 
@@ -193,7 +193,7 @@ def test_resume_rejects_changed_policy_or_validation_and_authenticates_winner(tm
             ),
         ),
     ]:
-        with pytest.raises(ValueError, match="selection policy or evaluation identity"):
+        with pytest.raises(ValueError, match="selection policy or evaluation identity|reporting metric/data identity"):
             train(replace(changed, checkpoint=tmp_path / "final"))
     child = tmp_path / "final" / "selected" / "manifest.json"
     manifest = json.loads(child.read_text())

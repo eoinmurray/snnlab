@@ -16,6 +16,7 @@ from snnlab.sim import (
     ExecutionSpec,
     GraphExecutor,
     ObservationProbe,
+    TrainingMetrics,
     ValidationSpec,
     load_training_checkpoint,
     train,
@@ -41,9 +42,7 @@ def request():
         synapse=snn.LeakyIntegrator(tau=2 * snn.ms),
         weight=snn.LowerClampedNormal(4.0, 0.1),
     )
-    mean = snn.reduce(
-        out.pre_reset_voltage, operation="mean", over="time", name="mean"
-    )
+    mean = snn.reduce(out.pre_reset_voltage, operation="mean", over="time", name="mean")
     net.output("scores", mean)
     recipe = snn.TrainSpec(
         objectives=[snn.CrossEntropy(prediction=mean, target="label")],
@@ -65,6 +64,9 @@ def request():
         input_bindings=(binding,),
         targets={"label": labels},
         validation=ValidationSpec(input_bindings=(binding,), targets={"label": labels}),
+        metrics=TrainingMetrics(
+            train="evaluate", initial=("train", "validation"), update_history=True
+        ),
         epochs=2,
         batch_size=2,
         seed=23,
@@ -190,7 +192,7 @@ def test_resumed_history_and_partial_gradient_totals_match_uninterrupted(
         json.loads((tmp_path / "checkpoint" / "manifest.json").read_text())[
             "schema_version"
         ]
-        == 3
+        == 5
     )
     loaded = load_training_checkpoint(tmp_path / "checkpoint")
     assert loaded.observation_state == first.training_checkpoint.observation_state

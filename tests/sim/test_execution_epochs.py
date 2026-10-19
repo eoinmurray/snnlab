@@ -9,6 +9,7 @@ from snnlab.sim import (
     DenseArrayBinding,
     ExecutionSpec,
     TargetArrayBinding,
+    TrainingMetrics,
     ValidationSpec,
     save_training_checkpoint,
     train,
@@ -43,7 +44,12 @@ def request():
 
 
 def test_epoch_evaluation_is_sample_weighted_and_validation_never_trains():
-    spec = request()
+    spec = replace(
+        request(),
+        metrics=TrainingMetrics(
+            train="evaluate", initial=("train", "validation"), update_history=True
+        ),
+    )
     result = train(spec)
     without_validation = train(replace(spec, validation=None))
     assert result.metrics["updates"] == without_validation.metrics["updates"]
@@ -105,13 +111,13 @@ def test_epoch_history_resume_reports_only_completed_epochs(tmp_path):
         tmp_path / "partial", partial.training_checkpoint
     )
     resumed = train(replace(spec, checkpoint=checkpoint))
-    assert resumed.metrics["epochs"] == full.metrics["epochs"][1:]
+    assert resumed.metrics["epochs"] == full.metrics["epochs"]
     boundary = train(replace(spec, updates=3))
     checkpoint = save_training_checkpoint(
         tmp_path / "boundary", boundary.training_checkpoint
     )
     resumed_boundary = train(replace(spec, checkpoint=checkpoint))
-    assert resumed_boundary.metrics["epochs"] == full.metrics["epochs"][1:]
+    assert resumed_boundary.metrics["epochs"] == full.metrics["epochs"]
 
 
 def test_validation_requires_epochs_and_matching_target_ids():

@@ -227,6 +227,8 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             raise ValueError(f"training {name} must be an integer >= {minimum}")
     if not isinstance(spec.shuffle, bool):
         raise TypeError("training shuffle must be boolean")
+    if spec.metrics is None and spec.epochs > 0:
+        spec = replace(spec, metrics=TrainingMetrics())
     metric_policy = spec.metrics or TrainingMetrics()
     if not isinstance(metric_policy, TrainingMetrics):
         raise TypeError("metrics must be TrainingMetrics")

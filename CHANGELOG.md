@@ -6,6 +6,13 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-10-19
+
+### Changed
+
+1. `TrainingMetrics()` now defaults to online training metrics, epoch validation, initial validation only and no per-update history: `train="online", validation="epoch", initial=("validation",), update_history=False`. Omitting the policy uses these defaults. Online epoch reporting retains completed history and partial sums in resumable checkpoints. Implicit update-loss checkpoint selection is disabled with update history; request an explicit selection policy when needed.
+2. To retain the previous measurement behavior, pass `TrainingMetrics(train="evaluate", validation="epoch", initial=("train", "validation"), update_history=True)` for epoch training. Updated metric documentation and focused policy, observation and checkpoint regressions.
+
 ## [0.19.1] - 2026-10-16
 
 ### Fixed

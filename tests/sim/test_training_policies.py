@@ -305,7 +305,14 @@ def test_callback_snapshot_observations_rng_and_no_extra_forwards(monkeypatch, t
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(GraphExecutor, "_forward", tracked)
-    spec = replace(spec, observations=observations(spec), training_timing=timed)
+    spec = replace(
+        spec,
+        observations=observations(spec),
+        training_timing=timed,
+        metrics=TrainingMetrics(
+            train="evaluate", initial=("train", "validation"), update_history=True
+        ),
+    )
     baseline = train(spec)
     count = len(calls)
     calls.clear()
@@ -407,7 +414,9 @@ def test_incompatible_policies_and_checkpoint_authentication(tmp_path):
     with pytest.raises(ValueError, match="protocol"):
         train(
             replace(
-                spec, checkpoint=saved, metrics=TrainingMetrics(initial=("validation",))
+                spec,
+                checkpoint=saved,
+                metrics=TrainingMetrics(train="evaluate", initial=("validation",)),
             )
         )
     manifest_path = saved / "manifest.json"
@@ -418,7 +427,7 @@ def test_incompatible_policies_and_checkpoint_authentication(tmp_path):
         load_training_checkpoint(saved)
 
 
-def test_callback_enabled_on_legacy_boundary_resume_does_not_replay(tmp_path):
+def test_callback_enabled_on_default_boundary_resume_does_not_replay(tmp_path):
     spec = request()
     saved = save_training_checkpoint(
         tmp_path / "legacy", train(replace(spec, updates=3)).training_checkpoint
@@ -446,8 +455,8 @@ def test_explicit_legacy_selection_online_partial_candidate_can_resume(tmp_path)
     [
         {"train": "bad"},
         {"validation": "bad"},
-        {"train": "online"},
-        {"train": "none"},
+        {"train": "online", "initial": ("train",)},
+        {"train": "none", "initial": ("train",)},
         {"initial": ("train", "train")},
         {"initial": "train"},
         {"validation": "none"},
@@ -460,7 +469,14 @@ def test_invalid_metric_policies(fields):
 
 
 def test_online_reporting_policy_does_not_change_optimizer_trajectory():
-    baseline = train(request())
+    baseline = train(
+        replace(
+            request(),
+            metrics=TrainingMetrics(
+                train="evaluate", initial=("train", "validation"), update_history=True
+            ),
+        )
+    )
     measured = train(online_spec())
     for name in baseline.parameters:
         torch.testing.assert_close(
@@ -512,3 +528,25 @@ def test_callback_alone_adds_no_tensor_cpu_transfers(monkeypatch):
     calls.clear()
     train(replace(request(), on_epoch_end=lambda report: None))
     assert len(calls) == count
+
+
+def test_default_metrics_match_explicit_policy_and_resume(tmp_path):
+    spec = request()
+    implicit = train(spec)
+    explicit = train(replace(spec, metrics=TrainingMetrics()))
+    assert TrainingMetrics().to_dict() == {
+        "train": "online",
+        "validation": "epoch",
+        "initial": ["validation"],
+        "update_history": False,
+    }
+    assert implicit.metrics["epochs"] == explicit.metrics["epochs"]
+    assert implicit.metrics["updates"] == []
+    assert "train_loss" not in implicit.metrics["epochs"][0]
+    assert [row.get("train_loss") for row in implicit.metrics["epochs"]] == [
+        row.get("train_loss") for row in explicit.metrics["epochs"]
+    ]
+    partial = train(replace(spec, updates=1))
+    saved = save_training_checkpoint(tmp_path / "default", partial.training_checkpoint)
+    resumed = train(replace(spec, checkpoint=saved))
+    assert resumed.metrics["epochs"] == implicit.metrics["epochs"]

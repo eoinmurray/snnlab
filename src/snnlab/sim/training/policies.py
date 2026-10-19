@@ -10,10 +10,10 @@ import torch
 
 @dataclass(frozen=True)
 class TrainingMetrics:
-    train: Literal["online", "evaluate", "none"] = "evaluate"
+    train: Literal["online", "evaluate", "none"] = "online"
     validation: Literal["epoch", "none"] = "epoch"
-    initial: tuple[str, ...] = ("train", "validation")
-    update_history: bool = True
+    initial: tuple[str, ...] = ("validation",)
+    update_history: bool = False
 
     def __post_init__(self):
         if self.train not in {"online", "evaluate", "none"}:
