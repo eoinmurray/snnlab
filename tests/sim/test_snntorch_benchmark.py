@@ -125,14 +125,21 @@ def test_two_epoch_training_and_plot_artifacts_keep_partial_batches(
     ]
     assert len(calls) == 1
     execution, native_result = calls[0]
-    assert execution["epochs"] == 2 and execution["batch_size"] == 8 and execution["shuffle"]
+    assert (
+        execution["epochs"] == 2
+        and execution["batch_size"] == 8
+        and execution["shuffle"]
+    )
     assert execution["validation"] is not None
     assert execution["training_timing"]
     assert execution["training"]["optimizer"]["kind"] == "custom_optimizer"
     assert native_result.training_checkpoint.completed_updates == 6
     assert [row["epoch"] for row in native_result.metrics["epochs"]] == [0, 1, 2]
     assert results[1]["training_api"] == "snnlab.sim.train"
-    assert results[1]["train_call_seconds"] > 0
+    assert (
+        results[1]["train_call_seconds"]
+        >= native_result.metrics["training_timing"]["total_s"]
+    )
     assert (tmp_path / "snnlab.native/manifest.json").exists()
     left_checkpoint = torch.load(tmp_path / "snntorch.pt", weights_only=True)
     right_checkpoint = torch.load(tmp_path / "snnlab.pt", weights_only=True)
@@ -216,9 +223,7 @@ def test_minimal_layout_and_retained_results():
             == 900
         )
     else:
-        assert (
-            report["training"]["snnlab"]["training_api"] == "snnlab.sim.train"
-        )
+        assert report["training"]["snnlab"]["training_api"] == "snnlab.sim.train"
         assert report["cloud"]["native_training_checkpoint"].endswith("snnlab.native")
 
 

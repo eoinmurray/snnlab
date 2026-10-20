@@ -11,6 +11,7 @@ import torch
 from snnlab.sim.artifacts.snapshots import SnapshotSpec
 from snnlab.sim.diagnostics.tracing import TraceSpec
 from snnlab.sim.inputs.bindings import InputBinding, TargetArrayBinding
+from snnlab.sim.requests.performance import _performance_from_spec
 from snnlab.sim.runtime.interventions import Intervention
 from snnlab.sim.runtime.recording import MeasurementWindow, RecordingSpec
 from snnlab.sim.runtime.resets_decisions import DecisionSegments, ResetVoltage
@@ -84,16 +85,20 @@ class ExecutionSpec:
     projection_mode: Literal["fast", "strict"] = "fast"
     extension_validation: Literal["strict", "structural"] = "structural"
     compile_mode: Literal["default"] | None = "default"
-    dataset_prefetch: int = 0
+    precision: Literal["auto", "highest"] = "auto"
+    dataset_prefetch: int = 1
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized"
     training_timing: bool = False
     tracing: TraceSpec | None = None
 
     snapshot: str | Path | SnapshotSpec | None = None
-    compile_block_steps: int = 1
+    compile_block_steps: int | Literal["auto"] = "auto"
+    cuda_graphs: Literal["auto", "off"] = "auto"
+    fused_optimizer: Literal["auto", "off"] = "auto"
     test: TestSpec | None = None
 
     def __post_init__(self):
+        _performance_from_spec(self)
         if self.snapshot is not None:
             if not isinstance(self.snapshot, (str, Path, SnapshotSpec)):
                 raise TypeError("snapshot must be a path or SnapshotSpec")
@@ -106,23 +111,9 @@ class ExecutionSpec:
                 raise TypeError("tracing must be a TraceSpec")
             if self.kind != "train":
                 raise ValueError("tracing currently requires kind='train'")
-        if self.projection_mode not in {"fast", "strict"}:
-            raise ValueError("projection_mode must be fast or strict")
         for name in ("retain_parameters", "retain_final_state", "retain_runtime_state"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be boolean")
-        if self.compile_mode not in {None, "default"}:
-            raise ValueError("compile_mode must be None or default")
-        if (
-            type(self.compile_block_steps) is not int
-            or not 1 <= self.compile_block_steps <= 64
-        ):
-            raise ValueError("compile_block_steps must be an integer from 1 to 64")
-        if (
-            type(self.dataset_prefetch) is not int
-            or not 0 <= self.dataset_prefetch <= 8
-        ):
-            raise ValueError("dataset_prefetch must be an integer from 0 to 8")
         if not isinstance(self.training_timing, bool):
             raise TypeError("training_timing must be boolean")
         if self.training_timing and self.kind != "train":

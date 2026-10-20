@@ -13,13 +13,44 @@ from snnlab.sim.graph import dynamics as M
 from snnlab.sim.graph import extensions as X
 
 
+def precision_fallback(device, dtype):
+    return (
+        torch.__version__.split("+")[0].startswith("2.10.")
+        and device.type == "cpu"
+        and dtype in {torch.float16, torch.bfloat16}
+    )
+
+
 def prepare_kernel(step, compile_mode, *, fullgraph=True):
     if compile_mode is not None:
         # Each prepared closure owns its compiler guards. Sharing a code object
         # across unrelated configurations exhausts Dynamo's cache limit.
         step.__code__ = step.__code__.replace(co_name=f"tensor_step_{id(step)}")
+        options = {"emulate_precision_casts": True}
+        if torch.__version__.split("+")[0].startswith("2.10."):
+            # 2.10 CPU vector codegen rejects precision casts; scalar codegen
+            # compiles but still changes recurrent gradients. Choose the eager
+            # tensor graph at compile time, without per-step argument scans.
+            def backend(graph, examples):
+                if any(
+                    isinstance(value, torch.Tensor)
+                    and precision_fallback(value.device, value.dtype)
+                    for value in examples
+                ):
+                    return graph.forward
+                return torch._inductor.compile(graph, examples, options=options)
+
+            return torch.compile(
+                step, backend=backend, fullgraph=fullgraph, dynamic=False
+            )
         return torch.compile(
-            step, mode=compile_mode, fullgraph=fullgraph, dynamic=False
+            # Fusion must retain eager rounding at intermediate dtype casts.
+            # In bfloat16, dropping those casts changed recurrent gradients by
+            # over 30%, even for compiled individual kernels.
+            step,
+            options=options,
+            fullgraph=fullgraph,
+            dynamic=False,
         )
     return step
 
@@ -129,7 +160,9 @@ def synapse_kernel(
     elif projection_mode == "fast" and projection.decay == 0.0:
 
         def step(previous, drive):
-            return drive
+            # Autocast matrix products may be BF16; recurrent synaptic state
+            # retains its declared dtype, including the zero-decay fast path.
+            return drive.to(previous.dtype)
     else:
         decay = projection.decay
 

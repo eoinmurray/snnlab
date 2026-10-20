@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
+from contextlib import nullcontext
 from typing import Any, Literal, Mapping, Sequence
 
 import torch
@@ -22,6 +23,7 @@ from snnlab.sim.graph.kernels import (
     constraint_kernel,
     neuron_kernel,
     operation_kernel,
+    precision_fallback,
     synapse_kernel,
 )
 from snnlab.sim.graph.plan import GraphPlan, PlannedProjection, _signal_axes
@@ -88,8 +90,10 @@ class GraphExecutor(nn.Module):
         surrogate: Mapping[str, Any] | None = None,
         extension_validation: Literal["strict", "structural"] = "structural",
         compile_mode: Literal["default"] | None = "default",
-        compile_block_steps: int = 1,
+        compile_block_steps: int | Literal["auto"] = "auto",
         projection_mode: Literal["fast", "strict"] = "fast",
+        precision: Literal["auto", "highest"] = "auto",
+        cuda_graphs: Literal["auto", "off"] = "auto",
     ):
         super().__init__()
         if projection_mode not in {"fast", "strict"}:
@@ -98,9 +102,20 @@ class GraphExecutor(nn.Module):
         if compile_mode not in {None, "default"}:
             raise ValueError("compile_mode must be None or default")
         self.compile_mode = compile_mode
-        if type(compile_block_steps) is not int or not 1 <= compile_block_steps <= 64:
+        if compile_block_steps != "auto" and (
+            type(compile_block_steps) is not int or not 1 <= compile_block_steps <= 64
+        ):
             raise ValueError("compile_block_steps must be an integer from 1 to 64")
-        self.compile_block_steps = compile_block_steps
+        from snnlab.sim.graph.replay import ForwardReplay
+
+        if cuda_graphs not in {"auto", "off"}:
+            raise ValueError("cuda_graphs must be auto or off")
+        self.cuda_graphs = cuda_graphs
+        self._forward_replay = ForwardReplay()
+        self.requested_block_steps = compile_block_steps
+        self.precision = precision
+        if precision not in {"auto", "highest"}:
+            raise ValueError("precision must be auto or highest")
         self._block_kernels = {}
         self._execution_paths = []
         if extension_validation not in ("strict", "structural"):
@@ -549,7 +564,78 @@ class GraphExecutor(nn.Module):
         )
         return result
 
-    def _forward(
+    @property
+    def compile_block_steps(self):
+        if self.requested_block_steps != "auto":
+            return self.requested_block_steps
+        parameter = next(self.parameters(), None)
+        device = parameter.device.type if parameter is not None else "cpu"
+        return {"cuda": 16, "mps": 4}.get(device, 1)
+
+    def _forward(self, inputs, **kwargs):
+        from snnlab.sim.graph.precision import execution_precision
+
+        parameter = next(self.parameters(), None)
+        automatic_inference = (
+            torch.is_grad_enabled()
+            and kwargs.get("runtime_state") is None
+            and not any(
+                value.requires_grad for value in (*inputs.values(), *self.parameters())
+            )
+            and all(
+                E.get(row["category"], row["definition"]).capture_safe
+                for row in E.required(self.plan.graph)
+                if row["category"]
+                in {"neuron", "synapse", "surrogate", "operation", "constraint"}
+            )
+            and (
+                self.surrogate is None
+                or E.resolve("surrogate", self.surrogate).capture_safe
+            )
+        )
+        with (
+            execution_precision(self.precision, parameter),
+            torch.no_grad() if automatic_inference else nullcontext(),
+        ):
+            captured = (
+                self._forward_replay.run(
+                    self,
+                    inputs,
+                    kwargs,
+                    lambda values: self._forward_impl(values, **kwargs),
+                )
+                if not torch.is_grad_enabled()
+                else None
+            )
+            result, signals = (
+                captured
+                if captured is not None
+                else self._forward_impl(inputs, **kwargs)
+            )
+        result.metrics["cuda_graphs"] = self._forward_replay.summary()
+        result.metrics["precision"] = {
+            "policy": self.precision,
+            "autocast": "bfloat16" if self._amp_enabled(parameter) else "off",
+            "matmul": "high"
+            if self.precision == "auto"
+            and parameter is not None
+            and parameter.device.type == "cuda"
+            else "highest"
+            if parameter is not None and parameter.device.type == "cuda"
+            else "caller",
+        }
+        if parameter is not None and parameter.device.type == "cuda":
+            result.metrics["inference_retention"]["precision"] = dict(
+                result.metrics["precision"]
+            )
+        return result, signals
+
+    def _amp_enabled(self, parameter):
+        from snnlab.sim.graph.precision import amp_enabled
+
+        return amp_enabled(self.precision, parameter)
+
+    def _forward_impl(
         self,
         inputs: Mapping[str, torch.Tensor],
         *,
@@ -1101,6 +1187,12 @@ class GraphExecutor(nn.Module):
             if row["kind"] == "pool2d"
         }
         block_reasons = []
+        compiler_fallback = (
+            "PyTorch 2.10 reduced-precision CPU uses eager tensor graphs"
+            if self.compile_mode is not None
+            and precision_fallback(device, parameter_dtype)
+            else None
+        )
         block_trainable = {
             projection.parameter
             for projection in self.plan.projections
@@ -1116,6 +1208,7 @@ class GraphExecutor(nn.Module):
         for condition, reason in (
             (self.compile_block_steps == 1, "block execution not requested"),
             (self.compile_mode is None, "compilation disabled"),
+            (compiler_fallback is not None, compiler_fallback),
             (
                 device.type == "mps" and self.compile_block_steps > 4,
                 "MPS block size above validated limit (4)",
@@ -1827,10 +1920,14 @@ class GraphExecutor(nn.Module):
                 "extension_validation": self.extension_validation,
                 "projection_mode": self.projection_mode,
                 "compile_mode": self.compile_mode,
+                "compiler_precision_policy": "snnlab.eager-precision-casts/v1"
+                if self.compile_mode is not None
+                else None,
+                "compiler_fallback": compiler_fallback,
                 "execution_path": {
                     "schema": "snnlab.network-blocks/v1",
                     "selected": "kernel_loop" if block_reasons else "compiled_blocks",
-                    "requested_block_steps": self.compile_block_steps,
+                    "requested_block_steps": self.requested_block_steps,
                     "block_steps": 1 if block_reasons else self.compile_block_steps,
                     "fallback_reasons": block_reasons,
                 },

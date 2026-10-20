@@ -14,11 +14,12 @@ function section(start: string, end: string, indent = false, source = script) {
 const replacements: Record<string, string> = {
   SCRIPT: script.trimEnd(),
   CALLBACKS: callbacks.trimEnd(),
-  NEURON: section('# 1. Define a neuron using tensor state and a normal Python step function.', '# 2. Define an initialization', false, callbacks),
-  INITIALIZER: section('# 2. Define an initialization distribution with ordinary PyTorch.', '', false, callbacks),
+  NEURON: section('# 1. Define a neuron using tensor state and a normal Python step function.', '# 2. Define a synapse', false, callbacks),
+  SYNAPSE: section('# 2. Define a synapse using the already weight-projected drive.', '# 3. Define an initialization', false, callbacks),
+  INITIALIZER: section('# 3. Define an initialization distribution with ordinary PyTorch.', '', false, callbacks),
   REGISTRATION: section('# Register references to functions in the sibling importable module.', '\ndef main()'),
-  NETWORK: section('# 3. Define a stimulus with custom tensors: quiet, then sustained activity.', '# 5. Compile and execute', true),
-  EXECUTION: section('# 5. Compile and execute: the bundle stores names/config, not Python code.', '# 6. Plot the same stimulus', true),
+  NETWORK: section('# 4. Define a stimulus with custom tensors: quiet, then sustained activity.', '# 6. Compile and execute', true),
+  EXECUTION: section('# 6. Compile and execute: the bundle stores names/config, not Python code.', '# 7. Plot the same stimulus', true),
 };
 writeFileSync(new URL('../content/docs/custom-neurons-and-synapses.mdx', import.meta.url),
   template.replace(/\{\{(\w+)\}\}/g, (_, name) => {

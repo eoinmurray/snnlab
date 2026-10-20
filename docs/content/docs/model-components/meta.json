@@ -5,6 +5,7 @@
   "pages": [
     "../neurons",
     "../synapses",
-    "../weights"
+    "../weights",
+    "../performance-and-custom-components"
   ]
 }

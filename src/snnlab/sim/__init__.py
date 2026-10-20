@@ -9,6 +9,7 @@ from importlib import import_module
 from ._version import __version__
 
 _EXPORTS = {
+    "Performance": "requests.performance",
     "load_dataset": "inputs.datasets",
     "encode_images_poisson": "inputs.encoders",
     "poisson_spikes": "graph.dynamics",

@@ -34,6 +34,15 @@ ref_steps_E = refractory_steps(ref_ms_E, dt)
 ref_steps_I = refractory_steps(ref_ms_I, dt)
 
 
+def _surrogate_abs(value):
+    # Metal's precision-preserving bfloat16 codegen has an ambiguous abs
+    # overload. Bfloat16 values widen exactly; abs changes only the sign, so
+    # narrowing the result preserves both values and the abs derivative.
+    if value.device.type == "mps" and value.dtype == torch.bfloat16:
+        return value.float().abs().to(value.dtype)
+    return value.abs()
+
+
 class _ScaledFastSigmoid(torch.autograd.Function):
     """Keep hard spikes exact when the compiler fuses scaled proxy arithmetic."""
 
@@ -47,7 +56,9 @@ class _ScaledFastSigmoid(torch.autograd.Function):
     @staticmethod
     def backward(ctx, gradient):
         (u,) = ctx.saved_tensors
-        derivative = ctx.gradient_scale * ctx.slope / (1 + ctx.slope * u.abs()) ** 2
+        derivative = (
+            ctx.gradient_scale * ctx.slope / (1 + ctx.slope * _surrogate_abs(u)) ** 2
+        )
         return gradient * derivative, None, None, None
 
 
@@ -68,7 +79,7 @@ def fast_sigmoid_spike(u, slope, gradient_scale=1.0, threshold_inclusive=True):
     if gradient_scale != 1.0:
         return _ScaledFastSigmoid.apply(u, slope, gradient_scale, threshold_inclusive)
     hard = ((u >= 0) if threshold_inclusive else (u > 0)).to(u.dtype)
-    proxy = slope * u / (1.0 + slope * u.abs())
+    proxy = slope * u / (1.0 + slope * _surrogate_abs(u))
     # Parenthesise so (proxy - proxy.detach()) collapses to bitwise zero
     # in the forward pass; otherwise (hard + proxy) then - proxy.detach()
     # loses fp32 precision when |proxy| is close to 1 (value drifts to

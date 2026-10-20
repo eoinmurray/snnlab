@@ -5,6 +5,7 @@ Outputs are saved beside this script. Diagram rendering requires Graphviz.
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,7 @@ import torch
 from snnlab import extensions, lang, viz
 from snnlab.sim import (
     DenseArrayBinding,
+    Performance,
     simulate,
 )
 
@@ -30,9 +32,21 @@ def register_definitions():
         initialize="custom_neurons:adaptive_initial_state",
         input_unit="nA",
         state_units={"adaptation": "nA"},
+        validate="custom_neurons:validate_adaptive",
+        capture_safe=True,
+    )
+    extensions.register_synapse(
+        "example.exponential_current/v1",
+        "custom_neurons:exponential_step",
+        initialize="custom_neurons:exponential_initial_state",
+        output_unit="nA",
+        validate="custom_neurons:validate_exponential",
+        capture_safe=True,
     )
     extensions.register_initializer(
-        "example.clipped_normal/v1", "custom_neurons:clipped_normal"
+        # Random weight initialization happens once, outside replay.
+        "example.clipped_normal/v1",
+        "custom_neurons:clipped_normal",
     )
 
 
@@ -43,9 +57,18 @@ def main():
         action="store_true",
         help="Load the saved bundle in a fresh process; do not build or register definitions.",
     )
+    parser.add_argument(
+        "--device", default="cpu", help="Torch device, e.g. cpu or cuda:0"
+    )
+    parser.add_argument(
+        "--eager", action="store_true", help="Disable runtime compilation"
+    )
+    parser.add_argument(
+        "--extension-validation", choices=("structural", "strict"), default="structural"
+    )
     args = parser.parse_args()
     bundle_path = OUTPUT_DIR / "network.bundle"
-    # 3. Define a stimulus with custom tensors: quiet, then sustained activity.
+    # 4. Define a stimulus with custom tensors: quiet, then sustained activity.
     steps = round(DURATION_MS / DT_MS)
     rates = torch.full((steps, 1, 4), 20.0)
     rates[round(100 / DT_MS) : round(400 / DT_MS)] = 120.0
@@ -55,7 +78,7 @@ def main():
     ).float()
     binding = DenseArrayBinding("inputs", input_spikes)
 
-    # 4. Compare built-in and custom neuron dynamics with matched input weights.
+    # Compare built-in and custom neuron dynamics with matched input weights.
     if not args.simulate:
         register_definitions()
         net = lang.Network("customisation", dt=DT_MS * lang.ms)
@@ -89,7 +112,9 @@ def main():
                 inputs,
                 cells.excitatory,
                 name=f"input_to_{cells.id}",
-                synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
+                synapse=lang.CustomSynapse(
+                    "example.exponential_current/v1", tau_ms=5.0
+                ),
                 weight=weights,
             )
             net.output(f"{cells.id}_spikes", cells.spikes)
@@ -101,7 +126,7 @@ def main():
         bundle = lang.compile(net, target="tools/snnsim")
         bundle.write(bundle_path)
 
-    # 5. Compile and execute: the bundle stores names/config, not Python code.
+    # 6. Compile and execute: the bundle stores names/config, not Python code.
     bundle = lang.load_bundle(bundle_path)
     viz.render_diagram(
         lang.diagram(bundle, view="expanded"),
@@ -114,12 +139,17 @@ def main():
         bundle=bundle_path,
         input_bindings=(binding,),
         seed=SEED,
-        device="cpu",
+        device=args.device,
+        performance=Performance(compile_mode=None if args.eager else "default"),
+        extension_validation=args.extension_validation,
+    )
+    (OUTPUT_DIR / "metrics.json").write_text(
+        json.dumps(result.metrics, indent=2, allow_nan=False) + "\n"
     )
     data = result.numpy(batch=0)
     assert data.time_ms is not None
 
-    # 6. Plot the same stimulus, both responses and the custom adaptation state.
+    # 7. Plot the same stimulus, both responses and the custom adaptation state.
     import matplotlib.pyplot as plt
 
     layout = viz.FigureGrid(

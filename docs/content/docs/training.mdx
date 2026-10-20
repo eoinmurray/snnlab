@@ -13,6 +13,14 @@ Both the input-to-E weights (`w_in`) and E-to-readout weights (`w_out`) learn. S
 
 This extends [Quickstart](/quickstart) with labelled data, minibatches, validation and saved weights. No dataset download is needed. All files live in `examples/training/`; the saved model can later be reused from the [Inference example](/inference).
 
+Training uses the automatic [Performance defaults](/api/sim/execution-spec#performance).
+Import `Performance` from `snnlab.sim`.
+Pass `performance=Performance(...)` to `train` to customize compilation, CUDA
+replay, precision, fused optimization, dataset prefetch and projection arithmetic.
+For short eager runs use `Performance(compile_mode=None, cuda_graphs="off")`;
+use `precision="highest"` inside the object to disable automatic CUDA BF16/TF32.
+Device, minibatches and reporting remain arguments on the training call.
+
 ## 1. Imports and network definition
 
 ```python

@@ -83,10 +83,13 @@ def adam_optimizer(groups, config):
 
 
 extensions.register_objective(
-    "benchmarks.shd.equal_class_ce/v1", equal_class_cross_entropy, classification=True
+    "benchmarks.shd.equal_class_ce/v1",
+    equal_class_cross_entropy,
+    classification=True,
+    capture_safe=True,
 )
 extensions.register_operation(
-    "benchmarks.shd.rate_normalize/v1", rate_normalized_scores
+    "benchmarks.shd.rate_normalize/v1", rate_normalized_scores, capture_safe=True
 )
 extensions.register_initializer("benchmarks.shd.centered_readout/v1", centered_readout)
 extensions.register_initializer("benchmarks.shd.identity_gain/v1", identity_gain)

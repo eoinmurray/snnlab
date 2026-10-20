@@ -22,7 +22,8 @@ for (const [name, expected] of Object.entries({ ...presentation.source_sha256, .
   if (hash(join(source, name)) !== expected) throw new Error(`SHD artifact changed: ${name}`);
 }
 const recipe = 'benchmarks/shd/shd_recipe.py';
-if (hash(join(repo, recipe)) !== configuration.source_sha256[recipe]) {
+const pinnedRecipe = join(source, 'shd_recipe.py');
+if (hash(pinnedRecipe) !== configuration.source_sha256[recipe]) {
   throw new Error('Retained SHD recipe differs from the uploaded numerical source');
 }
 const files = readdirSync(source).filter((name) => /\.(json|png|pdf|svg)$/.test(name));
@@ -33,4 +34,4 @@ for (const name of files) {
   copyFileSync(join(source, name), target);
 }
 copyFileSync(renderer, join(destination, 'plot.py'));
-copyFileSync(join(repo, recipe), join(destination, 'shd_recipe.py'));
+copyFileSync(pinnedRecipe, join(destination, 'shd_recipe.py'));

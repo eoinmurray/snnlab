@@ -24,6 +24,7 @@ from snnlab.sim.graph.plan import plan_graph
 from snnlab.sim.inputs.bindings import ResolvedDenseInputs
 from snnlab.sim.inputs.provider import DatasetProvider, simulate_dataset
 from snnlab.sim.inputs.resolution import _split_input_bindings, resolve_input_bindings
+from snnlab.sim.requests.performance import _performance_report
 from snnlab.sim.requests.result import ExecutionResult
 from snnlab.sim.requests.spec import ExecutionSpec
 from snnlab.sim.runtime.state import RUNTIME_STATE_SCHEMA, GraphRuntimeState
@@ -48,15 +49,32 @@ def _projection_protocol(protocol, mode):
 
 
 def _compilation_protocol(protocol, spec):
-    """Bind opt-in block policy for exact optimizer/checkpoint replay."""
+    """Bind resolved block policy for optimizer/checkpoint replay."""
+    block_steps = spec.compile_block_steps
+    if block_steps == "auto":
+        block_steps = {"cuda": 16, "mps": 4}.get(
+            torch.device(resolve_device(spec.device)).type, 1
+        )
     result = dict(protocol)
+    precision = (
+        {"schema": "snnlab.cuda-precision/v1", "policy": "auto"}
+        if torch.device(resolve_device(spec.device)).type == "cuda"
+        and spec.precision == "auto"
+        else None
+    )
+    if result.get("execution_precision", precision) != precision:
+        raise ValueError("execution protocol precision does not match request")
+    if precision is not None:
+        result["execution_precision"] = precision
+    else:
+        result.pop("execution_precision", None)
     expected = (
         {
             "schema": "snnlab.network-blocks/v1",
             "compile_mode": spec.compile_mode,
-            "block_steps": spec.compile_block_steps,
+            "block_steps": block_steps,
         }
-        if spec.compile_block_steps > 1
+        if block_steps > 1
         else None
     )
     if result.get("network_blocks", expected) != expected:
@@ -80,7 +98,7 @@ def resolve_device(requested: str | torch.device = "auto") -> str:
     """Resolve an explicit device or select the fastest available accelerator."""
     name = str(requested).lower()
     if name == "auto":
-        forced = os.environ.get("PINGLAB_DEVICE")
+        forced = os.environ.get("SNNLAB_DEVICE")
         if forced:
             return resolve_device(forced)
         if torch.cuda.is_available():
@@ -135,10 +153,12 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
         surrogate=surrogate,
         extension_validation=spec.extension_validation,
         compile_mode=spec.compile_mode,
+        precision=spec.precision,
+        cuda_graphs=spec.cuda_graphs,
         compile_block_steps=spec.compile_block_steps,
         projection_mode=spec.projection_mode,
     ).to(device)
-    return ExecutionResult(
+    result = ExecutionResult(
         executor="graph",
         model=model,
         parameters=model.parameter_map() if spec.retain_parameters else {},
@@ -151,6 +171,7 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
             "projection_mode": model.projection_mode,
             "compile_mode": model.compile_mode,
             "compile_block_steps": model.compile_block_steps,
+            "precision": spec.precision,
             "surrogate": copy.deepcopy(model.surrogate_config),
             "compiled_populations": [
                 row["id"]
@@ -164,6 +185,11 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
             "training_schema": training.get("schema") if training else None,
         },
     )
+
+    result.metrics["performance"] = _performance_report(
+        spec, model, result.metrics, device=device, executed=False
+    )
+    return result
 
 
 def simulate(
@@ -462,6 +488,14 @@ def simulate(
                 "completed_steps": result.runtime_state.completed_steps,
             }
         )
+    result.metrics["performance"] = _performance_report(
+        spec,
+        built.model,
+        result.metrics,
+        device=device,
+        executed=True,
+        dataset=isinstance(resolved_inputs, DatasetProvider),
+    )
     snapshots.capture("end")
     result.snapshots = snapshots.snapshots
     return result

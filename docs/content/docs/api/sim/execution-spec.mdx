@@ -21,6 +21,106 @@ This reference describes the available keyword arguments and binding types. See 
 
 Unsupported keywords raise `TypeError`; for example, `simulate(epochs=10)` is rejected. Shared controls and operation-specific validation run before execution; graph-dependent validation occurs during planning and input resolution. Optional mapping arguments default to `None` and are normalized to independent empty mappings internally.
 
+## Performance
+
+`performance: Performance | None = None` groups execution optimizations for
+`build`, `simulate`, `infer` and `train`. Import `Performance` from `snnlab.sim`.
+It is a frozen, keyword-only dataclass; omission and `None` both use
+`Performance()`. Creating an object does not allocate a device or compile a model.
+These defaults preserve the existing automatic policy.
+
+See [Performance and Custom Components](/performance-and-custom-components) for
+callback requirements, capture safety and current compilation/replay limits.
+
+```python
+from dataclasses import replace
+from pathlib import Path
+from snnlab.sim import Performance, train, infer, simulate
+
+performance = Performance(precision="highest", compile_block_steps=4)
+trained = train(
+    graph=bundle.graph, training=bundle.training,
+    input_bindings=train_inputs, targets=targets,
+    epochs=20, device="cuda:0", performance=performance,
+    save_final_checkpoint=Path("trained.checkpoint"),
+)
+prediction = infer(
+    graph=bundle.graph, input_bindings=test_inputs,
+    device="cuda:0", performance=performance,
+    checkpoint=Path("trained.checkpoint"),
+)
+simulation = simulate(
+    graph=bundle.graph, input_bindings=test_inputs,
+    device="cuda:0", performance=replace(performance, cuda_graphs="off"),
+    checkpoint=Path("trained.checkpoint"),
+)
+```
+
+The same policy is reusable across operations; the saved `checkpoint` transfers
+the learned weights.
+
+| Field | Type / default | Behavior |
+| --- | --- | --- |
+| `compile_mode` | `Literal["default"] \| None = "default"` | Prepare runtime `torch.compile` kernels; `None` selects eager execution and prevents CUDA capture. Compilation happens lazily. |
+| `compile_block_steps` | `int \| Literal["auto"] = "auto"` | Target 16 timesteps per compiled block on CUDA, 4 on MPS and 1 on CPU. Explicit integers 1–64 override this policy; graph compatibility can select the kernel loop. |
+| `cuda_graphs` | `Literal["auto", "off"] = "auto"` | Capture eligible repeated CUDA work with bounded shape caches and explicit fallback reporting. `"off"` disables capture. |
+| `precision` | `Literal["auto", "highest"] = "auto"` | Automatic native CUDA BF16 autocast with float32 parameters and high matmul precision/TF32. CPU/MPS keep ordinary arithmetic. `"highest"` disables SNNLab autocast and selects highest CUDA matmul precision. |
+| `fused_optimizer` | `Literal["auto", "off"] = "auto"` | Training only: select fused CUDA Adam/AdamW when the optimizer leaves fused/foreach unset. `"off"` disables automatic selection. Explicit optimizer settings take precedence. |
+| `dataset_prefetch` | `int = 1` | Bounded lookahead for dataset training, validation/test and inference. Accepts 0–8; 0 prepares synchronously. Direct tensor bindings do not use this queue. |
+| `projection_mode` | `Literal["fast", "strict"] = "fast"` | Skip the historical previous-state expression for built-in zero-decay synapses. `"strict"` retains that expression and its IEEE/autograd behavior. |
+
+Fields are validated when constructing the object. Unused fields remain reusable:
+`build` does not prefetch or optimize, and `simulate`/`infer` do not optimize.
+Device, batch size, epochs, retention, diagnostics, `extension_validation`,
+recording, tracing and timing controls remain arguments on each function.
+Direct `GraphExecutor` construction and CLI flags retain their existing controls.
+
+For short runs, startup can outweigh faster steady execution:
+
+```python
+eager = Performance(compile_mode=None, cuda_graphs="off")
+```
+
+This retains the other automatic settings, including CUDA precision and fused
+training optimizers. Use `precision="highest"` independently when full precision
+is required. Compilation/capture does not automatically estimate a run's length
+or choose a device. In the full 20-epoch digits L4 run, automatic execution took
+80.51 s including startup versus 30.24 s for the GPU control; warm epoch medians
+were 22.56 ms versus 312.37 ms. The previous CPU call took 3.90 s. These are single
+measurements, and BF16 changed the final accuracy; see the retained
+[GPU benchmark report](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/execution/results/automatic-defaults/digits-gpu-20261020/README.md).
+
+`result.metrics["performance"]` records the requested object, resolved device and
+policies, observed execution paths, capture counts and fallback reasons. The
+resolved block count is the device's target; each `execution_paths` entry records
+the actual block size used for that path. A build reports no executed paths and
+marks precision/replay as `"not_run"`. Inapplicable prefetch/optimizer fields are
+`None`. Existing detailed metric fields remain available. Policies normalize to
+the same internal request and checkpoint identities as the old keywords.
+
+### Migrating individual keywords
+
+The seven fields above remain accepted as deprecated keywords on functions that
+previously supported them. They emit `DeprecationWarning`; omission retains the
+defaults above. Move them into `Performance`:
+
+```python
+# Before
+result = infer(graph=graph, input_bindings=inputs, compile_mode=None, precision="highest")
+
+# Now
+result = infer(
+    graph=graph, input_bindings=inputs,
+    performance=Performance(compile_mode=None, precision="highest"),
+)
+```
+
+Combining a non-`None` `performance` with any individual performance keyword
+raises `TypeError`, including explicit values equal to a default. `performance`
+must be a `Performance` instance or `None`; dictionaries are rejected. The
+descriptions below use field names such as `compile_mode` to describe this policy;
+set them inside `Performance` for public Python execution calls.
+
 ## Graph source
 
 ### bundle
@@ -492,7 +592,7 @@ Direct PyTorch executors can use matching float16/bfloat16/float32/float64 weigh
 
 Accepted values are `"auto"`, `"cpu"`, `"cuda"`, `"cuda:N"` and `"mps"` (normalized to lowercase by the resolver). Explicit unavailable CUDA/MPS requests raise `ValueError`; indexed CUDA availability/topology is additionally constrained by PyTorch.
 
-`"auto"` first honors the `PINGLAB_DEVICE` environment variable. Otherwise it selects CUDA when available, then CPU. It does not automatically select MPS. Use `"cpu"` for the portable Quickstart behaviour.
+`"auto"` first honors the `SNNLAB_DEVICE` environment variable. Otherwise it selects CUDA when available, then CPU. It does not automatically select MPS. Use `"cpu"` for the portable Quickstart behaviour.
 
 ## Diagnostics
 
@@ -691,23 +791,39 @@ The same keyword is accepted by `GraphExecutor`; the CLI uses `--extension-valid
 
 `compile_mode="default"` is the default for the execution function and `GraphExecutor`. It prepares `torch.compile` kernels for built-in and custom neuron/synapse updates, custom graph operations, surrogate derivatives and post-update weight constraints. Existing `step(context)` callback signatures are unchanged; no decorator or special neuron language is needed. Registration/configuration resolution happens outside the timestep loop, and returned tensor contracts are checked outside the compiled updates. Weight and state initialization, projection matrix products, other graph operations, timestep scheduling, delays, interventions, recording, objectives, regularizers, optimizer factories and dataset encoders retain eager orchestration. Matrix products already use PyTorch's native device kernels.
 
-`compile_block_steps=1` keeps the individual-kernel loop. Values from 2 to 64 opt into the bounded network path from issue #22, combining projection products, synaptic updates, input accumulation, ordered built-in neuron/readout updates, pooling/convolution, modulation and causal delay histories in a tensor graph. Internal blocks preserve autograd; final partial blocks compile their own shape. Post-block readout operations retain the reference reductions. This is an internal execution choice: graph bundles and runtime-state signatures keep their numerical definitions. Training/simulation protocols bind opt-in block settings as `network_blocks` with `snnlab.network-blocks/v1`; training checkpoints reject changed block sizes or compile modes. The default one-step protocol keeps its existing identity. Build/snapshot metrics record the requested size; forward `execution_path` and training `execution_paths` record the selected path and reasons for eager orchestration.
+`compile_block_steps="auto"` selects 16 timesteps on CUDA, 4 on MPS and 1 on CPU. An explicit integer from 1 to 64 overrides this choice; 1 keeps the individual-kernel loop. Compatible graphs combine projections, synapses, ordered built-in neurons/readouts, spatial operations, modulation and causal delay histories in a bounded tensor graph. Final partial blocks preserve all timesteps. Training protocols bind the resolved block size; checkpoint resume rejects incompatible block policies.
 
-Blocks currently fall back for registered neurons/synapses/surrogates, recording, online reductions, spike interventions, resets/decision segments and tracing. Autograd also falls back when multiple inputs require input-gradient handling, retained/required signals have different projection-parameter dependencies or when a delayed trajectory is too short for the conservative reachability check. This prevents compiler-created zero gradients from updating parameters that eager execution leaves unused. Custom callbacks keep their prepared individual kernels and strict diagnostics. Set `compile_mode=None` for the fully eager debugging path. Compilation failures surface explicitly. Blocks remain opt-in until representative CPU/CUDA/MPS measurements justify a default; larger blocks are not assumed faster. CUDA Graph replay is not enabled.
+Blocks fall back for registered dynamics/surrogates, recording, online reductions, interventions, resets/decision segments, tracing and incompatible gradient dependencies. `execution_path` (or training `execution_paths`) records the selected path and fallback reasons. MPS blocks above four steps fall back because larger training graphs exceeded validated Metal buffer limits. `compile_mode=None` disables compilation.
 
-MPS blocks above four timesteps currently select the kernel loop with an explicit fallback reason: larger Inductor training graphs exceeded Metal buffer bindings during local PyTorch 2.14.1 validation. Four-step MPS blocks remain opt-in; this is a conservative validated limit, not a promise for arbitrary graph sizes. CPU/CUDA requests retain the 1-64 range.
+### Precision and fused optimizers
+
+`precision="auto"` enables BF16 autocast on supported CUDA devices with float32 model parameters, plus `high` float32 matmul precision (TF32). Parameters, recurrent floating state and Adam moments retain their declared dtype. CPU/MPS retain their normal arithmetic. `precision="highest"` disables SNNLab CUDA autocast and selects highest matmul precision. Scoped settings restore the caller's matmul setting after execution. Automatic CUDA precision is bound into execution protocols, and CUDA inference retention metadata records precision policy. `highest` retains the historical FP32 protocol identity. BF16/TF32 can change spike decisions and learning trajectories; compare the task's accuracy as well as time.
+
+Native training defaults to `fused_optimizer="auto"`, selecting fused execution for ordinary CUDA Adam/AdamW instances, including those returned by a custom factory. Explicit optimizer `fused`/`foreach` options take precedence. Other optimizer classes, CPU/MPS and differentiable optimizers retain their implementation. `fused_optimizer="off"` disables automatic selection; `result.metrics["fused_optimizer"]` records the selected implementation.
+
+### cuda_graphs
+
+**Type:** `Literal["auto", "off"]`. **Default:** `"auto"`. Accepted by `build`, `train`, `simulate`, `infer` and `GraphExecutor`.
+
+Native training captures repeated compatible CUDA forward/loss/backward shapes, including automatic BF16 autocast. Optimizer updates, clipping, constraints, metrics, epoch callbacks, evaluation and checkpoints remain outside capture. Inputs/targets and gradient buffers have stable storage; at most two shapes are captured per training call. Warmup never updates weights and restores RNG state. One-off shapes, CPU/MPS, disabled compilation, tracing and input gradients retain normal execution. Unsupported capture operations or unavailable memory fall back once per shape; unrelated errors still raise.
+
+Forward-only execution also replays compatible repeated CUDA calls under `torch.no_grad()`. Calls with no input/parameter gradients automatically select this scope when callbacks are capture safe; input gradients and runtime continuation retain their normal autograd behavior. Each shape executes normally twice before capture, with at most two graphs and sixteen tracked shapes per executor. Returned tensors have independent storage, so later replays cannot overwrite earlier results. Runtime continuation, recording/sinks, interventions, resets, decisions and measurement windows keep normal execution. Dataset batches reuse shapes across global offsets; each returned result preserves its own global coordinates.
+
+Custom dynamics, surrogates, operations, objectives, regularizers and constraints require registration with `capture_safe=True` before replay. This is an author contract: callbacks (including state initialization) must use deterministic tensor operations, avoid host tensor reads, randomness, Python side effects and external state. Python executes during warmup/capture, then CUDA work alone repeats. Unmarked callbacks and strict extension value validation fall back. Optimizer factories execute outside capture and need no annotation.
+
+`result.metrics["cuda_graphs"]` records capture/replay counts and fallback reasons. Training evaluation uses the executor's separate forward cache; training metrics describe update capture. `cuda_graphs="off"` disables both. Compilation/capture add startup cost; short runs can be faster with capture disabled.
 
 The normal tensor kernels use `fullgraph=True, dynamic=False`. Strict validation with a registered custom surrogate permits graph breaks at its eager spike/autograd boundary so derivative value checks still raise errors; its numerical derivative is compiled separately. Structural validation allows the surrogate to participate in the neuron graph. Strict checks still scan values and can synchronize accelerators. Build metrics report `compile_mode`, `compiled_populations` and `compiled_projections`; these list prepared kernels, which compile lazily on first use.
 
 Prepared kernels capture callback definitions and configuration at construction; construct a new executor after changing them. First calls, training/inference switches, new batch shapes, dtypes or devices can compile additional variants. Reuse the executor and measure both startup and warmed execution for the intended workload. Compilation errors surface rather than silently disabling compilation. For unsupported environments or callbacks, select `compile_mode=None` in Python or `--compile-mode eager` in the CLI. Compare outputs, gradients and continuation against eager execution with appropriate floating-point tolerances: fusion can change rounding. See [Writing efficient PyTorch callbacks](/api/lang/extensions#writing-efficient-pytorch-callbacks).
 
-`dataset_prefetch=0` preserves synchronous batch preparation. Values from 1 to 8 enable bounded lookahead in training, validation and dataset inference. A single worker prepares isolated CPU batches in order. CUDA uses pinned CPU buffers, a transfer stream, events and consumer-stream lifetime tracking; device rate/event generation runs directly on the preparation stream. Custom encoders prepare lookahead on the caller thread under scoped RNG state, then use the same transfer queue, avoiding a background race with process-global randomness. An encoder with an explicit optional `device` keyword receives the selected device. Accelerator callback preparation records `snnlab.encoder-device/v1`, backend and PyTorch version, while CPU encoder identities stay unchanged. Other devices retain synchronous transfers. Prefetch does not change spikes or checkpoint data order within the same recorded encoding policy. Larger queues consume more memory; start with 2 and measure the whole workload.
+`dataset_prefetch=1` is the default bounded lookahead. `dataset_prefetch=0` selects synchronous batch preparation. Values from 1 to 8 enable bounded lookahead in training, validation and dataset inference. A single worker prepares isolated CPU batches in order. CUDA uses pinned CPU buffers, a transfer stream, events and consumer-stream lifetime tracking; device rate/event generation runs directly on the preparation stream. Custom encoders prepare lookahead on the caller thread under scoped RNG state, then use the same transfer queue, avoiding a background race with process-global randomness. An encoder with an explicit optional `device` keyword receives the selected device. Accelerator callback preparation records `snnlab.encoder-device/v1`, backend and PyTorch version, while CPU encoder identities stay unchanged. Other devices retain synchronous transfers. Prefetch does not change spikes or checkpoint data order within the same recorded encoding policy. Larger queues consume more memory; measure the whole workload.
 
 Replay stages its active dense window or compact sparse routing on the execution device before stepping. Sparse replay keeps integer slice bounds on the host and performs no per-step transfer. CUDA recording stages bounded chunks to pinned host buffers with a copy stream and at most two pending transfers, delivering host sinks after each transfer completes. CPU/MPS recording remains synchronous at chunk boundaries. Final partial blocks, event coordinates and sink invocation order are preserved. Decision counts stay on the device and are copied together after stepping. Strict custom-state and post-update custom-constraint finite checks combine flags per device before a host read, retaining named errors for invalid tensors. Unconstrained weights are not copied after an optimizer step. Unrequested snapshots retain their existing controls.
 
 For simulation/inference, `timing_mode="synchronized"` brackets input resolution and completed execution with device synchronisation and reports `metrics["simulate_s"]`. This includes encoding, transfers and recording, but excludes model construction and checkpoint loading; `timing_scope` records that boundary. CPU requires no device fence. MPS uses its device synchronisation API. `timing_mode="enqueue"` omits these fences and reports `simulate_enqueue_s` instead: this is host elapsed time and may exclude queued accelerator work. Existing internal validation, recordings and other operations may still synchronise. `peak_python_bytes` measures Python allocations only, not GPU tensor memory.
 
-The CLI exposes `--compile-mode default|eager`, `--compile-block-steps N`, `--dataset-prefetch N` and `--timing-mode synchronized|enqueue`. Use `--no-diagnostics` when dense diagnostics are unnecessary. Gradient reporting copies only the final update or explicitly observed gradients, metric reporting batches host reads, and batch-loss selection snapshots only improving candidates. Selection still requires its loss read; requested gradient-norm observations still have measurement overhead.
+The CLI exposes `--cuda-graphs auto|off`, `--precision auto|highest`, training `--fused-optimizer auto|off`, `--compile-mode default|eager`, `--compile-block-steps auto|N`, `--dataset-prefetch N` and `--timing-mode synchronized|enqueue`. Use `--no-diagnostics` when dense diagnostics are unnecessary. Gradient reporting copies only the final update or explicitly observed gradients, metric reporting batches host reads, and batch-loss selection snapshots only improving candidates. Selection still requires its loss read; requested gradient-norm observations still have measurement overhead.
 
 For matched numerical gates, cold/warm end-to-end timings, operator counts and memory provenance, run `uv run python benchmarks/execution/benchmark.py --devices cpu --output artifacts/execution/results.json`. [Benchmark source](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/execution/benchmark.py) and [protocol/limits](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/execution/README.md) cover CPU, CUDA and MPS, optional recordings, batch sizes and timestep blocks. GPU RNG timing uses matched features, with separate identical-spike numerical checks. Measure your actual graph and recording policy before drawing throughput conclusions.
 

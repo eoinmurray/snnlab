@@ -159,6 +159,25 @@ class NumpyExecutionResult:
     time_ms: np.ndarray | None
 ```
 
+## Performance policy and selected paths
+
+Public execution calls and the CLI include `metrics["performance"]` with schema
+`snnlab.performance/v1`. `requested` contains all seven
+[Performance fields](/api/sim/execution-spec#performance), including defaults.
+`resolved` contains the device, compilation policy, projection mode, CUDA
+autocast/matmul selection, optimizer fusion, applicable dataset prefetch depth,
+observed execution paths and CUDA capture statistics. The resolved block count
+is the device's target; `execution_paths` records the block size actually used
+for each path, including evaluation fallbacks. Training CUDA statistics describe
+update capture; forward evaluation has a separate cache.
+
+`fallbacks.compiled_blocks` lists unique compatibility reasons and
+`fallbacks.cuda_graphs` retains replay fallback counts. Build-only results have
+no observed paths, mark precision/replay as `"not_run"`, and set inapplicable
+optimizer/prefetch values to `None`. Metadata contains independent JSON-compatible
+copies. Existing detailed metric fields remain available; requesting a policy
+does not guarantee that every optimization is compatible with the graph.
+
 ## Intervention provenance and replay cache checks
 
 Graph simulation/inference returns `result.metrics["inference_interventions"]`, or `None` without interventions. It contains ordered `requested` and `resolved` metadata plus a `window` with absolute `start_step`, `steps_count`, `batch_size` and `dt_ms`. Replay rows include the canonical payload digest, representation and complete coverage; full payload tensors are not embedded in JSON. Stochastic rows include resolved seeds and add probabilities.

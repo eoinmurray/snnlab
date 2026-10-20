@@ -1,5 +1,7 @@
 # SHD native-training benchmark
 
+The 20 October 2026 [Modal before/automatic-default comparison](../execution/results/automatic-defaults/README.md) retains fresh full-workload timings, accuracy, actual execution paths and source hashes. Earlier results below retain their original protocols.
+
 A feedforward **700 → 128 COBA LIF → 128 COBA LIF → 20 leaky readout**
 classifier, using the calibrated COBA settings from Pinglab's SHD experiment.
 The default is **10 epochs, batch 256, seed 42, 1,000 timesteps at 1 ms**.
@@ -147,8 +149,9 @@ Dataset: [SHD](https://zenkelab.org/resources/spiking-heidelberg-datasets-shd/),
    7,340/816 examples; one native CPU update with batch 256 and 1,000 steps completed.
 4. The two-epoch synthetic smoke run changed all three learned matrices, left the
    gain unchanged and wrote a bundle that loads in a fresh Python process.
-5. The launcher imports with Modal 1.6.1. Neither an H100 run nor the full ten-epoch
-   learning trajectory has been executed for this new benchmark.
+5. The launcher imports with Modal 1.6.1. The subsequent full H100 trajectory
+   is retained in `results/shd-59e3371bb384`; the 20 October automatic-default
+   rerun is linked at the top of this page.
 
 
 ## Optional tracing

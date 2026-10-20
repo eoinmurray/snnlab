@@ -26,8 +26,11 @@ from snnlab import __version__ as snnlab_version
 from snnlab import extensions as E
 from snnlab import lang
 from snnlab.sim import (
+    CheckpointSelection,
     DenseArrayBinding,
     GraphExecutor,
+    Performance,
+    TrainingMetrics,
     ValidationSpec,
     plan_graph,
     save_training_checkpoint,
@@ -40,7 +43,7 @@ REQUIRED_RELEASE = "0.12.1"
 EXECUTION_POLICY = {
     "projection_mode": "fast",
     "extension_validation": "structural",
-    "compile_mode": None,
+    "compile_mode": "default",
     "diagnostics": False,
     "retain_parameters": False,
     "retain_final_state": False,
@@ -262,18 +265,28 @@ class LabNetwork(nn.Module):
         definitions = {definition.name for definition in E.definitions()}
         if "comparison.tutorial_current/v1" not in definitions:
             E.register_neuron(
-                "comparison.tutorial_current/v1", current_step, initialize=initialize
+                "comparison.tutorial_current/v1",
+                current_step,
+                initialize=initialize,
+                capture_safe=True,
             )
         if "comparison.atan/v1" not in definitions:
-            E.register_surrogate("comparison.atan/v1", atan_derivative)
+            E.register_surrogate(
+                "comparison.atan/v1", atan_derivative, capture_safe=True
+            )
         extensions = (
             ("initializer", "comparison.weights/v1", matched_initializer, {}),
-            ("objective", "comparison.temporal_ce/v1", temporal_objective, {}),
+            (
+                "objective",
+                "comparison.temporal_ce/v1",
+                temporal_objective,
+                {"capture_safe": True},
+            ),
             (
                 "objective",
                 "comparison.spike_accuracy/v1",
                 accuracy_objective,
-                {"classification": True},
+                {"classification": True, "capture_safe": True},
             ),
             ("optimizer", "comparison.adam/v1", adam_factory, {}),
         )
@@ -360,6 +373,8 @@ class LabNetwork(nn.Module):
             # Prepared built-in kernels can compile; this benchmark's matched
             # custom neuron/surrogate callbacks retain eager dispatch.
             compile_mode=EXECUTION_POLICY["compile_mode"],
+            precision="highest",
+            cuda_graphs="off",
         )
         with torch.no_grad():
             p = self.executor.parameter_map()
@@ -572,6 +587,8 @@ def run_lab_training(
             ),
         )
 
+    synchronize(device)
+    started = time.perf_counter()
     result = train(
         graph=model.bundle.graph,
         training=model.bundle.training,
@@ -587,10 +604,20 @@ def run_lab_training(
         batch_size=config.batch_size,
         shuffle=True,
         training_timing=True,
-        **EXECUTION_POLICY,
+        metrics=TrainingMetrics(
+            train="evaluate", initial=("train", "validation"), update_history=True
+        ),
+        checkpoint_selection=CheckpointSelection.disabled(),
+        performance=Performance(
+            compile_mode=EXECUTION_POLICY["compile_mode"],
+            projection_mode=EXECUTION_POLICY["projection_mode"],
+        ),
+        **{
+            k: v
+            for k, v in EXECUTION_POLICY.items()
+            if k not in {"compile_mode", "projection_mode"}
+        },
     )
-    synchronize(device)
-    started = time.perf_counter()
     synchronize(device)
     elapsed = time.perf_counter() - started
     expected_updates = config.epochs * math.ceil(config.train_size / config.batch_size)
@@ -602,6 +629,11 @@ def run_lab_training(
         raise RuntimeError("native training returned incomplete epoch evaluations")
     if not all(math.isfinite(row["loss"]) for row in result.metrics["updates"]):
         raise RuntimeError("nonfinite native training loss")
+    metrics["cuda_graphs"] = result.metrics["cuda_graphs"]
+    metrics["precision"] = result.metrics["precision"]
+    metrics["fused_optimizer"] = result.metrics["fused_optimizer"]
+    metrics["execution_paths"] = result.metrics.get("execution_paths")
+    metrics["performance"] = result.metrics["performance"]
     metrics["training_api"] = "snnlab.sim.train"
     metrics["train_call_seconds"] = elapsed
     metrics["wall_seconds"] = elapsed

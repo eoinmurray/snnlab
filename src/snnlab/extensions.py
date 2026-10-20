@@ -30,6 +30,7 @@ class Definition:
     references: Mapping[str, str] = field(default_factory=dict)
     package: str | None = None
     package_version: str | None = None
+    capture_safe: bool = False
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,7 @@ def register(
     classification=False,
     package=None,
     package_version=None,
+    capture_safe=False,
 ) -> Definition:
     """Register a definition once; identifiers look like ``my_lab.model/v1``."""
     if category not in _CATEGORIES:
@@ -155,6 +157,8 @@ def register(
         raise ValueError(
             "extension names must be qualified and versioned, e.g. my_lab.model/v1"
         )
+    if not isinstance(capture_safe, bool):
+        raise TypeError("capture_safe must be boolean")
     package_version = _check_package(package, package_version)
     references = {}
     callbacks = {}
@@ -210,6 +214,7 @@ def register(
         MappingProxyType(references),
         package,
         package_version,
+        capture_safe,
     )
     _REGISTRY[key] = definition
     return definition
@@ -271,6 +276,7 @@ def register_neuron(
     validate=None,
     package=None,
     package_version=None,
+    capture_safe=False,
 ):
     return register(
         "neuron",
@@ -282,6 +288,7 @@ def register_neuron(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
@@ -295,6 +302,7 @@ def register_synapse(
     validate=None,
     package=None,
     package_version=None,
+    capture_safe=False,
 ):
     return register(
         "synapse",
@@ -306,6 +314,7 @@ def register_synapse(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
@@ -317,6 +326,7 @@ def register_objective(
     validate=None,
     package=None,
     package_version=None,
+    capture_safe=False,
 ):
     return register(
         "objective",
@@ -326,11 +336,18 @@ def register_objective(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
 def register_initializer(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
+    capture_safe=False,
 ):
     return register(
         "initializer",
@@ -339,11 +356,18 @@ def register_initializer(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
 def register_constraint(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
+    capture_safe=False,
 ):
     return register(
         "constraint",
@@ -352,11 +376,18 @@ def register_constraint(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
 def register_operation(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
+    capture_safe=False,
 ):
     return register(
         "operation",
@@ -365,11 +396,18 @@ def register_operation(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
 def register_regularizer(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
+    capture_safe=False,
 ):
     return register(
         "regularizer",
@@ -378,11 +416,18 @@ def register_regularizer(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
 def register_optimizer(
-    name, factory, *, validate=None, package=None, package_version=None
+    name,
+    factory,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
+    capture_safe=False,
 ):
     return register(
         "optimizer",
@@ -391,11 +436,18 @@ def register_optimizer(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
 def register_surrogate(
-    name, derivative, *, validate=None, package=None, package_version=None
+    name,
+    derivative,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
+    capture_safe=False,
 ):
     return register(
         "surrogate",
@@ -404,11 +456,18 @@ def register_surrogate(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
 def register_encoder(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
+    capture_safe=False,
 ):
     return register(
         "encoder",
@@ -417,6 +476,7 @@ def register_encoder(
         validate=validate,
         package=package,
         package_version=package_version,
+        capture_safe=capture_safe,
     )
 
 
@@ -444,6 +504,8 @@ def _descriptor(category, definition):
         "state_units": dict(definition.state_units),
         "classification": definition.classification,
     }
+    if definition.capture_safe:
+        row["capture_safe"] = True
     if roles <= definition.references.keys():
         row["implementation"] = dict(definition.references)
     if definition.package is not None:
@@ -505,6 +567,15 @@ def require_portable(graph, training=None):
             )
 
 
+def _same_implementation(category, definition, saved):
+    # Capture safety is an execution annotation. Older bundles omitted it;
+    # the installed registration remains authoritative for replay eligibility.
+    actual = _descriptor(category, definition)
+    return {key: value for key, value in actual.items() if key != "capture_safe"} == {
+        key: value for key, value in saved.items() if key != "capture_safe"
+    }
+
+
 def restore(data):
     """Automatically resolve descriptors in an authenticated graph or recipe."""
     rows = data.get("extensions", [])
@@ -524,6 +595,8 @@ def restore(data):
         if (category, name) in seen:
             raise ValueError(f"duplicate saved extension {category}:{name}")
         seen.add((category, name))
+        if not isinstance(row.get("capture_safe", False), bool):
+            raise TypeError("capture_safe must be boolean")
         implementation = row.get("implementation")
         if implementation is None:
             get(category, name)  # Older bundles require explicit registration.
@@ -542,7 +615,7 @@ def restore(data):
         _check_package(package, version)
         existing = _REGISTRY.get((category, name))
         if existing is not None:
-            if _descriptor(category, existing) != row:
+            if not _same_implementation(category, existing, row):
                 raise ValueError(
                     f"extension implementation conflicts with saved definition {category}:{name}"
                 )
@@ -552,7 +625,7 @@ def restore(data):
             _import_callback(reference)
         existing = _REGISTRY.get((category, name))
         if existing is not None:
-            if _descriptor(category, existing) != row:
+            if not _same_implementation(category, existing, row):
                 raise ValueError(
                     f"extension implementation conflicts with saved definition {category}:{name}"
                 )
@@ -566,6 +639,7 @@ def restore(data):
             unit=row.get("unit", "1"),
             state_units=row.get("state_units", {}),
             classification=row.get("classification", False),
+            capture_safe=row.get("capture_safe", False),
             package=package,
             package_version=version,
         )

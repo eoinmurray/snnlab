@@ -1,5 +1,7 @@
 # snnTorch / SNNLab comparison
 
+The 20 October 2026 [Modal before/automatic-default comparison](../execution/results/automatic-defaults/README.md) retains fresh full-workload timings, accuracy, actual execution paths and source hashes. Earlier results below retain their original protocols.
+
 Three code files:
 
 1. `benchmark.py`: matched models, MNIST training, verification and pass timings.

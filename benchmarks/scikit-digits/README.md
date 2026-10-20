@@ -1,8 +1,16 @@
 # Scikit-learn digits / conductance LIF
 
-A small CPU training benchmark using the 1,797 bundled 8×8 handwritten digits
-from `sklearn.datasets.load_digits`. No downloads, GPU, compilation warmup, or
-extra dependencies are needed.
+The 20 October 2026 [Modal before/automatic-default comparison](../execution/results/automatic-defaults/README.md) retains fresh full-workload timings, accuracy, actual execution paths and source hashes. Earlier results below retain their original protocols.
+
+The subsequent [L4 GPU rerun](../execution/results/automatic-defaults/digits-gpu-20261020/README.md)
+reached 94.17% with automatic settings: 80.51 s including compilation/capture,
+and 22.56 ms per warm epoch. The small CPU recipe remains faster for a single
+complete run because GPU startup dominates this workload.
+
+A small training benchmark using the 1,797 bundled 8×8 handwritten digits
+from `sklearn.datasets.load_digits`. The default runs eagerly on CPU and needs
+no downloads or compilation warmup. CUDA runs use the automatic compiled
+execution defaults.
 
 Run from the repository root after `uv sync --dev`:
 
@@ -10,6 +18,7 @@ Run from the repository root after `uv sync --dev`:
 uv run python benchmarks/scikit-digits/benchmark.py
 uv run python benchmarks/scikit-digits/benchmark.py --smoke
 uv run python benchmarks/scikit-digits/benchmark.py --epochs 30 --output /tmp/digits-run
+uv run python benchmarks/scikit-digits/benchmark.py --device cuda:0
 ```
 
 The default is 20 epochs, batch size 128, one CPU thread, seed 17, and a fixed
@@ -47,6 +56,8 @@ not exist), containing:
 evaluations, and checkpoint writing. `workflow_s` additionally covers loading,
 encoding and graph/bundle creation. Both exclude Python imports and the final
 JSON write. Timings depend on hardware; `--cpu-threads` is configurable.
+CUDA timings synchronize the device and include compilation and graph capture
+within the training call.
 
 A local macOS arm64 run with Python 3.12.12 and PyTorch 2.14.1 reached **93.6%**
 held-out accuracy in **1.34 s** for the native training call with these defaults.

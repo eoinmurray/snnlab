@@ -7,6 +7,12 @@ description: PyTorch module for executing a compiled spiking-network graph, acce
 
 Use this class when composing a spiking network with ordinary PyTorch layers or writing an external optimization loop. For bundle loading, input bindings and execution provenance, use [Execution Options](/api/sim/execution-spec) with `build`, `simulate`, `infer` or `train`.
 
+Those four functions accept a shared [Performance](/api/sim/execution-spec#performance)
+object. Direct `GraphExecutor` construction keeps the individual constructor
+controls below; use `build(..., performance=policy).model` to initialize an
+executor from that policy. The build result describes preparation; subsequent
+direct model calls report their own execution paths and replay statistics.
+
 ## Constructor
 
 ```python
@@ -21,7 +27,9 @@ GraphExecutor(
     surrogate=None,
     extension_validation="structural",
     compile_mode="default",
-    compile_block_steps=1,
+    compile_block_steps="auto",
+    precision="auto",
+    cuda_graphs="auto",
     projection_mode="fast",
 )
 ```
@@ -35,13 +43,15 @@ GraphExecutor(
 | `surrogate` | `Mapping[str, Any]` or `None` | Serialized `FastSigmoid` or custom surrogate configuration. Built-in settings override `surrogate_slope`; registered implementations must be imported before use. |
 | `compile_mode` | `None` or `"default"` | Default `torch.compile` for built-in/custom dynamics, custom graph operations, surrogate derivatives and post-update weight constraints; `None` disables compilation. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls). |
 
-`compile_block_steps` is an integer from 1 to 64 (default 1). Values above 1 opt into bounded network compilation for compatible graphs. Forward metrics report `execution_path` with selected block size and fallback reasons. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls).
+`compile_block_steps="auto"` selects CUDA 16, MPS 4 and CPU 1; explicit integers from 1 to 64 override it. Forward metrics report `execution_path` with the selected block size and fallback reasons. `precision="auto"` selects supported CUDA BF16 autocast and TF32; `"highest"` opts out. `cuda_graphs="auto"` replays compatible repeated forward-only CUDA calls with bounded caches and independent result tensors. See [GPU performance controls](/api/sim/execution-spec#gpu-performance-controls).
+
+Compiled kernels preserve intermediate dtype casts. Forward metrics record `compiler_precision_policy="snnlab.eager-precision-casts/v1"`; eager execution records `None`. This keeps reduced-dtype rounding consistent with the reference equations without changing model or runtime-state dtype. PyTorch 2.10 reduced-precision CPU execution uses eager tensor graphs because its CPU backend cannot preserve these casts; `compiler_fallback` and `execution_path.fallback_reasons` record this limit.
 
 `extension_validation` accepts `"structural"` (default) or `"strict"`. Opt into strict mode while developing custom callbacks or investigating numerical failures. Structural mode skips custom neuron/synapse step value checks and surrogate derivative finite checks while retaining tensor contracts; initialization and restored state stay strict. Invalid values may propagate silently. See [validation policy](/api/sim/execution-spec#custom-dynamics-validation) for details. Surrogate dispatch is cached per executor; reconstruct the executor after changing its surrogate configuration. Resolved surrogate settings and `compile_mode` appear in build and forward metrics. Non-default built-in threshold conventions bind runtime-state compatibility; changing between inclusive and exclusive built-in thresholds rejects continuation. Default and registered-callback state identities retain their historical convention.
 
 `projection_mode="fast"` defaults to direct drive for built-in exactly-zero-decay projections. `"strict"` preserves historical zero multiplication and IEEE nonfinite propagation. This is independent of custom extension value validation. See [projection arithmetic and result snapshots](/api/sim/execution-spec#projection-arithmetic-and-result-snapshots) for gradients, caches and continuation compatibility.
 
-Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Floating voltage, spike, synaptic and adaptive state follow the model dtype, including `.half()`, `.bfloat16()` and `.double()` with matching inputs. Refractory counters remain integer. MPS has no float64 support. Runtime/checkpoint/recording storage supports bfloat16 through versioned lossless bit payloads. NumPy inference-analysis caches instead widen bfloat16 values exactly to float32 and record `snnlab.inference-bfloat16/v1` in their manifest. Precision changes are explicit and can change spike decisions; reduced precision does not establish accuracy equivalence. CPU/CUDA support float16, bfloat16, float32 and float64; actual kernel/compiler support also depends on installed PyTorch and hardware.
+Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Floating voltage, spike, synaptic and adaptive state follow the model dtype, including `.half()`, `.bfloat16()` and `.double()` with matching inputs. Refractory counters remain integer. MPS has no float64 support. Runtime/checkpoint/recording storage supports bfloat16 through versioned lossless bit payloads. NumPy inference-analysis caches instead widen bfloat16 values exactly to float32 and record `snnlab.inference-bfloat16/v1` in their manifest. Automatic CUDA precision can change spike decisions; reduced precision does not establish accuracy equivalence. CPU/CUDA support float16, bfloat16, float32 and float64; actual kernel/compiler support also depends on installed PyTorch and hardware.
 
 Selecting trainable parameters enables gradients; it does not create an optimizer or perform training.
 

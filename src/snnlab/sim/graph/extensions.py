@@ -10,6 +10,7 @@ import torch
 
 from snnlab import extensions as E
 from snnlab._shared import neurons as N
+from snnlab.sim.graph.validation import _PENDING, check_finite
 
 
 def checked_tensor(value, *, shape, device, dtype, name, check_values=True):
@@ -23,8 +24,8 @@ def checked_tensor(value, *, shape, device, dtype, name, check_values=True):
         raise ValueError(
             f"{name} tensor must have shape={tuple(shape)}, device={device}, dtype={dtype}; got shape={tuple(value.shape)}, device={value.device}, dtype={value.dtype}"
         )
-    if check_values and not torch.isfinite(value).all():
-        raise ValueError(f"{name} tensor must be finite")
+    if check_values:
+        check_finite(value, name)
     return value
 
 
@@ -52,7 +53,10 @@ def checked_state(value, template, name, *, required=(), check_values=True):
                 name=f"{name}.{key}",
                 check_values=False,
             )
-    if check_values:
+    if check_values and _PENDING.get() is not None:
+        for key, tensor in value.items():
+            check_finite(tensor, f"{name}.{key}")
+    elif check_values:
         # Structural validation above retains useful errors. On valid states,
         # reduce finite flags per device before asking Python for a scalar.
         by_device = {}

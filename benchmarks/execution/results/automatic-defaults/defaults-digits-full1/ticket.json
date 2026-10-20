@@ -1,0 +1,7 @@
+{
+  "run_id": "defaults-digits-full1",
+  "volume": "snnlab-automatic-defaults",
+  "jobs": {
+    "digits": "fc-01M5C0B29MJ6DZJG2TACNVBT65"
+  }
+}

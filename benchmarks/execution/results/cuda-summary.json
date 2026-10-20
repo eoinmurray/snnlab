@@ -1,14 +1,321 @@
 {
   "schema": "snnlab.cuda-execution-validation/v1",
   "date": "2026-10-19",
-  "status": "running",
+  "status": "complete_with_documented_failures",
   "runs": {
+    "cuda-896d6506018e": {
+      "role": "diagnostic cast-preserving bfloat16 gates",
+      "manifest": {
+        "run_id": "cuda-896d6506018e",
+        "volume": "snnlab-execution",
+        "status": "complete",
+        "suite": "rounding",
+        "jobs": [
+          {
+            "name": "bfloat16-rounding",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/precision_probe.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--dtype",
+              "bfloat16",
+              "--steps",
+              "128",
+              "--batch-sizes",
+              "32",
+              "--block-sizes",
+              "1",
+              "4",
+              "16",
+              "--output",
+              "/data/runs/cuda-896d6506018e/bfloat16-rounding.json"
+            ],
+            "elapsed_s": 134.79496097564697,
+            "exit_code": 0,
+            "status": "complete"
+          }
+        ],
+        "report_files": [
+          "bfloat16-rounding.json",
+          "bfloat16-rounding.log"
+        ]
+      }
+    },
+    "cuda-370dfb99adca": {
+      "role": "final precision-preserving performance (actual NVIDIA H200)",
+      "manifest": {
+        "run_id": "cuda-370dfb99adca",
+        "volume": "snnlab-execution",
+        "status": "complete",
+        "suite": "final-performance",
+        "jobs": [
+          {
+            "name": "coba-final-1000",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/benchmark.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--coba",
+              "--channels",
+              "700",
+              "--cells",
+              "128",
+              "--steps",
+              "1000",
+              "--batch-sizes",
+              "256",
+              "--block-sizes",
+              "1",
+              "16",
+              "--output",
+              "/data/runs/cuda-370dfb99adca/coba-final-1000.json"
+            ],
+            "elapsed_s": 264.9336268901825,
+            "exit_code": 0,
+            "status": "complete"
+          },
+          {
+            "name": "cuda-graph-1000",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/cuda_graph.py",
+              "--coba",
+              "--steps",
+              "1000",
+              "--batch",
+              "32",
+              "--block-steps",
+              "16",
+              "--output",
+              "/data/runs/cuda-370dfb99adca/cuda-graph-1000.json"
+            ],
+            "elapsed_s": 74.07630801200867,
+            "exit_code": 0,
+            "status": "complete"
+          }
+        ],
+        "report_files": [
+          "coba-final-1000.json",
+          "coba-final-1000.log",
+          "cuda-graph-1000.json",
+          "cuda-graph-1000.log"
+        ]
+      }
+    },
+    "cuda-4e01bd4ff837": {
+      "role": "final precision probes; CPU 2.10 vector codegen failure superseded by compatibility run",
+      "manifest": {
+        "run_id": "cuda-4e01bd4ff837",
+        "volume": "snnlab-execution",
+        "status": "completed_with_failures",
+        "suite": "final-precision",
+        "jobs": [
+          {
+            "name": "final-regressions",
+            "command": [
+              "/usr/local/bin/python",
+              "-m",
+              "pytest",
+              "-q",
+              "tests/sim/test_execution_dtypes.py",
+              "tests/sim/test_network_blocks.py",
+              "tests/sim/test_device_preparation.py",
+              "tests/sim/test_dtype_artifacts.py",
+              "tests/sim/test_native_device_callbacks.py",
+              "tests/sim/test_constraint_boundaries.py",
+              "tests/sim/test_gpu_efficiency.py",
+              "tests/sim/test_compiled_extensions.py",
+              "tests/sim/test_compiler_precision.py"
+            ],
+            "elapsed_s": 140.44447231292725,
+            "exit_code": 1,
+            "status": "failed"
+          },
+          {
+            "name": "bfloat16-final",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/benchmark.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--dtype",
+              "bfloat16",
+              "--steps",
+              "128",
+              "--batch-sizes",
+              "32",
+              "--block-sizes",
+              "1",
+              "4",
+              "16",
+              "--output",
+              "/data/runs/cuda-4e01bd4ff837/bfloat16-final.json"
+            ],
+            "elapsed_s": 119.09505367279053,
+            "exit_code": 0,
+            "status": "complete"
+          },
+          {
+            "name": "float16-final",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/benchmark.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--dtype",
+              "float16",
+              "--steps",
+              "128",
+              "--batch-sizes",
+              "32",
+              "--block-sizes",
+              "4",
+              "--output",
+              "/data/runs/cuda-4e01bd4ff837/float16-final.json"
+            ],
+            "elapsed_s": 31.168773651123047,
+            "exit_code": 0,
+            "status": "complete"
+          },
+          {
+            "name": "amp-final",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/benchmark.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--autocast",
+              "bfloat16",
+              "--coba",
+              "--channels",
+              "700",
+              "--cells",
+              "128",
+              "--steps",
+              "128",
+              "--batch-sizes",
+              "32",
+              "--block-sizes",
+              "16",
+              "--output",
+              "/data/runs/cuda-4e01bd4ff837/amp-final.json"
+            ],
+            "elapsed_s": 110.31734442710876,
+            "exit_code": 0,
+            "status": "complete"
+          }
+        ],
+        "report_files": [
+          "amp-final.json",
+          "amp-final.log",
+          "bfloat16-final.json",
+          "bfloat16-final.log",
+          "final-regressions.log",
+          "float16-final.json",
+          "float16-final.log"
+        ]
+      }
+    },
+    "cuda-bebc047f0cdf": {
+      "role": "rejected scalar CPU codegen workaround; gradients still mismatched",
+      "manifest": {
+        "run_id": "cuda-bebc047f0cdf",
+        "volume": "snnlab-execution",
+        "status": "completed_with_failures",
+        "suite": "compatibility",
+        "jobs": [
+          {
+            "name": "compatibility-regressions",
+            "command": [
+              "/usr/local/bin/python",
+              "-m",
+              "pytest",
+              "-q",
+              "tests/sim/test_execution_dtypes.py",
+              "tests/sim/test_network_blocks.py",
+              "tests/sim/test_device_preparation.py",
+              "tests/sim/test_dtype_artifacts.py",
+              "tests/sim/test_native_device_callbacks.py",
+              "tests/sim/test_constraint_boundaries.py",
+              "tests/sim/test_gpu_efficiency.py",
+              "tests/sim/test_compiled_extensions.py",
+              "tests/sim/test_compiler_precision.py",
+              "tests/sim/test_execution_api.py"
+            ],
+            "elapsed_s": 152.06534576416016,
+            "exit_code": 1,
+            "status": "failed"
+          }
+        ],
+        "report_files": [
+          "compatibility-regressions.log"
+        ]
+      }
+    },
+    "cuda-c82de9d9b85f": {
+      "role": "final PyTorch 2.10 eager reduced-precision CPU fallback and keyword API regressions",
+      "manifest": {
+        "run_id": "cuda-c82de9d9b85f",
+        "volume": "snnlab-execution",
+        "status": "complete",
+        "suite": "compatibility",
+        "jobs": [
+          {
+            "name": "compatibility-regressions",
+            "command": [
+              "/usr/local/bin/python",
+              "-m",
+              "pytest",
+              "-q",
+              "tests/sim/test_execution_dtypes.py",
+              "tests/sim/test_network_blocks.py",
+              "tests/sim/test_device_preparation.py",
+              "tests/sim/test_dtype_artifacts.py",
+              "tests/sim/test_native_device_callbacks.py",
+              "tests/sim/test_constraint_boundaries.py",
+              "tests/sim/test_gpu_efficiency.py",
+              "tests/sim/test_compiled_extensions.py",
+              "tests/sim/test_compiler_precision.py",
+              "tests/sim/test_execution_api.py"
+            ],
+            "elapsed_s": 137.48769903182983,
+            "exit_code": 0,
+            "status": "complete"
+          }
+        ],
+        "report_files": [
+          "compatibility-regressions.log"
+        ]
+      }
+    },
     "cuda-1a2f8d714d09": {
       "role": "full serial validation and timing sweep",
       "manifest": {
         "run_id": "cuda-1a2f8d714d09",
         "volume": "snnlab-execution",
-        "status": "running",
+        "status": "completed_with_failures",
         "jobs": [
           {
             "name": "regressions",
@@ -90,13 +397,200 @@
             "elapsed_s": 309.0719795227051,
             "exit_code": 0,
             "status": "complete"
+          },
+          {
+            "name": "coba-1000",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/benchmark.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--coba",
+              "--channels",
+              "700",
+              "--cells",
+              "128",
+              "--steps",
+              "1000",
+              "--batch-sizes",
+              "8",
+              "32",
+              "256",
+              "--block-sizes",
+              "1",
+              "16",
+              "32",
+              "--output",
+              "/data/runs/cuda-1a2f8d714d09/coba-1000.json"
+            ],
+            "elapsed_s": 945.4035267829895,
+            "exit_code": 0,
+            "status": "complete"
+          },
+          {
+            "name": "recording-prefetch",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/benchmark.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--steps",
+              "128",
+              "--batch-sizes",
+              "8",
+              "--block-sizes",
+              "1",
+              "--mode",
+              "infer",
+              "--record",
+              "--prefetch",
+              "2",
+              "--profile",
+              "--output",
+              "/data/runs/cuda-1a2f8d714d09/recording-prefetch.json"
+            ],
+            "elapsed_s": 22.82468295097351,
+            "exit_code": 0,
+            "status": "complete"
+          },
+          {
+            "name": "bfloat16",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/benchmark.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--steps",
+              "128",
+              "--batch-sizes",
+              "32",
+              "--block-sizes",
+              "4",
+              "16",
+              "--dtype",
+              "bfloat16",
+              "--output",
+              "/data/runs/cuda-1a2f8d714d09/bfloat16.json"
+            ],
+            "elapsed_s": 14.777000904083252,
+            "exit_code": 1,
+            "status": "failed"
+          },
+          {
+            "name": "float16",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/benchmark.py",
+              "--devices",
+              "cuda",
+              "--repeats",
+              "3",
+              "--case-timeout",
+              "240",
+              "--steps",
+              "128",
+              "--batch-sizes",
+              "32",
+              "--block-sizes",
+              "4",
+              "--dtype",
+              "float16",
+              "--output",
+              "/data/runs/cuda-1a2f8d714d09/float16.json"
+            ],
+            "elapsed_s": 24.587125539779663,
+            "exit_code": 0,
+            "status": "complete"
+          },
+          {
+            "name": "cuda-graph-33",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/cuda_graph.py",
+              "--coba",
+              "--steps",
+              "33",
+              "--batch",
+              "8",
+              "--block-steps",
+              "16",
+              "--output",
+              "/data/runs/cuda-1a2f8d714d09/cuda-graph-33.json"
+            ],
+            "elapsed_s": 13.112775087356567,
+            "exit_code": 0,
+            "status": "complete"
+          },
+          {
+            "name": "cuda-graph-128",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/cuda_graph.py",
+              "--coba",
+              "--steps",
+              "128",
+              "--batch",
+              "32",
+              "--block-steps",
+              "16",
+              "--output",
+              "/data/runs/cuda-1a2f8d714d09/cuda-graph-128.json"
+            ],
+            "elapsed_s": 10.582038640975952,
+            "exit_code": 0,
+            "status": "complete"
+          },
+          {
+            "name": "cuda-graph-1000",
+            "command": [
+              "/usr/local/bin/python",
+              "benchmarks/execution/cuda_graph.py",
+              "--coba",
+              "--steps",
+              "1000",
+              "--batch",
+              "32",
+              "--block-steps",
+              "16",
+              "--output",
+              "/data/runs/cuda-1a2f8d714d09/cuda-graph-1000.json"
+            ],
+            "elapsed_s": 15.812319040298462,
+            "exit_code": 0,
+            "status": "complete"
           }
         ],
         "report_files": [
+          "bfloat16.json",
+          "bfloat16.log",
+          "coba-1000.json",
+          "coba-1000.log",
           "coba-128.json",
           "coba-128.log",
+          "cuda-graph-1000.json",
+          "cuda-graph-1000.log",
+          "cuda-graph-128.json",
+          "cuda-graph-128.log",
+          "cuda-graph-33.json",
+          "cuda-graph-33.log",
           "current-short.json",
           "current-short.log",
+          "float16.json",
+          "float16.log",
+          "recording-prefetch.json",
+          "recording-prefetch.log",
           "regressions.log"
         ]
       }
@@ -653,8 +1147,124 @@
   },
   "raw_files": [
     {
+      "file": "cuda-h100/cuda-896d6506018e/bfloat16-rounding.json.gz",
+      "uncompressed_sha256": "f959ad166570f77a0ca55e07edd552058824112df46de4b1d124dfe786f1b574"
+    },
+    {
+      "file": "cuda-h100/cuda-896d6506018e/bfloat16-rounding.log.gz",
+      "uncompressed_sha256": "c46f6c6e988e5bd1facd23b179859467977f5b2bbf4e3313d973a1a6e433df60"
+    },
+    {
+      "file": "cuda-h100/cuda-896d6506018e/cloud.json.gz",
+      "uncompressed_sha256": "1509edbda024de3fc6e9c368e84d434bce4e70487808361cd42845120dec5f1d"
+    },
+    {
+      "file": "cuda-h100/cuda-896d6506018e/ticket.json.gz",
+      "uncompressed_sha256": "471cf10fc43157d676c74c7578a906b785442634bfc524d246a08843ed493fb7"
+    },
+    {
+      "file": "cuda-h100/cuda-370dfb99adca/cloud.json.gz",
+      "uncompressed_sha256": "207630d4d642eecc3584ba8a56f7afcde76f0a888df77416c33560240e37ea08"
+    },
+    {
+      "file": "cuda-h100/cuda-370dfb99adca/coba-final-1000.json.gz",
+      "uncompressed_sha256": "a3668950030b81dfacede688d1d3f6494ff1a692a49f84b263b719df8bf390a4"
+    },
+    {
+      "file": "cuda-h100/cuda-370dfb99adca/coba-final-1000.log.gz",
+      "uncompressed_sha256": "8461db2d2b15619fd238a62f746f504fde6078648d91ec0e4e503b9df6a18049"
+    },
+    {
+      "file": "cuda-h100/cuda-370dfb99adca/cuda-graph-1000.json.gz",
+      "uncompressed_sha256": "eb67cbf97dba79a89f50595ad6533f58603600640915762b6d1f909a2b2786e0"
+    },
+    {
+      "file": "cuda-h100/cuda-370dfb99adca/cuda-graph-1000.log.gz",
+      "uncompressed_sha256": "b61e41f66d8dd849b72c6f39eee5453721c36041a260e1ea0a8752053b88a3b0"
+    },
+    {
+      "file": "cuda-h100/cuda-370dfb99adca/ticket.json.gz",
+      "uncompressed_sha256": "35f5304fa62725e26bbd6a91b808827d21358660d01f250cf9f6a8a748ba1c6f"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/amp-final.json.gz",
+      "uncompressed_sha256": "906df7586f52d880aba52883bb284efc0debc19d9875d137771ddc00f6318f2e"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/amp-final.log.gz",
+      "uncompressed_sha256": "c3670ee6601ebcbb4d239e7fffeb852589a902961af8fcf3af5df4e653cc8acf"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/bfloat16-final.json.gz",
+      "uncompressed_sha256": "b257886f1e97aca0d4ad12cd639a1abca6cfb63bc6f59d850f8ccbd2370fd998"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/bfloat16-final.log.gz",
+      "uncompressed_sha256": "b857fa1fe97135d614686685053126c783e58154bee5b29cd290f3d149c246ff"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/cloud.json.gz",
+      "uncompressed_sha256": "105d715f69af67dd63215a1d3197de782bcd019ca0d74e5aea16222585035fe9"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/final-regressions.log.gz",
+      "uncompressed_sha256": "f0d85a7c3fc6ace005e678d4855f929b4d1ad026e514f14a85a69a0b6d67519a"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/float16-final.json.gz",
+      "uncompressed_sha256": "4fdc0dc024b6bbec81900272694cfad246db409da0b049d8b5d9286a3d800050"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/float16-final.log.gz",
+      "uncompressed_sha256": "e1b4619dec6325f86ef7766798ba9401bb62851723288e27f52c02b30cf04d44"
+    },
+    {
+      "file": "cuda-h100/cuda-4e01bd4ff837/ticket.json.gz",
+      "uncompressed_sha256": "a01e83fa86e27ab96d23eb2c97197434bf1a293ff1f6ed921514f0fc1ddccf78"
+    },
+    {
+      "file": "cuda-h100/cuda-bebc047f0cdf/cloud.json.gz",
+      "uncompressed_sha256": "1e61e83b5f407eb09ba0f849fbf18db6b51c9e787e1e49aa29e71dc56215fa86"
+    },
+    {
+      "file": "cuda-h100/cuda-bebc047f0cdf/compatibility-regressions.log.gz",
+      "uncompressed_sha256": "412e87aaee1f64c3cca0686b2bea71a158305a003a5b614619004edb10edc96b"
+    },
+    {
+      "file": "cuda-h100/cuda-bebc047f0cdf/ticket.json.gz",
+      "uncompressed_sha256": "5016130b6c02750ac3ccec7a341f70b585222d3f3004a11d46a2e18b211e10bf"
+    },
+    {
+      "file": "cuda-h100/cuda-c82de9d9b85f/cloud.json.gz",
+      "uncompressed_sha256": "5869e86ad9e23bb2b2eaf76e105769741cb20e8bbe7ee9a1e183efcd29eb394c"
+    },
+    {
+      "file": "cuda-h100/cuda-c82de9d9b85f/compatibility-regressions.log.gz",
+      "uncompressed_sha256": "7e95e6c7f77fed12195c5157b67b70b0db433cac4e24f6c2cff8f12810b2bdc0"
+    },
+    {
+      "file": "cuda-h100/cuda-c82de9d9b85f/ticket.json.gz",
+      "uncompressed_sha256": "7a78f83664eab8a5abdd74b5141d899d07a60805652459af7421aba791181168"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/bfloat16.json.gz",
+      "uncompressed_sha256": "e5487c87791669186e8eae88e15ca0655263c9927a5e76d2c09f95491b52a010"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/bfloat16.log.gz",
+      "uncompressed_sha256": "7ea7df5aee2302611e620ac6539d4851860b75cc263650ed83a4ce2aec02680c"
+    },
+    {
       "file": "cuda-h100/cuda-1a2f8d714d09/cloud.json.gz",
-      "uncompressed_sha256": "5c6cb1af9e4ea815822357d1579da8382f0d041b82024214a3b4a06f304ae732"
+      "uncompressed_sha256": "246a86e55a34679b09b62c03271280f5986f57ef2c0ff64c3ad40dd913181358"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/coba-1000.json.gz",
+      "uncompressed_sha256": "dbc21ccc47dea197f59c890fe209e00b3a863f93b6db53dc5c1f5608fb46a6bf"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/coba-1000.log.gz",
+      "uncompressed_sha256": "d7a24d0e83d979d85719f1febd8c008cc07dbfecd3fe6a5a82194a53ee6161b9"
     },
     {
       "file": "cuda-h100/cuda-1a2f8d714d09/coba-128.json.gz",
@@ -665,12 +1275,52 @@
       "uncompressed_sha256": "41f2d405c7e088e29ebe565acbf5fc6270aaedbd082da0e6e832de7b76496179"
     },
     {
+      "file": "cuda-h100/cuda-1a2f8d714d09/cuda-graph-1000.json.gz",
+      "uncompressed_sha256": "6ab27661d673c88f359ce4edb35e19e56659c613c2e42e55ce9dee9bddf4bc76"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/cuda-graph-1000.log.gz",
+      "uncompressed_sha256": "d0d42c99dea00891bf4337f95f4d4a800dd1c4f2d27913244102767eac254374"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/cuda-graph-128.json.gz",
+      "uncompressed_sha256": "6e27826032a9da5c189471142d1e8ebe4d7349d3555009a25705117057081a49"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/cuda-graph-128.log.gz",
+      "uncompressed_sha256": "1bea3296817834d4017be5a23031d69e4ad6d67557cd70d084ad2bf643d44a29"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/cuda-graph-33.json.gz",
+      "uncompressed_sha256": "9e3849ab0d85d4828470676f190173c6292b1925fa8d96aa9afcd7838fe167ba"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/cuda-graph-33.log.gz",
+      "uncompressed_sha256": "f5e39ba876df09c132b235d009418e865328db07fde651c3b33790018a333ace"
+    },
+    {
       "file": "cuda-h100/cuda-1a2f8d714d09/current-short.json.gz",
       "uncompressed_sha256": "d43f3114f830b7e07897e085e186e17047fb185366b5df272baadf347ddc42e2"
     },
     {
       "file": "cuda-h100/cuda-1a2f8d714d09/current-short.log.gz",
       "uncompressed_sha256": "9f1d676af7c5a3d3c1e9063fa1072257c5e47e800a40a260536c504b6ea633ba"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/float16.json.gz",
+      "uncompressed_sha256": "0a6b2087674fca45d2aef0455d5c87caa8c66d46b893dd0203fc8d7018ca4fc6"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/float16.log.gz",
+      "uncompressed_sha256": "0b100beb2bc175d61c07b5cbdcc6b9edbc5972be1f65a59b35f9da7dc8cbd936"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/recording-prefetch.json.gz",
+      "uncompressed_sha256": "9c7cf1c2837541c4921e8c4b2030ba768e5c1236041fe077b292c6e6ce3a2eca"
+    },
+    {
+      "file": "cuda-h100/cuda-1a2f8d714d09/recording-prefetch.log.gz",
+      "uncompressed_sha256": "118d881c602d15a7bdf0bf088b264d54ed77a383d601a243219c645436d6ea21"
     },
     {
       "file": "cuda-h100/cuda-1a2f8d714d09/regressions.log.gz",
@@ -901,32 +1551,253 @@
       "uncompressed_sha256": "aa08ef3bb0171ba24bf9c429702ae46889d1581ec400a6abb9638791981b33aa"
     }
   ],
-  "numerical_gates_passed": 24,
-  "timed_cases": 60,
+  "numerical_gates_passed": 45,
+  "timed_cases": 116,
   "regression_runs": [
+    {
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/final-regressions.log",
+      "failed": 2,
+      "passed": 161,
+      "skipped": 36
+    },
+    {
+      "run_id": "cuda-bebc047f0cdf",
+      "file": "cuda-bebc047f0cdf/compatibility-regressions.log",
+      "failed": 2,
+      "passed": 170,
+      "skipped": 36
+    },
+    {
+      "run_id": "cuda-c82de9d9b85f",
+      "file": "cuda-c82de9d9b85f/compatibility-regressions.log",
+      "failed": 0,
+      "passed": 174,
+      "skipped": 36
+    },
     {
       "run_id": "cuda-1a2f8d714d09",
       "file": "cuda-1a2f8d714d09/regressions.log",
+      "failed": 0,
       "passed": 155,
       "skipped": 34
     },
     {
       "run_id": "cuda-7f54732b34c1",
       "file": "cuda-7f54732b34c1/boundary-regressions.log",
+      "failed": 0,
       "passed": 12,
       "skipped": 1
     },
     {
       "run_id": "cuda-e285ed625a56",
       "file": "cuda-e285ed625a56/recording-regressions.log",
+      "failed": 0,
       "passed": 35,
       "skipped": 0
     }
   ],
   "cuda_graph_experiments": [
     {
+      "run_id": "cuda-370dfb99adca",
+      "file": "cuda-370dfb99adca/cuda-graph-1000.json",
+      "hardware": "NVIDIA H200",
+      "shape": [
+        1000,
+        32,
+        700
+      ],
+      "cells": 128,
+      "block_steps": 16,
+      "dtype": "float32",
+      "warmup_s": 60.968509283,
+      "capture_s": 0.4560363420000044,
+      "checks": [
+        {
+          "update": 1,
+          "passed": true
+        },
+        {
+          "update": 2,
+          "passed": true
+        },
+        {
+          "update": 3,
+          "passed": true
+        }
+      ],
+      "loop_three_updates_s": [
+        0.646811630000002,
+        0.662447665000002,
+        1.1400228489999904
+      ],
+      "replay_three_updates_s": [
+        0.1693026109999778,
+        0.16901120300002503,
+        0.1689676700000291
+      ],
+      "loop_samples_per_s": 144.91710828205532,
+      "replay_samples_per_s": 568.0096839496833,
+      "peak_cuda_allocated_bytes": 619858944,
+      "limits": [
+        "Experimental benchmark only; no public replay mode or default change.",
+        "Fixed shape, built-in model, no recording/callbacks/continuation; shape changes need recapture.",
+        "Timing starts from resident inputs and includes device input copy, fresh presentation, forward/backward, capturable Adam and constraints; encoding and host transfers excluded.",
+        "Numerical reference uses the same compiled blocks and capturable optimizer; separate execution benchmark gates compare these blocks to eager.",
+        "Synthetic execution does not establish task accuracy."
+      ]
+    },
+    {
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/cuda-graph-1000.json",
+      "hardware": "NVIDIA H100 80GB HBM3",
+      "shape": [
+        1000,
+        32,
+        700
+      ],
+      "cells": 128,
+      "block_steps": 16,
+      "dtype": "float32",
+      "warmup_s": 5.03292866400011,
+      "capture_s": 0.41278710300002786,
+      "checks": [
+        {
+          "update": 1,
+          "passed": true
+        },
+        {
+          "update": 2,
+          "passed": true
+        },
+        {
+          "update": 3,
+          "passed": true
+        }
+      ],
+      "loop_three_updates_s": [
+        0.4721182000000681,
+        0.46757207899986497,
+        0.6828213969999979
+      ],
+      "replay_three_updates_s": [
+        0.17556150100017476,
+        0.17549630100006652,
+        0.17545384499999273
+      ],
+      "loop_samples_per_s": 203.3389096204852,
+      "replay_samples_per_s": 547.0200765084138,
+      "peak_cuda_allocated_bytes": 619858944,
+      "limits": [
+        "Experimental benchmark only; no public replay mode or default change.",
+        "Fixed shape, built-in model, no recording/callbacks/continuation; shape changes need recapture.",
+        "Timing starts from resident inputs and includes device input copy, fresh presentation, forward/backward, capturable Adam and constraints; encoding and host transfers excluded.",
+        "Numerical reference uses the same compiled blocks and capturable optimizer; separate execution benchmark gates compare these blocks to eager.",
+        "Synthetic execution does not establish task accuracy."
+      ]
+    },
+    {
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/cuda-graph-128.json",
+      "hardware": "NVIDIA H100 80GB HBM3",
+      "shape": [
+        128,
+        32,
+        700
+      ],
+      "cells": 128,
+      "block_steps": 16,
+      "dtype": "float32",
+      "warmup_s": 3.959912155999973,
+      "capture_s": 0.04327619200012123,
+      "checks": [
+        {
+          "update": 1,
+          "passed": true
+        },
+        {
+          "update": 2,
+          "passed": true
+        },
+        {
+          "update": 3,
+          "passed": true
+        }
+      ],
+      "loop_three_updates_s": [
+        0.06563033499992343,
+        0.06494172899988371,
+        0.06480605699994157
+      ],
+      "replay_three_updates_s": [
+        0.022282051999809482,
+        0.022198612000011053,
+        0.022186121000004277
+      ],
+      "loop_samples_per_s": 1478.2482924064418,
+      "replay_samples_per_s": 4324.5947088922585,
+      "peak_cuda_allocated_bytes": 258393088,
+      "limits": [
+        "Experimental benchmark only; no public replay mode or default change.",
+        "Fixed shape, built-in model, no recording/callbacks/continuation; shape changes need recapture.",
+        "Timing starts from resident inputs and includes device input copy, fresh presentation, forward/backward, capturable Adam and constraints; encoding and host transfers excluded.",
+        "Numerical reference uses the same compiled blocks and capturable optimizer; separate execution benchmark gates compare these blocks to eager.",
+        "Synthetic execution does not establish task accuracy."
+      ]
+    },
+    {
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/cuda-graph-33.json",
+      "hardware": "NVIDIA H100 80GB HBM3",
+      "shape": [
+        33,
+        8,
+        700
+      ],
+      "cells": 128,
+      "block_steps": 16,
+      "dtype": "float32",
+      "warmup_s": 6.311784886999931,
+      "capture_s": 0.014447653999923205,
+      "checks": [
+        {
+          "update": 1,
+          "passed": true
+        },
+        {
+          "update": 2,
+          "passed": true
+        },
+        {
+          "update": 3,
+          "passed": true
+        }
+      ],
+      "loop_three_updates_s": [
+        0.022630463000041345,
+        0.022486513000103514,
+        0.022908672000085062
+      ],
+      "replay_three_updates_s": [
+        0.01822900800016214,
+        0.01820262600017486,
+        0.01820487400004822
+      ],
+      "loop_samples_per_s": 1060.5174096507064,
+      "replay_samples_per_s": 1318.3282674703723,
+      "peak_cuda_allocated_bytes": 210264576,
+      "limits": [
+        "Experimental benchmark only; no public replay mode or default change.",
+        "Fixed shape, built-in model, no recording/callbacks/continuation; shape changes need recapture.",
+        "Timing starts from resident inputs and includes device input copy, fresh presentation, forward/backward, capturable Adam and constraints; encoding and host transfers excluded.",
+        "Numerical reference uses the same compiled blocks and capturable optimizer; separate execution benchmark gates compare these blocks to eager.",
+        "Synthetic execution does not establish task accuracy."
+      ]
+    },
+    {
       "run_id": "cuda-0c8b7a8dc23e",
       "file": "cuda-0c8b7a8dc23e/cuda-graph-1000.json",
+      "hardware": "NVIDIA H100 80GB HBM3",
       "shape": [
         1000,
         32,
@@ -975,6 +1846,7 @@
     {
       "run_id": "cuda-0c8b7a8dc23e",
       "file": "cuda-0c8b7a8dc23e/cuda-graph-128.json",
+      "hardware": "NVIDIA H100 80GB HBM3",
       "shape": [
         128,
         32,
@@ -1023,6 +1895,7 @@
     {
       "run_id": "cuda-0c8b7a8dc23e",
       "file": "cuda-0c8b7a8dc23e/cuda-graph-33.json",
+      "hardware": "NVIDIA H100 80GB HBM3",
       "shape": [
         33,
         8,
@@ -1071,6 +1944,828 @@
   ],
   "coba_one_second": [
     {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 8,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 3.8068893759999582,
+      "warm_epoch_s": [
+        3.792466187000059,
+        3.801669625000045,
+        3.8054419840000264
+      ],
+      "warm_samples_per_s": 5.260846410345234,
+      "setup_s": 0.01176041400003669,
+      "peak_cuda_allocated_bytes": 149860352,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 8,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 3.380817713000056,
+      "warm_epoch_s": [
+        2.45864059500002,
+        2.33414441299999,
+        2.48280446199999
+      ],
+      "warm_samples_per_s": 8.134576497546131,
+      "setup_s": 0.007031895000068289,
+      "peak_cuda_allocated_bytes": 111370240,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 8,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 3.5778149920000715,
+      "warm_epoch_s": [
+        3.7000393629999735,
+        3.8493422000000237,
+        3.7384228580000354
+      ],
+      "warm_samples_per_s": 5.349849591573359,
+      "setup_s": 0.005974852999997893,
+      "peak_cuda_allocated_bytes": 149010432,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 8,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 3.412904309000055,
+      "warm_epoch_s": [
+        2.325336167000046,
+        2.2902771220000204,
+        2.421879366999974
+      ],
+      "warm_samples_per_s": 8.600906950070074,
+      "setup_s": 0.007858141000042451,
+      "peak_cuda_allocated_bytes": 121505792,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 8,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 15.601256992000003,
+      "warm_epoch_s": [
+        0.6663432100000364,
+        0.6591841279999926,
+        0.6556980940000585
+      ],
+      "warm_samples_per_s": 30.340536354662085,
+      "setup_s": 0.019381771999974262,
+      "peak_cuda_allocated_bytes": 139226112,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 8,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 6.43462096799999,
+      "warm_epoch_s": [
+        0.6064764819999482,
+        0.6043049980000887,
+        0.5991760649999378
+      ],
+      "warm_samples_per_s": 33.095870572291815,
+      "setup_s": 0.006973001000005752,
+      "peak_cuda_allocated_bytes": 121505792,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 32,
+      "batch_size": 8,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 82.16671131199996,
+      "warm_epoch_s": [
+        0.6371887340000058,
+        0.6330026939999698,
+        0.6352389579999453
+      ],
+      "warm_samples_per_s": 31.484215110121948,
+      "setup_s": 0.00984356299989031,
+      "peak_cuda_allocated_bytes": 139696640,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 32,
+        "block_steps": 32,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 32,
+      "batch_size": 8,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 9.603408366000053,
+      "warm_epoch_s": [
+        1.9671650850000333,
+        0.5703569190000053,
+        0.5718539729999748
+      ],
+      "warm_samples_per_s": 34.97396353666827,
+      "setup_s": 0.006985450000001947,
+      "peak_cuda_allocated_bytes": 121505792,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 32,
+        "block_steps": 32,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 3.741730831000041,
+      "warm_epoch_s": [
+        3.854743536000001,
+        3.8440078469999435,
+        3.9044041700000207
+      ],
+      "warm_samples_per_s": 20.7536504706133,
+      "setup_s": 0.008889292999924692,
+      "peak_cuda_allocated_bytes": 380791808,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 3.557773503999897,
+      "warm_epoch_s": [
+        3.2714729939999643,
+        2.453047814999991,
+        2.4600739859999976
+      ],
+      "warm_samples_per_s": 32.51934716405724,
+      "setup_s": 0.008700483999973585,
+      "peak_cuda_allocated_bytes": 237546496,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 3.452708770000072,
+      "warm_epoch_s": [
+        3.659214936999888,
+        3.8909445900000037,
+        3.8103425110000444
+      ],
+      "warm_samples_per_s": 20.995487877808543,
+      "setup_s": 0.006101693999994495,
+      "peak_cuda_allocated_bytes": 379091968,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 3.191915463999976,
+      "warm_epoch_s": [
+        2.214835174999962,
+        3.0219092090000004,
+        2.2133778370000528
+      ],
+      "warm_samples_per_s": 36.12006929590206,
+      "setup_s": 0.007332610000048589,
+      "peak_cuda_allocated_bytes": 274368000,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 32,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 15.43869546399992,
+      "warm_epoch_s": [
+        0.8192607409999937,
+        0.8213339860000133,
+        0.8123907940000663
+      ],
+      "warm_samples_per_s": 97.64900964539275,
+      "setup_s": 0.009247200999993765,
+      "peak_cuda_allocated_bytes": 214253056,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 32,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 6.042981103999978,
+      "warm_epoch_s": [
+        0.5388934669999799,
+        0.5381681290000415,
+        0.5403852179999831
+      ],
+      "warm_samples_per_s": 148.45234707587016,
+      "setup_s": 0.0074093609999863475,
+      "peak_cuda_allocated_bytes": 273518080,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 32,
+      "batch_size": 32,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 80.37063150000017,
+      "warm_epoch_s": [
+        0.7452963690000161,
+        0.7419293780001226,
+        0.7401439220000157
+      ],
+      "warm_samples_per_s": 107.82697433499766,
+      "setup_s": 0.010226893999970343,
+      "peak_cuda_allocated_bytes": 215010816,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 32,
+        "block_steps": 32,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 32,
+      "batch_size": 32,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 11.74633403100006,
+      "warm_epoch_s": [
+        0.5661685019999823,
+        0.552249060999884,
+        0.555141236000054
+      ],
+      "warm_samples_per_s": 144.10747177857314,
+      "setup_s": 0.007929150000109075,
+      "peak_cuda_allocated_bytes": 272668160,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 32,
+        "block_steps": 32,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 5.507289995000065,
+      "warm_epoch_s": [
+        5.516613059000065,
+        5.529087338000181,
+        5.538544976999901
+      ],
+      "warm_samples_per_s": 115.75147232734471,
+      "setup_s": 0.0152293460000692,
+      "peak_cuda_allocated_bytes": 2536109056,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 8.983060711999997,
+      "warm_epoch_s": [
+        4.094615834000024,
+        4.090616756000145,
+        4.0986322449998625
+      ],
+      "warm_samples_per_s": 156.30281959193837,
+      "setup_s": 0.01253871199992318,
+      "peak_cuda_allocated_bytes": 1385927680,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 3.624811783000041,
+      "warm_epoch_s": [
+        3.666648561000102,
+        3.6821196809999037,
+        3.684148283000013
+      ],
+      "warm_samples_per_s": 173.8129271849751,
+      "setup_s": 0.009582206999994014,
+      "peak_cuda_allocated_bytes": 2534409216,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 3.2463293030000386,
+      "warm_epoch_s": [
+        2.2216110889999072,
+        2.2388009620001412,
+        3.788632962000065
+      ],
+      "warm_samples_per_s": 285.86730614418934,
+      "setup_s": 0.012142807999907745,
+      "peak_cuda_allocated_bytes": 1687644160,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 54.999298041999964,
+      "warm_epoch_s": [
+        2.3498049739998805,
+        2.3694959169999947,
+        2.3559654419998424
+      ],
+      "warm_samples_per_s": 271.65084367992307,
+      "setup_s": 0.014212826999937533,
+      "peak_cuda_allocated_bytes": 1213331456,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 5.800025205999873,
+      "warm_epoch_s": [
+        0.5055716239999128,
+        0.4881139290000647,
+        0.4835204360001626
+      ],
+      "warm_samples_per_s": 1311.1693028533,
+      "setup_s": 0.010517851000031442,
+      "peak_cuda_allocated_bytes": 1686794240,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 32,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 82.80834874399989,
+      "warm_epoch_s": [
+        2.348999382999864,
+        2.372285049999846,
+        2.3702291290001085
+      ],
+      "warm_samples_per_s": 270.01608923352774,
+      "setup_s": 0.013518769000029351,
+      "peak_cuda_allocated_bytes": 1217394688,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 32,
+        "block_steps": 32,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 32,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 9.417255309999973,
+      "warm_epoch_s": [
+        0.4590815139999904,
+        0.4711978689999796,
+        0.4833372860000509
+      ],
+      "warm_samples_per_s": 1358.240438052634,
+      "setup_s": 0.0110933590001423,
+      "peak_cuda_allocated_bytes": 1686794240,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 32,
+        "block_steps": 32,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/coba-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
       "device": "cpu",
       "dtype": "float32",
       "compile_mode": null,
@@ -1099,6 +2794,10 @@
       },
       "run_id": "cuda-7f54732b34c1",
       "file": "cuda-7f54732b34c1/cpu-comparison.json",
+      "hardware": {
+        "cpu": "x86_64"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off"
     },
@@ -1130,6 +2829,10 @@
       },
       "run_id": "cuda-7f54732b34c1",
       "file": "cuda-7f54732b34c1/cpu-comparison.json",
+      "hardware": {
+        "cpu": "x86_64"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off"
     },
@@ -1159,11 +2862,761 @@
       },
       "run_id": "cuda-7f54732b34c1",
       "file": "cuda-7f54732b34c1/cpu-comparison.json",
+      "hardware": {
+        "cpu": "x86_64"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off"
     }
   ],
   "precision_probes": [
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 0.5968141500000002,
+      "warm_epoch_s": [
+        0.4704737630000011,
+        0.48493364899999847,
+        0.5150342969999997
+      ],
+      "warm_samples_per_s": 164.97102266458776,
+      "setup_s": 0.020498978999999196,
+      "peak_cuda_allocated_bytes": 69298176,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-896d6506018e",
+      "file": "cuda-896d6506018e/bfloat16-rounding.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 6.135246141,
+      "warm_epoch_s": [
+        0.4799674100000004,
+        0.46859829199999936,
+        0.6054817390000018
+      ],
+      "warm_samples_per_s": 166.67798340724826,
+      "setup_s": 0.013895854999997681,
+      "peak_cuda_allocated_bytes": 120167936,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-896d6506018e",
+      "file": "cuda-896d6506018e/bfloat16-rounding.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 0.6414823869999999,
+      "warm_epoch_s": [
+        0.582157837999997,
+        0.6339294849999995,
+        0.6151806370000017
+      ],
+      "warm_samples_per_s": 130.04310472145076,
+      "setup_s": 0.005328739999999499,
+      "peak_cuda_allocated_bytes": 69813248,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-896d6506018e",
+      "file": "cuda-896d6506018e/bfloat16-rounding.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 2.0829576219999986,
+      "warm_epoch_s": [
+        0.7020911420000004,
+        0.4354511219999999,
+        0.4096145419999999
+      ],
+      "warm_samples_per_s": 183.7175195061273,
+      "setup_s": 0.018689171000001892,
+      "peak_cuda_allocated_bytes": 68830208,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-896d6506018e",
+      "file": "cuda-896d6506018e/bfloat16-rounding.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 4,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 10.055141309000007,
+      "warm_epoch_s": [
+        0.1211689370000002,
+        0.11241659299999895,
+        0.11196551100000107
+      ],
+      "warm_samples_per_s": 711.6387168929834,
+      "setup_s": 0.014687346999998852,
+      "peak_cuda_allocated_bytes": 120116736,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-896d6506018e",
+      "file": "cuda-896d6506018e/bfloat16-rounding.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 4,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 1.788282418999998,
+      "warm_epoch_s": [
+        0.11692105600000247,
+        0.11230325100000016,
+        0.11955469000000107
+      ],
+      "warm_samples_per_s": 684.2223525589635,
+      "setup_s": 0.01314745599999867,
+      "peak_cuda_allocated_bytes": 68707328,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-896d6506018e",
+      "file": "cuda-896d6506018e/bfloat16-rounding.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 37.65312940000001,
+      "warm_epoch_s": [
+        0.08920934299999317,
+        0.08498983999999155,
+        0.08481339200000093
+      ],
+      "warm_samples_per_s": 941.2889823066846,
+      "setup_s": 0.015408462999999983,
+      "peak_cuda_allocated_bytes": 120119296,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-896d6506018e",
+      "file": "cuda-896d6506018e/bfloat16-rounding.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 4.741188340000008,
+      "warm_epoch_s": [
+        0.08392626500000233,
+        0.07931610200000705,
+        0.07673712799999066
+      ],
+      "warm_samples_per_s": 1008.6224358326748,
+      "setup_s": 0.013850918999992246,
+      "peak_cuda_allocated_bytes": 68716544,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-896d6506018e",
+      "file": "cuda-896d6506018e/bfloat16-rounding.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 48.372411176000014,
+      "warm_epoch_s": [
+        0.1251067379999995,
+        0.11436033400002543,
+        0.1119985930000098
+      ],
+      "warm_samples_per_s": 699.5432524705831,
+      "setup_s": 0.01820676500000218,
+      "peak_cuda_allocated_bytes": 132928000,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/amp-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "bfloat16"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 6.457749785999965,
+      "warm_epoch_s": [
+        0.0812639310000236,
+        0.0794583869999883,
+        0.07916121299996348
+      ],
+      "warm_samples_per_s": 1006.8163100266781,
+      "setup_s": 0.015603794000014659,
+      "peak_cuda_allocated_bytes": 95676416,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/amp-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "bfloat16"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 0.46193121400000337,
+      "warm_epoch_s": [
+        0.4213558180000234,
+        0.42365124799999876,
+        0.4249769239999921
+      ],
+      "warm_samples_per_s": 188.83456705879982,
+      "setup_s": 0.007225371999993513,
+      "peak_cuda_allocated_bytes": 69298176,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/bfloat16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 5.377241916999992,
+      "warm_epoch_s": [
+        0.33725388200002726,
+        0.3316897329999904,
+        0.32216279099998246
+      ],
+      "warm_samples_per_s": 241.18925622579437,
+      "setup_s": 0.013387528999999176,
+      "peak_cuda_allocated_bytes": 120167936,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/bfloat16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 0.43211332600000674,
+      "warm_epoch_s": [
+        0.41962148900000784,
+        0.41836630100002026,
+        0.41705540699999233
+      ],
+      "warm_samples_per_s": 191.21999025441613,
+      "setup_s": 0.003259644999985767,
+      "peak_cuda_allocated_bytes": 69813248,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/bfloat16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 1.5378793810000104,
+      "warm_epoch_s": [
+        0.42852059800000575,
+        0.48937261899999385,
+        0.3542997499999956
+      ],
+      "warm_samples_per_s": 186.68880883060592,
+      "setup_s": 0.013021159000004445,
+      "peak_cuda_allocated_bytes": 68830208,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/bfloat16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 4,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 10.482327419,
+      "warm_epoch_s": [
+        0.10834546800001021,
+        0.10548786199998972,
+        0.10642625099998781
+      ],
+      "warm_samples_per_s": 751.6942413015108,
+      "setup_s": 0.016130970999995498,
+      "peak_cuda_allocated_bytes": 120116736,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/bfloat16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 4,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 2.073300403000019,
+      "warm_epoch_s": [
+        0.10100444299999367,
+        0.10023049299999798,
+        0.10061186600000838
+      ],
+      "warm_samples_per_s": 795.1348402582389,
+      "setup_s": 0.013705984000011995,
+      "peak_cuda_allocated_bytes": 68698112,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/bfloat16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 39.474774989,
+      "warm_epoch_s": [
+        0.08528027800002747,
+        0.08110057199999687,
+        0.08022827199999938
+      ],
+      "warm_samples_per_s": 986.4295408422407,
+      "setup_s": 0.013910826000000043,
+      "peak_cuda_allocated_bytes": 120119296,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/bfloat16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 4.867417405000026,
+      "warm_epoch_s": [
+        0.0765727849999962,
+        0.07788093499999604,
+        0.07950900399998773
+      ],
+      "warm_samples_per_s": 1027.2090338926216,
+      "setup_s": 0.013278995999996823,
+      "peak_cuda_allocated_bytes": 68716544,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/bfloat16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float16",
+      "compile_mode": "default",
+      "requested_block_steps": 4,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 10.618965794000019,
+      "warm_epoch_s": [
+        0.10762458499999639,
+        0.10548361600001499,
+        0.10411684100000684
+      ],
+      "warm_samples_per_s": 758.4116191085886,
+      "setup_s": 0.01707790699998668,
+      "peak_cuda_allocated_bytes": 120116736,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/float16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float16",
+      "compile_mode": "default",
+      "requested_block_steps": 4,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 1.7142827939999847,
+      "warm_epoch_s": [
+        0.101059145000022,
+        0.1017536020000307,
+        0.10079003300000977
+      ],
+      "warm_samples_per_s": 791.6156425030371,
+      "setup_s": 0.01308451100004504,
+      "peak_cuda_allocated_bytes": 68707840,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-4e01bd4ff837",
+      "file": "cuda-4e01bd4ff837/float16-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float16",
+      "compile_mode": "default",
+      "requested_block_steps": 4,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 7.888184378999995,
+      "warm_epoch_s": [
+        0.08781481799996982,
+        0.08678388199996334,
+        0.08487970500004849
+      ],
+      "warm_samples_per_s": 921.8301619652575,
+      "setup_s": 0.007707598000024518,
+      "peak_cuda_allocated_bytes": 120117248,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/float16.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float16",
+      "compile_mode": "default",
+      "requested_block_steps": 4,
+      "batch_size": 32,
+      "steps": 128,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 1.3771902570001657,
+      "warm_epoch_s": [
+        0.0842049179998412,
+        0.08271211900000708,
+        0.08323299700009557
+      ],
+      "warm_samples_per_s": 961.1572679511726,
+      "setup_s": 0.003971434000050067,
+      "peak_cuda_allocated_bytes": 68710400,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 4,
+        "block_steps": 4,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/float16.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
+      "threads": 4,
+      "autocast": "off"
+    },
     {
       "device": "cuda",
       "dtype": "float32",
@@ -1190,6 +3643,10 @@
       },
       "run_id": "cuda-95cf87827ead",
       "file": "cuda-95cf87827ead/tf32-high.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off"
     },
@@ -1219,6 +3676,10 @@
       },
       "run_id": "cuda-95cf87827ead",
       "file": "cuda-95cf87827ead/tf32-high.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off"
     },
@@ -1248,6 +3709,10 @@
       },
       "run_id": "cuda-949166eb27dc",
       "file": "cuda-949166eb27dc/fused-adam.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off"
     },
@@ -1277,6 +3742,10 @@
       },
       "run_id": "cuda-949166eb27dc",
       "file": "cuda-949166eb27dc/fused-adam.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off"
     },
@@ -1306,6 +3775,10 @@
       },
       "run_id": "cuda-c0a15b981750",
       "file": "cuda-c0a15b981750/amp-bfloat16.json",
+      "hardware": {
+        "cuda": "NVIDIA H200"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "bfloat16"
     },
@@ -1335,6 +3808,10 @@
       },
       "run_id": "cuda-c0a15b981750",
       "file": "cuda-c0a15b981750/amp-bfloat16.json",
+      "hardware": {
+        "cuda": "NVIDIA H200"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "bfloat16"
     }
@@ -1370,6 +3847,10 @@
       },
       "run_id": "cuda-e285ed625a56",
       "file": "cuda-e285ed625a56/recording-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -1551,6 +4032,10 @@
       },
       "run_id": "cuda-e285ed625a56",
       "file": "cuda-e285ed625a56/recording-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -1726,6 +4211,10 @@
       },
       "run_id": "cuda-e285ed625a56",
       "file": "cuda-e285ed625a56/recording-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -1920,6 +4409,10 @@
       },
       "run_id": "cuda-e285ed625a56",
       "file": "cuda-e285ed625a56/recording-final.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -2105,6 +4598,10 @@
       },
       "run_id": "cuda-5b5595aa1bf3",
       "file": "cuda-5b5595aa1bf3/cuda-profile.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -2420,6 +4917,10 @@
       },
       "run_id": "cuda-5b5595aa1bf3",
       "file": "cuda-5b5595aa1bf3/cuda-profile.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -2708,6 +5209,10 @@
       },
       "run_id": "cuda-5b5595aa1bf3",
       "file": "cuda-5b5595aa1bf3/cuda-profile.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -3020,6 +5525,10 @@
       },
       "run_id": "cuda-5b5595aa1bf3",
       "file": "cuda-5b5595aa1bf3/cuda-profile.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -3311,6 +5820,10 @@
       },
       "run_id": "cuda-5b5595aa1bf3",
       "file": "cuda-5b5595aa1bf3/cuda-profile.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -3592,6 +6105,10 @@
       },
       "run_id": "cuda-5b5595aa1bf3",
       "file": "cuda-5b5595aa1bf3/cuda-profile.json",
+      "hardware": {
+        "cuda": "NVIDIA H100 80GB HBM3"
+      },
+      "compiler_precision_policy": null,
       "threads": 4,
       "autocast": "off",
       "profile": {
@@ -3852,6 +6369,18 @@
   ],
   "failures": [
     {
+      "run_id": "cuda-1a2f8d714d09",
+      "file": "cuda-1a2f8d714d09/bfloat16.json",
+      "device": "cuda",
+      "steps": 128,
+      "batch": 32,
+      "block_steps": 4,
+      "phase": "numerical_gate",
+      "status": "error",
+      "error_type": "AssertionError",
+      "message": "Tensor-likes are not close!\n\nMismatched elements: 1024 / 1024 (100.0%)\nGreatest absolute difference: 0.4453125 at index (12, 9) (up to 0.05 allowed)\nGreatest relative difference: 0.32421875 at index (12, 26) (up to 0.05 allowed)"
+    },
+    {
       "run_id": "cuda-95cf87827ead",
       "file": "cuda-95cf87827ead/fused-adam.json",
       "device": "cuda",
@@ -3865,6 +6394,79 @@
     }
   ],
   "job_failures": [
+    {
+      "run_id": "cuda-4e01bd4ff837",
+      "name": "final-regressions",
+      "command": [
+        "/usr/local/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/sim/test_execution_dtypes.py",
+        "tests/sim/test_network_blocks.py",
+        "tests/sim/test_device_preparation.py",
+        "tests/sim/test_dtype_artifacts.py",
+        "tests/sim/test_native_device_callbacks.py",
+        "tests/sim/test_constraint_boundaries.py",
+        "tests/sim/test_gpu_efficiency.py",
+        "tests/sim/test_compiled_extensions.py",
+        "tests/sim/test_compiler_precision.py"
+      ],
+      "elapsed_s": 140.44447231292725,
+      "exit_code": 1,
+      "status": "failed"
+    },
+    {
+      "run_id": "cuda-bebc047f0cdf",
+      "name": "compatibility-regressions",
+      "command": [
+        "/usr/local/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/sim/test_execution_dtypes.py",
+        "tests/sim/test_network_blocks.py",
+        "tests/sim/test_device_preparation.py",
+        "tests/sim/test_dtype_artifacts.py",
+        "tests/sim/test_native_device_callbacks.py",
+        "tests/sim/test_constraint_boundaries.py",
+        "tests/sim/test_gpu_efficiency.py",
+        "tests/sim/test_compiled_extensions.py",
+        "tests/sim/test_compiler_precision.py",
+        "tests/sim/test_execution_api.py"
+      ],
+      "elapsed_s": 152.06534576416016,
+      "exit_code": 1,
+      "status": "failed"
+    },
+    {
+      "run_id": "cuda-1a2f8d714d09",
+      "name": "bfloat16",
+      "command": [
+        "/usr/local/bin/python",
+        "benchmarks/execution/benchmark.py",
+        "--devices",
+        "cuda",
+        "--repeats",
+        "3",
+        "--case-timeout",
+        "240",
+        "--steps",
+        "128",
+        "--batch-sizes",
+        "32",
+        "--block-sizes",
+        "4",
+        "16",
+        "--dtype",
+        "bfloat16",
+        "--output",
+        "/data/runs/cuda-1a2f8d714d09/bfloat16.json"
+      ],
+      "elapsed_s": 14.777000904083252,
+      "exit_code": 1,
+      "status": "failed"
+    },
     {
       "run_id": "cuda-95cf87827ead",
       "name": "fused-adam",
@@ -4224,6 +6826,216 @@
       ]
     }
   ],
+  "final_performance": [
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 7.781868033000002,
+      "warm_epoch_s": [
+        7.827271621999998,
+        8.022210085000005,
+        7.848078346999998
+      ],
+      "warm_samples_per_s": 81.54862524335604,
+      "setup_s": 0.02930826000000053,
+      "peak_cuda_allocated_bytes": 2535259648,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-370dfb99adca",
+      "file": "cuda-370dfb99adca/coba-final-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H200"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 11.932088395000001,
+      "warm_epoch_s": [
+        6.270917329999996,
+        6.147843215999998,
+        6.437775465000001
+      ],
+      "warm_samples_per_s": 102.05843361038224,
+      "setup_s": 0.026894419000001335,
+      "peak_cuda_allocated_bytes": 1383377920,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-370dfb99adca",
+      "file": "cuda-370dfb99adca/coba-final-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H200"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": null,
+      "requested_block_steps": 1,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 5.115854440000007,
+      "warm_epoch_s": [
+        5.19159169000001,
+        5.214924926999998,
+        5.4501298679999906
+      ],
+      "warm_samples_per_s": 122.72468136337568,
+      "setup_s": 0.01646306300000333,
+      "peak_cuda_allocated_bytes": 2534409728,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested",
+          "compilation disabled"
+        ]
+      },
+      "run_id": "cuda-370dfb99adca",
+      "file": "cuda-370dfb99adca/coba-final-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H200"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 1,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 4.834087390000008,
+      "warm_epoch_s": [
+        3.676397525000013,
+        3.5175629360000045,
+        3.6817744030000057
+      ],
+      "warm_samples_per_s": 174.0834595954086,
+      "setup_s": 0.025116231999987804,
+      "peak_cuda_allocated_bytes": 1686794752,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "kernel_loop",
+        "requested_block_steps": 1,
+        "block_steps": 1,
+        "fallback_reasons": [
+          "block execution not requested"
+        ]
+      },
+      "run_id": "cuda-370dfb99adca",
+      "file": "cuda-370dfb99adca/coba-final-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H200"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cpu",
+      "cold_epoch_s": 63.72039233700002,
+      "warm_epoch_s": [
+        3.2369044760000065,
+        3.253572694000013,
+        3.234619189
+      ],
+      "warm_samples_per_s": 197.71976737196698,
+      "setup_s": 0.029165622999983043,
+      "peak_cuda_allocated_bytes": 1213331456,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-370dfb99adca",
+      "file": "cuda-370dfb99adca/coba-final-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H200"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    },
+    {
+      "device": "cuda",
+      "dtype": "float32",
+      "compile_mode": "default",
+      "requested_block_steps": 16,
+      "batch_size": 256,
+      "steps": 1000,
+      "preparation_device": "cuda",
+      "cold_epoch_s": 8.379473763000021,
+      "warm_epoch_s": [
+        0.7000887789999979,
+        0.69693307,
+        0.697241474000009
+      ],
+      "warm_samples_per_s": 917.9029416141584,
+      "setup_s": 0.026423843000003444,
+      "peak_cuda_allocated_bytes": 1685944832,
+      "execution_path": {
+        "schema": "snnlab.network-blocks/v1",
+        "selected": "compiled_blocks",
+        "requested_block_steps": 16,
+        "block_steps": 16,
+        "fallback_reasons": []
+      },
+      "run_id": "cuda-370dfb99adca",
+      "file": "cuda-370dfb99adca/coba-final-1000.json",
+      "hardware": {
+        "cuda": "NVIDIA H200"
+      },
+      "compiler_precision_policy": "snnlab.eager-precision-casts/v1",
+      "threads": 4,
+      "autocast": "off"
+    }
+  ],
   "canceled_probes": [
     {
       "run_id": "cuda-6db2e79a793f",
@@ -4232,7 +7044,7 @@
   ],
   "limits": [
     "Synthetic execution does not establish task accuracy or universal speedups.",
-    "Each run has an assigned H100 and runs its cases serially. CPU allocation is 4 and actual Torch thread counts are in each report. Modal CPU identity is only x86_64; no CPU model claim.",
+    "Each run requests an H100 and runs cases serially; Modal supplied an H200 for final-performance. Actual hardware is retained per report. CPU allocation is 4 and actual Torch thread counts are in each report. Modal CPU identity is only x86_64; no CPU model claim.",
     "CPU and accelerator RNG streams differ. Matched-spike/weight numerical gates are separate from pipeline timing.",
     "Cold epochs can reuse compiler caches and earlier numerical gates; raw validation/first-execution and cold timings are retained.",
     "Source snapshots span Git heads and source revisions. Exact source hashes and settings are retained per report. Later recording/profile fixes have dedicated final runs.",
@@ -4242,5 +7054,28 @@
     "PyTorch 2.10.0 pinned-host allocator counters include negative freed counts and active bytes above owned bytes; raw values are retained but pinned-host peak values are unreliable.",
     "CPU RSS is process-lifetime high water. Device allocator peaks include cold work; pinned-host peaks can include cached blocks retained from earlier cases.",
     "All failures, rejected optional precision settings and superseded harness probes remain retained. No failed case contributes a throughput result."
+  ],
+  "final_regression_run": "cuda-c82de9d9b85f",
+  "resolved_failures": [
+    {
+      "run_id": "cuda-bebc047f0cdf",
+      "case": "CPU bfloat16 scalar workaround",
+      "resolution": "Rejected due to persistent gradient mismatch; superseded by eager tensor-graph fallback in cuda-c82de9d9b85f."
+    },
+    {
+      "run_id": "cuda-1a2f8d714d09",
+      "case": "bfloat16",
+      "resolution": "Cast preservation enabled; final bfloat16 CUDA gates passed in cuda-4e01bd4ff837."
+    },
+    {
+      "run_id": "cuda-95cf87827ead",
+      "case": "fused-adam",
+      "resolution": "Harness compares optimizer step on candidate device; cuda-949166eb27dc passed."
+    },
+    {
+      "run_id": "cuda-4e01bd4ff837",
+      "case": "final-regressions CPU bfloat16",
+      "resolution": "PyTorch 2.10 vector cast codegen incompatibility; scalar workaround also failed. Eager tensor-graph fallback validated in cuda-c82de9d9b85f."
+    }
   ]
 }

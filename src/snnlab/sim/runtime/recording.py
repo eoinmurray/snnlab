@@ -15,6 +15,7 @@ import torch
 
 from snnlab import extensions as E
 from snnlab.sim.artifacts.tensors import numpy_payload
+from snnlab.sim.graph.validation import check_condition
 from snnlab.sim.training.observations import evaluation_rng
 
 
@@ -662,9 +663,10 @@ class OnlineReductions:
             value = self.tensors[signal + "/value"]
             count = self.tensors[signal + "/count"]
             if op["kind"] == "reduce_mean":
-                if complete and bool((count <= 0).any()):
-                    raise ValueError(
-                        f"{op['id']}: valid-time mask contains an empty reduction window"
+                if complete:
+                    check_condition(
+                        (count > 0).all(),
+                        f"{op['id']}: valid-time mask contains an empty reduction window",
                     )
                 value = value / torch.where(count > 0, count, torch.ones_like(count))
             result[signal] = value.to(self.output_dtypes[signal])

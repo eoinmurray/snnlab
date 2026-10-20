@@ -185,7 +185,7 @@ def numerical_gate(
                 **adam_options("default" if mode is None else adam_execution),
             )
             with autocast_context("off" if mode is None else autocast):
-                result, _ = model._forward({"events": inputs}, diagnostics=False)
+                result, _ = model._forward_impl({"events": inputs}, diagnostics=False)
                 loss = result.outputs["scores"].sum()
             loss.backward()
             gradients = {
@@ -237,6 +237,8 @@ def numerical_gate(
         "reference_adam_execution": "default",
         "reference_autocast": "off",
         "candidate_autocast": autocast,
+        "compiler_precision_policy": actual[0].metrics.get("compiler_precision_policy"),
+        "compiler_fallback": actual[0].metrics.get("compiler_fallback"),
         "optimizer_state_comparison": "Values compared on the candidate state device; fused Adam keeps its step counter on CUDA while default Adam may keep it on CPU.",
         "checks": ["outputs", "gradients", "Adam parameters", "Adam moments"],
     }
@@ -322,7 +324,7 @@ def measure(
                 # numerical benchmark. Online inference is measured separately
                 # by native APIs; its blocks fallback remains explicit.
                 with autocast_context(args.autocast):
-                    last, _ = model._forward(
+                    last, _ = model._forward_impl(
                         tensors,
                         diagnostics=False,
                         recording=recording,

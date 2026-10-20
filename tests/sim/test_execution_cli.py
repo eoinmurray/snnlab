@@ -89,7 +89,8 @@ def test_graph_cli_resolves_explicit_device_and_diagnostics(tmp_path, monkeypatc
     assert graph.device == "cpu"
     assert graph.diagnostics is False
     assert resolve_device("cpu") == "cpu"
-    monkeypatch.setenv("PINGLAB_DEVICE", "cpu")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setenv("SNNLAB_DEVICE", "cpu")
     assert resolve_device("auto") == "cpu"
 
 

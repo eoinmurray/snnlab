@@ -8,6 +8,7 @@ import torch
 
 from snnlab import sim
 from snnlab.sim.requests import handlers
+from snnlab.sim.requests.performance import _UNSET
 from snnlab.sim.requests.spec import ExecutionSpec
 from snnlab.sim.training.trainer import train as train_request
 from tests.sim._execution_builders import direct_train_bundle
@@ -33,11 +34,15 @@ def test_execution_functions_have_explicit_operation_specific_keywords(name):
             function(interventions=())
     # Shared defaults remain consistent with CLI/internal execution.
     default = ExecutionSpec(kind=name)
+    performance_fields = {field.name for field in fields(sim.Performance)}
     for field in fields(default):
         if field.name in signature.parameters:
             public_default = signature.parameters[field.name].default
             internal_default = getattr(default, field.name)
-            if isinstance(internal_default, dict):
+            if field.name in performance_fields:
+                assert public_default is _UNSET
+                assert getattr(sim.Performance(), field.name) == internal_default
+            elif isinstance(internal_default, dict):
                 assert public_default is None
             else:
                 assert public_default == internal_default

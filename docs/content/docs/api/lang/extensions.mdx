@@ -33,7 +33,7 @@ All registrations also accept `package=None, package_version=None`. `package` is
 
 ## Writing efficient PyTorch callbacks
 
-Simulation compiles tensor updates by default with `compile_mode="default"`. Keep the ordinary importable Python callback signatures documented below; SNNLab prepares the compiled functions, so callbacks do not need `@torch.compile`. The graph-authoring `lang.compile(net)` is separate from this runtime tensor compilation. Use `compile_mode=None` on execution options or `GraphExecutor`, or CLI `--compile-mode eager`, to debug an unsupported callback.
+Simulation compiles tensor updates by default through `Performance(compile_mode="default")`. Keep the ordinary importable Python callback signatures documented below; SNNLab prepares the compiled functions, so callbacks do not need `@torch.compile`. The graph-authoring `lang.compile(net)` is separate from this runtime tensor compilation. Use `performance=Performance(compile_mode=None)` on execution functions, `compile_mode=None` on `GraphExecutor`, or CLI `--compile-mode eager`, to debug an unsupported callback. See [Performance and Custom Components](/performance-and-custom-components) for the compatibility table, capture safety, mixed precision and measurement guidance.
 
 - Operate on whole tensors with PyTorch broadcasting, reductions and elementwise operations. A neuron step receives all `(batch, cells)` values together; a synapse step receives a weight-projected drive for all target cells. Avoid Python loops over cells, samples or edges.
 - Keep tensor shapes, state keys, dtypes and devices stable. Return new state tensors without modifying the previous state in place. Use `zeros_like`, `full_like` or the supplied initialization device/dtype rather than creating CPU tensors during an accelerator update.
@@ -132,10 +132,12 @@ import math
 
 def exponential_step(context):
     decay = math.exp(-context.dt_ms / context.config["tau_ms"])
-    return {**context.state, "value": context.state["value"] * decay + context.drive}
+    previous = context.state["value"]
+    drive = context.drive.to(previous.dtype)
+    return {**context.state, "value": previous * decay + drive}
 ```
 
-Register this importable function with `register_synapse`; omitting `initialize` supplies the zero-valued `value` state. There is no per-cell loop or host read, and the fixed scalar decay can specialize during compilation. The weighted drive is already supplied: do not multiply weights or loop over source edges again.
+Register this importable function with `register_synapse`; omitting `initialize` supplies the zero-valued `value` state. There is no per-cell loop or host read, and the fixed scalar decay can specialize during compilation. The drive cast preserves state dtype under autocast. The weighted drive is already supplied: do not multiply weights or loop over source edges again. The [runnable customisation example](/custom-neurons-and-synapses) includes a state initializer, configuration validation and capture-safe registration.
 
 ## Initializers and constraints
 
@@ -273,6 +275,7 @@ class Definition:
     references: Mapping[str, str] = field(default_factory=dict)
     package: str | None = None
     package_version: str | None = None
+    capture_safe: bool = False
 
 
 def register(
@@ -317,3 +320,7 @@ def restore(data): ...
 `required(graph, training=None)` returns descriptors for used custom definitions, combining saved metadata and registered definitions; conflicting saved descriptors fail. `restore(data)` loads descriptor callbacks, validates exact declared dependency versions and populates the registry. Existing conflicting registrations fail. Normal bundle loading calls restoration after integrity checks; applications ordinarily do not call these helpers directly. Import references identify functions, not immutable source-code digests.
 
 Native custom objectives and regularizers validate results against the prediction/signal tensor’s resolved device, including indexed MPS/CUDA devices. Returning a tensor on another device still raises a contract error.
+
+### CUDA capture safety
+
+All registration functions accept `capture_safe=False`. Set it to `True` only for deterministic tensor callbacks whose function and initializer avoid host tensor reads, random draws, Python side effects and external state. During CUDA replay Python runs during warmup/capture; only recorded CUDA work repeats. Unmarked callbacks use normal execution. Tensor contracts remain checked, and finite checks for captured objectives/operations are evaluated after replay with named errors. Strict dynamics validation keeps normal execution. See [automatic execution controls](/api/sim/execution-spec#gpu-performance-controls) for precision and replay policies.

@@ -9,6 +9,33 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-20
+
+### Added
+
+1. Public immutable, keyword-only `snnlab.sim.Performance` shared by `build`, `train`, `infer` and `simulate`. Defaults are `compile_mode="default"`, `compile_block_steps="auto"`, `cuda_graphs="auto"`, `precision="auto"`, `fused_optimizer="auto"`, `dataset_prefetch=1` and `projection_mode="fast"`. Omission or `performance=None` uses these defaults. `result.metrics["performance"]` consolidates requested settings, resolved policies, observed paths and fallback reasons; build-only results distinguish preparation from execution. Device, workload, validation, recording and timing controls remain on the operation.
+2. Durable Modal comparisons of the full digits, MNIST/snnTorch and SHD workloads retain per-policy logs, metrics, actual GPU identities and source hashes. The digits benchmark now accepts `--device cuda:0` and has a paired L4 launcher; its default stays eager CPU. Public training calls in all three recipes use `Performance` without changing their workload or evaluation schedule.
+3. Added a Performance and Custom Components guide with per-setting compatibility, CUDA capture contracts, mixed-precision state handling, validation and cold/warm measurement guidance. The customisation example now uses validated, capture-safe custom adaptive neurons and exponential current synapses with shared weights, whole-tensor updates, scalar reset broadcasting and stable recurrent dtype. CPU/CUDA device selection, eager/strict debugging and saved performance metrics make its actual paths inspectable; the one-pass plotting example does not claim a replay speedup.
+
+### Changed
+
+1. Enable supported accelerator speed paths automatically: CUDA 16-step blocks, MPS 4-step blocks, one-batch prefetch, CUDA BF16 autocast/TF32, fused native Adam/AdamW and bounded forward-only replay. Explicit opt-outs remain available and metrics report selected paths/fallbacks. Precision can change spike decisions and learning outcomes. Custom tensor callbacks declare `capture_safe=True` before replay; validation host reads occur after capture with named errors. Training replay supports approved custom callbacks and AMP, while optimization, reporting and persistence remain in the native loop.
+2. Individual performance keywords on public execution functions remain compatible but emit `DeprecationWarning`; move them into `performance=Performance(...)`. Mixing a non-`None` object with any old performance keyword raises `TypeError`, including explicit default values. Normalization preserves existing execution/checkpoint identities. Internal requests, CLI flags and direct `GraphExecutor` constructor controls are unchanged.
+3. Ordinary inference automatically scopes `no_grad` when inputs/parameters need no gradients and registered callbacks are capture-safe. Differentiable inputs, trainable parameters and runtime continuation retain the existing autograd behavior. Forward replay caches at most two repeated shapes after warmup, returns independent result tensors and reuses shapes across dataset offsets while correcting per-batch metadata.
+4. Renamed the automatic device-selection environment variable from `PINGLAB_DEVICE` to `SNNLAB_DEVICE`. Update shell exports and deployment configuration; the old name is no longer read. Explicit API/CLI device choices still take precedence, and automatic selection still uses CUDA when available, otherwise CPU, with MPS available explicitly.
+
+### Fixed
+
+1. Correct the MNIST comparison's native wall timer and explicitly retain its initial and per-epoch fixed-weight train/test evaluations.
+2. Preserve model dtype for zero-decay synaptic state under automatic mixed precision, including runtime continuation.
+3. Compiled kernels preserve intermediate dtype casts, correcting recurrent bfloat16 gradient differences above 30% under compiler fusion. Results record `snnlab.eager-precision-casts/v1`. Added actual Inductor output/gradient/Adam regressions on CPU, CUDA and MPS, including a value-preserving workaround for Metal's bfloat16 absolute-value overload and an explicit eager tensor-graph fallback for reduced-precision CPU execution on PyTorch 2.10.
+4. CUDA precision support checks and stream waits use the model/stream's actual device. Replay value validation defers host reads until after capture, preserving named finite-value errors. Existing portable callback descriptors without a capture annotation remain loadable; installed registration determines eligibility, and only affirmative capture annotations are serialized.
+
+### Performance measurements
+
+1. Matched full-workload native calls on Modal measured MNIST L4 at 166.23 s / 42.30 s before/automatic (3.93×), with accuracy 80.01% / 85.64%; fresh snnTorch took 169.09 s at 85.20%. SHD H100 measured 1107.88 s / 518.63 s (2.14×), with accuracy 47.30% / 46.32%. MNIST replayed all 940 updates and SHD all 290, each with two captures and no replay fallbacks. These are single-seed measurements; precision changes learning trajectories.
+2. Digits eager CPU measured 4.30 s / 3.90 s at 93.61% in both conditions; treat the small difference as timing variation. A separate L4 pair measured 30.24 s / 80.51 s including startup, at 93.33% / 94.17%. Warm epoch medians improved from 312.37 ms to 22.56 ms (13.85×), but compilation/capture dominated the full automatic GPU run. All 240 automatic updates replayed with two captures and no replay fallbacks. Warm epochs are not a separate full-call rerun. Conditions ran serially with potentially shared compiler caches. See `benchmarks/execution/results/automatic-defaults/README.md` and its linked raw reports for timing scopes, memory, provenance and limitations.
+
 ## [0.21.0] - 2026-10-19
 
 ### Changed

@@ -40,6 +40,7 @@ from snnlab.sim.requests.handlers import (
     build,
     resolve_device,
 )
+from snnlab.sim.requests.performance import _performance_report
 from snnlab.sim.requests.result import ExecutionResult
 from snnlab.sim.requests.spec import ExecutionSpec, TestSpec, ValidationSpec
 from snnlab.sim.training.checkpoints import (
@@ -65,6 +66,7 @@ from snnlab.sim.training.policies import (
     FrozenValues,
     TrainingMetrics,
 )
+from snnlab.sim.training.replay import TrainingReplay
 from snnlab.sim.training.selection import CheckpointSelection, SelectionMetric
 
 
@@ -582,6 +584,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         raise ValueError(
             "graph training requires at least one trainable parameter group"
         )
+    from snnlab.sim.graph.precision import (
+        automatic_fused_optimizer,
+        execution_precision,
+    )
+
     optimizer_spec = training.get("optimizer", {})
     if optimizer_spec.get("kind") == "custom_optimizer":
         definition = E.resolve("optimizer", optimizer_spec)
@@ -594,6 +601,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         raise ValueError(
             f"graph training unsupported optimizer {optimizer_spec.get('kind')}"
         )
+    if spec.fused_optimizer == "auto":
+        automatic_fused_optimizer(optimizer)
+
+    fused_optimizer = any(group.get("fused", False) for group in optimizer.param_groups)
+
     if resumed is not None:
         trainable_names = {
             name for name, parameter in parameter_map.items() if parameter.requires_grad
@@ -1376,6 +1388,24 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             (-1, update, torch.arange(dataset_size)) for update in range(updates)
         ]
 
+    replay = TrainingReplay(spec, model, training, scheduled, tracing=trace is not None)
+
+    def numerical_step(batch_inputs, batch_targets):
+        forward, signals = model._forward(
+            batch_inputs,
+            diagnostics=spec.diagnostics,
+            required_signals=required_signals,
+            retain_parameters=False,
+            retain_final_state=False,
+            retain_runtime_state=False,
+        )
+        loss, components = compute_loss(
+            forward, signals, batch_targets, resolved_inputs.protocol
+        )
+        with execution_precision(spec.precision, next(model.parameters(), None)):
+            loss.backward()
+        return forward, signals, loss, components
+
     snapshots = SnapshotSession(
         spec,
         model,
@@ -1415,24 +1445,28 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         if trace is not None:
             trace.observe_inputs(batch_inputs)
         epoch, batch, sample_indices = scheduled[update]
-        optimizer.zero_grad(set_to_none=True)
         batch_targets = {
             name: value.index_select(0, sample_indices.to(value.device))
             for name, value in resolved_targets.items()
         }
-        with trace.region("forward") if trace is not None else nullcontext():
-            forward, signal_values = model._forward(
-                batch_inputs,
-                diagnostics=spec.diagnostics,
-                required_signals=required_signals,
-                retain_parameters=False,
-                retain_final_state=False,
-                retain_runtime_state=False,
-            )
-        with trace.region("loss") if trace is not None else nullcontext():
-            loss, components = compute_loss(
-                forward, signal_values, batch_targets, resolved_inputs.protocol
-            )
+        replayed = replay.run(batch_inputs, batch_targets, numerical_step)
+        if replayed is not None:
+            forward, signal_values, loss, components = replayed
+        else:
+            optimizer.zero_grad(set_to_none=True)
+            with trace.region("forward") if trace is not None else nullcontext():
+                forward, signal_values = model._forward(
+                    batch_inputs,
+                    diagnostics=spec.diagnostics,
+                    required_signals=required_signals,
+                    retain_parameters=False,
+                    retain_final_state=False,
+                    retain_runtime_state=False,
+                )
+            with trace.region("loss") if trace is not None else nullcontext():
+                loss, components = compute_loss(
+                    forward, signal_values, batch_targets, resolved_inputs.protocol
+                )
         if metric_policy.train == "online":
             count = len(sample_indices)
             values = {
@@ -1468,7 +1502,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                     online_sums[name].add_(value)
             online_count += count
         with trace.region("backward") if trace is not None else nullcontext():
-            loss.backward()
+            if replayed is None:
+                with execution_precision(
+                    spec.precision, next(model.parameters(), None)
+                ):
+                    loss.backward()
         if trace is not None:
             trace.observe_gradients(parameter_map)
         gradient_names = (
@@ -1673,6 +1711,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             **built.metrics,
             "diagnostics": spec.diagnostics,
             "dataset_prefetch": spec.dataset_prefetch,
+            "cuda_graphs": replay.summary(),
             "execution_paths": copy.deepcopy(model._execution_paths),
             "updates": history,
             "epochs": epoch_history,
@@ -1685,6 +1724,13 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             "execution_protocol": resolved_inputs.protocol,
             "trainable_parameters": sorted(last_gradients),
             "optimizer": optimizer_spec,
+            "fused_optimizer": fused_optimizer,
+            "precision": {
+                "policy": spec.precision,
+                "autocast": "bfloat16"
+                if model._amp_enabled(next(model.parameters(), None))
+                else "off",
+            },
             "training_checkpoint_schema": TRAINING_CHECKPOINT_SCHEMA,
             "training_checkpoint_rng": {
                 "backend": final_checkpoint.rng_backend,
@@ -1698,6 +1744,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
 
     if timing.enabled:
         result.metrics["training_timing"] = timing.finish()
+    result.metrics["performance"] = _performance_report(
+        spec, model, result.metrics, device=device, executed=True
+    )
     snapshots.capture("end", completed_updates=final_checkpoint.completed_updates)
     result.snapshots = snapshots.snapshots
     return result

@@ -3,7 +3,7 @@ title: Execution Functions
 description: Build, simulate, infer and train graphs with explicit keyword arguments.
 ---
 
-Import these functions from `snnlab.sim`. All arguments are keyword-only. Each function returns [ExecutionResult](/api/sim/execution-result); see [Execution Options](/api/sim/execution-spec) for binding types, defaults and validation rules. `ExecutionSpec` and the CLI dispatcher are internal.
+Import these functions from `snnlab.sim`. All arguments are keyword-only. Each function returns [ExecutionResult](/api/sim/execution-result); see [Execution Options](/api/sim/execution-spec) for binding types, defaults and validation rules. `ExecutionSpec` and the CLI dispatcher are internal. The signatures below show the preferred API. Deprecated per-setting performance keywords remain accepted when `performance` is omitted; combining both styles raises `TypeError`. See [Performance](/api/sim/execution-spec#performance) for all seven fields and their defaults.
 
 ## build
 
@@ -16,10 +16,8 @@ def build(
     seed: int = 0,
     device: str = "auto",
     retain_parameters: bool = True,
-    projection_mode: Literal["fast", "strict"] = "fast",
+    performance: Performance | None = None,
     extension_validation: Literal["strict", "structural"] = "structural",
-    compile_mode: Literal["default"] | None = "default",
-    compile_block_steps: int = 1,
 ) -> ExecutionResult: ...
 ```
 
@@ -50,11 +48,8 @@ def simulate(
     retain_parameters: bool = True,
     retain_final_state: bool = True,
     retain_runtime_state: bool = True,
-    projection_mode: Literal["fast", "strict"] = "fast",
+    performance: Performance | None = None,
     extension_validation: Literal["strict", "structural"] = "structural",
-    compile_mode: Literal["default"] | None = "default",
-    compile_block_steps: int = 1,
-    dataset_prefetch: int = 0,
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
     snapshot: str | Path | SnapshotSpec | None = None,
     inference_overrides: Mapping[str, Any] | None = None,
@@ -90,11 +85,8 @@ def infer(
     retain_parameters: bool = True,
     retain_final_state: bool = True,
     retain_runtime_state: bool = True,
-    projection_mode: Literal["fast", "strict"] = "fast",
+    performance: Performance | None = None,
     extension_validation: Literal["strict", "structural"] = "structural",
-    compile_mode: Literal["default"] | None = "default",
-    compile_block_steps: int = 1,
-    dataset_prefetch: int = 0,
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
     snapshot: str | Path | SnapshotSpec | None = None,
     inference_overrides: Mapping[str, Any] | None = None,
@@ -135,11 +127,8 @@ def train(
     retain_parameters: bool = True,
     retain_final_state: bool = True,
     retain_runtime_state: bool = True,
-    projection_mode: Literal["fast", "strict"] = "fast",
+    performance: Performance | None = None,
     extension_validation: Literal["strict", "structural"] = "structural",
-    compile_mode: Literal["default"] | None = "default",
-    compile_block_steps: int = 1,
-    dataset_prefetch: int = 0,
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
     training_timing: bool = False,
     tracing: TraceSpec | None = None,
@@ -157,7 +146,7 @@ By default, validation runs after each epoch and selects the lowest-loss checkpo
 def resolve_device(requested: str | torch.device = "auto") -> str: ...
 ```
 
-Returns a device string. `"auto"` first honours `PINGLAB_DEVICE`, otherwise selects CUDA when available and CPU otherwise. MPS is explicit opt-in. Accepted explicit names are `"cpu"`, `"cuda"`, `"cuda:N"` and `"mps"`; unavailable accelerator backends and unknown names raise `ValueError`. CUDA index validity may be checked later by PyTorch.
+Returns a device string. `"auto"` first honours `SNNLAB_DEVICE`, otherwise selects CUDA when available and CPU otherwise. MPS is explicit opt-in. Accepted explicit names are `"cpu"`, `"cuda"`, `"cuda:N"` and `"mps"`; unavailable accelerator backends and unknown names raise `ValueError`. CUDA index validity may be checked later by PyTorch.
 
 ## Example
 

@@ -11,6 +11,12 @@ The script loads **`examples/training/network.bundle` and `examples/training/tra
 
 The diagram is generated from the saved bundle. This walkthrough loads that network rather than defining or compiling a new one. Run the Training example first; all inference outputs are saved separately in `examples/inference/`.
 
+`infer` accepts the same immutable [Performance policy](/api/sim/execution-spec#performance)
+as training and simulation. Omission enables the automatic defaults; for example,
+`performance=Performance(precision="highest")` disables automatic CUDA BF16/TF32.
+Import `Performance` from `snnlab.sim`. It controls execution settings; load the
+trained weights separately with `checkpoint` as below.
+
 ## 1. Imports and saved artifact paths
 
 ```python

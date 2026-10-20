@@ -34,6 +34,7 @@ def retention_identity(
     retain_final_state=True,
     retain_runtime_state=True,
     projection_mode="fast",
+    precision=None,
     measurement=None,
     recording=None,
     batch_offset=0,
@@ -69,6 +70,7 @@ def retention_identity(
             raise TypeError("measurement must be MeasurementWindow")
         measurement.validate()
     return {
+        **({"precision": dict(precision)} if precision is not None else {}),
         "measurement": {
             "start_step": measurement.start_step,
             "end_step": measurement.end_step,

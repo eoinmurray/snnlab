@@ -227,6 +227,171 @@ def worker(run_id: str, identity: dict, suite: str = "full"):
         )
     if suite == "graphs":
         jobs = [row for row in jobs if row[0].startswith("cuda-graph-")]
+    elif suite == "final-performance":
+        replay = next(row for row in jobs if row[0] == "cuda-graph-1000")
+        jobs = [
+            (
+                "coba-final-1000",
+                [
+                    *benchmark,
+                    *common,
+                    "--coba",
+                    "--channels",
+                    "700",
+                    "--cells",
+                    "128",
+                    "--steps",
+                    "1000",
+                    "--batch-sizes",
+                    "256",
+                    "--block-sizes",
+                    "1",
+                    "16",
+                ],
+                1800,
+            ),
+            replay,
+        ]
+    elif suite == "native-replay-benchmark":
+        jobs = [
+            (
+                "native-replay",
+                [sys.executable, "benchmarks/execution/native_replay.py"],
+                1200,
+            ),
+        ]
+    elif suite in {"native-replay", "native-replay-final"}:
+        jobs = [
+            (
+                "native-replay-regressions",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "tests/sim/test_training_replay.py",
+                    "tests/sim/test_execution_api.py",
+                    "tests/sim/test_native_device_callbacks.py",
+                ],
+                1200,
+            ),
+        ]
+        if suite == "native-replay-final":
+            jobs.append(
+                (
+                    "native-replay",
+                    [sys.executable, "benchmarks/execution/native_replay.py"],
+                    1200,
+                )
+            )
+    elif suite == "compatibility":
+        jobs = [
+            (
+                "compatibility-regressions",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    *tests,
+                    "tests/sim/test_compiler_precision.py",
+                    "tests/sim/test_execution_api.py",
+                ],
+                900,
+            ),
+        ]
+    elif suite == "final-precision":
+        jobs = [
+            (
+                "final-regressions",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    *tests,
+                    "tests/sim/test_compiler_precision.py",
+                ],
+                900,
+            ),
+            (
+                "bfloat16-final",
+                [
+                    *benchmark,
+                    *common,
+                    "--dtype",
+                    "bfloat16",
+                    "--steps",
+                    "128",
+                    "--batch-sizes",
+                    "32",
+                    "--block-sizes",
+                    "1",
+                    "4",
+                    "16",
+                ],
+                1200,
+            ),
+            (
+                "float16-final",
+                [
+                    *benchmark,
+                    *common,
+                    "--dtype",
+                    "float16",
+                    "--steps",
+                    "128",
+                    "--batch-sizes",
+                    "32",
+                    "--block-sizes",
+                    "4",
+                ],
+                600,
+            ),
+            (
+                "amp-final",
+                [
+                    *benchmark,
+                    *common,
+                    "--autocast",
+                    "bfloat16",
+                    "--coba",
+                    "--channels",
+                    "700",
+                    "--cells",
+                    "128",
+                    "--steps",
+                    "128",
+                    "--batch-sizes",
+                    "32",
+                    "--block-sizes",
+                    "16",
+                ],
+                900,
+            ),
+        ]
+    elif suite == "rounding":
+        jobs = [
+            (
+                "bfloat16-rounding",
+                [
+                    sys.executable,
+                    "benchmarks/execution/precision_probe.py",
+                    *common,
+                    "--dtype",
+                    "bfloat16",
+                    "--steps",
+                    "128",
+                    "--batch-sizes",
+                    "32",
+                    "--block-sizes",
+                    "1",
+                    "4",
+                    "16",
+                ],
+                1200,
+            )
+        ]
     elif suite == "trajectory":
         jobs = [
             (
@@ -500,7 +665,14 @@ def main(mode: str = "launch", run_id: str = "", suite: str = "full"):
     if suite not in {
         "full",
         "graphs",
+        "final-performance",
+        "final-precision",
+        "compatibility",
+        "native-replay",
+        "native-replay-final",
+        "native-replay-benchmark",
         "trajectory",
+        "rounding",
         "precision",
         "fused",
         "amp",

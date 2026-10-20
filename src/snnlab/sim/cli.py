@@ -54,8 +54,11 @@ def execution_spec_from_args(
             if getattr(args, "compile_mode", "default") == "eager"
             else getattr(args, "compile_mode", "default")
         ),
-        compile_block_steps=getattr(args, "compile_block_steps", 1),
-        dataset_prefetch=getattr(args, "dataset_prefetch", 0),
+        compile_block_steps=getattr(args, "compile_block_steps", "auto"),
+        cuda_graphs=getattr(args, "cuda_graphs", "auto"),
+        precision=getattr(args, "precision", "auto"),
+        fused_optimizer=getattr(args, "fused_optimizer", "auto"),
+        dataset_prefetch=getattr(args, "dataset_prefetch", 1),
         timing_mode=getattr(args, "timing_mode", "synchronized"),
         training_timing=bool(getattr(args, "training_timing", False)),
         projection_mode=getattr(args, "projection_mode", "fast"),
@@ -114,6 +117,9 @@ def execution_spec_from_args(
                 "measurement",
                 "recording",
                 "retain_outputs",
+                "cuda_graphs",
+                "precision",
+                "fused_optimizer",
             }
         },
     )
@@ -146,14 +152,27 @@ def _add_common_arguments(parser):
     )
     parser.add_argument(
         "--compile-block-steps",
-        type=int,
-        default=1,
-        help="Opt-in network timestep block size (1-64; default 1 keeps the kernel loop).",
+        type=lambda value: value if value == "auto" else int(value),
+        default="auto",
+        help="Network timestep block size (auto: CUDA 16, MPS 4, CPU 1; or 1-64).",
+    )
+    parser.add_argument("--fused-optimizer", choices=("auto", "off"), default="auto")
+    parser.add_argument(
+        "--precision",
+        choices=("auto", "highest"),
+        default="auto",
+        help="Auto uses CUDA BF16 autocast and TF32; highest preserves caller precision.",
+    )
+    parser.add_argument(
+        "--cuda-graphs",
+        choices=("auto", "off"),
+        default="auto",
+        help="Automatically replay compatible repeated CUDA training shapes; off disables capture.",
     )
     parser.add_argument(
         "--dataset-prefetch",
         type=int,
-        default=0,
+        default=1,
         help="Encoded batch lookahead (0 disables, maximum 8); CUDA uses pinned transfers.",
     )
     parser.add_argument(

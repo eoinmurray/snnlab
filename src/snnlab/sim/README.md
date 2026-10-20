@@ -58,6 +58,28 @@ optimizer step.
 
 ## Execution requests
 
+`Performance` groups shared execution optimizations for all four public functions:
+
+```python
+from snnlab.sim import Performance
+
+performance = Performance()  # Automatic settings; also used when omitted.
+eager = Performance(compile_mode=None, cuda_graphs="off")
+full_precision = Performance(precision="highest")
+```
+
+Defaults enable compilation, device-selected blocks (CUDA 16 / MPS 4 / CPU 1),
+eligible CUDA replay, native CUDA BF16/TF32, fused CUDA Adam/AdamW, one dataset
+batch of prefetch and fast projection arithmetic. Optimizer fusion applies only
+to training; prefetch applies only to dataset providers. CPU/MPS retain ordinary
+precision. Compilation/capture add startup cost, so short runs can favor eager
+execution. Reuse an immutable policy with `performance=performance`; device,
+batch size, metrics, timing and recording remain on the call. Existing separate
+performance keywords warn and cannot be combined with a non-`None` policy.
+`result.metrics["performance"]` records requested/resolved settings and fallbacks.
+See [Performance](../../../docs/content/docs/api/sim/execution-spec.mdx#performance)
+for all fields and compatibility details.
+
 For bundle loading, input resolution, device selection, and execution metadata,
 use the request API:
 
@@ -106,7 +128,7 @@ from `snnlab.sim`. Each package initializer is deliberately minimal.
 
 | Package | Responsibility and source files | API reference |
 | --- | --- | --- |
-| `requests/` | [api.py](requests/api.py), [spec.py](requests/spec.py), [result.py](requests/result.py), [handlers.py](requests/handlers.py): requests, results, build/simulate/infer and dispatch. | Internal requests, ExecutionResult, Execution Functions |
+| `requests/` | [api.py](requests/api.py), [performance.py](requests/performance.py), [spec.py](requests/spec.py), [result.py](requests/result.py), [handlers.py](requests/handlers.py): performance policy, requests, results, build/simulate/infer and dispatch. | Performance, internal requests, ExecutionResult, Execution Functions |
 | `inputs/` | [bindings.py](inputs/bindings.py), [resolution.py](inputs/resolution.py), datasets, encoders and providers. | Input bindings and resolution |
 | `graph/` | [plan.py](graph/plan.py), [executor.py](graph/executor.py), dynamics, tensor kernels and extension helpers. | GraphExecutor, PyTorch Integration |
 | `runtime/` | [state.py](runtime/state.py), [recording.py](runtime/recording.py), [interventions.py](runtime/interventions.py), [resets_decisions.py](runtime/resets_decisions.py). | Runtime State, Recording and Measurement, Interventions, Resets and Decisions |
@@ -155,7 +177,7 @@ Measure compiler warmup and compare outputs/gradients against eager execution;
 fused floating-point arithmetic can differ slightly.
 
 `dataset_prefetch=2` overlaps built-in CPU dataset encoding and
-CUDA transfers through a bounded queue; the default is 0. CPU seeds and batch
+CUDA transfers through a bounded queue; the default is 1. CPU seeds and batch
 order remain unchanged. Custom encoders retain caller-thread execution.
 `RecordingSpec(block_steps=32)` groups selected samples before CPU transfers;
 the default is 1 for existing sinks. Partial blocks flush at call completion.
@@ -166,7 +188,8 @@ as `simulate_enqueue_s` and omits explicit fences. `peak_python_bytes` is Python
 memory only. See the [performance reference](../../../docs/content/docs/api/sim/execution-spec.mdx)
 and `benchmarks/execution/benchmark.py` for verification and measured limitations.
 
-For opt-in network compilation use `compile_block_steps=16` (1-64; default 1).
+`compile_block_steps="auto"` selects CUDA 16, MPS 4 and CPU 1.
+Use an explicit integer from 1 to 64 to override it.
 Projection, synapse, ordered built-in neuron/readout, spatial and delay work then
 shares a bounded tensor graph. Internal blocks retain gradients and final partial
 blocks are included. `execution_path` reports the selected path and fallback
@@ -177,7 +200,9 @@ individual-kernel loop. `compile_mode=None` remains fully eager.
 
 Runtime floating state follows model dtype, including recurrent `.half()` and
 `.bfloat16()` execution with matching inputs. Counters remain integer; MPS cannot
-use float64. Precision changes remain explicit. Built-in Poisson inputs generate
+use float64. Compiled kernels preserve intermediate dtype rounding and report
+`snnlab.eager-precision-casts/v1` in forward metrics. CUDA float32 models default to supported BF16 autocast and TF32;
+`precision="highest"` opts out. Built-in Poisson inputs generate
 spikes on the selected device from compact rates/features. Accelerator encoding
 records `snnlab.poisson-device/v1`; CPU draws retain their stream, while
 cross-device bitwise equivalence is not promised. Event datasets are indexed once
@@ -229,3 +254,18 @@ initial/final exports. Captured `RunSnapshot` objects are in `result.snapshots`;
 `write_run_snapshot(path, snapshot)` re-exports them. Snapshots preserve resolved
 settings and copied weights, independently of `retain_parameters`; they do not
 replace training checkpoints or runtime state. Existing exports are not overwritten.
+
+Native training and forward-only execution default to `cuda_graphs="auto"`.
+Training captures compatible repeated forward/loss/backward shapes; optimization,
+constraints, reporting and persistence stay outside capture. Forward-only calls
+under no_grad capture after two normal calls and return independent tensor storage.
+Ordinary inference selects this scope automatically when no gradients are requested
+and callbacks are capture safe. Dataset offsets retain their global coordinates.
+Each cache holds at most two shapes. Continuation, recording, interventions,
+tracing and unsupported operations fall back. Custom tensor callbacks must declare
+`capture_safe=True`; this contract excludes host reads, randomness, side effects
+and external state. Strict extension validation retains normal execution.
+`result.metrics["cuda_graphs"]` reports captures, replays and fallback reasons.
+Use `cuda_graphs="off"` to disable capture. Startup costs can outweigh replay in
+short runs. CUDA Adam/AdamW also select fused execution when no explicit
+fused/foreach choice was supplied; `fused_optimizer="off"` disables selection.

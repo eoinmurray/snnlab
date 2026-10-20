@@ -1,0 +1,93 @@
+{
+  "schema": "snnlab.automatic-defaults-verification/v1",
+  "date": "2026-10-20",
+  "local_full": {
+    "passed": 1194,
+    "skipped": 85,
+    "failed": 15,
+    "seconds": 217.86,
+    "new_failures_against_previous_clean_head_audit": [],
+    "known_failures": [
+      "tests/sim/test_batch_encoding.py::test_changed_encoder_draws_and_old_protocol_cannot_resume",
+      "tests/sim/test_batch_encoding.py::test_cli_dataset_encoding_is_automatic_and_categorical_rates_are_recorded",
+      "tests/sim/test_cli_policy.py::test_training_uses_recipe_epochs_and_honors_explicit_zero[0]",
+      "tests/sim/test_cli_policy.py::test_training_uses_recipe_epochs_and_honors_explicit_zero[1]",
+      "tests/sim/test_cli_policy.py::test_training_uses_recipe_epochs_and_honors_explicit_zero[None]",
+      "tests/sim/test_execution_checkpoints.py::test_graph_inference_loads_portable_selected_checkpoint_with_provenance",
+      "tests/sim/test_execution_checkpoints.py::test_training_checkpoint_round_trip_and_resume_are_exact",
+      "tests/sim/test_execution_cli.py::test_production_shaped_deep_shd_recipe_trains_all_recurrent_layers",
+      "tests/sim/test_execution_datasets.py::test_prebinned_dataset_snapshot_trains_with_bound_labels",
+      "tests/sim/test_execution_targets.py::test_graph_training_cli_loads_targets_and_writes_resume_checkpoint",
+      "tests/sim/test_execution_training.py::test_graph_training_authenticates_recipe_from_bundle",
+      "tests/sim/test_execution_training.py::test_graph_training_backpropagates_through_recurrence_and_spike_budget",
+      "tests/sim/test_execution_training.py::test_graph_training_updates_named_parameters_and_optimizer_state_deterministically",
+      "tests/sim/test_numeric_conformance.py::test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly",
+      "tests/sim/test_numeric_conformance.py::test_shuffled_dataset_trajectory_matches_independent_pytorch_loop"
+    ],
+    "log": "verification/local-full.log.gz"
+  },
+  "local_targeted": {
+    "passed": 149,
+    "skipped": 53,
+    "seconds": 20.37,
+    "log": "verification/local-targeted-final.log.gz"
+  },
+  "local_compiled": {
+    "passed": 44,
+    "skipped": 5,
+    "seconds": 11.45,
+    "log": "verification/local-compiled-final.log.gz"
+  },
+  "local_inference": {
+    "passed": 78,
+    "skipped": 6,
+    "seconds": 78.71,
+    "log": "verification/inference-final.log.gz"
+  },
+  "compatibility": {
+    "passed": 62,
+    "skipped": 5,
+    "seconds": 19.81,
+    "log": "verification/compatibility-final.log.gz"
+  },
+  "cuda": {
+    "passed": 22,
+    "seconds": 77.66,
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "torch": "2.10.0+cu128",
+    "log": "defaults-validation-current/snntorch-comparison/tests.log.gz",
+    "scope": "Final AMP/device policy, custom capture-safe objectives, default inference without an explicit no_grad context, capture reuse across global dataset offsets, input gradients, result ownership, runtime continuation, partial batches, RNG, clipping, evaluation and checkpoint resume. Both follow-on two-epoch MNIST smoke policies completed.",
+    "source_matches_final_library": true
+  },
+  "docs": {
+    "types": {
+      "errors": 0,
+      "warnings": 0,
+      "hints": 0
+    },
+    "root_pages": 52,
+    "base_path": "/snnlab",
+    "base_pages": 52,
+    "logs": [
+      "verification/docs-types.log.gz",
+      "verification/docs-root.log.gz",
+      "verification/docs-base.log.gz"
+    ]
+  },
+  "timed_snapshot_vs_final": {
+    "changed_files": [
+      "src/snnlab/extensions.py",
+      "src/snnlab/sim/graph/executor.py",
+      "src/snnlab/sim/graph/precision.py",
+      "src/snnlab/sim/graph/replay.py",
+      "src/snnlab/sim/requests/handlers.py"
+    ],
+    "explanation": "Final hardening after timed submission added legacy extension/FP32-protocol compatibility, automatic no-grad scope for ordinary inference, reuse across dataset offsets, and device-specific/native BF16 capability and stream queries. The timed training and explicitly no-grad epoch-evaluation workloads select the same precision and math on H100/L4. Numerical kernels and optimizer/training loops are unchanged. Final local and CUDA checks cover the hardening."
+  },
+  "limits": [
+    "Test groups overlap; do not add their counts.",
+    "Known baseline reporting/selection failures remain; this is not an all-green full suite.",
+    "Full local execution exercises CPU/MPS; CUDA coverage is reported separately.",
+    "Task accuracy is single-seed evidence, not an accuracy-equivalence guarantee."
+  ]
+}

@@ -43,7 +43,7 @@ def experiment(steps, batch, channels, cells, block_steps, repeats, coba):
 
     def step(model, optimizer, value):
         optimizer.zero_grad(set_to_none=False)
-        result, _ = model._forward(
+        result, _ = model._forward_impl(
             {"events": value},
             diagnostics=False,
             retain_parameters=False,
@@ -167,6 +167,11 @@ def experiment(steps, batch, channels, cells, block_steps, repeats, coba):
         "replay_samples_per_s": 3 * batch / statistics.median(replay),
         "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated(),
         "execution_path": captured_result.metrics["execution_path"],
+        "compiler_precision_policy": captured_result.metrics.get(
+            "compiler_precision_policy"
+        ),
+        "matmul_precision": torch.get_float32_matmul_precision(),
+        "threads": torch.get_num_threads(),
         "limits": [
             "Experimental benchmark only; no public replay mode or default change.",
             "Fixed shape, built-in model, no recording/callbacks/continuation; shape changes need recapture.",

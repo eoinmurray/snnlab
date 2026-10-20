@@ -22,6 +22,7 @@ from snnlab.sim import (
     Batching,
     CheckpointSelection,
     DenseArrayBinding,
+    Performance,
     TrainingMetrics,
     ValidationSpec,
     encode_images_poisson,
@@ -158,18 +159,22 @@ def progress(report):
     )
 
 
-def run(cfg, output, *, smoke=False, cpu_threads=1):
+def run(cfg, output, *, smoke=False, cpu_threads=1, device="cpu"):
     if type(cpu_threads) is not int or cpu_threads < 1:
         raise ValueError("cpu_threads must be a positive integer")
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     torch.set_num_threads(cpu_threads)
+    device = torch.device(device)
+    compile_mode = "default" if device.type == "cuda" else None
     started = time.perf_counter()
     (train_spikes, train_labels), (test_spikes, test_labels), dataset = prepare_data(
         cfg, smoke=smoke
     )
     bundle = author_network(cfg)
     bundle.write(output / "network.bundle")
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
     training_started = time.perf_counter()
     result = train(
         graph=bundle.graph,
@@ -180,7 +185,7 @@ def run(cfg, output, *, smoke=False, cpu_threads=1):
             input_bindings=(DenseArrayBinding(input_id="pixels", value=test_spikes),),
             targets={"class": test_labels},
         ),
-        device="cpu",
+        device=str(device),
         seed=cfg.seed,
         epochs=cfg.epochs,
         batch_size=cfg.batch_size,
@@ -191,11 +196,12 @@ def run(cfg, output, *, smoke=False, cpu_threads=1):
         checkpoint_selection=CheckpointSelection.disabled(),
         save_final_checkpoint=output / "final.checkpoint",
         diagnostics=False,
-        compile_mode=None,
-        projection_mode="fast",
+        performance=Performance(compile_mode=compile_mode),
         training_timing=True,
         on_epoch_end=progress,
     )
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
     training_s = time.perf_counter() - training_started
     if any(
         not torch.isfinite(p).all()
@@ -214,8 +220,9 @@ def run(cfg, output, *, smoke=False, cpu_threads=1):
             "torch": torch.__version__,
             "sklearn": sklearn.__version__,
             "cpu_threads": torch.get_num_threads(),
-            "device": "cpu",
-            "compile_mode": None,
+            "device": str(device),
+            "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
+            "compile_mode": compile_mode,
         },
         "summary": {
             "test_accuracy": final["validation_accuracy"],
@@ -250,6 +257,7 @@ def main():
     parser.add_argument("--steps", type=int, default=Config.steps)
     parser.add_argument("--seed", type=int, default=Config.seed)
     parser.add_argument("--cpu-threads", type=int, default=1)
+    parser.add_argument("--device", default="cpu", help="Torch device, e.g. cpu or cuda:0")
     parser.add_argument(
         "--smoke",
         action="store_true",
@@ -265,7 +273,13 @@ def main():
     )
     if args.smoke:
         cfg = replace(cfg, epochs=2, steps=8)
-    run(cfg, args.output, smoke=args.smoke, cpu_threads=args.cpu_threads)
+    run(
+        cfg,
+        args.output,
+        smoke=args.smoke,
+        cpu_threads=args.cpu_threads,
+        device=args.device,
+    )
 
 
 if __name__ == "__main__":
