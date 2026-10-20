@@ -12,6 +12,7 @@ from typing import Any, Callable, Literal, Mapping, Sequence
 
 import torch
 
+from snnlab.lang.compilation.bundles import Bundle
 from snnlab.sim.artifacts.snapshots import SnapshotSpec
 from snnlab.sim.diagnostics.tracing import TraceSpec
 from snnlab.sim.inputs.bindings import InputBinding, TargetArrayBinding
@@ -35,7 +36,7 @@ from snnlab.sim.training.selection import CheckpointSelection
 
 def build(
     *,
-    bundle: Path | None = None,
+    bundle: Bundle | str | Path | None = None,
     graph: Mapping[str, Any] | None = None,
     training: Mapping[str, Any] | None = None,
     seed: int = 0,
@@ -74,7 +75,7 @@ def build(
 
 def simulate(
     *,
-    bundle: Path | None = None,
+    bundle: Bundle | str | Path | None = None,
     graph: Mapping[str, Any] | None = None,
     training: Mapping[str, Any] | None = None,
     input_bindings: Sequence[InputBinding] = (),
@@ -106,7 +107,7 @@ def simulate(
     snapshot: str | Path | SnapshotSpec | None = None,
     inference_overrides: Mapping[str, Any] | None = None,
 ) -> ExecutionResult:
-    """Execute a graph with bound inputs and optional runtime continuation."""
+    """Simulate a graph, optionally loading learned weights for inference."""
     policy = _resolve_performance(
         performance,
         projection_mode=projection_mode,
@@ -151,88 +152,9 @@ def simulate(
     return handlers.simulate(spec)
 
 
-def infer(
-    *,
-    bundle: Path | None = None,
-    graph: Mapping[str, Any] | None = None,
-    training: Mapping[str, Any] | None = None,
-    input_bindings: Sequence[InputBinding] = (),
-    protocol: Mapping[str, Any] | None = None,
-    batch_size: int | None = None,
-    seed: int = 0,
-    device: str = "auto",
-    diagnostics: bool = True,
-    checkpoint: Path | None = None,
-    runtime_state: GraphRuntimeState | None = None,
-    interventions: Sequence[Intervention] = (),
-    resets: Sequence[ResetVoltage] = (),
-    decisions: DecisionSegments | None = None,
-    measurement: MeasurementWindow | None = None,
-    recording: RecordingSpec | None = None,
-    retain_outputs: bool = True,
-    retain_parameters: bool = True,
-    retain_final_state: bool = True,
-    retain_runtime_state: bool = True,
-    performance: Performance | None = None,
-    projection_mode: Literal["fast", "strict"] | _Unset = _UNSET,
-    extension_validation: Literal["strict", "structural"] = "structural",
-    compile_mode: Literal["default"] | None | _Unset = _UNSET,
-    precision: Literal["auto", "highest"] | _Unset = _UNSET,
-    compile_block_steps: int | Literal["auto"] | _Unset = _UNSET,
-    dataset_prefetch: int | _Unset = _UNSET,
-    cuda_graphs: Literal["auto", "off"] | _Unset = _UNSET,
-    timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
-    snapshot: str | Path | SnapshotSpec | None = None,
-    inference_overrides: Mapping[str, Any] | None = None,
-) -> ExecutionResult:
-    """Run inference with the same execution controls as simulate."""
-    policy = _resolve_performance(
-        performance,
-        projection_mode=projection_mode,
-        compile_mode=compile_mode,
-        precision=precision,
-        compile_block_steps=compile_block_steps,
-        cuda_graphs=cuda_graphs,
-        dataset_prefetch=dataset_prefetch,
-    )
-    spec = ExecutionSpec(
-        **asdict(policy),
-        kind="infer",
-        bundle=bundle,
-        graph=graph,
-        training=training,
-        input_bindings=input_bindings,
-        protocol=protocol if protocol is not None else {},
-        batch_size=batch_size,
-        seed=seed,
-        device=device,
-        diagnostics=diagnostics,
-        checkpoint=checkpoint,
-        runtime_state=runtime_state,
-        interventions=interventions,
-        resets=resets,
-        decisions=decisions,
-        measurement=measurement,
-        recording=recording,
-        retain_outputs=retain_outputs,
-        retain_parameters=retain_parameters,
-        retain_final_state=retain_final_state,
-        retain_runtime_state=retain_runtime_state,
-        extension_validation=extension_validation,
-        timing_mode=timing_mode,
-        snapshot=snapshot,
-        options=(
-            {"inference_overrides": dict(inference_overrides)}
-            if inference_overrides is not None
-            else {}
-        ),
-    )
-    return handlers.infer(spec)
-
-
 def train(
     *,
-    bundle: Path | None = None,
+    bundle: Bundle | str | Path | None = None,
     graph: Mapping[str, Any] | None = None,
     training: Mapping[str, Any] | None = None,
     input_bindings: Sequence[InputBinding] = (),

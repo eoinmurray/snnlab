@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from snnlab import extensions as E
+from snnlab.sim.artifacts.evidence import member_path, sha256_file
 
 
 class BundleCompatibilityError(ValueError):
@@ -85,8 +87,39 @@ def _digest(data: Any) -> str:
     return "sha256:" + hashlib.sha256(_canonical_json(data)).hexdigest()
 
 
-def load_graph_bundle(path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def load_graph_bundle(path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load and authenticate manifest.json + graph.json from a bundle directory."""
+    from snnlab.lang.compilation.bundles import Bundle
+
+    if isinstance(path, Bundle):
+        from snnlab.lang.compilation.graph_validation import validate_graph
+
+        graph, manifest = copy.deepcopy(path.graph), copy.deepcopy(path.manifest)
+        if (
+            graph.get("schema") != "snnlang.graph/v1"
+            or manifest.get("schema") != "snnlang.bundle/v1"
+        ):
+            raise BundleCompatibilityError("unsupported in-memory bundle schema")
+        validate_graph(graph).raise_for_errors()
+        declared_assets = {asset["id"] for asset in graph.get("assets", ())}
+        manifest_assets = manifest.get("assets", ())
+        if (
+            len(manifest_assets) != len(declared_assets)
+            or {asset["id"] for asset in manifest_assets} != declared_assets
+        ):
+            raise BundleCompatibilityError(
+                "bundle asset declarations disagree with manifest"
+            )
+        for asset in manifest.get("assets", ()):
+            source = path.asset_sources.get(Path(asset["path"]).name)
+            if source is None or "sha256:" + sha256_file(source) != asset["digest"]:
+                raise BundleCompatibilityError(
+                    "bundle asset digest mismatch or missing asset"
+                )
+        # In-memory objects are structurally validated, not authenticated as a
+        # historical disk image. Recipe graph references must still agree.
+        manifest["graph_digest"] = _digest(graph)
+        return manifest, graph
     root = Path(path)
     if not root.exists():
         raise FileNotFoundError(f"bundle not found: {root}")
@@ -116,13 +149,34 @@ def load_graph_bundle(path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]
     if actual != manifest.get("graph_digest"):
         raise BundleCompatibilityError("graph.json digest does not match manifest.json")
     E.restore(graph)
+    for asset in manifest.get("assets", ()):
+        if "sha256:" + sha256_file(member_path(root, asset["path"])) != asset["digest"]:
+            raise BundleCompatibilityError("bundle asset digest mismatch")
     return manifest, graph
 
 
 def load_training_recipe(
-    path: str | Path, manifest: dict[str, Any], graph: dict[str, Any]
+    path, manifest: dict[str, Any], graph: dict[str, Any]
 ) -> dict[str, Any]:
     """Load and authenticate the optional training recipe required by train."""
+    from snnlab.lang.compilation.bundles import Bundle
+
+    if isinstance(path, Bundle):
+        from snnlab.lang.compilation.training_validation import validate_training
+
+        if path.training is None:
+            raise BundleCompatibilityError(
+                "bundle-driven training requires a training recipe"
+            )
+        training = copy.deepcopy(path.training)
+        if training.get("schema") != "snnlang.training/v1" or training.get(
+            "graph_digest"
+        ) != _digest(graph):
+            raise BundleCompatibilityError(
+                "in-memory training recipe targets a different graph or schema"
+            )
+        validate_training(graph, training).raise_for_errors()
+        return training
     root = Path(path)
     if root.is_file():
         root = root.parent

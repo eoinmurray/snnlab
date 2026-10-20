@@ -1948,6 +1948,7 @@ class GraphExecutor(nn.Module):
             },
             decisions=segments.records,
             recorded_signals=recorder.finish(batch),
+            _recording_info=recorder.information(batch),
             _output_axes={
                 row["id"]: signal_axes[row["signal"]] for row in self.plan.outputs
             },

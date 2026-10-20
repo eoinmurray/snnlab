@@ -320,7 +320,7 @@ def test_timing_modes_use_explicit_boundaries(monkeypatch):
     calls = []
     monkeypatch.setattr(execution_functions, "_synchronize_device", calls.append)
     spec = ExecutionSpec(
-        kind="infer",
+        kind="simulate",
         graph=graph,
         input_bindings=(DenseArrayBinding("events", torch.ones(3, 1, 2)),),
         device="cpu",

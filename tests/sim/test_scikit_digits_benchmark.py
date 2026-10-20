@@ -11,7 +11,7 @@ import pytest
 import torch
 
 from snnlab.sim import DenseArrayBinding, load_training_checkpoint
-from snnlab.sim.requests.handlers import build, infer
+from snnlab.sim.requests.handlers import build, simulate
 from snnlab.sim.requests.spec import ExecutionSpec
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,9 +61,9 @@ def test_default_learns_and_checkpoint_reproduces_final_accuracy(tmp_path):
         assert not torch.equal(value, initial.parameters[name])
     assert (checkpoint.parameters["pixels_to_hidden.weight"] >= 0).all()
     _, (spikes, labels), _ = benchmark.prepare_data(cfg)
-    result = infer(
+    result = simulate(
         ExecutionSpec(
-            kind="infer",
+            kind="simulate",
             bundle=output / "network.bundle",
             checkpoint=output / "final.checkpoint",
             device="cpu",

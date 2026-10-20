@@ -39,7 +39,7 @@ validation and the first eager/compiled forward/backward/Adam execution before
 those timing cases. Suspend/resume or competing workloads invalidate wall-time
 comparisons; rerun those samples on an awake, idle host.
 
-`--mode infer` omits backward and updates. The benchmark deliberately uses dense
+`--mode simulate` omits backward and updates. The benchmark deliberately uses dense
 readout histories to compare the same reduction across paths; public inference
 may instead select online reductions and report a block fallback. `--record`
 records voltage and sparse spike events to a counting host sink, including final

@@ -80,6 +80,45 @@ class DatasetSnapshotBinding:
     sample_cap: int | None = None
     shuffle: bool = False
     order_seed: int = 0
+    sample_ids_key: str | None = None
+    sample_indices: Sequence[int] | None = None
+    snapshot_digest: str | None = None
+
+
+def dataset_indices(binding, count):
+    """Resolve explicit subset, order and cap without changing legacy RNG draws."""
+    import numpy as np
+
+    if binding.sample_indices is None:
+        base = np.arange(count, dtype=np.int64)
+    else:
+        raw = tuple(binding.sample_indices)
+        if (
+            not raw
+            or any(
+                isinstance(index, bool)
+                or not isinstance(index, (int, np.integer))
+                or not 0 <= index < count
+                for index in raw
+            )
+            or len(set(raw)) != len(raw)
+        ):
+            raise ValueError("dataset sample indices must be unique, valid integers")
+        base = np.asarray(raw, dtype=np.int64)
+    cap = len(base) if binding.sample_cap is None else binding.sample_cap
+    if (
+        isinstance(cap, bool)
+        or not isinstance(cap, (int, np.integer))
+        or not 0 < cap <= len(base)
+    ):
+        raise ValueError("dataset sample cap must be within available samples")
+    if binding.shuffle:
+        order = torch.randperm(
+            len(base),
+            generator=torch.Generator(device="cpu").manual_seed(binding.order_seed),
+        ).numpy()
+        base = base[order]
+    return base[:cap]
 
 
 InputBinding = (

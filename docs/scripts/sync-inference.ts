@@ -18,7 +18,7 @@ const replacements: Record<string, string> = {
   ARTIFACTS: section('# 1. Locate the saved training artifacts.', '# 2. Load the saved'),
   NETWORK: section('# 2. Load the saved network and generate its diagram.', '# 3. Generate fresh'),
   INPUTS: section('# 3. Generate fresh inputs and bind them to the saved network.', '# 4. Load learned'),
-  INFER: section('# 4. Load learned weights and run inference.', '# 5. Retrieve scores'),
+  SIMULATE: section('# 4. Load learned weights and run inference.', '# 5. Retrieve scores'),
   RESULTS: section('# 5. Retrieve scores, choose classes and measure accuracy.', '# 6. Save predictions'),
   SAVE: section('# 6. Save predictions and checkpoint provenance.', '# Plot one fresh'),
 };

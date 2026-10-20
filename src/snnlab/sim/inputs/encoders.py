@@ -70,7 +70,7 @@ def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None):
     """Encode (B, N_in) pixel intensities as Poisson spike trains.
 
     Returns (T_steps, B, N_in) float spikes. Single canonical encoder used by
-    train, infer, and image paths so identical pixels with the same dt
+    train, simulate, and image paths so identical pixels with the same dt
     and max_rate produce the same spike train regardless of mode.
     """
     pixels = images.clamp(0, 1)

@@ -82,7 +82,7 @@ def test_numpy_timing_follows_continuation_and_diagnostics_can_be_disabled():
 def test_numpy_uses_effective_timestep_after_inference_overrides():
     result = simulate(
         ExecutionSpec(
-            kind="infer",
+            kind="simulate",
             graph=_graph(),
             device="cpu",
             input_bindings=(

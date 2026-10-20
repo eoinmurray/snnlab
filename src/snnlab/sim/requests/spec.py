@@ -8,6 +8,7 @@ from typing import Any, Callable, Literal, Mapping, Sequence
 
 import torch
 
+from snnlab.lang.compilation.bundles import Bundle
 from snnlab.sim.artifacts.snapshots import SnapshotSpec
 from snnlab.sim.diagnostics.tracing import TraceSpec
 from snnlab.sim.inputs.bindings import InputBinding, TargetArrayBinding
@@ -23,7 +24,7 @@ from snnlab.sim.training.selection import CheckpointSelection
 ExecutorName = Literal["graph"]
 
 
-RequestKind = Literal["build", "simulate", "train", "infer"]
+RequestKind = Literal["build", "simulate", "train"]
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ class ExecutionSpec:
 
     kind: RequestKind
     executor: ExecutorName = "graph"
-    bundle: Path | None = None
+    bundle: Bundle | str | Path | None = None
     graph: Mapping[str, Any] | None = None
     input_bindings: Sequence[InputBinding] = field(default_factory=tuple)
     protocol: Mapping[str, Any] = field(default_factory=dict)
@@ -105,7 +106,7 @@ class ExecutionSpec:
             if isinstance(self.snapshot, (str, Path)):
                 SnapshotSpec(self.snapshot)
             if self.kind == "build":
-                raise ValueError("snapshots require simulate, infer or train")
+                raise ValueError("snapshots require simulate or train")
         if self.tracing is not None:
             if not isinstance(self.tracing, TraceSpec):
                 raise TypeError("tracing must be a TraceSpec")

@@ -326,7 +326,7 @@ def test_inference_encodes_batches_without_rebuilding_model(tmp_path, monkeypatc
     monkeypatch.setattr(GraphExecutor, "_forward", record)
     result = simulate(
         ExecutionSpec(
-            kind="infer",
+            kind="simulate",
             graph=request().graph,
             input_bindings=(binding,),
             batch_size=4,

@@ -30,7 +30,7 @@ def test_policy_is_immutable_keyword_only_and_has_unchanged_defaults():
         policy.precision = "highest"
     with pytest.raises(TypeError):
         sim.Performance(None)
-    for kind in ("build", "simulate", "infer", "train"):
+    for kind in ("build", "simulate", "train"):
         spec = ExecutionSpec(kind=kind)
         assert asdict(policy) == {f.name: getattr(spec, f.name) for f in fields(policy)}
 
@@ -59,7 +59,7 @@ def test_invalid_settings_fail_at_construction_and_internal_boundary(name, value
         ExecutionSpec(kind="train", **{name: value})
 
 
-@pytest.mark.parametrize("name", ["build", "simulate", "infer", "train"])
+@pytest.mark.parametrize("name", ["build", "simulate", "train"])
 def test_all_public_operations_resolve_policy_before_dispatch(name, monkeypatch):
     observed = []
     sentinel = object()
@@ -92,7 +92,7 @@ def test_all_public_operations_resolve_policy_before_dispatch(name, monkeypatch)
     assert observed[-1].dataset_prefetch == 1
 
 
-@pytest.mark.parametrize("name", ["build", "simulate", "infer", "train"])
+@pytest.mark.parametrize("name", ["build", "simulate", "train"])
 def test_ambiguous_policies_and_wrong_types_fail_before_execution(name):
     function = getattr(sim, name)
     with pytest.raises(TypeError, match="performance must be a Performance"):
@@ -119,22 +119,20 @@ def test_build_reports_preparation_without_claiming_work_was_executed():
     assert report["resolved"]["dataset_prefetch"] is None
 
 
-@pytest.mark.parametrize("name", ["simulate", "infer"])
-def test_simulation_policy_preserves_outputs_state_and_independent_metadata(name):
+def test_simulation_policy_preserves_outputs_state_and_independent_metadata():
     kwargs = inputs()
     kwargs.pop("compile_mode")
     # Keep the default no-gradient inference path eligible.
     kwargs.pop("training")
     policy = sim.Performance(compile_mode=None, precision="highest")
-    function = getattr(sim, name)
-    actual = function(**kwargs, performance=policy, diagnostics=False)
+    actual = sim.simulate(**kwargs, performance=policy, diagnostics=False)
     with pytest.warns(DeprecationWarning):
-        expected = function(
+        expected = sim.simulate(
             **kwargs, compile_mode=None, precision="highest", diagnostics=False
         )
     for key, value in expected.outputs.items():
         torch.testing.assert_close(actual.outputs[key], value, rtol=0, atol=0)
-    continued = function(
+    continued = sim.simulate(
         **kwargs,
         performance=policy,
         diagnostics=False,
@@ -208,7 +206,7 @@ def test_cuda_policy_reports_actual_precision_fusion_and_replay():
     assert resolved["execution_paths"] == actual.metrics["execution_paths"]
 
 
-@pytest.mark.parametrize("name", ["train", "infer"])
+@pytest.mark.parametrize("name", ["train", "simulate"])
 def test_dataset_policy_preserves_samples_and_reports_prefetch(name, tmp_path):
     kwargs = inputs()
     kwargs.pop("compile_mode")

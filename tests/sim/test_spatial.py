@@ -204,9 +204,9 @@ def test_spiking_chain_trains_and_checkpoint_snapshot_roundtrip(tmp_path, mode):
         assert not torch.equal(
             result.snapshots["start"].parameters[name], result.parameters[name]
         )
-    inferred = handlers.infer(
+    inferred = handlers.simulate(
         ExecutionSpec(
-            kind="infer",
+            kind="simulate",
             bundle=path,
             checkpoint=checkpoint,
             device="cpu",
@@ -366,9 +366,9 @@ def test_spatial_input_works_with_existing_sparse_event_binding():
     graph = lang.compile(net).graph
     values = torch.arange(120).reshape(3, 1, 40).remainder(5).eq(0).float()
     steps, batches, channels = values.nonzero(as_tuple=True)
-    sparse = handlers.infer(
+    sparse = handlers.simulate(
         ExecutionSpec(
-            kind="infer",
+            kind="simulate",
             graph=graph,
             device="cpu",
             input_bindings=(
@@ -376,9 +376,9 @@ def test_spatial_input_works_with_existing_sparse_event_binding():
             ),
         )
     )
-    dense = handlers.infer(
+    dense = handlers.simulate(
         ExecutionSpec(
-            kind="infer",
+            kind="simulate",
             graph=graph,
             device="cpu",
             input_bindings=(sim.DenseArrayBinding("events", values),),

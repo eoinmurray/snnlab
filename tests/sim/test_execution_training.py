@@ -357,4 +357,4 @@ def test_training_timing_single_batch_and_field_validation():
     with pytest.raises(TypeError, match="training_timing must be boolean"):
         ExecutionSpec(kind="train", training_timing=1)
     with pytest.raises(ValueError, match="training_timing requires"):
-        ExecutionSpec(kind="infer", training_timing=True)
+        ExecutionSpec(kind="simulate", training_timing=True)

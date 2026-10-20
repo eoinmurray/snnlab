@@ -147,7 +147,7 @@ def test_replay_policy_validation():
     assert ExecutionSpec(kind="train").cuda_graphs == "auto"
     with pytest.raises(ValueError, match="auto or off"):
         ExecutionSpec(kind="train", cuda_graphs="force")
-    assert ExecutionSpec(kind="infer", cuda_graphs="off").cuda_graphs == "off"
+    assert ExecutionSpec(kind="simulate", cuda_graphs="off").cuda_graphs == "off"
 
 
 @pytest.mark.parametrize("policy", ["auto", "off"])

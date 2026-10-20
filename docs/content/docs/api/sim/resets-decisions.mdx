@@ -40,10 +40,10 @@ class DecisionSegments:
 ```python
 from pathlib import Path
 
-from snnlab.sim import Boundary, BoundarySchedule, DecisionSegments, ResetVoltage, infer
+from snnlab.sim import Boundary, BoundarySchedule, DecisionSegments, ResetVoltage, simulate
 
 boundaries = BoundarySchedule(steps=(0, 200, 400))
-result = infer(
+result = simulate(
     bundle=Path("network.bundle"),
     input_bindings=input_bindings,
     resets=(ResetVoltage("out", boundaries, value_mv=0.0),),

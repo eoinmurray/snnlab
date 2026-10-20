@@ -382,7 +382,7 @@ def simulate(
     snapshots = SnapshotSession(
         spec,
         built.model,
-        kind="infer" if spec.kind == "infer" else "simulate",
+        kind="simulate",
         protocol=protocol,
         device_resolved=device,
         checkpoint=checkpoint_provenance,
@@ -501,15 +501,11 @@ def simulate(
     return result
 
 
-def infer(spec: ExecutionSpec) -> ExecutionResult:
-    return simulate(spec)
-
-
 def execute_request(spec: ExecutionSpec) -> ExecutionResult:
     """Dispatch one graph execution request."""
     from snnlab.sim.training.trainer import train
 
-    handlers = {"build": build, "simulate": simulate, "train": train, "infer": infer}
+    handlers = {"build": build, "simulate": simulate, "train": train}
     try:
         handler = handlers[spec.kind]
     except KeyError:

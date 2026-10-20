@@ -193,7 +193,7 @@ def test_typed_simulation_cli_and_cache(tmp_path):
     resets, decisions = policy()
     result = simulate(
         ExecutionSpec(
-            kind="infer",
+            kind="simulate",
             graph=graph,
             device="cpu",
             input_bindings=(DenseArrayBinding("events", stream()),),
@@ -320,5 +320,5 @@ def test_unsupported_neuron_reset_and_training_rejected():
         train(ExecutionSpec(kind="train", graph=graph_fixture(), resets=resets))
     with pytest.raises(ValueError, match="only the graph executor"):
         execute_request(
-            ExecutionSpec(kind="infer", executor="legacy", decisions=decisions),
+            ExecutionSpec(kind="simulate", executor="legacy", decisions=decisions),
         )

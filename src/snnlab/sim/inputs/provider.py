@@ -56,7 +56,7 @@ class DatasetProvider:
         encoding_seeds=(),
     ):
         from snnlab.sim.artifacts.integrity import _file_digest
-        from snnlab.sim.inputs.bindings import TargetArrayBinding
+        from snnlab.sim.inputs.bindings import TargetArrayBinding, dataset_indices
         from snnlab.sim.inputs.resolution import resolve_dataset_snapshot_binding
 
         binding = copy.deepcopy(binding)
@@ -90,6 +90,8 @@ class DatasetProvider:
         self._temporary = tempfile.TemporaryDirectory(prefix="snnlab-dataset-")
         source = Path(binding.path)
         before = _file_digest(source)
+        if binding.snapshot_digest is not None and before != binding.snapshot_digest:
+            raise ValueError("dataset snapshot digest does not match saved binding")
         arrays = {}
         with zipfile.ZipFile(source) as archive:
             for index, member in enumerate(archive.infolist()):
@@ -120,21 +122,16 @@ class DatasetProvider:
                 "dataset snapshot labels must be a non-empty one-dimensional integer array"
             )
         total = len(labels)
-        cap = (
-            total
-            if binding.sample_cap is None
-            else _integer("sample_cap", binding.sample_cap, 1)
-        )
-        if cap > total:
-            raise ValueError("dataset sample cap exceeds available samples")
-        order = (
-            torch.randperm(
-                total, generator=torch.Generator().manual_seed(binding.order_seed)
-            )
-            if binding.shuffle
-            else torch.arange(total)
-        )
-        self.selected = order[:cap].numpy()
+        self.selected = dataset_indices(binding, total)
+        cap = len(self.selected)
+        self.sample_ids = self.selected.tolist()
+        if binding.sample_ids_key is not None:
+            if binding.sample_ids_key not in arrays:
+                raise ValueError("dataset snapshot is missing sample identities")
+            identities = arrays[binding.sample_ids_key]
+            if identities.ndim != 1 or len(identities) != total or identities.dtype.kind not in {"i", "u", "U"} or len(np.unique(identities)) != total:
+                raise ValueError("dataset sample identities are invalid or duplicated")
+            self.sample_ids = identities[self.selected].tolist()
         self.sample_count = cap
         self.labels = torch.from_numpy(np.array(labels[self.selected], dtype=np.int64))
         # Validate stored feature values in bounded sample slices; exact replay remains exact.
@@ -188,6 +185,8 @@ class DatasetProvider:
         self.protocol["dataset"].update(sample_cap=cap, batch_size=min(32, cap))
         self.protocol["inputs"][0]["shape"][1] = cap
         self.protocol["dataset_binding"]["selected_indices"] = self.selected.tolist()
+        if binding.sample_ids_key is not None:
+            self.protocol["dataset_binding"]["sample_ids"] = self.sample_ids
         encoder_row = self.protocol["dataset_binding"]["encoder"]
         encoder_row.pop("selected_rates_hz", None)
         encoder_row.pop("retained_events", None)
@@ -301,6 +300,8 @@ class DatasetProvider:
             "spike_encoding_seed": spike_seed,
             "encoder": resolved.protocol["dataset_binding"]["encoder"],
         }
+        if self.binding.sample_ids_key is not None:
+            metadata["sample_ids"] = self.snapshot[0][self.binding.sample_ids_key][absolute].tolist()
         return resolved, metadata
 
     def with_protocol(self, protocol):
@@ -533,13 +534,18 @@ def simulate_dataset(
                 active.append(replace(intervention, replay=replay))
             else:
                 active.append(intervention)
+        active_recording = recording
+        if recording is not None and recording.sink is not None:
+            def dataset_sink(block):
+                recording.sink(replace(block, sample_ids=tuple(provider.sample_ids[start:end])))
+            active_recording = replace(recording, sink=dataset_sink)
         result = model(
             encoded,
             diagnostics=diagnostics,
             interventions=tuple(active),
             runtime_state=runtime_state,
             measurement=measurement,
-            recording=recording,
+            recording=active_recording,
             retain_outputs=retain_outputs,
             retain_parameters=retain_parameters,
             retain_final_state=retain_final_state,
@@ -571,6 +577,12 @@ def simulate_dataset(
     result.recorded_signals = {
         name: torch.cat(values, dim=0 if kinds[name] == "spike_events" else 1)
         for name, values in collected_recordings.items()
+    }
+    result._batch_size = provider.sample_count
+    result._recording_info = {
+        name: replace(info, batch_size=provider.sample_count,
+                      sample_ids=tuple(provider.sample_ids))
+        for name, info in result._recording_info.items()
     }
     result.final_state = {
         name: torch.cat(values, dim=0) for name, values in collected_states.items()

@@ -9,6 +9,22 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-20
+
+### Added
+
+1. Public `sim.TrainingHistory` reads native metrics from memory or saved evidence, exposes immutable epoch/split, selection, held-out test and performance records, and extracts curves without filling missing observations. Explicit validation covers completion expectations, metric domains, counts/encoding draws and available checkpoint-selection/test provenance, preserving online training, fixed-weight baselines and partial/resumed histories.
+2. Public `sim.NetworkSnapshot` provides metadata-only structured access to native snapshots, physical parameters/units, projection shapes, initializer/scaling/constraint definitions and resolved trainable/frozen membership. Explicit parameter loading verifies integrity and returns independent CPU tensors with original dtypes; initialization statistics remain distinct from final-weight measurements.
+3. `ExecutionResult.numpy(batch=...)` now includes retained recorded signals through `recorded_signals` and `recording: sim.RecordingData`, with declared axes, original cell/sample identities and per-signal time coordinates. Numeric NumPy conversion explicitly expands bfloat16 to float32; original tensors and their computation graphs remain intact.
+4. Explicit `result.write_metrics` and `result.write_recording` exporters, paired with `sim.read_metrics` and `sim.RecordingData.read`, publish versioned native evidence with opt-in overwrite. Metrics use `snnlab.metrics/v1`; recordings extend the existing NPZ-block format with axes and coordinates while preserving exact bfloat16 storage. Export never performs execution, selection, analysis or RNG draws.
+5. Public `sim.DatasetPartition`, `sim.DatasetSnapshot` and explicit `sim.stratified_split(..., policy="stratified-v1")` support portable named feature/label partitions, original sample IDs, disjointness/integrity checks and existing native encoder bindings. Archive schema `snnlab.dataset-snapshot/v1` retains rows, shapes, dtypes and caller-declared preprocessing/provenance; diagnostic members retain their original split identity.
+6. `viz.plot_raster` and `viz.plot_learning_curves` draw saved evidence on caller-owned axes and return artists. Raster coordinates preserve selected cells and actual recording times; learning curves retain gaps and measurement semantics, with held-out test markers separate from curves. Optional `sim.format_epoch` and `sim.EpochLogger` format finalized epoch reports without extra evaluation.
+7. Public `build`, `simulate` and `train` accept authored `lang.Bundle` objects alongside saved paths, validating copied graph/recipe data and asset integrity without temporary write/read cycles. Existing explicit graph/training precedence and path execution identities remain supported. Added an offline digits example demonstrating explicit calls, local snapshot configuration, readers, exporters and plotting.
+
+### Removed
+
+1. Removed `snnlab.sim.infer` and its internal request kind. Use `snnlab.sim.simulate` with the same keyword arguments for inference, including checkpoint loading, runtime continuation, recording and performance policies. New inference run snapshots now record `kind="simulate"`. The execution benchmark uses `--mode simulate` for forward-only runs; retained historical reports may still record `infer`.
+
 ## [0.22.0] - 2026-10-20
 
 ### Added

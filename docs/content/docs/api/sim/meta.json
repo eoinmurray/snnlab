@@ -5,6 +5,7 @@
     "graph-executor",
     "execution-spec",
     "execution-result",
+    "experiment-utilities",
     "training-checkpoints",
     "runtime-state",
     "run-snapshots",

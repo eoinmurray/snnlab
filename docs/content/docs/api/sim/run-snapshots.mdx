@@ -4,7 +4,9 @@ description: Export the effective network, execution settings and optional param
 ---
 
 Import `SnapshotSpec`, `RunSnapshot` and `write_run_snapshot` from `snnlab.sim`.
-Snapshots are optional inspection/provenance artifacts for `simulate`, `infer`,
+Use [`NetworkSnapshot`](/api/sim/experiment-utilities#networksnapshot) for structured,
+metadata-only reading, units and explicit verified parameter loading.
+Snapshots are optional inspection/provenance artifacts for `simulate` and
 `train`. They capture the compiled
 network and effective settings, rather than only the original request.
 
@@ -13,7 +15,7 @@ network and effective settings, rather than only the original request.
 ```python
 from snnlab import sim
 
-result = sim.infer(
+result = sim.simulate(
     bundle="network.bundle",
     checkpoint="checkpoints/selected",
     input_bindings=(

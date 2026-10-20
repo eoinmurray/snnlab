@@ -3,7 +3,7 @@
 The canonical entry point is `load_dataset(name, ...)`, used by graph-based
 applications to obtain source arrays before binding or encoding them.
 
-MNIST returns dense (N, 784) pixel rows in [0, 1] that the train/infer paths
+MNIST returns dense (N, 784) pixel rows in [0, 1] that the train/simulate paths
 Poisson-encode per batch. SHD is event data — each utterance is a list of
 (spike_time_seconds, unit) pairs over 700 channels — so it returns an OBJECT
 array of per-sample event tuples instead of a dense block; the caller bins each
@@ -109,7 +109,7 @@ def load_dataset(
         evaluation_only: skip the unused MNIST training partition; requires
                split=True and evaluation_split='test'. Training outputs are None.
 
-    Single canonical loader used by train, infer, and image paths so
+    Single canonical loader used by train, simulate, and image paths so
     "first digit-0 sample" means the same physical sample everywhere.
     """
     if evaluation_only and (not split or evaluation_split != "test"):

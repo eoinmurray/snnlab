@@ -138,12 +138,12 @@ Here no parameters or inputs require gradients. Ordinary forward execution
 selects `no_grad` for capture-safe custom components, and the third use of a
 compatible shape can capture/replay. A build result describes preparation;
 subsequent direct model results expose their own path/replay metrics. Public
-`train`, `simulate` and `infer` results consolidate them under
+`train` and `simulate` results consolidate them under
 `result.metrics["performance"]`, separating requested settings, resolved policies
 and actual paths. An automatic block target of 16 can coexist with an actual
 kernel-loop block size of 1 and successful CUDA replay.
 
-Repeated public `simulate`/`infer` calls construct fresh models. Reuse a built
+Repeated public `simulate` calls construct fresh models. Reuse a built
 executor, or use dataset batching within one request, to amortize preparation
 and reuse compatible shapes. Keep batch shapes stable where the workload
 allows it; a tail batch can consume the second capture slot. Do not drop data

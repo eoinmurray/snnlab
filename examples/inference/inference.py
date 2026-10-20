@@ -13,7 +13,7 @@ import torch
 from snnlab import lang, viz
 from snnlab.sim import (
     DenseArrayBinding,
-    infer,
+    simulate,
 )
 
 OUTPUT_DIR = Path(__file__).resolve().parent
@@ -74,7 +74,7 @@ def main():
 
     # 4. Load learned weights and run inference.
     with torch.no_grad():
-        result = infer(
+        result = simulate(
             bundle=bundle_path,
             checkpoint=checkpoint_path,
             input_bindings=(test_input,),

@@ -195,7 +195,14 @@ class SnapshotSession:
                 "graph_digest": _json_digest(model.plan.graph),
                 "training": training,
                 "request": {
-                    f.name: getattr(spec, f.name)
+                    f.name: (
+                        {
+                            "source": "in_memory",
+                            "graph_digest": _json_digest(spec.bundle.graph),
+                        }
+                        if f.name == "bundle" and hasattr(spec.bundle, "graph")
+                        else getattr(spec, f.name)
+                    )
                     for f in fields(spec)
                     if f.name not in excluded
                 },
@@ -209,6 +216,18 @@ class SnapshotSession:
                     "projection_mode": model.projection_mode,
                     "compile_mode": model.compile_mode,
                     "compile_block_steps": model.compile_block_steps,
+                    "parameter_membership": {
+                        "trainable": sorted(
+                            name
+                            for name, value in model.parameter_map().items()
+                            if value.requires_grad
+                        ),
+                        "frozen": sorted(
+                            name
+                            for name, value in model.parameter_map().items()
+                            if not value.requires_grad
+                        ),
+                    },
                     **resolved,
                 },
             }

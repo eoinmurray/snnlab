@@ -11,7 +11,7 @@ from typing import Literal
 
 @dataclass(frozen=True, kw_only=True)
 class Performance:
-    """Execution optimizations shared by build, simulate, infer and train.
+    """Execution optimizations shared by build, simulate and train.
 
     Defaults preserve the automatic execution policy. Compilation and capture
     add startup cost; use ``compile_mode=None`` for short eager runs.

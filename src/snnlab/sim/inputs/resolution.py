@@ -26,6 +26,7 @@ from snnlab.sim.inputs.bindings import (
     PoissonInputBinding,
     ResolvedDenseInputs,
     TargetArrayBinding,
+    dataset_indices,
 )
 from snnlab.sim.inputs.encoders import (
     accepts_device,
@@ -947,6 +948,8 @@ def resolve_dataset_snapshot_binding(
             arrays = {key: loaded[key] for key in loaded.files}
     else:
         arrays, source_digest = _snapshot
+    if binding.snapshot_digest is not None and source_digest != binding.snapshot_digest:
+        raise ValueError("dataset snapshot digest does not match saved binding")
     if not binding.dataset_id or not binding.split:
         raise ValueError("dataset snapshot identity and split must be non-empty")
     if binding.label_key not in arrays:
@@ -965,17 +968,20 @@ def resolve_dataset_snapshot_binding(
     if cap <= 0 or cap > sample_count:
         raise ValueError(f"dataset snapshot sample cap must be in [1, {sample_count}]")
     if _indices is None:
-        order = torch.arange(sample_count)
-        if binding.shuffle:
-            generator = torch.Generator(device="cpu").manual_seed(
-                int(binding.order_seed)
-            )
-            order = torch.randperm(sample_count, generator=generator)
-        selected = order[:cap].numpy()
+        selected = dataset_indices(binding, sample_count)
+        cap = len(selected)
     else:
         selected = np.asarray(_indices, dtype=np.int64)
         cap = len(selected)
     selected_labels = labels[selected].astype(np.int64, copy=False)
+    sample_ids = None
+    if binding.sample_ids_key is not None:
+        if binding.sample_ids_key not in arrays:
+            raise ValueError("dataset snapshot is missing sample identities")
+        identities = np.asarray(arrays[binding.sample_ids_key])
+        if identities.ndim != 1 or len(identities) != sample_count or identities.dtype.kind not in {"i", "u", "U"} or (not _validated and len(np.unique(identities)) != sample_count):
+            raise ValueError("dataset sample identities are invalid or duplicated")
+        sample_ids = identities[selected].tolist()
     encoder = binding.encoder
     dt_ms = float(graph["timebase"]["dt"]["value"])
     channels = int(declared[2])
@@ -1137,8 +1143,12 @@ def resolve_dataset_snapshot_binding(
         device_aware = accepts_device(definition.function)
         trace = current_trace()
         with trace.region("encoding") if trace is not None else nullcontext():
+            callback_arrays = arrays
+            if binding.sample_ids_key is not None:
+                callback_arrays = {**arrays, "features": arrays[binding.feature_key],
+                                   "labels": labels, "sample_ids": arrays[binding.sample_ids_key]}
             spikes = definition.function(
-                arrays,
+                callback_arrays,
                 selected,
                 dt_ms=dt_ms,
                 channels=channels,
@@ -1243,6 +1253,8 @@ def resolve_dataset_snapshot_binding(
         },
         **supplied,
     }
+    if sample_ids is not None:
+        protocol["dataset_binding"]["sample_ids"] = sample_ids
     targets = (
         (
             TargetArrayBinding(

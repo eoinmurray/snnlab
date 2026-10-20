@@ -115,9 +115,11 @@ time_ms = data.time_ms
 | --- | --- |
 | `outputs` | Named output NumPy arrays. |
 | `diagnostics` | Named diagnostic NumPy arrays; empty when diagnostics were disabled. |
+| `recorded_signals` | Requested retained recording arrays, with declared-axis batch selection. |
+| `recording` | `RecordingData` with those arrays and per-signal axes, units, cell/sample identities and actual time coordinates. |
 | `time_ms` | One-dimensional simulation time axis in milliseconds, or `None` when no execution occurred. |
 
-The method detaches tensors, transfers them to CPU, and copies their NumPy arrays. Changing the arrays cannot modify the original tensors, and the original result retains its computation graphs. Conversion uses PyTorch's NumPy-supported dtypes.
+The method transfers independent tensor copies to CPU for conversion. Changing the arrays cannot modify the original tensors, and the original result retains its computation graphs. NumPy-supported dtypes retain their dtype; bfloat16 expands explicitly to float32, preserving all finite values. Recording metadata identifies the source and array dtypes. See [Experiment Utilities](/api/sim/experiment-utilities) for the complete recording and export contracts.
 
 Without `batch`, all batch items and tensor axes are preserved. Passing a non-negative integer selects that item and removes its batch axis. Selection uses the compiled signal shape: `(time, batch, cells)` becomes `(time, cells)`, while `(batch, classes)` becomes `(classes,)`. Signals without a batch axis are unchanged. Booleans and non-integer indices raise `TypeError`; negative or out-of-range indices raise `IndexError`. Selection requires metadata supplied by the graph executor, and is unavailable on a build-only or manually constructed result without that metadata.
 
@@ -131,7 +133,7 @@ Shapes follow the declared graph signal, rather than one universal result layout
 
 Declared outputs always return, and direct graph forward outputs retain autograd. Diagnostics and continuation state are detached; `diagnostics=False` returns an empty diagnostic mapping. The built-in training result carries the last optimizer update's outputs, not an aggregate of all training presentations. Use `metrics` for epoch curves.
 
-For a differentiable PyTorch loss use `result.outputs` tensors directly. Use `.numpy()` only for plotting or analysis. It converts outputs and diagnostics, not parameters, optimizer state or metrics.
+For a differentiable PyTorch loss use `result.outputs` tensors directly. Use `.numpy()` for plotting or analysis. It converts outputs, diagnostics and retained recordings. Parameters, optimizer state and metrics have separate contracts.
 
 ## Constructor defaults
 
@@ -157,6 +159,8 @@ class NumpyExecutionResult:
     outputs: dict[str, np.ndarray]
     diagnostics: dict[str, np.ndarray]
     time_ms: np.ndarray | None
+    recording: RecordingData
+    # recorded_signals is a property alias for recording.signals
 ```
 
 ## Performance policy and selected paths
@@ -198,7 +202,9 @@ Dataset inference returns full concatenated sample outputs and `metrics["encodin
 
 ## recorded_signals
 
-Explicit [RecordingSpec selections](/api/sim/execution-spec#recording) return tensors keyed by graph signal ID in `recorded_signals`. Dense values have `(recorded_time, batch, selected_cells)` axes; sparse population spikes have `int64` rows `(absolute_step, batch, original_cell)`. Signal units and cell selections are retained in metrics. A sink consumes independent CPU blocks and leaves this mapping empty. `numpy()` continues to convert named outputs and diagnostics; convert selected recording tensors explicitly with `.numpy()` because sparse event axes differ from ordinary time-series axes.
+Explicit [RecordingSpec selections](/api/sim/execution-spec#recording) return tensors keyed by graph signal ID in `recorded_signals`. Dense values have `(recorded_time, batch, selected_cells)` axes; sparse population spikes have `int64` rows `(absolute_step, batch, original_cell)`. A sink consumes independent CPU blocks and leaves this mapping empty. `result.numpy(batch=0).recorded_signals` converts retained recordings using their declared axes; sparse events are filtered by their batch coordinate. Use `sample.recording.info[signal].time_ms` for a dense recording's actual timeline, which may differ from the full output timebase.
+
+Use `result.write_metrics(path)` and `result.write_recording(path, signals=(...), batch=0)` for explicit native exports. [Experiment Utilities](/api/sim/experiment-utilities) documents matching readers, validation, dtype storage and opt-in overwrite behaviour.
 
 Inference metrics expose automatic `online_reductions`, remaining `retained_signal_samples`, `measurement_complete` and digest-bound `inference_retention`. An explicit measurement window retains partial accumulators/cursor in runtime state, including portable save/load. With `retain_outputs=False`, `outputs` is empty; dataset inference also avoids collecting per-sample `final_state` tensors. Exposed diagnostics remain independent and explicitly controlled.
 

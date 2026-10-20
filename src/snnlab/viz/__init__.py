@@ -5,6 +5,8 @@ from importlib import import_module
 from ._version import __version__
 
 _EXPORTS = {
+    "plot_raster": "plotting.primitives",
+    "plot_learning_curves": "plotting.primitives",
     "FrameTimeline": "plotting.animation",
     "save_animation": "plotting.animation",
     "Recording": "recording",

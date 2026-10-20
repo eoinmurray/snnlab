@@ -124,7 +124,7 @@ def sparse(value=None):
 def run(graph=None, replay=None, inputs=None, interventions=None):
     return simulate(
         ExecutionSpec(
-            kind="infer",
+            kind="simulate",
             graph=graph or graph_fixture(),
             input_bindings=(
                 DenseArrayBinding(
@@ -347,7 +347,7 @@ def test_nonspiking_unknown_duplicate_targets_and_old_option_fail():
     with pytest.raises(ValueError, match="ExecutionSpec.interventions"):
         simulate(
             ExecutionSpec(
-                kind="infer",
+                kind="simulate",
                 graph=graph_fixture(),
                 options={"inference_interventions": []},
             )
@@ -433,7 +433,7 @@ def test_cache_rejects_different_replay_and_order_and_preserves_integrity(tmp_pa
 
 def test_diagnostics_do_not_change_outputs_or_rng():
     spec = ExecutionSpec(
-        kind="infer",
+        kind="simulate",
         graph=graph_fixture(),
         input_bindings=(DenseArrayBinding("events", torch.zeros(6, 2, 2)),),
         seed=17,

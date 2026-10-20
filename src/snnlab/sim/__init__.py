@@ -9,6 +9,19 @@ from importlib import import_module
 from ._version import __version__
 
 _EXPORTS = {
+    "TrainingHistory": "training.history",
+    "HistoryEpoch": "training.history",
+    "MetricCurve": "training.history",
+    "NetworkSnapshot": "artifacts.network_snapshot",
+    "PhysicalParameter": "artifacts.network_snapshot",
+    "RecordingData": "artifacts.recordings",
+    "SignalInfo": "artifacts.recordings",
+    "read_metrics": "artifacts.evidence",
+    "DatasetPartition": "inputs.snapshots",
+    "DatasetSnapshot": "inputs.snapshots",
+    "stratified_split": "inputs.snapshots",
+    "EpochLogger": "training.progress",
+    "format_epoch": "training.progress",
     "Performance": "requests.performance",
     "load_dataset": "inputs.datasets",
     "encode_images_poisson": "inputs.encoders",
@@ -32,7 +45,6 @@ _EXPORTS = {
     "EpochReport": "training.policies",
     "build": "requests.api",
     "simulate": "requests.api",
-    "infer": "requests.api",
     "train": "requests.api",
     "resolve_device": "requests.handlers",
     "GraphExecutor": "graph.executor",

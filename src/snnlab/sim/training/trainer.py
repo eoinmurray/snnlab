@@ -156,6 +156,12 @@ class _TrainingTiming:
 
 def train(spec: ExecutionSpec) -> ExecutionResult:
     """Execute native training, optionally collecting bounded diagnostic traces."""
+    # Validate split declarations before build/performance reporting inspects
+    # their bindings; preserve the documented public TypeError on invalid input.
+    if spec.validation is not None and not isinstance(spec.validation, ValidationSpec):
+        raise TypeError("validation must be a ValidationSpec")
+    if spec.test is not None and not isinstance(spec.test, TestSpec):
+        raise TypeError("test must be a TestSpec")
     trace = current_trace()
     if trace is not None:
         if getattr(trace, "training_started", False):
@@ -1716,6 +1722,11 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             "updates": history,
             "epochs": epoch_history,
             "test": test_metrics,
+            "history_coverage": {
+                "requested_epochs": dataset_epochs,
+                "complete": next_data_state == {"epoch": dataset_epochs, "batch": 0} if dataset_mode else None,
+                "data_state": dict(next_data_state),
+            },
             "validation_protocol": (
                 {**validation_data[0].protocol, "targets": validation_data[2]}
                 if validation_data is not None

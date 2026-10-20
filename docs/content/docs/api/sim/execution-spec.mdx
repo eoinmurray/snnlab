@@ -3,7 +3,7 @@ title: Execution Options
 description: Keyword arguments for graph construction, simulation, inference and training.
 ---
 
-Call `build`, `simulate`, `infer` or `train` from `snnlab.sim` with explicit keyword arguments. The function selects the operation; there is no public request object, `kind` or `executor` argument. Each function returns [ExecutionResult](/api/sim/execution-result).
+Call `build`, `simulate` or `train` from `snnlab.sim` with explicit keyword arguments. The function selects the operation; there is no public request object, `kind` or `executor` argument. Each function returns [ExecutionResult](/api/sim/execution-result).
 
 ```python
 from snnlab.sim import simulate
@@ -16,7 +16,7 @@ This reference describes the available keyword arguments and binding types. See 
 | Function | Supported options |
 | --- | --- |
 | `build` | Graph/bundle, optional training recipe, initialization seed, device, parameter retention and compilation controls. |
-| `simulate`, `infer` | Build options plus input bindings, protocol, dataset batch size, checkpoint, runtime continuation, diagnostics, interventions, recording, retention, snapshots and inference overrides. |
+| `simulate` | Build options plus input bindings, protocol, dataset batch size, checkpoint, runtime continuation, diagnostics, interventions, recording, retention, snapshots and inference overrides. |
 | `train` | Build options plus training inputs/targets, schedule, batching, metrics, validation/test data, checkpoint resume/selection, observations, tracing and snapshots. |
 
 Unsupported keywords raise `TypeError`; for example, `simulate(epochs=10)` is rejected. Shared controls and operation-specific validation run before execution; graph-dependent validation occurs during planning and input resolution. Optional mapping arguments default to `None` and are normalized to independent empty mappings internally.
@@ -24,7 +24,7 @@ Unsupported keywords raise `TypeError`; for example, `simulate(epochs=10)` is re
 ## Performance
 
 `performance: Performance | None = None` groups execution optimizations for
-`build`, `simulate`, `infer` and `train`. Import `Performance` from `snnlab.sim`.
+`build`, `simulate` and `train`. Import `Performance` from `snnlab.sim`.
 It is a frozen, keyword-only dataclass; omission and `None` both use
 `Performance()`. Creating an object does not allocate a device or compile a model.
 These defaults preserve the existing automatic policy.
@@ -35,7 +35,7 @@ callback requirements, capture safety and current compilation/replay limits.
 ```python
 from dataclasses import replace
 from pathlib import Path
-from snnlab.sim import Performance, train, infer, simulate
+from snnlab.sim import Performance, train, simulate
 
 performance = Performance(precision="highest", compile_block_steps=4)
 trained = train(
@@ -44,7 +44,7 @@ trained = train(
     epochs=20, device="cuda:0", performance=performance,
     save_final_checkpoint=Path("trained.checkpoint"),
 )
-prediction = infer(
+prediction = simulate(
     graph=bundle.graph, input_bindings=test_inputs,
     device="cuda:0", performance=performance,
     checkpoint=Path("trained.checkpoint"),
@@ -70,7 +70,7 @@ the learned weights.
 | `projection_mode` | `Literal["fast", "strict"] = "fast"` | Skip the historical previous-state expression for built-in zero-decay synapses. `"strict"` retains that expression and its IEEE/autograd behavior. |
 
 Fields are validated when constructing the object. Unused fields remain reusable:
-`build` does not prefetch or optimize, and `simulate`/`infer` do not optimize.
+`build` does not prefetch or optimize, and `simulate` does not optimize.
 Device, batch size, epochs, retention, diagnostics, `extension_validation`,
 recording, tracing and timing controls remain arguments on each function.
 Direct `GraphExecutor` construction and CLI flags retain their existing controls.
@@ -106,10 +106,10 @@ defaults above. Move them into `Performance`:
 
 ```python
 # Before
-result = infer(graph=graph, input_bindings=inputs, compile_mode=None, precision="highest")
+result = simulate(graph=graph, input_bindings=inputs, compile_mode=None, precision="highest")
 
 # Now
-result = infer(
+result = simulate(
     graph=graph, input_bindings=inputs,
     performance=Performance(compile_mode=None, precision="highest"),
 )
@@ -228,6 +228,9 @@ Binds one immutable external NPZ dataset snapshot. Graph execution automatically
 | `sample_cap` | `int | None = None` |
 | `shuffle` | `bool = False` |
 | `order_seed` | `int = 0` |
+| `sample_ids_key` | Optional NPZ array key for original integer/Unicode sample identities. |
+| `sample_indices` | Optional explicit source-row subset, applied before ordering and capping. |
+| `snapshot_digest` | Optional expected whole-archive SHA-256 identity; changed content is rejected. |
 
 The resolver computes the source file digest, selects samples with the cap/order settings, and records file identity, split, selected indices, encoder and seeds. It performs no dataset download or registry lookup. `dataset_id` and `split` must be non-empty.
 
@@ -659,7 +662,7 @@ Weights or training state to load before execution. Behaviour depends on the han
 
 | Handler | Behaviour |
 | --- | --- |
-| `simulate` / `infer` | A directory loads a digest-verified graph training checkpoint's parameters. A non-directory path loads a PyTorch state dictionary with `weights_only=True`; the keys must match `GraphExecutor.state_dict()`. Historical COBANet dictionaries require an application-owned conversion before loading. |
+| `simulate` | A directory loads a digest-verified graph training checkpoint's parameters. A non-directory path loads a PyTorch state dictionary with `weights_only=True`; the keys must match `GraphExecutor.state_dict()`. Historical COBANet dictionaries require an application-owned conversion before loading. |
 | `train` | Loads a graph training-checkpoint directory and resumes parameters, AdamW state, RNG state and iteration coordinates. |
 | `build` | Does not load the checkpoint field. |
 
@@ -675,7 +678,7 @@ Dynamic state for continuing a simulation trajectory. Obtain it from `result.run
 
 This is distinct from `checkpoint`: a weight checkpoint supplies parameters; runtime state supplies ongoing neuron/synapse/delay state. Continuation validates graph/state compatibility, names, shapes, dtypes and device.
 
-Pass `runtime_state=state` to `simulate` or `infer`. Timestep overrides cannot be combined with runtime continuation. `build` and `train` have no runtime-state argument.
+Pass `runtime_state=state` to `simulate`. Timestep overrides cannot be combined with runtime continuation. `build` and `train` have no runtime-state argument.
 
 ## interventions
 
@@ -736,7 +739,7 @@ result = simulate(
 )
 ```
 
-`build(...)`, `simulate(...)`, `infer(...)` and `train(...)` return `ExecutionResult`. Call the function for the operation you want; no request kind is required. None of the direct simulation handlers automatically writes CLI output directories or PNGs; save the returned tensors or render them explicitly.
+`build(...)`, `simulate(...)` and `train(...)` return `ExecutionResult`. Call the function for the operation you want; no request kind is required. None of the direct simulation handlers automatically writes CLI output directories or PNGs; save the returned tensors or render them explicitly.
 
 ## Returned result
 
@@ -803,7 +806,7 @@ Native training defaults to `fused_optimizer="auto"`, selecting fused execution 
 
 ### cuda_graphs
 
-**Type:** `Literal["auto", "off"]`. **Default:** `"auto"`. Accepted by `build`, `train`, `simulate`, `infer` and `GraphExecutor`.
+**Type:** `Literal["auto", "off"]`. **Default:** `"auto"`. Accepted by `build`, `train`, `simulate` and `GraphExecutor`.
 
 Native training captures repeated compatible CUDA forward/loss/backward shapes, including automatic BF16 autocast. Optimizer updates, clipping, constraints, metrics, epoch callbacks, evaluation and checkpoints remain outside capture. Inputs/targets and gradient buffers have stable storage; at most two shapes are captured per training call. Warmup never updates weights and restores RNG state. One-off shapes, CPU/MPS, disabled compilation, tracing and input gradients retain normal execution. Unsupported capture operations or unavailable memory fall back once per shape; unrelated errors still raise.
 
@@ -920,6 +923,9 @@ class DatasetSnapshotBinding:
     sample_cap: int | None = None
     shuffle: bool = False
     order_seed: int = 0
+    sample_ids_key: str | None = None
+    sample_indices: Sequence[int] | None = None
+    snapshot_digest: str | None = None
 
 
 class ValidationSpec:

@@ -16,6 +16,12 @@ load Matplotlib when accessed; applying a Theme loads it when needed.
 
 ## Execution arrays and Recording
 
+For raster plots and learning curves drawn on caller-owned axes, use
+[`plot_raster` and `plot_learning_curves`](/api/sim/experiment-utilities#axes-plotting-primitives).
+They consume the public `sim.RecordingData` and `sim.TrainingHistory` contracts,
+including per-signal coordinates, measurement semantics and missing observations.
+The composition container below remains available for shared-timeline animation.
+
 Use [ExecutionResult.numpy](/api/sim/execution-result#numpy) for named plotting arrays. A `viz.Recording` is a separate visualization container for time series; it is not the removed execution `recordings` field.
 
 ```python

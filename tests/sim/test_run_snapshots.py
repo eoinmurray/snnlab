@@ -14,7 +14,7 @@ from snnlab.sim.training.trainer import train
 from tests.sim._execution_builders import coupled_graph, direct_train_bundle
 
 
-def request(kind="infer", **options):
+def request(kind="simulate", **options):
     bundle = direct_train_bundle()
     values = dict(
         kind=kind,
@@ -60,8 +60,7 @@ def read_snapshot(path):
     "handler,kind",
     [
         (handlers.simulate, "simulate"),
-        (handlers.infer, "infer"),
-        (handlers.execute_request, "infer"),
+        (handlers.execute_request, "simulate"),
     ],
 )
 def test_path_shorthand_exports_resolved_overrides(tmp_path, handler, kind):
@@ -77,7 +76,7 @@ def test_path_shorthand_exports_resolved_overrides(tmp_path, handler, kind):
             }
         },
     )
-    baseline = handlers.infer(replace(spec, snapshot=None, retain_parameters=True))
+    baseline = handlers.simulate(replace(spec, snapshot=None, retain_parameters=True))
     result = handler(spec)
     metadata, arrays = read_snapshot(tmp_path / "run")
     assert metadata["kind"] == kind
@@ -134,10 +133,10 @@ def test_training_both_stages_resume_and_independent_copies(tmp_path):
 def test_inference_snapshot_loads_checkpoint_weights(tmp_path):
     trained = train(request("train"))
     sim.save_training_checkpoint(tmp_path / "checkpoint", trained.training_checkpoint)
-    result = handlers.infer(
-        request(snapshot=tmp_path / "infer", checkpoint=tmp_path / "checkpoint")
+    result = handlers.simulate(
+        request(snapshot=tmp_path / "simulate", checkpoint=tmp_path / "checkpoint")
     )
-    metadata, arrays = read_snapshot(tmp_path / "infer")
+    metadata, arrays = read_snapshot(tmp_path / "simulate")
     assert metadata["execution"]["checkpoint"]["completed_updates"] == 2
     for name, value in trained.parameters.items():
         np.testing.assert_array_equal(arrays[name], value.numpy())
@@ -145,7 +144,7 @@ def test_inference_snapshot_loads_checkpoint_weights(tmp_path):
 
 
 def test_metadata_only_end_and_disabled(tmp_path):
-    result = handlers.infer(
+    result = handlers.simulate(
         request(
             snapshot=sim.SnapshotSpec(tmp_path / "meta", parameters=False, stage="end")
         )
@@ -156,7 +155,7 @@ def test_metadata_only_end_and_disabled(tmp_path):
     assert not arrays
     assert not (tmp_path / "meta" / "parameters.npz").exists()
     assert not result.snapshots["end"].parameters
-    assert handlers.infer(request()).snapshots == {}
+    assert handlers.simulate(request()).snapshots == {}
 
 
 def test_writer_refuses_overwrite_and_invalid_metadata(tmp_path):
@@ -201,7 +200,7 @@ def test_snapshot_stage_validation():
 def test_projection_scales_are_captured_after_application(tmp_path):
     graph = coupled_graph()
     spec = ExecutionSpec(
-        kind="infer",
+        kind="simulate",
         graph=graph,
         device="cpu",
         input_bindings=tuple(
@@ -211,9 +210,9 @@ def test_projection_scales_are_captured_after_application(tmp_path):
             for name in ("drive_a", "drive_b")
         ),
     )
-    baseline = handlers.infer(spec)
+    baseline = handlers.simulate(spec)
     projection = graph["projections"][0]
-    result = handlers.infer(
+    result = handlers.simulate(
         replace(
             spec,
             snapshot=tmp_path / "scaled",
@@ -229,7 +228,7 @@ def test_projection_scales_are_captured_after_application(tmp_path):
 
 
 def test_both_simulation_stages_and_runtime_continuation(tmp_path):
-    first = handlers.infer(request())
+    first = handlers.simulate(request())
     result = handlers.simulate(
         request(snapshot=sim.SnapshotSpec(tmp_path, stage="both")),
         runtime_state=first.runtime_state,
@@ -258,7 +257,7 @@ def test_no_parameter_network_can_be_snapshotted(tmp_path):
     spec = replace(
         request(snapshot=tmp_path), graph=lang.compile(net, target=None).graph
     )
-    handlers.infer(spec)
+    handlers.simulate(spec)
     metadata, arrays = read_snapshot(tmp_path)
     assert metadata["parameters_included"] is True
     assert not arrays
@@ -283,7 +282,7 @@ def test_snapshot_supports_callable_recording_sinks(tmp_path):
             sink_id=sink.identity,
         ),
     )
-    handlers.infer(spec)
+    handlers.simulate(spec)
     metadata, _ = read_snapshot(tmp_path / "snapshot")
     recorded_sink = metadata["request"]["recording"]["sink"]
     assert recorded_sink["directory"] == str(tmp_path / "blocks")

@@ -13,7 +13,7 @@ CUDA = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailabl
 
 
 def test_defaults_and_cpu_fallback():
-    for kind in ("build", "simulate", "infer", "train"):
+    for kind in ("build", "simulate", "train"):
         spec = ExecutionSpec(kind=kind)
         assert spec.compile_block_steps == "auto"
         assert spec.dataset_prefetch == 1

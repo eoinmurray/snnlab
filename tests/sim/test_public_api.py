@@ -33,7 +33,6 @@ def test_documented_exports_are_the_public_package_api():
     [
         ("requests.api", "build"),
         ("requests.api", "simulate"),
-        ("requests.api", "infer"),
         ("requests.api", "train"),
         ("graph.executor", "GraphExecutor"),
         ("runtime.recording", "RecordingSpec"),
@@ -49,6 +48,21 @@ def test_exports_resolve_to_their_implementation_objects(module, name):
 def test_former_execution_module_is_retired():
     with pytest.raises(ModuleNotFoundError, match=r"snnlab\.sim\.execution"):
         importlib.import_module("snnlab.sim.execution")
+
+
+def test_infer_is_removed_from_public_and_internal_execution_apis():
+    from snnlab.sim.requests import api, handlers
+    from snnlab.sim.requests.spec import ExecutionSpec
+
+    assert "infer" not in sim.__all__
+    for module in (sim, api, handlers):
+        assert "infer" not in dir(module)
+        with pytest.raises(AttributeError):
+            getattr(module, "infer")
+    with pytest.raises(ImportError, match="infer"):
+        exec("from snnlab.sim import infer")
+    with pytest.raises(ValueError, match="unsupported execution request: infer"):
+        handlers.execute_request(ExecutionSpec(kind="infer"))
 
 
 def test_package_import_is_lazy_in_a_fresh_process():

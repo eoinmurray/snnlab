@@ -492,7 +492,7 @@ def main(argv=None):
         choices=["float16", "bfloat16", "float32", "float64"],
         default="float32",
     )
-    parser.add_argument("--mode", choices=["train", "infer"], default="train")
+    parser.add_argument("--mode", choices=["train", "simulate"], default="train")
     parser.add_argument("--record", action="store_true")
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--profile-steps", type=int, default=128)

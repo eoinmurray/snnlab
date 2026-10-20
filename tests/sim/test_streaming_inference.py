@@ -239,7 +239,7 @@ def test_dataset_sink_bounds_retained_samples_and_keeps_global_batches(tmp_path)
     result = simulate(
         replace(
             spec,
-            kind="infer",
+            kind="simulate",
             training=None,
             input_bindings=(dataset(tmp_path, count=9),),
             targets={},

@@ -38,6 +38,11 @@ class RecordingBlock:
     cells: tuple[int, ...] | None = None
     unit: str | None = None
     measurement_window: tuple[int, int] | None = None
+    axes: tuple[int | str, ...] | None = None
+    step_indices: tuple[int, ...] | None = None
+    sample_ids: tuple[int | str, ...] | None = None
+    batch_size: int | None = None
+    selected_batch: int | None = None
 
 
 class NPZRecordingSink:
@@ -45,6 +50,11 @@ class NPZRecordingSink:
 ```
 
 `RecordingBlock.values` contains an independent CPU tensor delivered to a sink. Absolute start/end steps describe the block; `batch_offset` identifies the source sample offset for dataset batching. `cells`, `unit` and `measurement_window` retain interpretation metadata. A recording window and the graph reduction measurement window are independently configurable.
+
+New native blocks also expose axes, actual dense step coordinates, sample identities
+and original batch size. Use [`sim.RecordingData.read`](/api/sim/experiment-utilities#recordingdata-and-numpy-conversion)
+to verify and read supported NPZ sink output. `result.write_recording` explicitly
+exports retained arrays through the same format, with optional sample selection.
 
 ## Automatic inference reductions
 

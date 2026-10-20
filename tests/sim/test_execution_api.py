@@ -14,7 +14,7 @@ from snnlab.sim.training.trainer import train as train_request
 from tests.sim._execution_builders import direct_train_bundle
 
 
-@pytest.mark.parametrize("name", ["build", "simulate", "infer", "train"])
+@pytest.mark.parametrize("name", ["build", "simulate", "train"])
 def test_execution_functions_have_explicit_operation_specific_keywords(name):
     function = getattr(sim, name)
     signature = inspect.signature(function)
@@ -71,8 +71,7 @@ def inputs():
     )
 
 
-@pytest.mark.parametrize("name", ["simulate", "infer"])
-def test_keyword_runs_match_internal_execution_and_continue(name, tmp_path):
+def test_keyword_simulation_matches_internal_execution_and_continues(tmp_path):
     kwargs = inputs()
     kwargs.update(
         diagnostics=False,
@@ -83,21 +82,21 @@ def test_keyword_runs_match_internal_execution_and_continue(name, tmp_path):
             ),
         ),
         inference_overrides={"duration_ms": 0.6, "input_rate_hz": 100.0},
-        snapshot=sim.SnapshotSpec(tmp_path / name, stage="both"),
+        snapshot=sim.SnapshotSpec(tmp_path / "simulate", stage="both"),
     )
-    result = getattr(sim, name)(**kwargs)
+    result = sim.simulate(**kwargs)
     options = {"inference_overrides": kwargs.pop("inference_overrides")}
     kwargs.pop("snapshot")
-    expected = getattr(handlers, name)(
-        ExecutionSpec(kind=name, **kwargs, options=options)
+    expected = handlers.simulate(
+        ExecutionSpec(kind="simulate", **kwargs, options=options)
     )
     for key, value in expected.outputs.items():
         torch.testing.assert_close(result.outputs[key], value, rtol=0, atol=0)
     assert not result.diagnostics
     assert result.runtime_state.completed_steps == 6
     assert result.snapshots.keys() == {"start", "end"}
-    assert result.snapshots["start"].metadata["kind"] == name
-    continued = getattr(sim, name)(
+    assert result.snapshots["start"].metadata["kind"] == "simulate"
+    continued = sim.simulate(
         **kwargs,
         inference_overrides=options["inference_overrides"],
         runtime_state=result.runtime_state,

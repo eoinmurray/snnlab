@@ -26,6 +26,14 @@ flag-built networks and config replay have been removed; see the
 
 Native training also supports online minibatch metrics, validation-only epoch evaluation, stratified schedules with configurable tails, and immutable epoch progress callbacks. See `examples/native-training/progress.py` for partial checkpoint resume and final/selected checkpoints, and the [execution policies](docs/content/docs/api/sim/execution-spec.mdx) for measurement and RNG contracts.
 
+Use `sim.TrainingHistory` and `sim.NetworkSnapshot` to read native experiment evidence,
+`sim.DatasetSnapshot` for named partitions with original sample identities, and explicit
+result exporters for portable metrics/recordings. NumPy results include retained recordings
+with per-signal coordinates; `viz.plot_raster` and `viz.plot_learning_curves` draw on your axes.
+See the [experiment utilities](docs/content/docs/api/sim/experiment-utilities.mdx) and run
+`uv run python examples/native-training/digits.py --smoke --output /tmp/digits-evidence`
+with a fresh output directory for a complete offline example.
+
 For a quick offline training benchmark with conductance-based LIF neurons, run
 `uv run python benchmarks/scikit-digits/benchmark.py`. See the
 [scikit-learn digits benchmark](benchmarks/scikit-digits/README.md) for the

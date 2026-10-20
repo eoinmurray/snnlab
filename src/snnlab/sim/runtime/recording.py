@@ -6,7 +6,7 @@ import copy
 import hashlib
 import json
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -63,6 +63,11 @@ class RecordingBlock:
     cells: tuple[int, ...] | None = None
     unit: str | None = None
     measurement_window: tuple[int, int] | None = None
+    axes: tuple[int | str, ...] | None = None
+    step_indices: tuple[int, ...] | None = None
+    sample_ids: tuple[int | str, ...] | None = None
+    batch_size: int | None = None
+    selected_batch: int | None = None
 
 
 class NPZRecordingSink:
@@ -83,9 +88,10 @@ class NPZRecordingSink:
         values, storage = numpy_payload(block.values)
         np.savez_compressed(destination, values=values)
         metadata = {
-            key: value for key, value in asdict(block).items() if key != "values"
+            item.name: getattr(block, item.name) for item in fields(block) if item.name != "values"
         }
         metadata.update(
+            schema=self.identity,
             file=name,
             shape=list(block.values.shape),
             dtype=str(block.values.dtype).removeprefix("torch."),
@@ -199,7 +205,9 @@ class Recorder:
         self.dtype = dtype
         self.axes = axes
         self.units = {}
+        self.output_axes = {}
         if graph:
+            self.output_axes = {row["id"]: axes[row["signal"]] for row in graph.get("outputs", ())}
             self.units.update(
                 {
                     f"{row['id']}.value": row.get("unit")
@@ -261,6 +269,16 @@ class Recorder:
 
     def send(self, block):
         # User sinks cannot perturb the executor's random streams or tensors.
+        if block.axes is None:
+            axes = ("event", "coordinate") if block.kind == "spike_events" else self.output_axes.get(block.signal, self.axes.get(block.signal))
+            if axes is None:
+                raise ValueError(f"recording axis metadata is missing for {block.signal!r}")
+            axes = tuple("cell" if isinstance(axis, int) else axis for axis in axes)
+            size = block.values.shape[axes.index("batch")] if "batch" in axes else None
+            block = replace(block, axes=axes,
+                            step_indices=tuple(range(block.start_step, block.end_step)) if "time" in axes else None,
+                            sample_ids=tuple(range(block.batch_offset, block.batch_offset + size)) if size is not None else block.sample_ids,
+                            batch_size=block.batch_offset + size if size is not None else block.batch_size)
         with evaluation_rng():
             self.spec.sink(block)
 
@@ -341,6 +359,8 @@ class Recorder:
                     self.batch_offset,
                     cells,
                     self.units.get(name),
+                    batch_size=self.batch_offset + host.shape[1],
+                    sample_ids=tuple(range(self.batch_offset, self.batch_offset + host.shape[1])),
                 )
             )
         else:
@@ -398,6 +418,26 @@ class Recorder:
             if self.spec and not self.spec.sink
             else {}
         )
+
+    def information(self, batch_size):
+        """Describe retained coordinates without reading tensors or drawing RNG."""
+        from snnlab.sim.artifacts.recordings import SignalInfo
+
+        if not self.spec or self.spec.sink:
+            return {}
+        start = max(self.start, self.spec.window.start_step) if self.spec.window else self.start
+        end = min(self.end, self.spec.window.end_step) if self.spec.window else self.end
+        end = max(start, end)
+        return {
+            name: SignalInfo(
+                axes=("event", "coordinate") if row.kind == "spike_events" else tuple("cell" if isinstance(axis, int) else axis for axis in self.axes[name]),
+                kind=row.kind, unit=self.units.get(name), cell_ids=self.selected_cells[name],
+                sample_ids=tuple(range(batch_size)),
+                step_indices=None if row.kind == "spike_events" else tuple(range(start, end)),
+                dt_ms=self.dt_ms, start_step=start, end_step=end,
+                batch_size=batch_size, source_dtype="int64" if row.kind == "spike_events" else str(self.dtype).removeprefix("torch."),
+            ) for name, row in self.rows.items()
+        }
 
 
 class OnlineReductions:

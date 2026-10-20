@@ -58,7 +58,7 @@ optimizer step.
 
 ## Execution requests
 
-`Performance` groups shared execution optimizations for all four public functions:
+`Performance` groups shared execution optimizations for all three public functions:
 
 ```python
 from snnlab.sim import Performance
@@ -107,12 +107,11 @@ functions. Missing implementations and incompatible declared versions fail
 before execution. See the [Extensions reference](../../../docs/content/docs/api/lang/extensions.mdx).
 
 1. `build(...)` loads and constructs a graph executor.
-2. `simulate(...)` resolves input bindings and runs the graph.
-3. `infer(...)` uses the simulation handler, including checkpoint loading.
-4. `train(...)` runs training with the supplied recipe and targets.
-5. Public functions take explicit keyword arguments; the CLI and handlers share an internal `ExecutionSpec`.
-6. `GraphRuntimeState` carries simulation state between compatible runs.
-7. `ExecutionResult` holds outputs, diagnostics, selected recorded signals, decisions,
+2. `simulate(...)` resolves input bindings and runs the graph, including inference with an optional learned-weight checkpoint.
+3. `train(...)` runs training with the supplied recipe and targets.
+4. Public functions take explicit keyword arguments; the CLI and handlers share an internal `ExecutionSpec`.
+5. `GraphRuntimeState` carries simulation state between compatible runs.
+6. `ExecutionResult` holds outputs, diagnostics, selected recorded signals, decisions,
    metrics, parameters and runtime state. `.numpy()` converts outputs/diagnostics;
    convert selected `recorded_signals` tensors separately.
 
@@ -128,7 +127,7 @@ from `snnlab.sim`. Each package initializer is deliberately minimal.
 
 | Package | Responsibility and source files | API reference |
 | --- | --- | --- |
-| `requests/` | [api.py](requests/api.py), [performance.py](requests/performance.py), [spec.py](requests/spec.py), [result.py](requests/result.py), [handlers.py](requests/handlers.py): performance policy, requests, results, build/simulate/infer and dispatch. | Performance, internal requests, ExecutionResult, Execution Functions |
+| `requests/` | [api.py](requests/api.py), [performance.py](requests/performance.py), [spec.py](requests/spec.py), [result.py](requests/result.py), [handlers.py](requests/handlers.py): performance policy, requests, results, build/simulate and dispatch. | Performance, internal requests, ExecutionResult, Execution Functions |
 | `inputs/` | [bindings.py](inputs/bindings.py), [resolution.py](inputs/resolution.py), datasets, encoders and providers. | Input bindings and resolution |
 | `graph/` | [plan.py](graph/plan.py), [executor.py](graph/executor.py), dynamics, tensor kernels and extension helpers. | GraphExecutor, PyTorch Integration |
 | `runtime/` | [state.py](runtime/state.py), [recording.py](runtime/recording.py), [interventions.py](runtime/interventions.py), [resets_decisions.py](runtime/resets_decisions.py). | Runtime State, Recording and Measurement, Interventions, Resets and Decisions |

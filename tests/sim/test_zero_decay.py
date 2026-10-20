@@ -251,7 +251,7 @@ def test_training_protocol_preserves_legacy_strict_and_rejects_mode_switch(tmp_p
 def test_request_defaults_and_snapshot_controls_reach_inference():
     graph = circuit()
     spec = ExecutionSpec(
-        kind="infer",
+        kind="simulate",
         graph=graph,
         input_bindings=(DenseArrayBinding("events", torch.ones(4, 1, 2)),),
         device="cpu",
@@ -378,7 +378,7 @@ def test_dataset_snapshot_policy_and_authenticated_cache(tmp_path):
         encoder=DatasetEncoder("prebinned_spikes"),
     )
     spec = ExecutionSpec(
-        kind="infer",
+        kind="simulate",
         graph=graph,
         input_bindings=(binding,),
         batch_size=2,

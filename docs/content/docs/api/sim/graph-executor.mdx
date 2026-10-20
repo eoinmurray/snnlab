@@ -5,9 +5,9 @@ description: PyTorch module for executing a compiled spiking-network graph, acce
 
 `GraphExecutor` is a `torch.nn.Module` that executes a prepared graph plan. Import it from `snnlab.sim`.
 
-Use this class when composing a spiking network with ordinary PyTorch layers or writing an external optimization loop. For bundle loading, input bindings and execution provenance, use [Execution Options](/api/sim/execution-spec) with `build`, `simulate`, `infer` or `train`.
+Use this class when composing a spiking network with ordinary PyTorch layers or writing an external optimization loop. For bundle loading, input bindings and execution provenance, use [Execution Options](/api/sim/execution-spec) with `build`, `simulate` or `train`.
 
-Those four functions accept a shared [Performance](/api/sim/execution-spec#performance)
+Those three functions accept a shared [Performance](/api/sim/execution-spec#performance)
 object. Direct `GraphExecutor` construction keeps the individual constructor
 controls below; use `build(..., performance=policy).model` to initialize an
 executor from that policy. The build result describes preparation; subsequent
