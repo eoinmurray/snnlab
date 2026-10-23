@@ -7,7 +7,7 @@ Use `snnlab.lang` to describe a network and `snnlab.viz` to render its diagram. 
 
 Rendering diagrams requires Graphviz's `dot` executable on your PATH (`brew install graphviz` on macOS).
 
-Compiled networks can stay in memory or be saved for later. The execution functions `simulate` and `train` accept [keyword execution options](/api/sim/execution-spec): use `graph=bundle.graph` to pass the compiled graph directly, or save it with `bundle.write("network.bundle")` and use `bundle=Path("network.bundle")`. A saved bundle is a directory containing the graph, manifest and any training recipe. For in-memory training, also pass `training=bundle.training` when the bundle includes a recipe; inputs and other execution settings belong in the request.
+Compiled networks can stay in memory or be saved for later. The execution functions `simulate` and `train` accept [keyword execution options](/api/sim#inputs-and-execution-settings): use `graph=bundle.graph` to pass the compiled graph directly, or save it with `bundle.write("network.bundle")` and use `bundle=Path("network.bundle")`. A saved bundle is a directory containing the graph, manifest and any training recipe. For in-memory training, also pass `training=bundle.training` when the bundle includes a recipe; inputs and other execution settings belong in the request.
 
 ## 1. Feedforward Network
 

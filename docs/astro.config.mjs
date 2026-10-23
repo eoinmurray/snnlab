@@ -9,6 +9,7 @@ import rehypeKatex from 'rehype-katex';
 import contentReload from './scripts/content-reload.mjs';
 import hydrationPreloads from './scripts/hydration-preloads.mjs';
 import slashRedirects from './scripts/slash-redirects.mjs';
+import apiRedirects from './scripts/api-redirects.mjs';
 
 const base = process.env.SITE_BASE_PATH || '/';
 
@@ -46,6 +47,10 @@ function baseLinks() {
 
 export default defineConfig({
   output: 'static',
+  redirects: Object.fromEntries(
+    Object.entries(apiRedirects).map(([from, to]) => [from, `${base.replace(/\/$/, '')}${to}`]),
+  ),
+  devToolbar: { enabled: false },
   outDir: './out',
   server: { port: 3001 },
   site: process.env.SITE_URL || 'https://snnlab.eoinmurray.info',

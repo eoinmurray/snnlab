@@ -9,6 +9,18 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-10-23
+
+### Added
+
+1. Runnable Hodgkin–Huxley neuron extension with sodium, potassium and leak currents, gating dynamics, an independent SciPy trajectory comparison and focused regression tests. The example, figures and comparison data are included in the documentation and source distribution.
+
+### Changed
+
+1. Consolidated API Reference into five curated module pages: `snnlab.lang`, `snnlab.sim`, `snnlab.extensions`, `snnlab.analysis` and `snnlab.viz`. Former API page URLs redirect to the consolidated references, including deployments beneath `/snnlab`.
+2. Simplified documentation navigation: API Reference precedes Benchmarks, library comparisons and Changelog; PyTorch Integration appears immediately before Animate a Simulation. Removed the Model Components and Results and Analysis guide groups and their six pages, updated remaining links and removed the retired Neurons publishing pipeline.
+3. Bundle graph, training and manifest JSON files now use sorted, indented UTF-8 text with a trailing newline. Canonical digest calculation and bundle verification remain unchanged.
+
 ## [0.24.0] - 2026-10-23
 
 ### Added
@@ -348,7 +360,7 @@ separate compatibility contracts.
 ### Upgrade notes
 
 1. This release includes the Pinglab migration APIs for batchwise encoding, epoch observations, checkpoint selection, spike replay, selective resets, decision segments and bounded inference retention. Refractory-duration unification, autapse policy and full expected-request/checkpoint authentication remain separate work.
-2. Removed legacy CLI switches now fail explicitly, and retained deprecated switches emit a visible warning. See the [CLI reference](docs/content/docs/api/sim/cli.mdx) for the complete removal list; historical config replay and Python APIs retain their supported behavior.
+2. Removed legacy CLI switches now fail explicitly, and retained deprecated switches emit a visible warning. See the [CLI reference](https://github.com/eoinmurray/snnlab/blob/4cffb5b78185633bb4e9b898430b04bfc6c49908/docs/content/docs/api/sim/cli.mdx) for the complete removal list; historical config replay and Python APIs retain their supported behavior.
 3. `recording` / `--recording` now accept the new typed `RecordingSpec` / JSON selection contract; old recording profile strings remain unsupported. Dataset checkpoints produced under the older eager encoding protocol cannot resume under the new batch encoding protocol. Runtime-state schemas 1–3 remain readable; explicit continued measurement windows use schema version 4.
 
 ### Added

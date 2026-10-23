@@ -24,7 +24,7 @@ Built-in spiking models include current and conductance LIF, ALIF and AdEx.
 ALIF uses a spike-triggered threshold offset; AdEx uses an exponential voltage
 term and adaptation current. Their per-cell adaptation is differentiable and
 included in saved runtime state and recordings. See the
-[Neurons guide](../../../docs/content/docs/neurons.mdx) for parameters and
+[Neurons guide](../../../docs/content/docs/api/extensions.mdx) for parameters and
 the exponential-Euler discretization.
 
 ## GraphExecutor

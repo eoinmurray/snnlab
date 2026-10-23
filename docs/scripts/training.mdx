@@ -13,7 +13,7 @@ Both the input-to-E weights (`w_in`) and E-to-readout weights (`w_out`) learn. S
 
 This extends [Quickstart](/quickstart) with labelled data, minibatches, validation and saved weights. No dataset download is needed. All files live in `examples/training/`; the saved model can later be reused from the [Inference example](/inference).
 
-Training uses the automatic [Performance defaults](/api/sim/execution-spec#performance).
+Training uses the automatic [Performance defaults](/api/sim#performance).
 Import `Performance` from `snnlab.sim`.
 Pass `performance=Performance(...)` to `train` to customize compilation, CUDA
 replay, precision, fused optimization, dataset prefetch and projection arithmetic.
@@ -67,7 +67,7 @@ The dataset helper makes balanced classes. Class A has nominal rates `[100, 100,
 
 Input tensors have `(400, samples, 4)` axes: time, sample/batch and input channel. Labels are integer class IDs `0` or `1`. Training and validation use different random seeds and share no samples.
 
-[`DenseArrayBinding`](/api/sim/execution-spec#densearraybinding) supplies these custom spike tensors. The training label vector is supplied separately through `targets`, under the name used by the loss.
+[`DenseArrayBinding`](/api/sim#densearraybinding) supplies these custom spike tensors. The training label vector is supplied separately through `targets`, under the name used by the loss.
 
 ## 3. Define the network and readout
 
@@ -75,7 +75,7 @@ Input tensors have `(400, samples, 4)` axes: time, sample/batch and input channe
 {{NETWORK}}
 ```
 
-[`net.connect`](/api/lang/network#connect) automatically creates 64 input-to-E weights, with compiled shape `(16, 4)`. `w_in = input_projection.weight` names the reference to these automatically created weights. They start with a uniform initialization and learn during training, while remaining non-negative. With the default initialization scaling, their initialization is divided by the four input channels at execution, as described in the [weight reference](/api/lang/parameters#weights).
+[`net.connect`](/api/lang#connect) automatically creates 64 input-to-E weights, with compiled shape `(16, 4)`. `w_in = input_projection.weight` names the reference to these automatically created weights. They start with a uniform initialization and learn during training, while remaining non-negative. With the default initialization scaling, their initialization is divided by the four input channels at execution, as described in the [weight reference](/api/lang#weights).
 
 The readout is an explicit population of **two non-spiking leaky-integrator cells**, one per class. `E_to_readout` connects all 16 E cells to both readout cells.
 
@@ -95,7 +95,7 @@ The official output is `result.outputs["class_scores"]`. Inputs, E spikes and re
 
 ## 5. Define the training recipe
 
-See the [Training API reference](/api/lang/training) for objectives, parameter groups, optimizer settings and surrogate gradients.
+See the [Training API reference](/api/lang#trainspec) for objectives, parameter groups, optimizer settings and surrogate gradients.
 
 ```python
 {{RECIPE}}
@@ -117,7 +117,7 @@ Compilation validates both the graph and training recipe. `network.bundle` conta
 
 ## 7. Train and evaluate in one call
 
-[`ValidationSpec`](/api/sim/execution-spec#validation) supplies held-out input bindings and labels. Pass it as `validation=validation` when calling `train`:
+[`ValidationSpec`](/api/sim#validation) supplies held-out input bindings and labels. Pass it as `validation=validation` when calling `train`:
 
 ```python
 {{TRAIN}}
@@ -134,7 +134,7 @@ To measure training and evaluation separately, add `training_timing=True` to the
 The default synchronized mode measures completed GPU work at phase boundaries;
 it adds no per-forward/backward timing fences. Keep warmup, plotting and external
 checkpoint writes outside the comparison timer. Timing is off by default and does
-not change checkpoint or resume identity. See [training timing](/api/sim/execution-spec#training_timing)
+not change checkpoint or resume identity. See [training timing](/api/sim#training_timing)
 for the complete scopes and host-only enqueue timing.
 
 To select completed-epoch weights by validation cross-entropy, breaking ties with accuracy, configure your execution request before calling `train`:
@@ -160,9 +160,9 @@ print(selected.selection_record)
 save_training_checkpoint(OUTPUT_DIR / "selected.checkpoint", selected)
 ```
 
-Pass the same graph, recipe, training bindings and `ValidationSpec` as in the main training call. This optional alternative can select an earlier epoch than the final state. Initial weights are excluded; exact ties retain the earliest winner. The final checkpoint retains the winner for resume. See [Checkpoint selection](/api/sim/execution-spec#checkpoint_selection) for policy and compatibility rules. The downloadable example below keeps its existing final-checkpoint workflow.
+Pass the same graph, recipe, training bindings and `ValidationSpec` as in the main training call. This optional alternative can select an earlier epoch than the final state. Initial weights are excluded; exact ties retain the earliest winner. The final checkpoint retains the winner for resume. See [Checkpoint selection](/api/sim#inputs-and-execution-settings) for policy and compatibility rules. The downloadable example below keeps its existing final-checkpoint workflow.
 
-For an external NPZ dataset, use `DatasetSnapshotBinding` in `input_bindings` and its `target_id` for labels. Encoding is automatically batchwise; no additional switch is needed. With `DatasetEncoder("rate_poisson", duration_ms=200, max_rate_hz=100, seed=17)`, training receives fresh spikes per epoch while validation reuses deterministic draws. `rates_hz=(40, 80, 120)` can replace `max_rate_hz` for one categorical rate per presentation. Set `ValidationSpec.encoding_seeds=(101, 103)` when multiple explicit validation draws are required. See [automatic batch encoding](/api/sim/execution-spec#automatic-batch-encoding) for source format, memory, streams and resume compatibility. This downloadable example continues to replay its explicitly constructed dense spike arrays.
+For an external NPZ dataset, use `DatasetSnapshotBinding` in `input_bindings` and its `target_id` for labels. Encoding is automatically batchwise; no additional switch is needed. With `DatasetEncoder("rate_poisson", duration_ms=200, max_rate_hz=100, seed=17)`, training receives fresh spikes per epoch while validation reuses deterministic draws. `rates_hz=(40, 80, 120)` can replace `max_rate_hz` for one categorical rate per presentation. Set `ValidationSpec.encoding_seeds=(101, 103)` when multiple explicit validation draws are required. See [automatic batch encoding](/api/sim#automatic-batch-encoding) for source format, memory, streams and resume compatibility. This downloadable example continues to replay its explicitly constructed dense spike arrays.
 
 Optional named epoch observations can be requested without enabling diagnostic traces:
 
@@ -184,7 +184,7 @@ result = train(
 )
 ```
 
-Use your graph's exact IDs (this example declares `E` and `w_out`). See [Epoch observations](/api/sim/execution-result#epoch-observations) for units, output-neuron activity, reference probes and resumable histories, and [Execution Options](/api/sim/execution-spec#observations) for configuration. Observations measure fixed epoch states and preserve evaluation RNG streams; they do not supply new checkpoint-selection rules.
+Use your graph's exact IDs (this example declares `E` and `w_out`). See [Epoch observations](/api/sim#epoch-observations) for units, output-neuron activity, reference probes and resumable histories, and [Execution Options](/api/sim#observations) for configuration. Observations measure fixed epoch states and preserve evaluation RNG streams; they do not supply new checkpoint-selection rules.
 
 The final checkpoint is saved once for later inference. There is no external epoch loop or intermediate checkpoint management.
 
@@ -247,7 +247,7 @@ python progress.py --output /tmp/native-weighted --equal-class-loss
 
 The script prints natural class counts and a report after each completed epoch: online train accuracy, held-out validation accuracy, global update/example counts and measured seconds. It saves a partial checkpoint after the first update, resumes the same schedule, then writes final and validation-selected checkpoints plus `results.json`. Online training has no epoch-zero measurement and no extra training evaluation. The optional equal-class objective uses only training counts; unweighted classification CE is retained separately. Synthetic accuracy does not establish performance on real SHD.
 
-For a larger SHD-shaped scheduling demonstration, add `--samples 8156 --batch-size 256 --steps 1000 --device cuda`. This needs an available CUDA device and substantial runtime; sample counts and rates here remain synthetic. The [Execution Options reference](/api/sim/execution-spec#metrics) specifies aggregation, RNG, conflict, timing and resume rules.
+For a larger SHD-shaped scheduling demonstration, add `--samples 8156 --batch-size 256 --steps 1000 --device cuda`. This needs an available CUDA device and substantial runtime; sample counts and rates here remain synthetic. The [Execution Options reference](/api/sim#metrics) specifies aggregation, RNG, conflict, timing and resume rules.
 
 ```python
 {{PROGRESS_SCRIPT}}

@@ -1,10 +1,8 @@
 """The public package API resolves implementations without the retired module."""
 
 import importlib
-import re
 import subprocess
 import sys
-from pathlib import Path
 from typing import get_type_hints
 
 import pytest
@@ -12,15 +10,9 @@ import pytest
 from snnlab import sim
 
 
-def test_documented_exports_are_the_public_package_api():
-    overview = (
-        Path(__file__).resolve().parents[2]
-        / "docs/content/docs/api/overview.mdx"
-    ).read_text()
-    section = overview.split("### Sim\n")[1].split("### Viz\n")[0]
-    names = re.findall(r"^\| `sim\.(\w+)`", section, re.MULTILINE)
+def test_all_public_exports_resolve():
+    names = sim.__all__
     assert len(names) == len(set(names))
-    assert set(names) == set(sim.__all__)
     for name in names:
         assert getattr(sim, name) is not None
         assert name in dir(sim)

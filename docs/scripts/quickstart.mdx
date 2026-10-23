@@ -43,11 +43,11 @@ The binding supplies 3,000 time steps and one batch item. At a timestep of 0.1 m
 
 Other input bindings are available for different input sources:
 
-1. [`DenseArrayBinding`](/api/sim/execution-spec#densearraybinding): custom input tensors, including NumPy arrays converted with `torch.as_tensor(array)`.
-2. [`EventStreamBinding`](/api/sim/execution-spec#eventstreambinding): sparse spike events specified by time-step, batch and channel coordinates.
-3. [`DatasetSnapshotBinding`](/api/sim/execution-spec#datasetsnapshotbinding): inputs from a saved NPZ dataset, with an encoder and optional training targets.
+1. [`DenseArrayBinding`](/api/sim#densearraybinding): custom input tensors, including NumPy arrays converted with `torch.as_tensor(array)`.
+2. [`EventStreamBinding`](/api/sim#eventstreambinding): sparse spike events specified by time-step, batch and channel coordinates.
+3. [`DatasetSnapshotBinding`](/api/sim#datasetsnapshotbinding): inputs from a saved NPZ dataset, with an encoder and optional training targets.
 
-All are supplied through `input_bindings`. See the [input binding reference](/api/sim/execution-spec#input_bindings) for their fields and compatibility rules.
+All are supplied through `input_bindings`. See the [input binding reference](/api/sim#input_bindings) for their fields and compatibility rules.
 
 ## 3. Define the network
 
@@ -61,13 +61,13 @@ Create the excitatory layer and connect the input to it:
 
 Each of the 4 input channels connects to every one of the 16 E cells. `net.connect` automatically sizes the weight matrix from the source channel count and target neuron count. This creates **64 weights**, arranged in a `(16, 4)` matrix in the compiled graph: one row per E cell and one column per input channel. Each cell receives its own weighted combination of the same four spike trains, so input channels and neurons do not need matching counts.
 
-`Uniform(0.1, 0.5)` initializes all 64 weights independently. By default, the graph executor divides projection weights by the number of input channels (4 here); see the [weight reference](/api/lang/parameters#weights) for this normalization. Different weights give cells different responses.
+`Uniform(0.1, 0.5)` initializes all 64 weights independently. By default, the graph executor divides projection weights by the number of input channels (4 here); see the [weight reference](/api/lang#weights) for this normalization. Different weights give cells different responses.
 
-See [`Network.connect`](/api/lang/network#connect) for all connection arguments and available options:
+See [`Network.connect`](/api/lang#connect) for all connection arguments and available options:
 
-1. [Synapses](/api/lang/components#synapses): AMPA, GABA and leaky-integrator projections, plus the current backend support limits.
-2. [Weights](/api/lang/parameters#weights): constant, zero, uniform and normal initializers, or an existing parameter.
-3. [Constraints](/api/lang/parameters#constraints): no constraint or `NonNegative`.
+1. [Synapses](/api/extensions#synapses): AMPA, GABA and leaky-integrator projections, plus the current backend support limits.
+2. [Weights](/api/lang#weights): constant, zero, uniform and normal initializers, or an existing parameter.
+3. [Constraints](/api/lang#constraints): no constraint or `NonNegative`.
 
 
 ## 4. Choose outputs and expose diagnostics
@@ -104,7 +104,7 @@ To run the saved bundle, pass `bundle=bundle_path` to `simulate` in place of `gr
 {{EXECUTION}}
 ```
 
-The graph executor is the default. `input_bindings` supplies the Poisson stimulus by name, `device="cpu"` selects CPU execution, and exposed diagnostics are returned by default. `simulate` executes the request and returns the result. See the [Execution Options reference](/api/sim/execution-spec) for every setting.
+The graph executor is the default. `input_bindings` supplies the Poisson stimulus by name, `device="cpu"` selects CPU execution, and exposed diagnostics are returned by default. `simulate` executes the request and returns the result. See the [Execution Options reference](/api/sim#inputs-and-execution-settings) for every setting.
 
 ## 7. Retrieve outputs and prepare plots
 
@@ -112,7 +112,7 @@ The graph executor is the default. `input_bindings` supplies the Poisson stimulu
 {{RETRIEVAL}}
 ```
 
-`spikes` comes from the official network output; `input_spikes` and `voltages` come from the exposed diagnostics. `result.numpy(batch=0)` converts them to independent NumPy arrays and selects the first batch item using each signal's declared axes. `data.time_ms` supplies the time axis in milliseconds using the actual simulation timestep. The original result retains its tensors. See the [NumPy result reference](/api/sim/execution-result#numpy) for details.
+`spikes` comes from the official network output; `input_spikes` and `voltages` come from the exposed diagnostics. `result.numpy(batch=0)` converts them to independent NumPy arrays and selects the first batch item using each signal's declared axes. `data.time_ms` supplies the time axis in milliseconds using the actual simulation timestep. The original result retains its tensors. See the [NumPy result reference](/api/sim#numpy) for details.
 
 The plotting step uses `snnlab.viz.FigureGrid` and Matplotlib to save one figure with three rows: input spikes, E spikes and E cell 0's membrane voltage. All rows share the same time axis. Its implementation is included in the full script below.
 

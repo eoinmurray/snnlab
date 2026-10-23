@@ -12,7 +12,7 @@ The script loads **`examples/training/network.bundle` and `examples/training/tra
 The diagram is generated from the saved bundle. This walkthrough loads that network rather than defining or compiling a new one. Run the Training example first; all inference outputs are saved separately in `examples/inference/`.
 
 Use `simulate` with `checkpoint` to run inference with learned weights. It accepts
-the same immutable [Performance policy](/api/sim/execution-spec#performance) as
+the same immutable [Performance policy](/api/sim#performance) as
 training. Omission enables the automatic defaults; for example,
 `performance=Performance(precision="highest")` disables automatic CUDA BF16/TF32.
 Import `Performance` from `snnlab.sim`. It controls execution settings; load the
@@ -102,7 +102,7 @@ input_spikes, labels = make_dataset(TEST_SAMPLES, seed=DATA_SEED)
 test_input = DenseArrayBinding(input_id="inputs", value=input_spikes)
 ```
 
-The [`DenseArrayBinding`](/api/sim/execution-spec#densearraybinding) matches the saved graph's input named `"inputs"`. Spikes have `(400, 64, 4)` axes: time, sample and input channel. Keep the timing and rate settings aligned with Training when modifying this paired example.
+The [`DenseArrayBinding`](/api/sim#densearraybinding) matches the saved graph's input named `"inputs"`. Spikes have `(400, 64, 4)` axes: time, sample and input channel. Keep the timing and rate settings aligned with Training when modifying this paired example.
 
 Labels are used to assess predictions after inference. They are not passed to `simulate`, which does not need the correct answer to run.
 
@@ -119,7 +119,7 @@ with torch.no_grad():
     )
 ```
 
-[`checkpoint`](/api/sim/execution-spec#checkpoint) loads the Training checkpoint's named parameters. Inference checks the graph identity and parameter compatibility. It does not restore the optimizer or resume training.
+[`checkpoint`](/api/sim#inputs-and-execution-settings) loads the Training checkpoint's named parameters. Inference checks the graph identity and parameter compatibility. It does not restore the optimizer or resume training.
 
 `torch.no_grad()` prevents gradient tracking. There is no optimizer step or training call. Diagnostics are enabled by default, so the signals exposed in Training are available for the plots: input spikes, E spikes and readout voltages.
 
@@ -134,7 +134,7 @@ accuracy = float(np.mean(predictions == expected))
 print(f"Accuracy on {TEST_SAMPLES} fresh samples: {accuracy:.1%}")
 ```
 
-[`result.numpy()`](/api/sim/execution-result#numpy) returns named NumPy arrays. `class_scores` has shape `(64, 2)`: one row per sample and one score per class. `argmax(axis=1)` selects the higher-scoring class. These scores are logits, not probabilities.
+[`result.numpy()`](/api/sim#numpy) returns named NumPy arrays. `class_scores` has shape `(64, 2)`: one row per sample and one score per class. `argmax(axis=1)` selects the higher-scoring class. These scores are logits, not probabilities.
 
 Accuracy is the fraction of predictions matching the known labels. With the supplied training configuration and seeds, the saved model classifies all 64 samples correctly. This measures the synthetic task, not performance on real neural recordings.
 

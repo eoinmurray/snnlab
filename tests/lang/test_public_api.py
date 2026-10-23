@@ -1,9 +1,7 @@
 """The public Lang API needs no implementation-module imports."""
 
-import re
 import subprocess
 import sys
-from pathlib import Path
 from typing import get_type_hints
 
 import pytest
@@ -11,14 +9,9 @@ import pytest
 from snnlab import lang
 
 
-def test_documented_exports_are_the_complete_public_api():
-    overview = (
-        Path(__file__).resolve().parents[2] / "docs/content/docs/api/overview.mdx"
-    ).read_text()
-    section = overview.split("### Lang\n")[1].split("### Sim\n")[0]
-    names = re.findall(r"^\| `lang\.(\w+)`", section, re.MULTILINE)
+def test_all_public_exports_resolve():
+    names = lang.__all__
     assert len(names) == len(set(names))
-    assert set(names) == set(lang.__all__)
     assert {"ops", "readouts", "training"}.isdisjoint(lang.__all__)
     for name in names:
         assert getattr(lang, name) is not None

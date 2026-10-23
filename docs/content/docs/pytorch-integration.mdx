@@ -55,7 +55,7 @@ Run [Training](/training) first to generate the bundle. `lang.load_bundle` verif
 
 ## 2. Combine the SNN with ordinary PyTorch layers
 
-See the [GraphExecutor API reference](/api/sim/pytorch) for construction, tensor shapes and live parameter access.
+See the [GraphExecutor API reference](/api/sim#advanced-pytorch-execution) for construction, tensor shapes and live parameter access.
 
 `GraphExecutor` already subclasses `torch.nn.Module`. `plan_graph` prepares the compiled graph for execution. The wrapper below adapts batch-first tensors, runs the SNN, then passes its output through a separate `nn.Sequential` head:
 

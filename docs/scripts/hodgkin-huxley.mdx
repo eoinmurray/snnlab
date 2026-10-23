@@ -1,0 +1,126 @@
+---
+title: Hodgkin–Huxley Neuron
+description: Implement an ionic-conductance neuron with extensions, inspect its channel dynamics, and compare against an independent SciPy solver.
+---
+
+This example implements the established single-compartment Hodgkin–Huxley model through [custom neuron and synapse extensions](/api/extensions#implementing-extensions). Sodium and potassium channels generate the action-potential waveform; there is no threshold-triggered voltage reset. One cell receives a 0.1 nA current pulse from 10 to 70 ms during a 100 ms recording.
+
+![A continuous pulse input drives one custom Hodgkin–Huxley neuron through a memoryless current-injection projection.](/hodgkin-huxley/network.png)
+
+The model follows [Hodgkin and Huxley (1952)](https://doi.org/10.1113/jphysiol.1952.sp004764), expressed in the modern absolute-voltage convention with resting voltage near −65 mV. Rates describe the classic squid-axon parameterization at 6.3 °C, with no temperature rescaling. The small membrane area and snnlab extension wrapper are choices for this example, rather than new channel equations.
+
+## Run the example
+
+Run from the repository root:
+
+```bash
+uv run python examples/hodgkin-huxley/hodgkin_huxley.py
+uv run python examples/hodgkin-huxley/scipy_comparison.py
+uv run pytest tests/sim/test_hodgkin_huxley_example.py -q
+```
+
+Keep `hh_neuron.py`, `hodgkin_huxley.py` and `scipy_comparison.py` in the same directory. The first command generates the voltage/gating figure and network diagram. The second independently integrates the density equations with SciPy and writes `scipy-comparison.png` and `comparison.json`. Both scripts render `network.png` and require Graphviz's `dot` command. Use `MPLBACKEND=Agg` for headless plotting. The simulation runs eagerly on CPU with strict extension validation; this is a forward-simulation example, without surrogate gradients for the binary spike events.
+
+1. [Download the neuron callbacks](/hodgkin-huxley/hh_neuron.py).
+2. [Download the runnable simulation](/hodgkin-huxley/hodgkin_huxley.py).
+3. [Download the SciPy comparison](/hodgkin-huxley/scipy_comparison.py).
+4. [Download the measured comparison report](/hodgkin-huxley/comparison.json).
+
+## Membrane and channel equations
+
+The membrane obeys
+
+$$
+C_m\frac{dV}{dt}=I_{\mathrm{inj}}
+-\bar g_{\mathrm{Na}}m^3h(V-E_{\mathrm{Na}})
+-\bar g_{\mathrm{K}}n^4(V-E_{\mathrm{K}})
+-g_L(V-E_L).
+$$
+
+Here $t$ is time in ms, $V$ is membrane voltage in mV, $C_m$ is capacitance in nF, and $I_{\mathrm{inj}}$ is net injected current in nA. The maximal sodium and potassium conductances are $\bar g_{\mathrm{Na}}$ and $\bar g_{\mathrm{K}}$ in µS; $g_L$ is leak conductance in µS. Their reversal voltages $E_{\mathrm{Na}}$, $E_{\mathrm{K}}$ and $E_L$ are in mV. Dimensionless gates $m$, $h$ and $n$ describe sodium activation, sodium inactivation and potassium activation, respectively. The instantaneous sodium and potassium conductances are $\bar g_{\mathrm{Na}}m^3h$ and $\bar g_{\mathrm{K}}n^4$.
+
+For each gate $x\in\{m,h,n\}$,
+
+$$
+\frac{dx}{dt}=\alpha_x(V)(1-x)-\beta_x(V)x,
+\qquad
+x(0)=\frac{\alpha_x(V_0)}{\alpha_x(V_0)+\beta_x(V_0)}.
+$$
+
+Here $\alpha_x$ and $\beta_x$ are voltage-dependent opening and closing rates in ms$^{-1}$, and $V_0=-65$ mV is the initial voltage. Initial gates are at their steady-state values for $V_0$. To display the conventional rate formulas without implicit physical units in exponential arguments, define the dimensionless voltage $v=V/(1\,\mathrm{mV})$. The table gives numerical rate values in ms$^{-1}$:
+
+| Gate | $\alpha_x$ | $\beta_x$ |
+| --- | --- | --- |
+| $m$ | $0.1(v+40)/(1-e^{-(v+40)/10})$ | $4e^{-(v+65)/18}$ |
+| $h$ | $0.07e^{-(v+65)/20}$ | $1/(1+e^{-(v+35)/10})$ |
+| $n$ | $0.01(v+55)/(1-e^{-(v+55)/10})$ | $0.125e^{-(v+65)/80}$ |
+
+The apparent singularities at −40 mV for $\alpha_m$ and −55 mV for $\alpha_n$ are removable. Their limiting rates are 1 and 0.1 ms$^{-1}$, respectively. The PyTorch implementation uses `expm1` with a local series expansion; the independent SciPy implementation uses `scipy.special.exprel`.
+
+### Parameters and physical units
+
+The example uses a 1,000 µm² patch, equivalent to $10^{-5}$ cm². Multiplying the classic density parameters by this area gives whole-cell values compatible with snnlab:
+
+| Parameter | Density formulation | Extension value |
+| --- | --- | --- |
+| Capacitance | 1 µF/cm² | 0.01 nF |
+| Maximal sodium conductance | 120 mS/cm² | 1.2 µS |
+| Maximal potassium conductance | 36 mS/cm² | 0.36 µS |
+| Leak conductance | 0.3 mS/cm² | 0.003 µS |
+| Sodium reversal | 50 mV | 50 mV |
+| Potassium reversal | −77 mV | −77 mV |
+| Leak reversal | −54.387 mV | −54.387 mV |
+| Pulse current | 10 µA/cm² | 0.1 nA |
+
+`input_unit="nA"` describes the injected input, while the neuron's intrinsic channels remain conductance-based. The registered memoryless synapse simply forwards the weight-projected current; it does not add synaptic filtering. In this example, `I_inj = excitatory - inhibitory`.
+
+## Voltage, gates and spikes
+
+![Membrane voltage, sodium and potassium gating variables, and the injected current pulse over 100 ms.](/hodgkin-huxley/hodgkin-huxley.png)
+
+The pulse produces {{SPIKE_COUNT}} spikes. Sodium activation rises rapidly during each upstroke; sodium inactivation and potassium activation contribute to repolarization. Potassium activation then relaxes during the afterhyperpolarization. These changes emerge from the channel equations, without a reset rule or an imposed refractory hold.
+
+The network timestep is 0.05 ms. Within each network step, the callback integrates all four differential equations together using classical fourth-order Runge–Kutta (RK4), subdividing into steps no larger than 0.025 ms. Input current is held constant during each network step. Gates are not clipped to force them into their physical interval.
+
+A binary spike marks an upward crossing of 0 mV during any internal substep. It is reported in that network step, while the continuous voltage keeps evolving. Recorded voltage/gates correspond to the end of each step, so plots use $(k+1)\Delta t$: $k$ is the zero-based step index and $\Delta t$ is the network timestep. The unused runtime refractory tensor is preserved. At most one event is returned per network step; coarse network timesteps can lose event multiplicity even when internal integration remains fine.
+
+## Compare with SciPy
+
+The reference separately implements the density equations using NumPy, then calls SciPy's adaptive [DOP853 solver](https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html) in float64. It does not call the PyTorch rate, derivative or integration functions. It restarts integration at 10 and 70 ms so the solver does not step across either current discontinuity, and samples its dense solution at exactly the same end-of-step times as snnlab.
+
+![Overlaid snnlab and SciPy voltage trajectories, their signed voltage difference, and errors in all three channel gates.](/hodgkin-huxley/scipy-comparison.png)
+
+The reference uses relative tolerance `rtol=1e-10` and absolute tolerance `atol=1e-12`. The following measurements are generated from the same run as the plotted comparison:
+
+| Measurement | Recorded value |
+| --- | --- |
+| snnlab state precision | float32 |
+| Maximum absolute voltage difference | {{VOLTAGE_MAX}} mV |
+| Voltage root mean square difference | {{VOLTAGE_RMSE}} mV |
+| Maximum absolute $m$ difference | {{M_MAX}} |
+| Maximum absolute $h$ difference | {{H_MAX}} |
+| Maximum absolute $n$ difference | {{N_MAX}} |
+| snnlab / SciPy spike count | {{SPIKE_COUNT}} / {{SCIPY_SPIKE_COUNT}} |
+| Maximum paired spike-time difference | {{SPIKE_TIME_MAX}} ms |
+
+These are numerical agreement measurements for this pulse protocol, not validation against biological recordings or a general accuracy bound. Spike times in snnlab are quantized to the 0.05 ms output grid, whereas SciPy locates continuous upward-crossing events. The plotted error combines finite-step RK4 error with float32 rounding; it should not be attributed solely to the integration method. The automated test checks the voltage and gate trajectories, paired spike times, physical gate bounds, resting behavior, and finite rate values/gradients at the removable singularities.
+
+## Extension callbacks
+
+The initializer supplies voltage and the three gates. `state_units` exposes each gate for recording; the executor adds the standard refractory tensor. The step returns the updated tensor state and binary events. Callback references remain importable through `hh_neuron.py` when a compiled bundle is reloaded in another process. See [Custom Neurons and Synapses](/custom-neurons-and-synapses) for the registration contract.
+
+```python title="hh_neuron.py"
+{{CALLBACKS}}
+```
+
+## Complete simulation
+
+```python title="hodgkin_huxley.py"
+{{SCRIPT}}
+```
+
+## Complete independent comparison
+
+```python title="scipy_comparison.py"
+{{COMPARISON}}
+```

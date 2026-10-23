@@ -13,10 +13,17 @@ from snnlab import extensions as E
 from snnlab.lang.compilation.diagnostics import Diagnostic
 from snnlab.lang.compilation.graph_validation import validate_graph
 from snnlab.lang.compilation.reports import text_report
-from snnlab.lang.compilation.serialization import canonical_json, digest
+from snnlab.lang.compilation.serialization import digest
 from snnlab.lang.compilation.training_validation import validate_training
 
 BUNDLE_SCHEMA = "snnlang.bundle/v1"
+
+
+def _write_json(path: Path, data: Any) -> None:
+    path.write_text(
+        json.dumps(data, sort_keys=True, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 @dataclass
@@ -31,14 +38,14 @@ class Bundle:
         E.require_portable(self.graph, self.training)
         root = Path(path)
         root.mkdir(parents=True, exist_ok=True)
-        (root / "graph.json").write_bytes(canonical_json(self.graph))
+        _write_json(root / "graph.json", self.graph)
         if self.training:
-            (root / "training.json").write_bytes(canonical_json(self.training))
+            _write_json(root / "training.json", self.training)
         assets_dir = root / "assets"
         for name, source in sorted(self.asset_sources.items()):
             assets_dir.mkdir(exist_ok=True)
             shutil.copyfile(source, assets_dir / name)
-        (root / "manifest.json").write_bytes(canonical_json(self.manifest))
+        _write_json(root / "manifest.json", self.manifest)
         reports = root / "reports"
         reports.mkdir(exist_ok=True)
         (reports / "summary.md").write_text(

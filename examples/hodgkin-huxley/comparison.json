@@ -1,0 +1,30 @@
+{
+  "network_dt_ms": 0.05,
+  "rk4_max_substep_ms": 0.025,
+  "state_dtype": "float32",
+  "reference_solver": "DOP853",
+  "reference_rtol": 1e-10,
+  "reference_atol": 1e-12,
+  "voltage_max_abs_error_mv": 0.008900706716529427,
+  "voltage_rmse_mv": 0.0006598591784149223,
+  "gate_max_abs_error": {
+    "m": 6.596989211660187e-05,
+    "h": 1.1064210836075894e-05,
+    "n": 1.4198778062746165e-05
+  },
+  "snnlab_spike_times_ms": [
+    11.950000000000001,
+    26.85,
+    41.5,
+    56.150000000000006,
+    70.95
+  ],
+  "scipy_spike_times_ms": [
+    11.901339864752574,
+    26.82275721877274,
+    41.47199343791751,
+    56.10916778152938,
+    70.91356651423948
+  ],
+  "max_spike_time_error_ms": 0.048660135247427405
+}

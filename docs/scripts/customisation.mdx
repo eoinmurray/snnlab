@@ -22,7 +22,7 @@ The first command builds and saves `network.bundle`, `network.png`, `customisati
 The default device is CPU. Use `--simulate --device cuda:0` on a CUDA host;
 that option changes execution placement without changing the fixed CPU-generated
 stimulus. This small plotting example is not a throughput benchmark. The
-[Performance and Custom Components guide](/performance-and-custom-components)
+[Performance reference](/api/sim#performance)
 explains compilation, replay eligibility, mixed precision and current limits.
 
 ## 1. Define the custom neuron
@@ -37,7 +37,7 @@ The initial state provides voltage and adaptation. The executor adds a zero-valu
 
 The ordinary `adaptive_step(context)` compiles by default alongside the built-in neuron update. Its PyTorch expressions operate on the whole batch/population; `torch.where` broadcasts a scalar reset without a Python branch or a full-sized reset allocation. Incoming currents are converted to the voltage state's dtype so BF16 matrix products do not change the recurrent state contract. The exponential factors depend only on fixed configuration and can specialize during tracing. Configuration validation runs before updates. Keep state keys/shapes/devices/dtypes stable, use `context.spike` for gradients, and avoid `.item()`, `.cpu()`, NumPy conversions or loops over cells inside the step. No compilation decorator is required.
 
-`state_units` makes adaptation available through `population.state("adaptation")`. For callback contracts and additional extension categories, see [Extensions](/api/lang/extensions).
+`state_units` makes adaptation available through `population.state("adaptation")`. For callback contracts and additional extension categories, see [Extensions](/api/extensions#implementing-extensions).
 
 ## 2. Define the custom synapse
 
@@ -63,7 +63,7 @@ so the comparison still isolates neuron adaptation.
 
 The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. Keep this function in `custom_neurons.py` too.
 
-This initializer draws the whole weight tensor on the requested device with the requested dtype. Initialization runs eagerly during setup to preserve seeded draws; speeding up per-timestep dynamics is separate. Repeated custom weight constraints compile after optimizer updates. Prefer whole-tensor expressions such as `parameter.clamp(...)` to loops over weights; see [Weights](/weights#efficient-custom-initializers-and-constraints).
+This initializer draws the whole weight tensor on the requested device with the requested dtype. Initialization runs eagerly during setup to preserve seeded draws; speeding up per-timestep dynamics is separate. Repeated custom weight constraints compile after optimizer updates. Prefer whole-tensor expressions such as `parameter.clamp(...)` to loops over weights; see [Weights](/api/lang#weights).
 
 Register the callbacks by their `module:function` references when building the network:
 
@@ -80,7 +80,7 @@ it does not itself enable replay or compiled timestep blocks. The random weight
 initializer runs once during setup and remains outside capture. Keep strict
 validation for development; structural validation is the execution default.
 
-See [Parameters](/api/lang/parameters#custom-initializers-and-constraints).
+See [Parameters](/api/extensions#custom-initializers-and-constraints).
 
 ## 4. Define inputs and the network
 
@@ -90,7 +90,7 @@ See [Parameters](/api/lang/parameters#custom-initializers-and-constraints).
 
 `DenseArrayBinding` supplies the custom stimulus. The shared parameter has graph shape `(8, 4)` and unit `"nA"`; both projections reference it, so differences in response come from neuron dynamics. `CustomSynapse("example.exponential_current/v1", tau_ms=5.0)` adds incoming spike-weighted current and lets it decay with a 5 ms time constant. Inhibitory current projections would subtract from membrane drive.
 
-The standard neuron uses the new [CUBA_LIF](/api/lang/components#current-based-lif), and the adaptive population uses `CustomNeuron`. Both expect current input. Mixing these with a conductance synapse is rejected rather than silently interpreting incompatible units.
+The standard neuron uses the new [CUBA_LIF](/api/extensions#current-based-lif), and the adaptive population uses `CustomNeuron`. Both expect current input. Mixing these with a conductance synapse is rejected rather than silently interpreting incompatible units.
 
 ## 5. Declare outputs and diagnostics
 

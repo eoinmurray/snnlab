@@ -1,6 +1,6 @@
 # Documentation site
 
-This site uses Astro static output with Fumadocs React islands. Keep `output: static`, preserve the root documentation routes, and verify both root and GitHub Pages base-path builds. The documentation includes Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section with Lang, Sim and Viz subgroups and Changelog, with content and metadata in `content/docs`. Installation covers only PyPI. The root is a landing page with basic library copy and links to documentation and GitHub; documentation begins at `/installation`. Run `bun run types:check` and `bun run build` after site changes.
+This site uses Astro static output with Fumadocs React islands. Keep `output: static`, preserve the root documentation routes, and verify both root and GitHub Pages base-path builds. The documentation includes Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section with exactly five module pages (`snnlab.lang`, `snnlab.sim`, `snnlab.extensions`, `snnlab.analysis`, `snnlab.viz`), no module subpages, and Changelog, with content and metadata in `content/docs`. Installation covers only PyPI. The root is a landing page with basic library copy and links to documentation and GitHub; documentation begins at `/installation`. Run `bun run types:check` and `bun run build` after site changes.
 
 Changelog is generated from the root `CHANGELOG.md` by `scripts/sync-changelog.ts` before development, type checks and builds. Edit the root source instead of the generated page.
 Keep Changelog last in the documentation navigation when adding pages.
@@ -19,12 +19,13 @@ All example scripts also generate `network.png` from the compiled bundle. Keep t
 
 Inference is generated from `scripts/inference.mdx` and `../examples/inference/inference.py` by `scripts/sync-inference.ts`. It loads `network.bundle` and `trained.checkpoint` from the sibling Training example and never retrains automatically. Regenerate its outputs after changing Training's saved model. Keep Inference immediately after Training in navigation.
 
-PyTorch Integration is generated from `scripts/pytorch-integration.mdx` and `../examples/pytorch/training.py` by `scripts/sync-pytorch.ts`. It reuses Training's saved bundle, initializes fresh weights, and runs an external PyTorch loop. Keep it immediately after Inference. Regenerate its plots after changes to the example or Training bundle.
+PyTorch Integration is generated from `scripts/pytorch-integration.mdx` and `../examples/pytorch/training.py` by `scripts/sync-pytorch.ts`. It reuses Training's saved bundle, initializes fresh weights, and runs an external PyTorch loop. Keep it immediately before Animate a Simulation in Examples. Regenerate its plots after changes to the example or Training bundle.
 
-Keep input declarations in `api/lang/network.mdx` and execution binding fields/rules in `api/sim/execution-spec.mdx`. Do not create a separate Inputs reference page; retain its former routes as redirects.
+Keep input declarations in `api/lang.mdx` and execution binding fields/rules in `api/sim.mdx`. Do not create a separate Inputs reference page; retain its former routes as redirects.
 
 Customisation is generated from `scripts/customisation.mdx` and `../examples/customisation/customisation.py` by `scripts/sync-customisation.ts`. Keep it immediately after Current-based LIF and before API Reference. Regenerate its figures after changes; preserve the same shared weights for standard/adaptive comparisons. Extensions reference documents callback contracts, units, tensor state and named implementation requirements.
 
-Current-based LIF is generated from `scripts/current-lif.mdx` and `../examples/current-lif/current_lif.py` by `scripts/sync-current-lif.ts`. Keep it after PyTorch Integration and before Customisation. Regenerate its diagram and four-row figure after example changes.
+Current-based LIF is generated from `scripts/current-lif.mdx` and `../examples/current-lif/current_lif.py` by `scripts/sync-current-lif.ts`. Keep it after Inference and before Customisation. Regenerate its diagram and four-row figure after example changes.
 
-Neurons is generated from `scripts/neurons.mdx` and `../examples/neurons/neurons.py` by `scripts/sync-neurons.ts`. Edit those sources and regenerate both COBA and CUBA diagrams and comparison plots after example changes. Keep Neurons, Synapses and Weights together after Customisation; Synapses and Weights are authored directly in `content/docs`.
+
+Model Components and Results and Analysis guides have been removed. Keep neuron/synapse, weight, result and analysis reference material on the five module API pages; do not regenerate the removed Neurons guide from `examples/neurons/`.

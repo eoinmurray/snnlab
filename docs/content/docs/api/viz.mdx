@@ -1,0 +1,451 @@
+---
+title: snnlab.viz
+description: Plot rasters and learning curves; compose figures, animations and network diagrams.
+---
+
+Import plotting tools with `from snnlab import viz`. Use `plot_raster` and `plot_learning_curves` on your own Matplotlib axes, `FigureGrid` for layouts, and `Scene` with `FrameTimeline` for animations. Use `bundle.visualise(...)` for the usual network diagram workflow.
+
+| Tool | Purpose |
+| --- | --- |
+| `plot_raster`, `plot_learning_curves` | Plot simulation recordings and training history. |
+| `Recording` | Hold arrays sharing a timeline for visualization. |
+| `Theme`, `FigureGrid` | Style figures and arrange axes. |
+| `Scene`, `FrameTimeline`, `save_animation` | Compose and export animations. |
+| `exponential_trace`, `projection_activity`, `representative_frame` | Prepare arrays for plotting. |
+| `render_diagram`, `diagram_to_dot` | Render or export a network diagram. |
+
+Figures use Matplotlib; diagrams require Graphviz when rendering through `dot`.
+
+## Basic plots
+
+
+### Axes plotting primitives
+
+```python
+raster_artists = viz.plot_raster(
+    axis, recording, signal="E.spikes", batch=0,
+    offset=100, color="tab:blue", label="E",
+)
+curve_artists = viz.plot_learning_curves(
+    {"loss": loss_axis, "accuracy": accuracy_axis}, history,
+    metrics=("loss", "accuracy"), splits=("train", "validation"),
+    include_test=True,
+)
+```
+
+`plot_raster` accepts `RecordingData` or a `NumpyExecutionResult`. Select a batch explicitly if one has not already been selected. The signal must have spike units and actual cell/time coordinates. `offset`, `color`, `label` and additional scatter keywords are explicit; population names do not determine scientific roles. It returns a Matplotlib `PathCollection`.
+
+`plot_learning_curves` accepts caller-owned axes mapped by metric and a `TrainingHistory`. Optional `objective`, split-keyed `colors` and `labels` configure selection and appearance; additional keywords go to line plotting. Returned artist tuples are keyed by `(split, metric)`. Missing measurements, missing epochs and changes in measurement semantics break lines. Test measurements appear as separate scatter markers at their evaluated checkpoint epoch. These primitives do not smooth, normalize, create a layout, select a diagnostic sample, run a network or save files. The existing `viz.Recording`, composition tools and direct Matplotlib access remain available.
+
+## Figures and animations
+
+
+### Execution arrays and Recording
+
+For raster plots and learning curves drawn on caller-owned axes, use
+[`plot_raster` and `plot_learning_curves`](/api/viz#axes-plotting-primitives).
+They consume the public `sim.RecordingData` and `sim.TrainingHistory` contracts,
+including per-signal coordinates, measurement semantics and missing observations.
+The composition container below remains available for shared-timeline animation.
+
+Use [ExecutionResult.numpy](/api/sim#numpy) for named plotting arrays. A `viz.Recording` is a separate visualization container for time series; it is not the removed execution `recordings` field.
+
+```python
+class Recording:
+    dt_ms: float
+    signals: Mapping[str, np.ndarray]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    source: Path | None = None
+```
+
+`dt_ms` must be finite and positive. At least one signal must vary over time, and all non-scalar signals must have the same leading time length; otherwise `RecordingError` is raised. `.steps` is that length, `.duration_ms` is `steps * dt_ms`, and `.require(*names)` returns arrays in the requested order or raises for missing names. Keep static weight matrices and time-reduced scores in metadata, not in the time-series signal mapping.
+
+```python
+data = result.numpy(batch=0)
+recording = viz.Recording(
+    dt_ms=DT_MS,
+    signals={
+        "spikes": data.outputs["spikes"],
+        "voltage": data.diagnostics["e_voltage"],
+    },
+)
+```
+
+### FigureGrid
+
+```python
+class FigureGrid:
+    rows: int | Sequence[float]
+    columns: int | Sequence[float]
+    bounds: FigureRect | tuple[float, float, float, float] = FigureRect(
+        0.06, 0.06, 0.88, 0.88
+    )
+    row_gap: float | Sequence[float] = 0.03
+    column_gap: float | Sequence[float] = 0.03
+    theme: Theme = field(default_factory=Theme)
+```
+
+Rows run from top to bottom and columns from left to right. Integers create equal tracks; sequences create positively weighted tracks. Bounds and gaps use normalized figure coordinates. Region names are unique; overlaps, out-of-bounds spans and gaps consuming the available area are rejected.
+
+| Method | Arguments and return |
+| --- | --- |
+| `place` | `place(name, *, row, column, rowspan=1, colspan=1)` → `FigureRegion`. Declares an axes region. |
+| `reserve` | Same arguments as `place`; reserves space that cannot become axes. |
+| `names` | Read-only property returning a tuple of registered names; use `layout.names` without calling it. |
+| `region` | `region(name)` → `FigureRegion`; unknown names raise `KeyError`. |
+| `rect` | `rect(name, *, padding=0.0)` → normalized `FigureRect`. |
+| `subgrid` | `subgrid(name, *, rows, columns, padding=0.0, row_gap=0.02, column_gap=0.02)` → nested grid sharing the theme. |
+| `figure` | `figure(*, figsize, dpi=120)` → styled Matplotlib figure. |
+| `add_axes` | `add_axes(figure, name, *, padding=0.0, frame=True, **kwargs)` → axes; `kwargs` go to Matplotlib. |
+| `style_axis` | `style_axis(axis, *, frame=True)` applies the theme's axis styling. |
+| `draw_region` | `draw_region(figure, name, *, role="ink", fill=None, linewidth=1.4, dashed=False, zorder=-10)` → rectangle artist. |
+
+```python
+layout = viz.FigureGrid(rows=3, columns=1)
+layout.place("inputs", row=0, column=0)
+layout.place("spikes", row=1, column=0)
+layout.place("voltage", row=2, column=0)
+figure = layout.figure(figsize=(10, 8))
+input_axis = layout.add_axes(figure, "inputs")
+spike_axis = layout.add_axes(figure, "spikes", sharex=input_axis)
+voltage_axis = layout.add_axes(figure, "voltage", sharex=input_axis)
+```
+
+#### FigureRect and FigureRegion
+
+#### FigureRect
+
+```python
+class FigureRect:
+    x: float
+    y: float
+    width: float
+    height: float
+```
+
+#### FigureRegion
+
+```python
+class FigureRegion:
+    name: str
+    row: int
+    column: int
+    rowspan: int = 1
+    colspan: int = 1
+    reserved: bool = False
+```
+
+`FigureRect.mpl` returns `(x, y, width, height)`. `.inset(padding)` uses relative left/bottom/right/top fractions, or one fraction for all sides; negative padding or padding consuming the rectangle raises `ValueError`.
+
+### Scene and Panel
+
+```python
+class Scene:
+    recording: Recording
+    figure: Any = None
+    layout: FigureGrid | None = None
+    panels: list[Panel] = field(default_factory=list)
+    callbacks: list[Callable[[int, "Scene"], object]] = field(default_factory=list)
+```
+
+A `Panel` implements `draw(ax, recording)` and `update(frame)`. It is a protocol for your own plot objects, rather than a built-in raster or voltage plot.
+
+`Scene` creates a Matplotlib figure when one is not supplied. `.add(panel, *, axis=None, region=None)` draws and registers a panel, returning its axes. Choose either an explicit axis or a named layout region; a region requires a layout. `.on_frame(callback)` registers a callback accepting `(frame, scene)`. `.update(frame)` updates all panels and callbacks and returns their artists.
+
+### Numerical transforms
+
+#### exponential_trace
+
+```python
+def exponential_trace(
+    events: np.ndarray, *, dt_ms: float, tau_ms: float
+) -> np.ndarray: ...
+```
+
+#### projection_activity
+
+```python
+def projection_activity(
+    weights: np.ndarray, source_trace: np.ndarray, *, scale: np.ndarray | float = 1.0
+) -> np.ndarray: ...
+```
+
+#### representative_frame
+
+```python
+def representative_frame(
+    *signals: np.ndarray, candidates: np.ndarray | None = None
+) -> int: ...
+```
+```python
+def grid_layout(
+    count: int,
+    *,
+    columns: int,
+    x_range: tuple[float, float] = (0.0, 1.0),
+    y_range: tuple[float, float] = (0.0, 1.0),
+) -> np.ndarray: ...
+```
+
+| Helper | Behaviour |
+| --- | --- |
+| `exponential_trace` | Input `(time, units)` events → float32 exponentially decaying trace. Positive `dt_ms` and `tau_ms` are required. Step zero is zero; each following step includes events from the preceding step. |
+| `projection_activity` | Source-major `(source, target)` weights and `(time, source)` trace → `(time, nonzero_edges)` activity. Optional scale is a scalar or one value per time step. |
+| `representative_frame` | Returns the candidate time index with greatest summed activity across signals. Signals must share their leading time length. |
+| `grid_layout` | Returns `(count, 2)` coordinates on a regular grid. Requires non-negative count and positive columns. |
+
+### Theme
+
+```python
+class Theme:
+    background: str = "#ffffff"
+    ink: str = "#1a1a1a"
+    accent: str = "#c8102e"
+    muted: str = "#666666"
+    rule: str = "#e7e5df"
+    cyan: str = "#00b4d8"
+    amber: str = "#e89400"
+    dark_grey: str = "#3a3a3a"
+    mid_grey: str = "#6a6a6a"
+```
+
+`.colour(role)` returns a named colour or raises `ValueError` for an unknown role. `.apply()` changes Matplotlib defaults for subsequently created figures. `FigureGrid.figure()` applies it automatically. Viz does not force a Matplotlib backend: for headless scripts configure your environment or backend before importing plotting helpers when needed.
+
+### Animation
+
+```python
+class FrameTimeline:
+    steps: np.ndarray
+    dt_ms: float
+```
+```python
+def save_animation(
+    figure,
+    update: Callable[[int], object],
+    output: str | Path,
+    *,
+    frames: int,
+    fps: int = 25,
+    bitrate: int = 3800,
+) -> FuncAnimation: ...
+```
+
+`FrameTimeline.sample(steps, *, frames, dt_ms)` uniformly samples step indices and requires `0 < frames <= steps`. `.compose(segments, *, dt_ms)` accepts `(start_step, end_step, frame_count)` segments; reversed ranges play backward and equal endpoints create holds. `.time_ms(frame)` converts the selected step to milliseconds.
+
+`save_animation` passes frame indices to the update callback, saves through Matplotlib's FFmpeg writer, and returns `FuncAnimation`. FFmpeg must be available. A timeline's selected simulation steps are distinct from animation frame indices: use `timeline.steps[frame]` inside your update callback.
+
+### Method signatures
+
+Methods are shown on their owning classes; `self` and `cls` are supplied automatically. Properties such as `Recording.steps`, `Recording.duration_ms`, `FigureGrid.names` and `FigureRect.mpl` are accessed without parentheses.
+
+```python
+class Recording:
+    def require(self, *names: str) -> tuple[np.ndarray, ...]: ...
+```
+
+```python
+class FigureRect:
+    def inset(
+        self, padding: float | tuple[float, float, float, float]
+    ) -> "FigureRect": ...
+```
+
+```python
+class FigureGrid:
+    def place(
+        self, name: str, *, row: int, column: int, rowspan: int = 1, colspan: int = 1
+    ) -> FigureRegion: ...
+    def reserve(
+        self, name: str, *, row: int, column: int, rowspan: int = 1, colspan: int = 1
+    ) -> FigureRegion: ...
+    def region(self, name: str) -> FigureRegion: ...
+    def rect(
+        self, name: str, *, padding: float | tuple[float, float, float, float] = 0.0
+    ) -> FigureRect: ...
+    def subgrid(
+        self,
+        name: str,
+        *,
+        rows: int | Sequence[float],
+        columns: int | Sequence[float],
+        padding: float | tuple[float, float, float, float] = 0.0,
+        row_gap: float | Sequence[float] = 0.02,
+        column_gap: float | Sequence[float] = 0.02,
+    ) -> "FigureGrid": ...
+    def figure(self, *, figsize: tuple[float, float], dpi: int = 120) -> Any: ...
+    def add_axes(
+        self,
+        figure: Any,
+        name: str,
+        *,
+        padding: float | tuple[float, float, float, float] = 0.0,
+        frame: bool = True,
+        **kwargs: Any,
+    ) -> Any: ...
+    def style_axis(self, axis: Any, *, frame: bool = True) -> None: ...
+    def draw_region(
+        self,
+        figure: Any,
+        name: str,
+        *,
+        role: str = "ink",
+        fill: str | None = None,
+        linewidth: float = 1.4,
+        dashed: bool = False,
+        zorder: float = -10,
+    ) -> Rectangle: ...
+```
+
+```python
+class Panel:
+    def draw(self, ax: Any, recording: Recording) -> Any: ...
+    def update(self, frame: int) -> object: ...
+```
+
+```python
+class Scene:
+    def add(
+        self, panel: Panel, *, axis: Any = None, region: str | None = None
+    ) -> Any: ...
+    def on_frame(self, callback: Callable[[int, "Scene"], object]) -> None: ...
+    def update(self, frame: int) -> tuple[object, ...]: ...
+```
+
+```python
+class FrameTimeline:
+    @classmethod
+    def sample(cls, steps: int, *, frames: int, dt_ms: float) -> "FrameTimeline": ...
+    @classmethod
+    def compose(
+        cls, segments: list[tuple[int, int, int]], *, dt_ms: float
+    ) -> "FrameTimeline": ...
+    def time_ms(self, frame: int) -> float: ...
+```
+
+```python
+class Theme:
+    def colour(self, role: str) -> str: ...
+    def apply(self) -> None: ...
+```
+
+`FrameTimeline` stores supplied step indices and `dt_ms`; the factories validate sampling counts/segments, but do not validate that `dt_ms` is finite and positive. Supply a meaningful positive timestep. Timeline indexing follows NumPy indexing. FFmpeg availability and file encoding errors propagate when saving animation.
+
+`RecordingError` is a `ValueError` subclass raised for invalid recording time-series contracts or missing required signals. Figure layout lookup raises `KeyError` for unknown region names; invalid tracks, gaps, bounds and overlapping regions raise `ValueError`.
+
+## Advanced: custom diagrams
+
+
+### Diagram data
+
+#### Diagram
+
+```python
+class Diagram:
+    name: str
+    nodes: tuple[DiagramNode, ...]
+    edges: tuple[DiagramEdge, ...]
+    groups: tuple[DiagramGroup, ...] = ()
+    title: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+```
+
+#### DiagramNode
+
+```python
+class DiagramNode:
+    id: str
+    title: str
+    detail: str
+    badge: str
+    kind: str = "neutral"
+    accent_role: str = "ink"
+    classes: tuple[str, ...] = ()
+    pen_width: float = 1.0
+    margin: tuple[float, float] = (0.18, 0.14)
+```
+
+#### DiagramEdge
+
+```python
+class DiagramEdge:
+    source: str
+    target: str
+    role: str = "signal"
+    label: str = ""
+    connection: str = "feedforward"
+    id: str | None = None
+    classes: tuple[str, ...] = ()
+    constraint: bool = True
+    pen_width: float = 1.1
+    frozen: bool = False
+```
+
+#### DiagramGroup
+
+```python
+class DiagramGroup:
+    id: str
+    label: str
+    members: tuple[str, ...]
+    same_rank: bool = False
+    same_row: bool = False
+```
+
+`Diagram` validates unique node IDs, existing edge endpoints and group members. `metadata` carries renderer-neutral context. A node supplies its text, category and accent role; an edge supplies direction, semantic role, optional label and routing hints. `frozen=True` marks a frozen connection visually. Supported node kinds are `input`, `population`, `operation`, `output`, `training`, `objective` and `neutral`. Collapsed `component` nodes are not supported. Groups enclose existing nodes; `same_rank` and `same_row` cannot both be enabled.
+
+Colour roles resolve against `DiagramTheme`. Use roles such as `signal`, `inhibitory`, `modulatory`, `output_line` or `training_line`, rather than arbitrary colour values in an edge's `role`. Node `classes` and edge `classes` become rendering metadata.
+
+### diagram_to_dot
+
+```python
+def diagram_to_dot(
+    diagram: Diagram,
+    *,
+    theme: DiagramTheme = DiagramTheme(),
+    height_to_width_ratio: float | None = None,
+    canvas_size: tuple[int, int] | None = None,
+) -> str: ...
+```
+
+Returns Graphviz DOT text without invoking Graphviz or writing a file. `height_to_width_ratio` must be finite and positive, or `None` for unconstrained natural layout. The default uses natural layout without a fixed ratio. `canvas_size=(1920, 900)` requests a centred canvas at a constant node and type scale; dimensions are positive integers in pixels at the base 144 DPI.
+
+### render_diagram
+
+```python
+def render_diagram(
+    diagram: Diagram,
+    path: str | Path,
+    *,
+    scale: int = 1,
+    theme: DiagramTheme = DiagramTheme(),
+    height_to_width_ratio: float | None = None,
+    canvas_size: tuple[int, int] | None = None,
+) -> Path: ...
+```
+
+Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT writes source directly; other formats use Graphviz `dot` for layout and `neato -n2` to export fixed routes after wire and label clearance. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. When `canvas_size` is supplied, SVG intrinsic dimensions match PNG dimensions; PNG `scale` multiplies the canvas dimensions. A canvas smaller than the natural layout raises `ValueError` before export, preventing clipping. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
+
+### DiagramTheme
+
+```python
+class DiagramTheme:
+    background: str = "#FFFFFF"
+    ink: str = "#28323C"
+    muted: str = "#6B7680"
+    line: str = "#D8DEE3"
+    neutral: str = "#FAFBFC"
+    output: str = "#F4F7FA"
+    modulatory: str = "#92764B"
+    training: str = "#F4F8F7"
+    inhibitory: str = "#AA5B63"
+    signal: str = "#7A8690"
+    output_line: str = "#58768F"
+    training_line: str = "#56857D"
+    title_size: int = 18
+    label_size: int = 14
+    secondary_size: int = 11
+    wrap_columns: int = 26
+    font_name: str = "Helvetica"
+```
+
+This immutable theme defines colours, font sizes, the font family and wrapping. The default uses bold node names and quieter regular detail, with muted red for inhibition, slate blue for outputs and teal for trainable parameters. Frozen training links are grey and dashed. The main forward path receives alignment priority, long-range feedback uses separated overhead lanes, and training annotations share the column of the population or operation they describe. It is separate from the Matplotlib [Theme](/api/viz#theme). Passing a custom diagram theme changes rendering without changing network or diagram semantics.

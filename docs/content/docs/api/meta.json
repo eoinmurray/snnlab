@@ -1,11 +1,11 @@
 {
   "title": "API Reference",
   "pages": [
-    "overview",
     "lang",
     "sim",
-    "viz",
-    "analysis"
+    "extensions",
+    "analysis",
+    "viz"
   ],
   "collapsible": true,
   "defaultOpen": false

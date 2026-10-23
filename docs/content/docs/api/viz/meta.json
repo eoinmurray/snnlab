@@ -1,9 +1,0 @@
-{
-  "title": "Viz",
-  "pages": [
-    "diagrams",
-    "plotting"
-  ],
-  "collapsible": true,
-  "defaultOpen": false
-}

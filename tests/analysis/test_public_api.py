@@ -13,9 +13,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_documented_exports_are_the_complete_public_api():
-    overview = (ROOT / "docs/content/docs/api/overview.mdx").read_text()
-    section = overview.split("### Analysis\n")[1].split("## Source organisation")[0]
-    names = re.findall(r"^\| `analysis\.(\w+)`", section, re.MULTILINE)
+    reference = (ROOT / "docs/content/docs/api/analysis.mdx").read_text()
+    names = re.findall(r"^## (\w+)\n", reference, re.MULTILINE)
     assert len(names) == len(set(names))
     assert set(names) == set(analysis.__all__)
     for name in names:
@@ -29,16 +28,16 @@ def test_documented_exports_are_the_complete_public_api():
         analysis.missing_export
 
 
-def test_reference_groups_preserve_all_function_anchors():
+def test_flat_reference_preserves_all_function_anchors():
     reference = (ROOT / "docs/content/docs/api/analysis.mdx").read_text()
-    names = re.findall(r"^### (\w+)\n", reference, re.MULTILINE)
+    names = re.findall(r"^## (\w+)\n", reference, re.MULTILINE)
     assert len(names) == len(set(names))
     assert set(names) == set(analysis.__all__)
     for group in (
         "Activity", "Intervals", "Correlations", "Spectra", "Rhythmicity",
         "Cycles", "Conductance",
     ):
-        assert f"## {group}\n" in reference
+        assert f"## {group}\n" not in reference
     assert 'id="new-measurement-results"' in reference
 
 

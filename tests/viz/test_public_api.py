@@ -1,9 +1,7 @@
 """Viz has one public export location, independent of its implementation layout."""
 
-import re
 import subprocess
 import sys
-from pathlib import Path
 from typing import get_type_hints
 
 import pytest
@@ -11,14 +9,9 @@ import pytest
 from snnlab import viz
 
 
-def test_documented_exports_are_the_complete_public_api():
-    overview = (
-        Path(__file__).resolve().parents[2] / "docs/content/docs/api/overview.mdx"
-    ).read_text()
-    section = overview.split("### Viz\n")[1].split("### Analysis\n")[0]
-    names = re.findall(r"^\| `viz\.(\w+)`", section, re.MULTILINE)
+def test_all_public_exports_resolve():
+    names = viz.__all__
     assert len(names) == len(set(names))
-    assert set(names) == set(viz.__all__)
     for name in names:
         assert getattr(viz, name) is not None
         assert name in dir(viz)

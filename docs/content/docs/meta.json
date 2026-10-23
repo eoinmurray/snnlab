@@ -4,11 +4,9 @@
     "installation",
     "quickstart",
     "workflows",
-    "model-components",
-    "results-and-analysis",
+    "api",
     "benchmark",
     "comparisons",
-    "api",
     "changelog"
   ]
 }

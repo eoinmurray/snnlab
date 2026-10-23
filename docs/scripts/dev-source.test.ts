@@ -2,14 +2,21 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { createDevSource } from '../src/lib/dev-source';
 
-test('the current documentation snapshot includes GraphExecutor in navigation', () => {
+test('the API reference exposes exactly five module pages without subpages', () => {
   const contents: Record<string, string> = {};
   for (const file of new Bun.Glob('**/*.{md,mdx,json}').scanSync('content/docs')) {
     contents[`/content/docs/${file}`] = readFileSync(`content/docs/${file}`, 'utf8');
   }
+  expect(Array.from(new Bun.Glob('**/*.mdx').scanSync('content/docs/api')).sort()).toEqual([
+    'analysis.mdx', 'extensions.mdx', 'lang.mdx', 'sim.mdx', 'viz.mdx',
+  ]);
   const source = createDevSource(contents, {}, '/');
-  expect(source.getPage(['api', 'sim', 'graph-executor'])?.data.title).toBe('GraphExecutor');
-  expect(JSON.stringify(source.getPageTree())).toContain('"url":"/api/sim/graph-executor"');
+  for (const name of ['lang', 'sim', 'extensions', 'analysis', 'viz']) {
+    expect(source.getPage(['api', name])?.data.title).toBe(`snnlab.${name}`);
+    expect(JSON.stringify(source.getPageTree())).toContain(`"url":"/api/${name}"`);
+  }
+  expect(source.getPage(['api', 'sim', 'graph-executor'])).toBeUndefined();
+  expect(JSON.stringify(source.getPageTree())).not.toContain('/api/sim/graph-executor');
 });
 
 test('new snapshots reflect page additions, metadata changes, content edits and deletions', () => {

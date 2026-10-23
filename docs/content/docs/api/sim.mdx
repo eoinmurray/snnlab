@@ -1,0 +1,1721 @@
+---
+title: snnlab.sim
+description: Build, simulate and train networks; bind inputs, record results, save state and integrate with PyTorch.
+---
+
+Import execution tools with `from snnlab import sim`. The three entry points are `build`, `simulate` and `train`; inference uses `simulate` with a weight checkpoint. Configure execution with keyword arguments and the types below.
+
+A typical workflow is `lang.compile(net)`, `sim.simulate(bundle=bundle, ...)`, then `result.numpy(batch=0)` for analysis. `build(...).model` provides a PyTorch module for external optimization loops or repeated forward calls. All public imports on this page come from `snnlab.sim`.
+
+## Execution functions
+
+
+### build
+
+```python
+def build(
+    *,
+    bundle: lang.Bundle | str | Path | None = None,
+    graph: Mapping[str, Any] | None = None,
+    training: Mapping[str, Any] | None = None,
+    seed: int = 0,
+    device: str = "auto",
+    retain_parameters: bool = True,
+    performance: Performance | None = None,
+    extension_validation: Literal["strict", "structural"] = "structural",
+) -> ExecutionResult: ...
+```
+
+Validates and plans the graph or bundle, initializes parameters and returns the model in `result.model`. It does not advance simulation time or load learned weights. Bundle loading verifies declared digests and resolves extension imports. Supply `training` explicitly when building a model with trainable parameters for an external optimizer.
+
+### simulate
+
+```python
+def simulate(
+    *,
+    bundle: lang.Bundle | str | Path | None = None,
+    graph: Mapping[str, Any] | None = None,
+    training: Mapping[str, Any] | None = None,
+    input_bindings: Sequence[InputBinding] = (),
+    protocol: Mapping[str, Any] | None = None,
+    batch_size: int | None = None,
+    seed: int = 0,
+    device: str = "auto",
+    diagnostics: bool = True,
+    checkpoint: Path | None = None,
+    runtime_state: GraphRuntimeState | None = None,
+    interventions: Sequence[Intervention] = (),
+    resets: Sequence[ResetVoltage] = (),
+    decisions: DecisionSegments | None = None,
+    measurement: MeasurementWindow | None = None,
+    recording: RecordingSpec | None = None,
+    retain_outputs: bool = True,
+    retain_parameters: bool = True,
+    retain_final_state: bool = True,
+    retain_runtime_state: bool = True,
+    performance: Performance | None = None,
+    extension_validation: Literal["strict", "structural"] = "structural",
+    timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
+    snapshot: str | Path | SnapshotSpec | None = None,
+    inference_overrides: Mapping[str, Any] | None = None,
+) -> ExecutionResult: ...
+```
+
+Builds a fresh model, resolves bound inputs and the device, loads an optional weight checkpoint and executes the graph. Use this function for both network simulation and inference with learned weights. Inputs support dense tensors, sparse events, generated Poisson spikes and dataset snapshots. Pass `runtime_state=previous.runtime_state` to continue compatible dynamics; parameters are loaded separately. Multiple dataset batches represent independent presentations and do not return one resumable trajectory.
+
+`inference_overrides` accepts duration, input rate, timestep and projection scaling overrides directly. Timestep changes cannot convert runtime state. See [override validation](/api/sim#inference_overrides).
+
+### train
+
+```python
+def train(
+    *,
+    bundle: lang.Bundle | str | Path | None = None,
+    graph: Mapping[str, Any] | None = None,
+    training: Mapping[str, Any] | None = None,
+    input_bindings: Sequence[InputBinding] = (),
+    protocol: Mapping[str, Any] | None = None,
+    targets: Mapping[str, torch.Tensor] | None = None,
+    target_bindings: Sequence[TargetArrayBinding] = (),
+    validation: ValidationSpec | None = None,
+    test: TestSpec | None = None,
+    epochs: int = 0,
+    batch_size: int | None = None,
+    shuffle: bool = False,
+    batching: Batching | None = None,
+    metrics: TrainingMetrics | None = None,
+    on_epoch_end: Callable[[EpochReport], None] | None = None,
+    updates: int | None = None,
+    save_final_checkpoint: str | Path | None = None,
+    save_selected_checkpoint: str | Path | None = None,
+    seed: int = 0,
+    device: str = "auto",
+    diagnostics: bool = True,
+    checkpoint: Path | None = None,
+    observations: EpochObservations | None = None,
+    checkpoint_selection: CheckpointSelection | None = None,
+    retain_parameters: bool = True,
+    retain_final_state: bool = True,
+    retain_runtime_state: bool = True,
+    performance: Performance | None = None,
+    extension_validation: Literal["strict", "structural"] = "structural",
+    timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
+    training_timing: bool = False,
+    tracing: TraceSpec | None = None,
+    snapshot: str | Path | SnapshotSpec | None = None,
+) -> ExecutionResult: ...
+```
+
+Runs the compiled training recipe with named targets. The recipe selects parameters, objectives, optimizer, regularizers and surrogate; keyword arguments control the schedule, reporting and held-out evaluation. `bundle=` accepts an authored `lang.Bundle` or a saved path and supplies its training recipe automatically. Explicit `training=` overrides it. See [authored Bundle execution](/api/sim#traininghistory) for validation and graph-source precedence.
+
+By default, validation runs after each epoch and selects the lowest-loss checkpoint. Supplied test data is evaluated once after all requested epochs using the selected checkpoint or final weights. Use `checkpoint` to resume training and `save_final_checkpoint` / `save_selected_checkpoint` to persist it. Results describe the final optimizer update; epoch/update summaries appear in `metrics`. Training has no inference intervention, runtime continuation or recording keywords.
+
+### resolve_device
+
+```python
+def resolve_device(requested: str | torch.device = "auto") -> str: ...
+```
+
+Returns a device string. `"auto"` first honours `SNNLAB_DEVICE`, otherwise selects CUDA when available and CPU otherwise. MPS is explicit opt-in. Accepted explicit names are `"cpu"`, `"cuda"`, `"cuda:N"` and `"mps"`; unavailable accelerator backends and unknown names raise `ValueError`. CUDA index validity may be checked later by PyTorch.
+
+### Example
+
+```python
+from pathlib import Path
+from snnlab.sim import PoissonInputBinding, simulate
+
+result = simulate(
+    bundle=Path("network.bundle"),
+    device="cpu",
+    input_bindings=(
+        PoissonInputBinding(
+            input_id="inputs",
+            steps_count=100,
+            rates_hz=(20.0,),
+            seed=17,
+        ),
+    ),
+)
+data = result.numpy(batch=0)
+```
+
+Execution functions return results without automatically writing plots or artifact directories. Use `result.write_metrics(path)` and `result.write_recording(path, ...)` to persist retained results.
+
+### Explicit source data
+
+```python
+from snnlab.sim import load_dataset, encode_images_poisson, poisson_spikes
+
+def load_dataset(name, max_samples=None, split=False,
+                 evaluation_split="validation", evaluation_only=False): ...
+def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None): ...
+def poisson_spikes(rate_hz, shape, dt, generator, device=None): ...
+```
+
+These functions expose source arrays for matched replay and measurements independently of execution bindings. `dt` is in ms; rates are in Hz. Both spike generators return binary `torch.float32` occupancy, using Bernoulli probability `rate_hz * dt / 1000`, with at most one spike per bin. Their historical names do not mean Poisson-distributed counts or preserved multiplets. Seeded draw ordering is unchanged on CPU; reproducibility requires the same device, generator state, shape and call sequence. Cross-device RNG algorithms need not agree.
+
+`load_dataset` returns NumPy `(X, y)` or, with `split=True`, `(X_train, X_eval, y_train, y_eval)`. MNIST has float32 `(samples, 784)` pixels normalized by 255 and int64 labels. `max_samples` deterministically subsamples its training partition with NumPy RandomState seed 42. Validation is a seed-42 stratified holdout of that partition, with size `max(ceil(0.1 * samples), number_of_classes)`. `evaluation_split="test"` uses the untouched official test partition. `evaluation_only=True` requires `split=True, evaluation_split="test"` and returns `(None, X_test, None, y_test)` without loading MNIST training data. Loading uses cached files and may download missing data.
+
+SHD retains its official train/test split and returns an object array whose entries are `(units_int16, times_float32_seconds)`, with int64 labels, 700 channels and 20 classes. Unlike MNIST, its `max_samples` deterministically caps **both** partitions. Without `split`, the partitions are concatenated. SHD ignores `evaluation_split` and does not implement the MNIST evaluation-only shortcut; prefer its ordinary split call. Caller-owned binning retains control over time resolution and collisions.
+
+`encode_images_poisson` takes a two-dimensional `(batch, channels)` PyTorch tensor, clips pixels to `[0, 1]`, and returns `(T_steps, batch, channels)` on the images' device. `max_rate_hz` is scalar or `(batch,)`; negative rates, wrong rate shapes and rate/timestep probabilities above one raise `ValueError`. Supply finite images, nonnegative finite rates, a positive finite timestep and a nonnegative integer step count. With a generator, random draws occur on `generator.device` and move to the image device before comparison; without one they use the image device's global RNG.
+
+`poisson_spikes` takes a scalar rate and a shape tuple. Draws occur on `generator.device` (CPU when `generator=None`); optional `device` moves the resulting occupancy tensor. This low-level historical primitive does not validate probability bounds: callers must supply a finite rate and positive timestep with probability in `[0, 1]`.
+
+## Inputs and execution settings
+
+
+### Performance
+
+`performance: Performance | None = None` groups execution optimizations for
+`build`, `simulate` and `train`. Import `Performance` from `snnlab.sim`.
+It is a frozen, keyword-only dataclass; omission and `None` both use
+`Performance()`. Creating an object does not allocate a device or compile a model.
+These defaults preserve the existing automatic policy.
+
+See [Performance reference](/api/sim#performance) for
+callback requirements, capture safety and current compilation/replay limits.
+
+```python
+from dataclasses import replace
+from pathlib import Path
+from snnlab.sim import Performance, train, simulate
+
+performance = Performance(precision="highest", compile_block_steps=4)
+trained = train(
+    graph=bundle.graph, training=bundle.training,
+    input_bindings=train_inputs, targets=targets,
+    epochs=20, device="cuda:0", performance=performance,
+    save_final_checkpoint=Path("trained.checkpoint"),
+)
+prediction = simulate(
+    graph=bundle.graph, input_bindings=test_inputs,
+    device="cuda:0", performance=performance,
+    checkpoint=Path("trained.checkpoint"),
+)
+simulation = simulate(
+    graph=bundle.graph, input_bindings=test_inputs,
+    device="cuda:0", performance=replace(performance, cuda_graphs="off"),
+    checkpoint=Path("trained.checkpoint"),
+)
+```
+
+The same policy is reusable across operations; the saved `checkpoint` transfers
+the learned weights.
+
+| Field | Type / default | Behavior |
+| --- | --- | --- |
+| `compile_mode` | `Literal["default"] \| None = "default"` | Prepare runtime `torch.compile` kernels; `None` selects eager execution and prevents CUDA capture. Compilation happens lazily. |
+| `compile_block_steps` | `int \| Literal["auto"] = "auto"` | Target 16 timesteps per compiled block on CUDA, 4 on MPS and 1 on CPU. Explicit integers 1–64 override this policy; graph compatibility can select the kernel loop. |
+| `cuda_graphs` | `Literal["auto", "off"] = "auto"` | Capture eligible repeated CUDA work with bounded shape caches and explicit fallback reporting. `"off"` disables capture. |
+| `precision` | `Literal["auto", "highest"] = "auto"` | Automatic native CUDA BF16 autocast with float32 parameters and high matmul precision/TF32. CPU/MPS keep ordinary arithmetic. `"highest"` disables SNNLab autocast and selects highest CUDA matmul precision. |
+| `fused_optimizer` | `Literal["auto", "off"] = "auto"` | Training only: select fused CUDA Adam/AdamW when the optimizer leaves fused/foreach unset. `"off"` disables automatic selection. Explicit optimizer settings take precedence. |
+| `dataset_prefetch` | `int = 1` | Bounded lookahead for dataset training, validation/test and inference. Accepts 0–8; 0 prepares synchronously. Direct tensor bindings do not use this queue. |
+| `projection_mode` | `Literal["fast", "strict"] = "fast"` | Skip the historical previous-state expression for built-in zero-decay synapses. `"strict"` retains that expression and its IEEE/autograd behavior. |
+
+Fields are validated when constructing the object. Unused fields remain reusable:
+`build` does not prefetch or optimize, and `simulate` does not optimize.
+Device, batch size, epochs, retention, diagnostics, `extension_validation`,
+recording, tracing and timing controls remain arguments on each function.
+Direct `GraphExecutor` construction and CLI flags retain their existing controls.
+
+For short runs, startup can outweigh faster steady execution:
+
+```python
+eager = Performance(compile_mode=None, cuda_graphs="off")
+```
+
+This retains the other automatic settings, including CUDA precision and fused
+training optimizers. Use `precision="highest"` independently when full precision
+is required. Compilation/capture does not automatically estimate a run's length
+or choose a device. In the full 20-epoch digits L4 run, automatic execution took
+80.51 s including startup versus 30.24 s for the GPU control; warm epoch medians
+were 22.56 ms versus 312.37 ms. The previous CPU call took 3.90 s. These are single
+measurements, and BF16 changed the final accuracy; see the retained
+[GPU benchmark report](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/execution/results/automatic-defaults/digits-gpu-20261020/README.md).
+
+`result.metrics["performance"]` records the requested object, resolved device and
+policies, observed execution paths, capture counts and fallback reasons. The
+resolved block count is the device's target; each `execution_paths` entry records
+the actual block size used for that path. A build reports no executed paths and
+marks precision/replay as `"not_run"`. Inapplicable prefetch/optimizer fields are
+`None`. Existing detailed metric fields remain available. Policies normalize to
+the same internal request and checkpoint identities as the old keywords.
+
+#### Migrating individual keywords
+
+The seven fields above remain accepted as deprecated keywords on functions that
+previously supported them. They emit `DeprecationWarning`; omission retains the
+defaults above. Move them into `Performance`:
+
+```python
+# Before
+result = simulate(graph=graph, input_bindings=inputs, compile_mode=None, precision="highest")
+
+# Now
+result = simulate(
+    graph=graph, input_bindings=inputs,
+    performance=Performance(compile_mode=None, precision="highest"),
+)
+```
+
+Combining a non-`None` `performance` with any individual performance keyword
+raises `TypeError`, including explicit values equal to a default. `performance`
+must be a `Performance` instance or `None`; dictionaries are rejected. The
+descriptions below use field names such as `compile_mode` to describe this policy;
+set them inside `Performance` for public Python execution calls.
+
+### Graph source
+
+#### bundle
+
+**Type:** `Path | None`. **Default:** `None`.
+
+Path to a compiled bundle directory containing the graph and its authenticated manifest. Use `Path("network.bundle")`. Loading verifies the bundle's digests, then automatically imports any referenced external extension modules. The bundle contains JSON implementation references and no Python source. Missing paths raise `FileNotFoundError("bundle not found: ...")`; unavailable callbacks and mismatched declared package versions fail explicitly.
+
+For graph execution, supply `bundle` or `graph`. When `graph` is provided, it takes precedence for construction. If both are supplied, training can still read its recipe from `bundle`; prefer one graph source to avoid ambiguity.
+
+With `train`, a bundle can supply its `training.json` recipe when the `training` field is absent.
+
+#### graph
+
+**Type:** `Mapping[str, Any] | None`. **Default:** `None`.
+
+A compiled graph mapping, commonly `bundle.graph` returned by `lang.compile`. Pass graph data, not an authoring `Network` or a `Bundle` object.
+
+The planner validates topology and backend capabilities before stepping. Supported graph execution includes COBA-LIF, current-based LIF and leaky-integrator populations, AMPA/GABA/current/integrator projections, supported and registered custom readout operations, feedforward/recurrent/feedback paths and timestep-aligned delays. Unsupported structures raise capability or validation errors.
+
+If neither `graph` nor `bundle` supplies graph data, graph execution raises `ValueError`.
+
+### Inputs
+
+#### input_bindings
+
+**Type:** `Sequence[InputBinding]`. **Default:** `()`.
+
+Supplies all input data for the request. Pass typed binding instances in one sequence, for example `input_bindings=(poisson_input,)`. Binding IDs must match inputs declared by `net.input`.
+
+Declare the accepted signal with [Network.input](/api/lang#input). The binding types and their compatibility rules are documented below. Import bindings and `InputBinding` from `snnlab.sim`.
+
+#### Binding rules
+
+All graph inputs must be covered exactly once by name. Names refer to IDs declared by `net.input`, not population names. Input tensors resolve the symbolic time and batch axes; the graph supplies the timestep and feature/channel dimensions.
+
+#### InputBinding
+
+[`input_bindings`](/api/sim#input_bindings) is the sole input field on the execution request. `InputBinding` is a public type alias from `snnlab.sim`:
+
+```python
+InputBinding = (
+    DenseArrayBinding
+    | EventStreamBinding
+    | PoissonInputBinding
+    | DatasetSnapshotBinding
+)
+```
+
+Pass instances of these types in one sequence; the executor routes each by its type. A one-binding tuple is `(binding,)`. Each binding's `input_id` must identify a declared graph input. Unknown binding types raise `TypeError`; duplicate input IDs raise `ValueError`, including duplicates across binding types.
+
+Dense and event bindings may be combined for different graph inputs. Poisson bindings must be used without replay bindings. A dataset snapshot must be the only binding in the sequence; multiple snapshots are not currently supported. The public request has no separate `inputs`, `event_bindings`, `poisson_bindings` or `dataset_binding` arguments.
+
+#### DenseArrayBinding
+
+Explicit dense tensors with source metadata. Each binding has `input_id: str`, `value: torch.Tensor` and `source: Mapping[str, Any]`, which defaults to an empty mapping.
+
+Use this route when retaining file or dataset provenance matters. The `source` mapping records supplied metadata; constructing an in-memory binding does not authenticate an arbitrary file by itself. File-loading helpers can supply file digests.
+
+Dense values normally use `(time, batch, *features)` axes. A missing batch axis can be inserted as a singleton. Feature dimensions must match the graph, and all inputs must share time/batch sizes. Spikes must be binary; masks must be boolean or zero/one; floating values must be finite. Non-mask values are converted to floating tensors on the selected device.
+
+Place each dense binding in `input_bindings`, for example `input_bindings=(DenseArrayBinding("inputs", spike_tensor),)`. Dense and event bindings may coexist for different inputs when resolved timestep, duration and batch dimensions agree.
+
+#### EventStreamBinding
+
+Sparse binary spike events. Each binding declares `input_id`, integer coordinate tensors `steps`, `batches`, `channels`, positive `steps_count`, positive `batch_size`, and optional `source` metadata.
+
+Coordinates are zero-based simulation steps, batch indices and channel indices. Coordinates must satisfy the resolver's ordering and bounds checks; duplicates are rejected. The input must be a spike input with a time/batch/channel declaration. Resolution materializes binary dense spikes and retains event counts/provenance.
+
+Place each event binding in `input_bindings`. Event bindings can accompany dense bindings for other graph inputs; they cannot accompany Poisson bindings or a dataset snapshot.
+
+#### PoissonInputBinding
+
+Generates seeded spike inputs. Pass it as `input_bindings=(poisson_input,)`.
+
+| Binding field | Type / default | Meaning |
+| --- | --- | --- |
+| `input_id` | `str`, required | Exact graph input ID. |
+| `steps_count` | `int`, required | Positive number of simulation steps. |
+| `batch_size` | `int = 1` | Positive number of presentations. |
+| `rates_hz` | `Sequence[float]`, required | Finite, non-negative rates in spikes per second. |
+| `seed` | `int`, required | Seed of this binding's CPU random generator. |
+| `categorical` | `bool = False` | If true, select one listed rate uniformly and independently per presentation. |
+
+The input declaration must have `(time, batch, channels)` axes and spike signal type. With `categorical=False`, exactly one rate is required and applies to all channels/presentations. With `categorical=True`, one selected rate applies to all channels of each presentation; spike samples are independent across channel/time positions.
+
+Generation uses a Bernoulli discretization of a homogeneous Poisson process. The per-step probability is the selected rate in Hz multiplied by the graph timestep in milliseconds and divided by 1,000. A probability above one is rejected. Configured and selected rates, seeds and resolved shapes are retained in the execution protocol.
+
+Multiple Poisson bindings must agree on time and batch sizes and cover all graph inputs. Poisson inputs cannot currently be mixed with dense/event replay or a dataset snapshot.
+
+#### DatasetSnapshotBinding
+
+Binds one immutable external NPZ dataset snapshot. Graph execution automatically uses a batch provider; no lazy/batchwise flag is required. Pass it as `input_bindings=(dataset_input,)`. Its fields are:
+
+| Field | Type / default |
+| --- | --- |
+| `path` | `Path`, required |
+| `input_id` | `str`, required |
+| `dataset_id` | `str`, required |
+| `split` | `str`, required |
+| `encoder` | `DatasetEncoder`, required |
+| `target_id` | `str | None = None` |
+| `feature_key` | `str = "features"` |
+| `label_key` | `str = "labels"` |
+| `sample_cap` | `int | None = None` |
+| `shuffle` | `bool = False` |
+| `order_seed` | `int = 0` |
+| `sample_ids_key` | Optional NPZ array key for original integer/Unicode sample identities. |
+| `sample_indices` | Optional explicit source-row subset, applied before ordering and capping. |
+| `snapshot_digest` | Optional expected whole-archive SHA-256 identity; changed content is rejected. |
+
+The resolver computes the source file digest, selects samples with the cap/order settings, and records file identity, split, selected indices, encoder and seeds. It performs no dataset download or registry lookup. `dataset_id` and `split` must be non-empty.
+
+`DatasetEncoder` has required `kind`, optional `duration_ms`, `max_rate_hz` and `rates_hz` (all default `None`), and `seed=0`. The `"custom"` kind uses a registered encoder with `definition` and `config`; see [Extensions](/api/extensions#dataset-encoders-and-inputs). Built-in kinds are `"rate_poisson"` for normalized sample/channel features, `"prebinned_spikes"` for binary time/sample/channel tensors, and `"event_bin"` for timestamped sample/channel events. Encoding validates shapes, values and physical timing against graph `dt`.
+
+A dataset snapshot must be the only element of `input_bindings`. During training it is also exclusive with explicit targets/target bindings; use its `target_id` to bind integer labels to the recipe's target. Simulation resolves the input and does not use its labels as training targets.
+
+
+#### Automatic batch encoding
+
+Dataset bindings resolve content identity, sample selection, labels and ordering without constructing the whole time-by-sample spike tensor. The provider verifies source-file stability while extracting arrays once into private temporary NPY files, then uses read-only memory mappings. Built-in rate encoders transfer compact features/rates and generate the current batch on the selected device. Event snapshots are validated/indexed by sample once, then vectorized binary binning visits only the selected samples and transfers compact bin coordinates to the execution device. Prebinned tensors retain CPU preparation and transfer. Custom encoders retain their registered backend/configuration and can opt into a device keyword. Temporary mappings live with the provider; they are not a dataset registry. Dataset download and split construction remain caller responsibilities.
+
+`batch_size` controls the encoded batch size. When omitted for a dataset binding, the default is 32, bounded by sample count. Snapshot training with `epochs=0` automatically runs one epoch; positive epochs and `updates` retain the normal schedule/truncation semantics, including a smaller tail batch. Dense/event/Poisson input bindings retain their existing direct replay/full-batch interfaces.
+
+For `rate_poisson`, features must have `(samples, channels)` shape and floating values in `[0, 1]`. Specify a positive timestep-aligned `duration_ms` and **either** `max_rate_hz` for a fixed feature-scaled rate **or** `rates_hz` for categorical rates:
+
+```python
+encoder = DatasetEncoder(
+    "rate_poisson",
+    duration_ms=200,
+    rates_hz=(40, 80, 120),
+    seed=17,
+)
+```
+
+Categorical selection is uniform and independent per presentation: one maximum-pixel rate is selected for each sample and scales its feature values throughout that presentation. Rates must be finite, non-negative and satisfy `rate_hz * dt_ms / 1000 <= 1`. Rate-selection and Bernoulli spike-generation streams are separate, so selecting rates does not consume the spike stream. Training re-encodes each batch with fresh draws at each epoch. Training-split evaluation, validation and named observation probes use fixed separate phase streams; evaluating or adding probes cannot change subsequent training draws.
+
+`prebinned_spikes` and `event_bin` preserve exact supplied spikes with no stochastic re-encoding. Sparse events are binned only for selected samples; unlisted bins are zero. Custom registered encoders receive the same read-only arrays and callback signature as before, but `selected` identifies only the current batch and `seed` is a derived batch/draw seed. Custom callbacks must preserve presentation duration and must not mutate the snapshot or retain full-dataset encoded tensors. Their global Python/NumPy/Torch randomness is scoped to that seed without perturbing model RNG streams.
+
+`result.metrics["execution_protocol"]["batch_encoding"]` uses `snnlab.batch-encoding/v1` and records the encoder backend (the selected device for rate/event encoders), fresh-training/fixed-evaluation policy, selected draw seeds and separate ordering/rate/spike stream roots. Derived rate/spike seeds bind phase, epoch, ordered absolute sample indices and draw seed. Epoch order remains `execution_seed + epoch`. Per-update `encoding` metadata records coordinates, stream seeds and selected categorical rates. Input memory scales with presentation steps, batch size and channels; retained outputs and requested diagnostics can still grow with dataset size.
+
+Checkpoints retain this versioned encoding protocol with epoch/next-batch coordinates and model/optimizer/RNG state. Coordinate-derived streams regenerate the next batch on resume under the same recorded backend and software policy. Accelerator rate encoding records `snnlab.poisson-device/v1`, device type, float32 draw dtype and PyTorch version in the encoder identity. CPU draws retain the historical stream; CPU, CUDA and MPS are not claimed to be bitwise equivalent. Categorical rate selection stays on its independent CPU stream. A checkpoint from another encoding backend/policy is rejected instead of silently changing its next input. Changed source contents, encoder settings, seeds, sample selection or batch schedule are rejected. Earlier checkpoints with eagerly encoded/reused dataset spikes cannot silently resume under the new protocol. Exact dense/event input bindings remain available for explicitly retained replay.
+
+Dataset simulation/inference also encodes successive batches using one model/checkpoint load and fixed inference draws, concatenating outputs along the sample axis. `encoding_batches` records each encoded batch. Separate batches start with fresh dynamic neuron state. Multiple-batch results have `runtime_state=None`; dataset runtime continuation requires a single complete batch. Full-batch dense/sparse replay interventions are authenticated before execution and sliced along the selected sample axis for each batch.
+
+The low-level `resolve_dataset_snapshot_binding` helper remains an explicit eager materializer for callers needing a complete dense replay. Normal request/CLI execution automatically chooses the provider.
+
+
+#### protocol
+
+**Type:** `Mapping[str, Any]`. **Default:** empty mapping.
+
+Additional JSON-serializable execution provenance. For example, a `dataset` mapping can identify the source and split. It is metadata, not a way to change the graph or generate inputs.
+
+Resolvers own reserved fields such as `schema`, `binding_schema`, `representation`, `inputs`, `timing` and `seeds`; attempting to override them raises `ValueError`. Dense/event resolvers also reserve `masks`; the dataset resolver reserves its additional dataset/snapshot/resolution fields. Use descriptive custom keys instead of resolver-owned fields. The finalized protocol appears in `result.metrics["execution_protocol"]`.
+
+### Training
+
+Custom training callbacks are documented in [Extensions](/api/extensions#objectives-and-regularizers). Classification targets are integer labels; custom regression targets can be finite real tensors with a leading sample axis.
+
+#### training
+
+**Type:** `Mapping[str, Any] | None`. **Default:** `None`.
+
+A compiled training recipe, typically `bundle.training`, rather than an authoring `TrainSpec` instance. It describes objectives, parameter groups, optimizer, surrogate gradients and regularizers. When omitted, a training bundle can supply the recipe.
+
+Graph training requires a recipe with resolved trainable parameters and external targets. The trainer supports cross entropy, spike budgets and AdamW, plus registered custom objectives, regularizers, optimizers and surrogates. Unsupported recipes, missing trainable parameters or unsupported optimizers fail. Direct training fields control iteration as described below; the recipe's epoch count is not automatically used by direct `train(...)`.
+
+`build` uses recipe trainable parameter IDs and surrogate slope when present. For a normal simulation request, training objectives and targets are not evaluated.
+
+#### targets
+
+**Type:** `Mapping[str, torch.Tensor]`. **Default:** empty mapping.
+
+Named training target tensors. Keys must match the objective target IDs exactly, with one leading entry per input sample/batch-axis element. Classification objectives require one-dimensional labels using `int8`, `int16`, `int32`, `int64` or `uint8`; resolved labels become `torch.long`, and objective evaluation checks valid classes. Custom non-classification objectives accept finite real tensors, including multidimensional regression targets, and preserve their dtype.
+
+Supply `targets` or `target_bindings`, not both. Dataset snapshot labels use the snapshot's `target_id` instead. Simulation/inference do not consume these training targets.
+
+#### target_bindings
+
+**Type:** `Sequence[TargetArrayBinding]`. **Default:** `()`.
+
+Explicit target vectors with provenance. Each binding has required `target_id: str` and `value: torch.Tensor`, plus `source: Mapping[str, Any] = {}` from a dataclass factory. IDs, shape and integer-value rules match `targets`. Duplicate/missing/unexpected target IDs are rejected.
+
+#### training_timing
+
+**Type:** `bool`. **Default:** `False`. Available on `train`.
+
+Set `training_timing=True` to return `result.metrics["training_timing"]`. The CLI
+provides `--training-timing`. Timing does not change the recipe, data order, loss,
+checkpoint identity or resume protocol. The metric is absent when disabled, and
+no timing clocks or timing fences are used.
+
+```python
+result = train(
+    bundle=bundle_path,
+    input_bindings=(train_input,),
+    targets={"class": train_labels},
+    validation=validation,
+    epochs=20,
+    batch_size=32,
+    shuffle=True,
+    training_timing=True,
+)
+timing = result.metrics["training_timing"]
+print(timing["total_s"], timing["training_s"])
+for row in timing["epochs"]:
+    print(row["epoch"], row["training_s"], row["validation_s"])
+```
+
+The mapping has `mode`, `scope`, `training_scope`, `total_s`, the phase fields
+below, and `epochs`. All durations are seconds. Phase totals are disjoint and sum
+to `total_s`.
+
+| Field | Scope |
+| --- | --- |
+| `setup_s` | Model construction, input/target resolution, optimizer/resume setup and scheduling before initial evaluation. |
+| `training_s` | Minibatch preparation, forward/loss/backward, optimizer updates, constraints, update bookkeeping and in-loop batch-loss checkpoint selection. Excludes epoch evaluations. |
+| `train_evaluation_s` | Fixed-weight training-split evaluations, including epoch 0 when evaluated. |
+| `validation_s` | Held-out evaluations and optional named observation probes. |
+| `test_s` | Final test input/target resolution and evaluation of the selected checkpoint or final weights. |
+| `checkpoint_s` | Final checkpoint construction and any requested `save_final_checkpoint` / `save_selected_checkpoint` writes. |
+| `reporting_s` | Epoch metric/observation bookkeeping, epoch-selection checkpoints and final result construction outside the other phases. |
+
+`epochs` contains phase durations for epochs evaluated or trained during this
+call. Epoch 0 has evaluation time and zero training time. Completed-epoch rows
+are numbered from 1. A resumed partial epoch reports only work performed in the
+current call; timings are not accumulated from its checkpoint. Single-batch
+`updates` mode has an empty epoch timing list and still reports phase totals.
+Initial evaluation can be skipped on mid-epoch resume. Truncated calls can have a
+training timing row for a partial epoch without a completed-epoch evaluation.
+
+With `timing_mode="synchronized"` (default), CPU wall clocks and CUDA/MPS device
+fences bracket phase/epoch transitions. There are no per-forward/backward timing
+fences. Opt-in `"enqueue"` omits timing fences and records host elapsed time;
+queued GPU work can extend beyond a phase, so those values cannot establish
+completed GPU speedups. Fences can change overlap and add overhead; disclose the
+measurement mode when comparing throughput.
+
+`total_s` starts after request validation and an initial device fence, and ends
+after in-memory result construction and a final device fence. Caller-side data
+preparation, warmup, plotting and external checkpoint/volume writes are excluded.
+Put those operations outside both comparison timers and use identical initial
+and completed-epoch evaluation schedules. Isolated forward/backward latencies
+require a separate profiler; `training_s` is not their sum alone.
+
+#### validation
+
+**Type:** `ValidationSpec | None`. **Default:** `None`.
+
+Held-out data for epoch evaluation by `train`. Import `ValidationSpec` from `snnlab.sim`:
+
+```python
+validation = ValidationSpec(
+    input_bindings=(validation_input,),
+    targets={"class": validation_labels},
+)
+result = train(
+    bundle=bundle_path,
+    input_bindings=(train_input,),
+    targets={"class": train_labels},
+    validation=validation,
+    epochs=20,
+    batch_size=32,
+    shuffle=True,
+)
+history = result.metrics["epochs"]
+```
+
+`ValidationSpec` is a frozen dataclass with `input_bindings: Sequence[InputBinding] = ()`, `targets: Mapping[str, torch.Tensor] = {}`, `target_bindings: Sequence[TargetArrayBinding] = ()`, `protocol: Mapping[str, Any] = {}`, and `encoding_seeds: Sequence[int] = ()`. Defaults use independent factories. It uses the same [input binding rules](/api/sim#input_bindings) and target validation as training, including dataset snapshots with a `target_id`. Supply `targets` or `target_bindings`, not both; snapshot labels must not be combined with either.
+
+Validation uses the same graph, current parameters, execution seed and device. It does not update parameters or optimizer state, retains no diagnostic traces, and runs without gradients. Its resolved provenance appears separately in `result.metrics["validation_protocol"]`; it does not change the training checkpoint's execution protocol. Validation data can be changed on resume when observations, retained reporting policies and epoch checkpoint selection are disabled. Audits require the same validation identity; epoch selection also verifies the resolved evaluation inputs and labels by content digest.
+
+For stochastic dataset validation, `encoding_seeds=(101, 103)` requests explicit repeatable draw sets; omission uses the encoder seed for one fixed draw. Each draw evaluates all selected samples in bounded batches, and loss/components/accuracies are sample-weighted across all draws. Epoch rows report `validation_encoding_draws`; observations count each draw's presentations. Encoding seeds require a stochastic dataset encoder, must be distinct non-negative integers, and are bound into validation/selection/audit identity.
+
+This field is used only by graph `train`, and requires positive effective `epochs`. Only `train` accepts validation data. See [epoch metrics](#epoch-metrics) and the [Training example](/training).
+
+#### test
+
+**Type:** `TestSpec | None`. **Default:** `None`.
+
+Supply a separate held-out test set for one evaluation after all requested epochs finish. Import `TestSpec` from `snnlab.sim`; it has the same fields and input/target binding rules as `ValidationSpec`.
+
+```python
+result = train(
+    bundle=bundle_path,
+    input_bindings=(train_input,),
+    targets={"class": train_labels},
+    validation=ValidationSpec(
+        input_bindings=(validation_input,),
+        targets={"class": validation_labels},
+    ),
+    test=TestSpec(
+        input_bindings=(test_input,),
+        targets={"class": test_labels},
+    ),
+    epochs=20,
+    batch_size=32,
+)
+test_metrics = result.metrics["test"]
+```
+
+The default evaluates validation at epoch zero and after each completed epoch, including the last, and selects the earliest completed-epoch checkpoint with the lowest total validation loss. Test evaluation uses that selected checkpoint; without selection it uses the final weights. Test labels never influence selection. The returned model and resumable training checkpoint retain the final training state.
+
+Test evaluation runs without gradients or optimizer updates, in batches bounded by `batch_size`. `encoding_seeds` supports the same fixed stochastic draw sets as validation. Test inputs are resolved only when the requested final epoch has completed: an update-limited partial call leaves `result.metrics["test"] = None`, and a subsequent resume evaluates the test set when it reaches the end. Extending the requested epoch count in a later call triggers another test evaluation at that new end; keep the test set held out until model choices are complete.
+
+Set `TrainingMetrics(test="none")` to skip test evaluation. This field requires positive effective `epochs` and is used only by `train`. No test split is inferred or created automatically; callers supply independent training, validation and test data.
+
+#### observations
+
+**Type:** `EpochObservations | None`. **Default:** `None`. Requires graph `train` with positive `epochs`.
+
+Import `EpochObservations` and `ObservationProbe` from `snnlab.sim`. Select exact graph IDs; all selections default to empty tuples and `probes` to an independent empty mapping. Unknown IDs, duplicate IDs, non-spiking population selections and non-trainable gradient selections are rejected.
+
+```python
+observations = EpochObservations(
+    population_rates=("cell_E", "cell_I"),
+    parameter_norms=("cell_E_to_I.weight", "w_out"),
+    output_activity=("output_neurons",),
+    gradient_norms=("w_out",),
+    probes={
+        "reference": ObservationProbe(input_bindings=reference_inputs, seed=17),
+        "validation_draw_1": ObservationProbe(
+            input_bindings=draw_inputs,
+            seed=23,
+            split="validation",
+        ),
+    },
+)
+result = train(
+    graph=bundle.graph,
+    training=bundle.training,
+    input_bindings=train_inputs,
+    targets=train_targets,
+    validation=validation,
+    observations=observations,
+    epochs=20,
+    batch_size=32,
+    diagnostics=False,
+)
+```
+
+| Selection | Meaning |
+| --- | --- |
+| `population_rates` | Population IDs for mean firing rates in Hz. |
+| `parameter_norms` | Parameter IDs for the L2 norm of each flattened stored tensor. |
+| `output_activity` | Spiking population IDs for per-cell spike totals, silence and shares. A non-spiking MeanVoltage integrator is not a spike-output population. |
+| `gradient_norms` | Trainable parameter IDs for epoch-average gradient norms before/after clipping. |
+| `probes` | Named `ObservationProbe` draws, measured independently from training and ordinary validation. |
+
+`ObservationProbe(input_bindings=(), seed=0, split="reference", protocol={})` accepts the standard input binding types, a nonnegative integer evaluation seed, and split `"reference"` or `"validation"`. Probes measure activity only; they have no targets, loss or accuracy and never participate in optimization. Dataset snapshot labels are ignored for activity-only probes. Each resolved draw and its protocol are retained under its own name; multiple validation draws remain separate rather than being silently pooled. Poisson/dataset encoders retain their binding-specific seeds; the probe seed controls the fallback resolution/evaluation stream. Dense/event/ordinary Poisson draws are resolved once and reused for fixed-weight evaluation. Dataset probes regenerate their same deterministic draw in bounded batches; training draws use a separate fresh stream.
+
+Observations run at initialization and completed epoch boundaries. Evaluation uses fresh dynamic state, fixed current weights and `batch_size`, with compact per-batch spike counts rather than additional dense spike histories. Declared graph outputs and loss regularizers may still require histories. The feature does not claim constant-memory training or redesign input encoding. Python, NumPy, PyTorch CPU and available accelerator RNG states are restored around evaluations, including on errors; extra probes do not change training randomness or optimizer updates.
+
+Audited checkpoints use checkpoint schema version 3, which requires this feature's reader; ordinary checkpoints continue to use version 2. Audited checkpoints retain completed history and partial-epoch gradient totals. Resume requires the same observation configuration, validation identity, draw identities, evaluation seed and batch size. A checkpoint without observation history cannot retroactively start an audit: missing measurements are not reconstructed. Ordinary checkpoints without observations retain their existing resume behavior. See [Epoch observations](/api/sim#epoch-observations) for result fields and aggregation.
+
+#### Training controls
+
+These keyword arguments are available on `train`:
+
+| Field | Type and default | Behaviour |
+| --- | --- | --- |
+| `epochs` | `int = 0` | A positive integer enables dataset iteration across the input sample axis. `0` selects repeated full-batch updates. |
+| `batch_size` | `int \| None = None` | Positive minibatch size in dataset mode; `None` uses all supplied samples. No remainder batch is dropped. |
+| `shuffle` | `bool = False` | In dataset mode, permute sample order each epoch with `seed + epoch`. |
+| `updates` | `int \| None = None` | Optional positive update limit for this invocation. `None` runs the remaining epoch schedule, or one update in full-batch mode. |
+| `save_final_checkpoint` | `str \| Path \| None = None` | Write the final checkpoint to this directory when supplied. |
+| `save_selected_checkpoint` | `str \| Path \| None = None` | Write the winning checkpoint under `checkpoint_selection`. Fails if no eligible candidate exists. |
+
+`epochs` must be a non-negative integer; supplied `batch_size` and `updates` must be positive integers. Boolean or fractional values are rejected for these counts, and `shuffle` must be boolean. Without dataset mode, `batch_size` and `shuffle` do not split or shuffle the repeated full batch. A dataset checkpoint already at its requested end epoch raises an error.
+
+A resumed dataset schedule starts at the checkpoint's next coordinates and is truncated by `updates` when supplied. The training recipe's `epochs` does not override this execution field. These controls do not change graph simulation or inference.
+
+Dataset bindings automatically use one epoch when `epochs=0` and a maximum default batch size of 32 when `batch_size=None`.
+
+Pass training settings directly as keyword arguments. Simulation and inference accept overrides through `inference_overrides=`.
+
+#### metrics
+
+Import `TrainingMetrics` from `snnlab.sim`. This execution policy changes measurement, independently of the scientific objective in `TrainSpec`. Omitting it uses online training metrics, validation at epoch zero and after every completed epoch, final test evaluation when supplied, and no update history.
+
+```python
+metrics = TrainingMetrics(
+    train="online",
+    validation="epoch",
+    initial=("validation",),
+    update_history=False,
+    test="final",
+)
+```
+
+| Field | Values and semantics |
+| --- | --- |
+| `train` | `"evaluate"`: full training split at fixed current weights. `"online"` (default): reuse each pre-update minibatch's scores. `"none"`: no training metrics. |
+| `validation` | `"epoch"` (default): evaluate supplied held-out data after each completed epoch. `"none"`: no validation evaluation. |
+| `initial` | Unique train/validation split names; default `("validation",)`. Use `()` to skip epoch-zero evaluation. Requesting initial train requires `train="evaluate"`; requesting initial validation requires `validation="epoch"`. An absent ValidationSpec produces absent validation metrics. Test cannot be an initial split. |
+| `update_history` | Boolean, default `False`. `False` returns an empty update history and omits per-update loss/component retention. |
+| `test` | `"final"` (default): evaluate supplied `TestSpec` once after all requested epochs, using the selected checkpoint or final weights. `"none"`: no test evaluation. |
+
+Online metrics accumulate detached objective/regularizer loss sums, unweighted classification cross-entropy sums and correct counts on-device. They transfer at completed epochs or explicitly saved checkpoint boundaries, without another training forward or retained autograd graph. Loss is the example-weighted mean of minibatch mean objectives (including objective weights and regularizers). For custom classification losses this is the custom objective's minibatch aggregation, which may differ from a full-dataset class-normalized objective. Reported cross-entropy always uses ordinary unweighted per-example CE, separately from that custom objective. Accuracy weights actual examples, including unequal tails.
+
+Initial online training metrics are absent. Rows label online results `train_measurement="online_pre_update"` and evaluated results `*_measurement="fixed_weight_evaluation"`, with presentation counts in `*_examples`. Online values describe changing weights throughout an epoch.
+
+With validation data and `validation="epoch"`, omitted checkpoint selection chooses the minimum total validation loss, independently of update history. Otherwise `update_history=False` disables implicit historical update-loss selection, while `update_history=True` retains that legacy fallback. Set an explicit `CheckpointSelection()` to select by unweighted validation cross-entropy, or explicitly request `CheckpointSelection.legacy_training_batch_loss()` for update selection and its host scalar decisions. `CheckpointSelection.disabled()` disables selection independently of history and makes final test evaluation use the final weights. Saving a selected checkpoint requires an enabled selection policy. Selection by epoch metrics requires fixed-weight evaluation of its split; online train metrics cannot silently stand in for evaluated train metrics. `include_initial=True` also requires that initial split measurement. Split activity observations require their normal evaluations; parameter/gradient observations and separately declared probes remain available.
+
+Default online metrics, explicit metrics, batching or callbacks retain contiguous available epoch history and partial online sums in authenticated training checkpoint schema version 5. Resume requires the same measurement policy and protocol identities, restores partial sums and next coordinates, and emits only newly completed epochs. Online metrics and explicit metric or batching policies additionally bind input/target contents; callback-only reporting uses existing protocol metadata without transferring input tensors. Older checkpoint versions still load under their original contracts. Changing measurement or schedule policy rejects resume.
+
+#### batching
+
+Import `Batching` from `snnlab.sim`. Omitting it preserves the existing `shuffle` flag and kept tail.
+
+```python
+batching = Batching(
+    order="stratified",
+    stratify_by="class",
+    remainder="merge_small",
+    min_batch_size=20,
+)
+```
+
+`order` is `"sequential"`, `"shuffle"` or `"stratified"`. Sequential preserves input order; shuffle retains the historical CPU `randperm` path. Stratification requires a named training target with one nonnegative integer label per example. Only represented labels form queues; missing classes and scarce classes never create samples. Each sorted class queue is shuffled with a private CPU generator seeded by `seed + zero_based_epoch`. Its examples get fractional positions `(j + 0.5) / class_count`, where `j` is the zero-based queue index. Queues merge by increasing position; a seeded permutation supplies random tie order before stable sorting. The generator is separate from training/encoding RNG streams. Natural unequal class counts remain unchanged; no validation labels are used.
+
+With explicit batching, `shuffle=False` is neutral; `shuffle=True` is allowed only with `order="shuffle"`. Contradictory settings raise an error. `stratify_by` requires stratified order.
+
+| Remainder | Coverage |
+| --- | --- |
+| `"keep"` (default) | Retain every example once, including a smaller final batch. |
+| `"drop"` | Explicitly omit the short final batch; fail if that would drop the entire dataset. |
+| `"merge_small"` | Merge a tail strictly smaller than `min_batch_size` into the preceding batch. With no preceding batch, keep the small dataset. |
+
+`min_batch_size` is required only for `merge_small`, and must be a positive integer no larger than `batch_size`. It is a tail threshold, not a class quota. For 200 examples, batch size 64 and threshold 20, batch sizes are 64/64/72. A merged final batch may exceed the nominal size. The policy does not impose any objective weighting.
+
+Resolved schedule metadata lives at `result.metrics["execution_protocol"]["training_iteration"]["batching"]`, including algorithm, label digest, actual batch sizes, examples/batches per epoch and dropped examples. Epoch rows record actual `epoch_examples`, `epoch_updates`, `dropped_examples`, cumulative `examples` and absolute `update`. Encoding requests use the actual ordered indices and batch sizes. Checkpoint coordinates, update limits and epoch boundaries use the resolved schedule.
+
+#### on_epoch_end
+
+Optional callable receiving an immutable `EpochReport`, once after each **newly completed** epoch's requested measurements and observations. Epoch-zero evaluation remains in history and does not invoke the hook. The hook receives no model or optimizer references; merely enabling it adds no evaluations or unrequested observations.
+
+```python
+from snnlab.sim import EpochReport
+
+
+def report_epoch(report: EpochReport) -> None:
+    print(
+        report.epoch,
+        report.total_epochs,
+        report.train.accuracy,
+        report.validation.accuracy,
+        flush=True,
+    )
+```
+
+`report.epoch`, `total_epochs`, `updates` and `examples` are global counters. `train`, `validation`, `observations` and `timing` are recursively immutable host mappings supporting both key and attribute access. Unavailable split metrics, observations or disabled timing are `None`. Split values equal the corresponding retained epoch row. Python, NumPy, CPU and available accelerator RNG states are preserved around the callback, including on failure. Exceptions propagate; optimizer updates are not automatically retried.
+
+With `training_timing=True`, `report.timing` contains wall seconds, `mode` and `total_s` through the report snapshot. It uses the configured synchronized/enqueue interpretation. It excludes the callback's own duration; the complete call's existing `reporting_s` includes callback overhead. After mid-epoch resume, timing describes work in this invocation, while metric sums and counters cover the full epoch. No guaranteed ETA is calculated. See the [runnable native example](/training#online-metrics-stratified-batches-and-progress).
+
+### Randomness and device
+
+#### seed
+
+**Type:** `int`. **Default:** `0`.
+
+Execution seed used for graph parameter initialization and provenance. Training's shuffled epoch ordering uses `seed + epoch`. Interventions default to this seed when their own seed is absent.
+
+Poisson bindings have their own explicit seeds. Dataset bindings separately declare `order_seed`, and rate encoders have an encoder seed. Setting `seed` does not replace these independently configured seeds. A fixed seed supports repeatable runs under the same execution conditions; cross-device numerical equality is a separate question.
+
+Direct PyTorch executors can use matching float16/bfloat16/float32/float64 weights and inputs; native execution requests retain float32. Runtime state and spike tensors follow the model dtype. Bfloat16 runtime/checkpoint/NPZ recording rows use lossless `snnlab.bfloat16-bits/v1` storage, preserving bits and dtype on load. Inference analysis caches widen those values exactly to NumPy float32 and record `snnlab.inference-bfloat16/v1`. Existing float32 artifact representations stay unchanged. MPS does not support float64.
+
+#### device
+
+**Type:** `str`. **Default:** `"auto"`.
+
+Accepted values are `"auto"`, `"cpu"`, `"cuda"`, `"cuda:N"` and `"mps"` (normalized to lowercase by the resolver). Explicit unavailable CUDA/MPS requests raise `ValueError`; indexed CUDA availability/topology is additionally constrained by PyTorch.
+
+`"auto"` first honors the `SNNLAB_DEVICE` environment variable. Otherwise it selects CUDA when available, then CPU. It does not automatically select MPS. Use `"cpu"` for the portable Quickstart behaviour.
+
+### Diagnostics
+
+#### diagnostics
+
+**Type:** `bool`. **Default:** `True`.
+
+Declared outputs from `net.output` are always returned in `result.outputs`. Signals declared with `net.expose` are returned by default in `result.diagnostics`, keyed by their exposed names. Set `diagnostics=False` to return no diagnostic tensors. This applies to simulation, inference and training; `build` does not execute the network.
+
+```python
+net.output("spikes", cells.spikes)
+net.expose(cells.voltage, name="e_voltage")
+bundle = lang.compile(net, target="tools/snnsim")
+
+result = simulate(
+    graph=bundle.graph,
+    input_bindings=(poisson_input,),
+)
+spikes = result.outputs["spikes"]
+voltages = result.diagnostics["e_voltage"]
+```
+
+Compile the network after declaring its outputs and exposed diagnostics. To disable diagnostics for a run, pass `diagnostics=False` to the execution function; outputs, training objectives/regularizers and continuation state are unaffected. The runtime requires a boolean value.
+
+For leaky integrators, expose `.voltage` for post-reset membrane diagnostics or `.pre_reset_voltage` for pre-reset integration samples. See [Voltage sampling](/api/lang#voltage-sampling) for reductions and older-graph compatibility.
+
+Expose exactly the signals you want to inspect. Population spikes and voltages typically have `(time, batch, cells)` axes. Projection conductance is also explicitly exposable using `net.expose(projection.conductance, name="input_conductance")`, where `projection` is returned by `net.connect`. Exposed diagnostics are detached tensors; declared outputs retain their computation graph for training.
+
+There is no automatic collection of unexposed signals. The previous `recording` and `recording_fields` constructor arguments have been removed, and `ExecutionResult.recordings` has been renamed to `diagnostics`. Training returns exposed diagnostics from its final update.
+
+### inference_overrides
+
+**Type:** `Mapping[str, Any] | None`. **Default:** `None`.
+
+`inference_overrides` is a keyword argument applied by simulation/inference. Supported keys are:
+
+| Key | Value | Effect |
+| --- | --- | --- |
+| `duration_ms` | Positive duration aligned to graph timestep | Resample generated Poisson inputs for that duration. |
+| `input_rate_hz` | Finite, non-negative rate | Replace each Poisson binding's rates with one fixed rate. The per-step probability must remain valid. |
+| `projection_scales` | Mapping of projection ID to finite, non-negative factor | Scale named projection parameters after checkpoint loading. |
+| `timestep_ms` | Finite, positive timestep | Recompile an immutable copy of the graph timebase and resample generated Poisson input while preserving physical duration unless overridden. |
+
+Unknown override keys or projection IDs raise `ValueError`. Duration/rate/timestep changes require resampleable Poisson inputs and reject dense/event replay. A dataset snapshot is not a substitute for these Poisson bindings. New timesteps must also satisfy graph delay/timing validation.
+
+Timestep recompilation rejects runtime continuation state. When using a checkpoint with a new timestep, checkpoint identity is checked against the source graph before parameters load into the effective graph. Projection scaling can be used with replay inputs. Source graph/checkpoint files are not rewritten by these request-local overrides. Metrics record requested and resolved values.
+
+### Custom dynamics validation
+
+`extension_validation="strict"` opts into diagnostic value checks. It checks custom neuron/synapse state and spikes at every step and custom surrogate derivatives during backward. Nonfinite values and nonbinary spikes raise `ValueError`; tensor type, shape, device, dtype and state keys are always checked.
+
+`extension_validation="structural"` is the default. Use strict mode while developing custom callbacks or investigating numerical failures. Structural mode skips those step/backward value scans and binary-spike checks, avoiding their host scalar reads on CUDA. Invalid values can propagate silently in this mode: output or gradient checks alone cannot establish that intermediate states were valid. Initial state, restored runtime state, initializers, constraints, custom graph operations and training callbacks retain strict validation. Input validation and other execution paths may still synchronize. Build/run metrics record the policy; it is an execution setting, not a change to the saved graph or checkpoint format.
+
+The same keyword is accepted by `GraphExecutor`; the CLI uses `--extension-validation strict|structural`. Surrogate definitions and autograd dispatch are resolved once per executor. Construct a new executor after changing a registration or surrogate configuration.
+
+## Results
+
+
+### Fields
+
+| Attribute | Contents |
+| --- | --- |
+| `executor` | Execution backend label. |
+| `outputs` | Named declared graph outputs. |
+| `diagnostics` | Detached tensors for explicitly exposed signals; empty when disabled. |
+| `parameters` | Named graph parameters; training returns detached final copies. |
+| `gradients` | Named gradients from the final training update, when applicable. |
+| `optimizer_state` | Named AdamW state from training. |
+| `training_checkpoint` | Final in-memory training checkpoint. |
+| `selected_checkpoint` | In-memory selected training checkpoint. |
+| `final_state` | Named final dynamic tensors from graph forward execution. |
+| `recorded_signals` | Explicit selected dense histories or sparse `(step, batch, cell)` events; empty when a sink consumes them. |
+| `decisions` | Completed per-batch decision segments, with step bounds, duration and integer population/per-neuron spike counts. |
+| `runtime_state` | Structured continuation state from graph forward execution. |
+| `metrics` | Build/run timing, initialization/protocol and operation-specific evidence. |
+| `model` | Built model where the handler supplies it. |
+
+The result class uses empty mappings/`None` for absent data. Attributes are populated by the operation; do not assume every handler returns all state. For example, graph training returns final-update outputs/diagnostics and checkpoints but does not populate its result's `runtime_state` field.
+
+### Epoch metrics
+
+In dataset iteration mode (`epochs > 0`), `train` reuses pre-update minibatch scores for online training metrics after each completed epoch. Supplying `validation` evaluates the held-out split at epoch zero and after each completed epoch, including the last. Set `TrainingMetrics(initial=())` to skip the initial evaluation. Results are returned as `result.metrics["epochs"]`; the epoch-zero row contains validation metrics by default, while initial training metrics require an explicit request:
+
+| Field | Meaning |
+| --- | --- |
+| `epoch` | Number of completed epochs; `0` is the initial baseline. |
+| `train_loss`, `validation_loss` | Sample-weighted mean total loss, including weighted objectives and regularizers. Validation fields appear only when validation data is supplied. |
+| `train_accuracy`, `validation_accuracy` | Fraction correctly classified, from 0 to 1. Present when the recipe has exactly one classification objective (cross entropy or a custom objective registered with `classification=True`). |
+| `train_components`, `validation_components` | Sample-weighted means by `objective[i]` and `regularizer[i]`. |
+| `train_cross_entropies`, `validation_cross_entropies` | Unweighted cross-entropy by classification `objective[i]`, including registered custom classification objectives, excluding regularizers. |
+| `train_accuracies`, `validation_accuracies` | Accuracy by `objective[i]`, including recipes with multiple objectives. |
+
+Each evaluation uses fixed weights and minibatches bounded by `batch_size`. The final smaller batch is weighted by its actual sample count. Training samples are not shuffled during evaluation. `result.metrics["updates"]` is empty by default; set `TrainingMetrics(update_history=True)` to retain per-update losses.
+
+Default online reporting restores completed history and adds newly completed epochs on resume. Explicit fixed-weight reporting without retained history evaluates the starting epoch boundary and subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. Default online reporting retains completed history and partial epoch sums in the checkpoint. With observations enabled, history is retained and resumed as described below. Full-batch update mode without positive epochs returns an empty epoch history.
+
+Epoch evaluations do not replace the final update's returned outputs or diagnostics. With validation enabled, the default checkpoint selection chooses the lowest total validation loss; explicit `checkpoint_selection` overrides it. Validation does not perform early stopping. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
+
+#### Final test metrics
+
+Supplying `test=TestSpec(...)` evaluates the test set once after all requested epochs finish. `result.metrics["test"]` contains `loss`, `components`, `cross_entropies`, `accuracies`, and `accuracy` when there is one classification objective. Loss and accuracy use the same sample-weighted aggregation as validation, including smaller batches and optional fixed encoding draws.
+
+The entry also records `checkpoint` (`"selected"` or `"final"`), the evaluated checkpoint's `epoch` and `update`, its `selection_record`, `examples` (including all encoding draws), `measurement="fixed_weight_evaluation"`, `evaluation_seed`, and input/target `protocol`. Dataset tests additionally record `encoding_draws`. Test results are separate from epoch history and cannot influence checkpoint selection. The model, parameters, optimizer state, outputs and training checkpoint continue to describe the final training state.
+
+The entry is `None` when no test set is supplied, test metrics are disabled, or the run stops before the requested final epoch. Resume evaluates the test split when training reaches that epoch.
+
+[TrainingMetrics, Batching and epoch callbacks](/api/sim#metrics) configure measurement and reporting. Online train metrics reuse pre-update scores; missing split fields are absent, not zero. `*_measurement` distinguishes online from fixed-weight measurements; `*_examples` counts contributing presentations. With these reporting policies enabled, `phase`, absolute `update`, cumulative `examples`, actual `epoch_updates`/`epoch_examples`, and `dropped_examples` accompany available metrics. Completed history and partial online accumulators survive checkpoint resume without duplicate rows. `update_history=False` returns `updates=[]` independently of explicit checkpoint selection. Callback timing snapshots appear in the corresponding row's `timing` mapping when enabled, while full call timing includes callback overhead.
+
+### Checkpoint selection
+
+`result.training_checkpoint` contains the final training state. `result.selected_checkpoint` contains the winner under [checkpoint_selection](/api/sim#inputs-and-execution-settings), or `None` when no eligible candidate was evaluated. Their parameters can differ; inference uses whichever checkpoint directory you supply.
+
+`selected_checkpoint.selection_record` and `result.metrics["selection_record"]` expose the winner's serialized `policy`, ordered metric `values`, absolute `update`, completed `epoch`, `phase` and `evaluation` identity. Epoch selection records total loss, unweighted cross-entropy or accuracy in policy order; exact ties retain the earliest winner. `phase` is `"initial"` or `"completed_epoch"`. The evaluation identity includes split protocol, seed, batch size, sample-weighted aggregation and content digests of resolved inputs and labels. `result.metrics["checkpoint_selection"]` contains the resolved contract.
+
+The final checkpoint's `best_checkpoint` retains a complete separate winning snapshot (parameters, optimizer/RNG state, coordinates and optional observations), with no recursive nesting. Saving the final state writes its candidate to `selected/` and authenticates that candidate's manifest and tensors. Resuming the final checkpoint preserves the earlier winner; returning history remains governed by the independent observation setting.
+
+`selected_loss` remains the historical training-batch-loss field. Epoch-selected candidates set it to `None`; read `selection_record` for their scores. The named legacy policy records `phase="legacy_training_batch_loss"` and explicitly labels pre-update loss versus post-update weights.
+
+### Epoch observations
+
+Supplying `observations` adds an `observations` mapping to each epoch row while retaining the existing loss/accuracy fields:
+
+```python
+row = result.metrics["epochs"][-1]
+rates = row["observations"]["validation"]["population_rates_hz"]
+weight_norms = row["observations"]["parameters"]["l2_norm"]
+gradients_before_clip = row["observations"]["gradients"]["pre_clip_l2_norm"]
+reference = row["observations"]["probes"]["reference"]
+```
+
+| Entry | Semantics |
+| --- | --- |
+| `train`, `validation` | Requested population activity on the corresponding full evaluation split. Validation appears only when supplied. |
+| `probes` | Separately named reference/validation draws, each recording `split`, `draw_id`, input protocol and evaluation seed. |
+| `parameters.l2_norm` | Flattened stored parameter L2 norms at that fixed epoch state; `state` distinguishes initialization from a completed epoch. The `units` mapping records graph units; norms retain stored scaling. Non-finite requested norms raise an error. |
+| `gradients.pre_clip_l2_norm`, `post_clip_l2_norm` | Arithmetic means of per-update flattened gradient L2 norms over that epoch, before and after the declared clipping step. They are not gradients recomputed on evaluation data. |
+
+Each activity entry includes `duration_s` (per presentation), `sample_count`, `population_sizes`, `window="full_presentation"`, input protocol, split, evaluation seed and aggregation. Population rates divide total emitted spikes by samples × population size × physical presentation duration; the smaller final batch receives its actual sample weight. Mask inputs do not implicitly redefine this measurement window.
+
+`output_activity[population]` records per-cell `spike_totals`, `silent_sample_fraction` (presentations with no spikes in that population), and `class_spike_shares` (each cell's fraction of total spikes). Cell index defines the class axis; class labels and scientific interpretation remain caller-owned. If no spikes occur, shares are `None` and `status="no_spikes"`, rather than fabricated zero probabilities. Counts come from the emitted output-neuron spikes, not weighted hidden-spike counts.
+
+Gradient entries include the number of epoch `updates`, per-parameter `missing_updates` and `aggregation="mean_over_epoch_updates_with_gradient"`. Missing gradients are excluded from the mean. A parameter with no observed gradient returns `None`; initial measurements have `status="no_updates"`. Without clipping, before/after norms agree.
+
+Epoch rows include absolute `update` and `phase="initial"` at epoch 0 or `"completed_epoch"` afterward. Completed history and partial-epoch gradient totals are stored in authenticated checkpoint observation metadata (schema version 3 for audited checkpoints). Resume returns the complete retained history without duplicate boundary rows, and adds a row only when another epoch completes. It rejects changed audit configuration or attempts to reconstruct history from an unaudited checkpoint. Ordinary histories remain invocation-local when observations are disabled.
+
+These compact observations do not change final-update outputs, diagnostics or the configured checkpoint-selection policy. Pinglab's field aliases, plotting, audit thresholds and bank serialization remain outside snnlab.
+
+### numpy
+
+```python
+data = result.numpy(batch=0)
+spikes = data.outputs["spikes"]
+voltages = data.diagnostics["e_voltage"]
+time_ms = data.time_ms
+```
+
+`ExecutionResult.numpy(*, batch: int | None = None)` returns `NumpyExecutionResult` for plotting or analysis:
+
+| Attribute | Contents |
+| --- | --- |
+| `outputs` | Named output NumPy arrays. |
+| `diagnostics` | Named diagnostic NumPy arrays; empty when diagnostics were disabled. |
+| `recorded_signals` | Requested retained recording arrays, with declared-axis batch selection. |
+| `recording` | `RecordingData` with those arrays and per-signal axes, units, cell/sample identities and actual time coordinates. |
+| `time_ms` | One-dimensional simulation time axis in milliseconds, or `None` when no execution occurred. |
+
+The method transfers independent tensor copies to CPU for conversion. Changing the arrays cannot modify the original tensors, and the original result retains its computation graphs. NumPy-supported dtypes retain their dtype; bfloat16 expands explicitly to float32, preserving all finite values. Recording metadata identifies the source and array dtypes. See [Experiment Utilities](/api/sim#traininghistory) for the complete recording and export contracts.
+
+Without `batch`, all batch items and tensor axes are preserved. Passing a non-negative integer selects that item and removes its batch axis. Selection uses the compiled signal shape: `(time, batch, cells)` becomes `(time, cells)`, while `(batch, classes)` becomes `(classes,)`. Signals without a batch axis are unchanged. Booleans and non-integer indices raise `TypeError`; negative or out-of-range indices raise `IndexError`. Selection requires metadata supplied by the graph executor, and is unavailable on a build-only or manually constructed result without that metadata.
+
+`time_ms` comes from the effective execution timestep and step count, including timestep/duration overrides. It starts at zero for a fresh run; a resumed runtime trajectory starts at its absolute continuation step. Time-reduced outputs such as class scores do not have a time axis, even though `data.time_ms` still describes the run. Training converts its final-update outputs and diagnostics, with time referring to that update's input presentation.
+
+Import `ExecutionResult` and `NumpyExecutionResult` from `snnlab.sim` if needed for type annotations.
+
+### Shapes and gradients
+
+Shapes follow the declared graph signal, rather than one universal result layout. A population trace typically has `(time, batch, cells)` axes; time-reduced class scores have `(batch, classes)` axes. Keys in `outputs` are names from `net.output`; keys in `diagnostics` are names from `net.expose`.
+
+Declared outputs always return, and direct graph forward outputs retain autograd. Diagnostics and continuation state are detached; `diagnostics=False` returns an empty diagnostic mapping. The built-in training result carries the last optimizer update's outputs, not an aggregate of all training presentations. Use `metrics` for epoch curves.
+
+For a differentiable PyTorch loss use `result.outputs` tensors directly. Use `.numpy()` for plotting or analysis. It converts outputs, diagnostics and retained recordings. Parameters, optimizer state and metrics have separate contracts.
+
+### decisions
+
+`result.decisions` contains completed records from an explicit [DecisionSegments policy](/api/sim#inputs-and-execution-settings). Partial segments remain in `runtime_state.segment_counts` with their cursor and full policy in `runtime_state.segment_state`; they are not prematurely reported at a call boundary. The result defaults to an empty list when no segments complete. Inference artifacts retain completed records in `metrics.json` and bind the policy and absolute execution window into the request digest. Ordinary output and diagnostic retention is unchanged.
+
+### recorded_signals
+
+Explicit [RecordingSpec selections](/api/sim#inputs-and-execution-settings) return tensors keyed by graph signal ID in `recorded_signals`. Dense values have `(recorded_time, batch, selected_cells)` axes; sparse population spikes have `int64` rows `(absolute_step, batch, original_cell)`. A sink consumes independent CPU blocks and leaves this mapping empty. `result.numpy(batch=0).recorded_signals` converts retained recordings using their declared axes; sparse events are filtered by their batch coordinate. Use `sample.recording.info[signal].time_ms` for a dense recording's actual timeline, which may differ from the full output timebase.
+
+Use `result.write_metrics(path)` and `result.write_recording(path, signals=(...), batch=0)` for explicit native exports. [Experiment Utilities](/api/sim#traininghistory) documents matching readers, validation, dtype storage and opt-in overwrite behaviour.
+
+Inference metrics expose automatic `online_reductions`, remaining `retained_signal_samples`, `measurement_complete` and digest-bound `inference_retention`. An explicit measurement window retains partial accumulators/cursor in runtime state, including portable save/load. With `retain_outputs=False`, `outputs` is empty; dataset inference also avoids collecting per-sample `final_state` tensors. Exposed diagnostics remain independent and explicitly controlled.
+
+#### Optional training timing
+
+When `training_timing=True`, `result.metrics["training_timing"]`
+contains disjoint setup, training, train-evaluation, validation/probe, test, checkpoint
+and reporting durations, their `total_s`, the measurement mode and per-epoch phase
+rows. These are elapsed seconds for the current call, including resumed partial
+epochs. They do not change or persist into checkpoint identity. See
+[training timing](/api/sim#training_timing) for exact boundaries and
+the difference between synchronized device work and host-only enqueue latency.
+
+### Persistence and returned object types
+
+`training_checkpoint` and `selected_checkpoint` are [TrainingCheckpoint](/api/sim#training-checkpoints) objects. `runtime_state` is [GraphRuntimeState](/api/sim#runtime-state-persistence), and selected recording sink callbacks receive [RecordingBlock](/api/sim#recording-and-measurement) objects. Use `result.write_metrics(path)` and `result.write_recording(path, ...)` to save retained results; `.numpy()` converts arrays without saving files.
+
+`recorded_signals` and `decisions` use per-instance factories, so separately constructed results do not share their empty mappings/lists. Their returned contents are mutable caller-owned containers.
+
+## Recording and measurement
+
+
+### Types and defaults
+
+```python
+class MeasurementWindow:
+    start_step: int
+    end_step: int
+
+
+class SignalRecording:
+    signal: str
+    cells: tuple[int, ...] | None = None
+    kind: str = "dense"
+
+
+class RecordingSpec:
+    signals: Sequence[SignalRecording] = field(default_factory=tuple)
+    window: MeasurementWindow | None = None
+    sink: Callable[[RecordingBlock], None] | None = None
+    sink_id: str | None = None
+    block_steps: int = 1
+
+
+class RecordingBlock:
+    signal: str
+    kind: str
+    values: torch.Tensor
+    start_step: int
+    end_step: int
+    dt_ms: float
+    batch_offset: int = 0
+    cells: tuple[int, ...] | None = None
+    unit: str | None = None
+    measurement_window: tuple[int, int] | None = None
+    axes: tuple[int | str, ...] | None = None
+    step_indices: tuple[int, ...] | None = None
+    sample_ids: tuple[int | str, ...] | None = None
+    batch_size: int | None = None
+    selected_batch: int | None = None
+
+
+class NPZRecordingSink:
+    def __init__(self, directory: str | Path): ...
+```
+
+`RecordingBlock.values` contains an independent CPU tensor delivered to a sink. Absolute start/end steps describe the block; `batch_offset` identifies the source sample offset for dataset batching. `cells`, `unit` and `measurement_window` retain interpretation metadata. A recording window and the graph reduction measurement window are independently configurable.
+
+New native blocks also expose axes, actual dense step coordinates, sample identities
+and original batch size. Use [`sim.RecordingData.read`](/api/sim#recordingdata-and-numpy-conversion)
+to verify and read supported NPZ sink output. `result.write_recording` explicitly
+exports retained arrays through the same format, with optional sample selection.
+
+### measurement
+
+`measurement: MeasurementWindow | None = None` selects one explicit absolute `[start_step, end_step)` window for graph time reductions. Without it, each call reduces its own input interval, preserving the previous API behavior. An unrelated chunk boundary cannot restart an explicitly declared window.
+
+```python
+from snnlab.sim import MeasurementWindow
+
+window = MeasurementWindow(start_step=0, end_step=600)
+first = model(first_inputs, diagnostics=False, measurement=window)
+continued = model(
+    remaining_inputs,
+    diagnostics=False,
+    measurement=window,
+    runtime_state=first.runtime_state,
+)
+assert continued.metrics["measurement_complete"]
+```
+
+Partial calls return aggregates accumulated so far and set `measurement_complete=False`. A mean with no valid samples yet returns zero until the window completes; a completed empty masked mean/rate window fails. Final selection tracks the last sample inside the window. Activity outside the window is excluded, and subsequent calls preserve the completed aggregate. Masked rates carry valid duration alongside counts; an explicitly authored fixed rate duration retains its declared meaning.
+
+Runtime state preserves partial measurement accumulators. Reuse the same graph, parameters, backend and window on continuation. Changed policies and incompatible state fail explicitly. Measurement windows require inference without autograd.
+
+[DecisionSegments](/api/sim#decisions-1) independently close/reset per-decision integer counters at their explicit boundaries. A MeasurementWindow covers its declared interval across those decisions; selective voltage resets do not silently reset its aggregate. Both policies and their partial accumulators survive the same runtime checkpoint.
+
+### recording
+
+`recording: RecordingSpec | None = None` selects additional time/batch/cell signals without requiring full exposed diagnostics. Import `RecordingSpec`, `SignalRecording`, `RecordingBlock` and `NPZRecordingSink` from `snnlab.sim`.
+
+```python
+from snnlab.sim import RecordingSpec, SignalRecording, NPZRecordingSink
+
+sink = NPZRecordingSink("recording-blocks")  # requires an empty directory
+recording = RecordingSpec(
+    signals=(
+        SignalRecording("E.spikes", kind="spike_events"),
+        SignalRecording("out.voltage", cells=(0, 1), kind="dense"),
+    ),
+    sink=sink,
+    sink_id=sink.identity,
+)
+result = model(inputs, diagnostics=False, recording=recording, retain_outputs=False)
+```
+
+`SignalRecording(signal, cells=None, kind="dense")` supports native signals and timewise linear chains. Cell selections must be nonempty, unique and in range. Dense recordings retain `(recorded_time, batch, selected_cells)` values in selection order. `kind="spike_events"` accepts population spikes and produces an `int64` `(events, 3)` tensor: absolute timestep, batch index and original cell index. Coordinates remain absolute during continuation; dataset batch indices identify positions in the full selected presentation sequence. Event rows follow execution/batch-block order rather than promising a global sort.
+
+`RecordingSpec.window` optionally restricts selected recordings to an absolute MeasurementWindow. Without a sink, tensors are returned in `result.recorded_signals` and saved as authenticated `recordings.npz` (inference-artifact schema version 2). In-memory sparse retention scales with emitted events; selected dense retention scales with selected history. An empty recording window returns a correctly shaped empty tensor. `metrics["recording_units"]` declares signal units.
+
+A sink is a callable receiving independent CPU `RecordingBlock` objects. Blocks carry signal, kind, values, absolute bounds, timestep, batch offset, original cell selection and units. Selected recordings default to one timestep per block; set `RecordingSpec(block_steps=32)` (or `"block_steps": 32` in recording JSON) to buffer up to 32 timesteps per signal before a CPU transfer. Event extraction runs on the transferred CPU block. Larger blocks change callback granularity and group signals into independent blocks, so opt in only when the sink supports this. A final partial block is always flushed, with absolute bounds and original cell indices preserved. Each continued call flushes its own blocks. With a sink, no recording tensors are accumulated in the result. Named reduced outputs are also delivered at call completion. Their block bounds describe accumulated measurement coverage, and `measurement_window` retains the full requested bounds, including for partial results. A stable `sink_id` is required, and callback RNG state is restored so recording cannot consume the executor's random streams. Sink callbacks should consume/write blocks rather than retain them when bounded memory is required.
+
+The built-in NPZ sink writes one compressed block file plus a JSONL manifest containing coordinates, units, shapes, dtypes and payload SHA-256 digests. Sink files are separate from inference-artifact files; generic external sink contents are not authenticated by the inference cache validator. Use a separate empty sink directory for each continued invocation.
+
+### retain_outputs
+
+`retain_outputs: bool = True` preserves the existing named output tensors by default. Set it to `False` to omit them from the result. A recording sink still receives reduced outputs at completion; supported timewise outputs are delivered per timestep without assembling a dense output history. Unsupported streamed output chains fail explicitly. Diagnostics are controlled independently: use `diagnostics=False` to avoid exposed dense histories.
+
+Dataset inference uses one initialized/checkpoint-loaded model, encodes successive batches and supplies global batch offsets to the sink. With diagnostics disabled, a sink and `retain_outputs=False`, it does not concatenate named outputs, selected recordings or per-sample final states across the dataset. Input/label/order metadata and batch provenance still scale with sample count. Requesting retained outputs, dense diagnostics or in-memory recordings explicitly restores the corresponding storage cost. These controls do not claim constant-memory training through time.
+
+
+### Methods and sink contract
+
+`MeasurementWindow.validate()` checks non-negative integer endpoints and positive duration. `MeasurementWindow.from_dict(value)` accepts exactly `start_step` and `end_step` and validates immediately.
+
+`RecordingSpec.from_dict(value)` accepts `signals`, `window`, `directory` and `block_steps`. Signal dictionaries use `SignalRecording` fields. A directory creates an `NPZRecordingSink`; construction requires an empty directory. There is no deserialization of arbitrary Python callbacks. Full signal/axes checks occur before execution.
+
+A custom sink is `Callable[[RecordingBlock], None]` and requires a non-empty stable `sink_id` in the recording specification. It receives CPU blocks synchronously and owns their subsequent storage. Exceptions propagate to the caller. Choose an identity that changes when the sink's scientific/storage interpretation changes.
+
+`NPZRecordingSink(directory)` creates the directory and rejects non-empty destinations. Calling it with a block writes `block-00000000.npz`, incrementing the index for each block, and appends metadata/digest records to `manifest.jsonl`. Its stable identity is `snnlab.npz-recording-blocks/v1`. Construct a fresh sink/directory per recording session; there is no automatic append/resume of an existing directory.
+
+## Reading results and preparing datasets
+
+
+### TrainingHistory
+
+```python
+history = sim.TrainingHistory.read("metrics.json")
+history = sim.TrainingHistory.from_metrics(result.metrics)
+
+history.validate(
+    expected_epochs=20,
+    require_complete=True,
+    selection=selection_policy,
+    expected_examples={"test": 360},
+    expected_encoding_draws={"test": (17,)},
+)
+curve = history.curve(metric="accuracy", split="validation", objective=0)
+curves = history.curves(
+    metrics=("loss", "accuracy"), splits=("train", "validation")
+)
+```
+
+Reading copies the input mapping and validates available native evidence. `.validate(...)` raises `ValueError` for inconsistent evidence or unmet expectations. A caller-supplied `selection` must be a `CheckpointSelection` matching the stored policy. Reading does not certify that the underlying evaluation implementation was correct.
+
+| Attribute | Contents |
+| --- | --- |
+| `epochs` | Tuple of `HistoryEpoch` records: `epoch`, named `splits`, optional `update`, and other native `metadata`. |
+| `splits` | Available epoch split names, `train` and/or `validation`. |
+| `selection` | Selected-checkpoint record, including `epoch`, `update`, policy and scores, or `None`. This is metadata, not checkpoint arrays. |
+| `test` | Final held-out measurement and checkpoint/evaluation provenance, or `None`. |
+| `performance` | Available requested/resolved performance metadata. |
+| `timing` | Available native training phase/call/epoch timing, or `None` when disabled. |
+| `coverage` | First/last observed epoch, contiguous coverage, recorded completion state, requested epochs, resume update and whether all epoch-selection candidates are available (`selection_verified`). Older artifacts can have unknown completion. |
+
+Split records and native metadata are immutable mappings with attribute access. `curve()` returns a `MetricCurve` with independent `epochs`, `values`, `available` mask, per-point `measurement` semantics, split, metric and optional objective. `curves()` returns a mapping keyed by `(split, metric)`.
+
+Absent measurements use NaN plus a false mask in the curve view; the underlying record stays absent. No epochs or evaluations are invented. Epoch-zero validation remains present when recorded; an online training baseline remains absent. Measurements retain `online_pre_update`, `fixed_weight_evaluation` or unknown historical semantics. Test evidence remains separate from curves.
+
+Without `objective`, `loss` means total weighted loss. With an objective index it reads the native `components["objective[i]"]` value. Accuracy and cross entropy require an explicit objective when multiple values are available. Custom or regression losses may be negative; finite values are required, accuracy is bounded by `[0, 1]`, and cross entropy is nonnegative. Unavailable metrics remain unavailable.
+
+Default validation checks increasing unique epochs, available metric domains/counts, candidate scores, selection direction/ties/initial eligibility and consistency with test provenance. Gaps and partial/resumed histories remain readable. `require_complete=True` requires all completed epochs through `expected_epochs` or the recorded requested epoch count; selection also requires all eligible candidates. With incomplete candidate evidence, validation can reject a winner worse than an available candidate but cannot certify a global winner. Example counts include repeated encoding draws: 100 original samples evaluated with two draws give `examples=200`.
+
+Historical bare metrics JSON requires `TrainingHistory.read(path, legacy=True)`. An unknown schema is rejected even with that flag.
+
+Legacy update-loss selection retains its native semantics: the score is a pre-update minibatch loss attached to post-update weights. Its recorded epoch is the presentation epoch ordinal (or absent in full-batch update mode), while a held-out test's epoch counts completed epochs at the checkpoint. The reader validates matching update/provenance records without treating that score as a fixed-weight epoch evaluation.
+
+### NetworkSnapshot
+
+```python
+snapshot = sim.NetworkSnapshot.read("training/end")
+snapshot = sim.NetworkSnapshot.from_snapshot(result.snapshots["end"])
+snapshot.populations["E"].parameters["threshold_mv"].unit
+snapshot.projections["input_to_E"].initializer
+snapshot.parameter_info["input_to_E.weight"].runtime_shape
+parameters = snapshot.load_parameters(names=("input_to_E.weight",))
+snapshot.validate(verify_parameters=True)
+```
+
+`.read(path, parameters=False)` accepts a snapshot directory or `snapshot.json`. The default reads metadata without opening NPZ payloads or loading extension implementations. `parameters=True` eagerly verifies and caches all available parameter arrays. `from_snapshot(snapshot, parameters=False)` also defers copying captured tensors until requested; its source tensors remain mutable through the original `RunSnapshot`. `load_parameters(names=None)` verifies referenced storage and returns independent CPU tensors in their original dtype. Missing requested parameters raise an error; metadata-only snapshots return an empty mapping when all available parameters are requested.
+
+| Attribute | Contents |
+| --- | --- |
+| `schema`, `snnlab_version`, `stage`, `graph_identity` | Source format, producer version, capture stage and graph digest. |
+| `execution`, `training` | Effective execution settings and optional training recipe. |
+| `populations` | ID-keyed population records with neuron definitions and `PhysicalParameter(value, unit)` values. Custom scalar configuration uses `config.<name>` keys; unspecified custom units stay unknown. |
+| `projections` | ID-keyed source/target, delay, synapse parameters, authored/runtime matrix shape, initializer, scaling, constraints and trainable/frozen parameter names. |
+| `parameter_info` | All declared parameters, units, initializers, scaling, constraints, resolved membership, initialization metadata and available storage descriptors. |
+
+Authored matrix shape can differ from runtime storage orientation; both are retained. Initializer mean/std are requested settings. `initialization.statistics` describes realized weights **at initialization**, even in an end snapshot. Reading does not compute statistics of final weights. Membership uses captured runtime metadata when available, then the training recipe; absent historical evidence remains unknown. Snapshots retain schema `snnlab.run-snapshot/v1` with additive metadata and remain distinct from resumable checkpoints.
+
+### RecordingData and NumPy conversion
+
+```python
+sample = result.numpy(batch=0)
+spikes = sample.recorded_signals["E.spikes"]
+recording = sample.recording
+times = recording.info["E.spikes"].time_ms
+cells = recording.info["E.spikes"].cell_ids
+```
+
+`sample.recorded_signals` is the same mapping as `sample.recording.signals`. `RecordingData(signals, info)` accepts NumPy arrays and a matching mapping of `SignalInfo` records. It copies arrays and validates metadata. `select_batch(index)` returns an independent selected recording. A previously selected recording rejects another selection.
+
+`SignalInfo` exposes `axes`, `kind`, `unit`, original `cell_ids`, optional original `sample_ids`, actual `step_indices`, `dt_ms`, start/end step bounds, original `batch_size`, `source_dtype`, `array_dtype`, `conversion`, `selected_batch` and an optional reduction `measurement_window` retained from native sink blocks. Its `time_ms` property multiplies actual dense step coordinates by the timestep. Signals without time axes do not acquire a timeline. Sparse events retain integer `(step, batch, original_cell)` columns and their recording window; batch selection filters event coordinates without relabelling them.
+
+NumPy conversion selects declared axes, copies requested retained signals to independent CPU arrays, and leaves original tensors and computation graphs intact. Empty signals and non-temporal signals remain supported. Float16/32/64 preserve their numeric dtype. Bfloat16 becomes float32 with explicit `conversion="bfloat16_to_float32"`; all finite values expand exactly. Artifact storage preserves original bfloat16 bits, including NaN payloads. Unsupported tensor dtypes raise rather than silently cast.
+
+Windows and strided recordings use per-signal coordinates. `sample.time_ms` remains the existing full output timebase and must not be substituted for a selected recording's coordinates. Conversion cannot recover recordings consumed by a streaming sink or not retained during execution.
+
+### DatasetSnapshot
+
+```python
+dataset = sim.DatasetSnapshot.from_partitions(
+    dataset_id="digits",
+    partitions={
+        "train": sim.DatasetPartition(x_train, y_train, train_ids),
+        "validation": sim.DatasetPartition(x_validation, y_validation, validation_ids),
+        "test": sim.DatasetPartition(x_test, y_test, test_ids),
+    },
+    disjoint=("train", "validation", "test"),
+    preprocessing={"operation": "divide", "divisor": 16},
+)
+dataset.write("dataset.npz")
+saved = sim.DatasetSnapshot.read("dataset.npz")
+binding = saved.binding(
+    "train", input_id="pixels", target_id="class", encoder=encoder,
+)
+diagnostic = saved.binding(
+    "test", sample_ids=(original_id,), input_id="pixels", encoder=encoder,
+)
+```
+
+Partitions copy and retain the caller's feature/label shapes and dtypes, row order and integer or Unicode sample IDs. Features use a leading sample axis by default; declare `feature_sample_axis=1` for native `(time, samples, channels)` prebinned spikes. Labels retain a leading sample axis. Object arrays, duplicate identities and overlaps among explicitly declared disjoint partitions are rejected. The library does not normalize, transpose, shuffle or select rows implicitly. `preprocessing` and `provenance` record caller-owned descriptions; they do not apply transforms. `.counts` reports per-split original sample counts.
+
+`write(path, overwrite=False)` creates one portable NPZ archive with schema `snnlab.dataset-snapshot/v1`. A uint8 UTF-8 JSON `__snnlab_manifest__` array describes named partitions, counts, array keys, shapes, dtypes, per-array SHA-256, disjointness, preprocessing and provenance. Readers validate all declared arrays and identities. Native bindings retain the digest of the complete archive and reject changes after binding.
+
+Call `.read()` after writing to obtain a saved snapshot suitable for bindings. `.binding()` returns an existing `DatasetSnapshotBinding` with feature/label/identity keys resolved internally. An optional `sample_ids` sequence selects those existing members in the requested order and preserves original split provenance. It does not create independent test evidence. The native encoder pipeline still requires one-dimensional integer classification targets and its declared feature layout: rate-Poisson uses `(samples, channels)`, prebinned spikes use `(time, samples, channels)` with sample axis 1, and custom encoders receive canonical `features`, `labels` and `sample_ids` aliases as well as the original archive keys. Historical event NPZ bindings remain supported directly.
+
+#### Optional stratified splitting
+
+```python
+partitions = sim.stratified_split(
+    features=x, labels=y, sample_ids=ids,
+    fractions={"train": .7, "validation": .15, "test": .15},
+    seed=17, policy="stratified-v1",
+)
+```
+
+Splitting is a separate explicit operation. `stratified-v1` permutes each sorted label's rows using a local NumPy PCG64 generator, allocates rows per class by largest remainder, breaks equal remainders in split insertion order and emits each partition in original source order. Fractions must be finite, nonnegative and sum to one. Small classes may leave a split empty; no samples are duplicated. Each returned partition records this policy, seed, fractions and ordering in provenance. Supply existing partitions directly when adopting utilities in an established experiment; this algorithm does not promise scikit-learn's exact rows.
+
+### Epoch progress
+
+```python
+logger = sim.EpochLogger(
+    metrics=("loss", "accuracy"), splits=("train", "validation"),
+    labels={"validation": "val"}, precision=4, timing=True,
+    stream=sys.stdout,
+)
+text = sim.format_epoch(report, precision=4)
+# Pass logger as on_epoch_end=logger in the explicit train call.
+```
+
+`format_epoch` and `EpochLogger` share `metrics`, `splits`, `labels`, `precision`, `timing` and optional `objective`. Precision is an integer from 0 to 16. The formatter returns text; the logger writes one flushed line to its stream, defaulting to current stdout. Fields label online training and fixed-weight evaluation. Missing metrics, validation and disabled timing are omitted rather than replaced with zeros.
+
+Only finalized `EpochReport` values are read. Existing callbacks, propagated exceptions and resume behaviour remain unchanged: only newly completed epochs produce progress lines.
+
+## Network snapshots
+
+
+### Enable an export
+
+```python
+from snnlab import sim
+
+result = sim.simulate(
+    bundle="network.bundle",
+    checkpoint="checkpoints/selected",
+    input_bindings=(
+        sim.PoissonInputBinding(
+            input_id="inputs",
+            steps_count=100,
+            rates_hz=(20.0,),
+            seed=17,
+        ),
+    ),
+    snapshot="runs/example",
+)
+```
+
+Replace `inputs` with the spike input declared by your network. The path shorthand
+means `SnapshotSpec(path="runs/example", parameters=True, stage="start")`.
+Omitting `snapshot` (the default `None`) disables capture and writing.
+`build` requests reject snapshots: they do not execute or load weight checkpoints.
+
+```python
+sim.SnapshotSpec(
+    path="runs/training",
+    parameters=True,
+    stage="both",
+)
+```
+
+Use this value as a training request's `snapshot` argument to capture both initial
+and final weights. `parameters=False` exports settings without copying or storing
+parameter arrays. Snapshot capture is independent of `retain_parameters`.
+
+### Capture stages and paths
+
+1. `"start"` captures immediately before graph execution or training, after
+   parameter initialization, checkpoint loading, input resolution and inference
+   overrides. This is the default.
+2. `"end"` captures the final model parameters after successful execution. In
+   training these are the final weights, regardless of checkpoint selection.
+3. `"both"` writes separate `start/` and `end/` directories below `path`.
+   Single-stage exports write directly into `path`.
+
+Training snapshots record `completed_updates`, including updates restored from a
+resume checkpoint. A start snapshot can remain when execution fails; an end
+snapshot is only written after execution succeeds. Existing snapshot files are
+never overwritten: choose a fresh path for each run. Export I/O errors propagate
+to the caller. Capture adds CPU transfers, array hashing, memory and disk costs;
+leave it disabled for uninstrumented performance measurements.
+
+## Training checkpoints
+
+
+### save_training_checkpoint
+
+```python
+def save_training_checkpoint(
+    path: str | Path, checkpoint: TrainingCheckpoint
+) -> Path: ...
+```
+
+Writes a directory containing `manifest.json` and `tensors.npz`, publishing individual files by replacement, and returns its `Path`. Use a dedicated destination; concurrent readers do not get a transactional directory swap. Tensor values and metadata are stored without pickle. Arbitrary Python optimizer objects, scheduler state and custom global optimizer state are not captured.
+
+### load_training_checkpoint
+
+```python
+def load_training_checkpoint(
+    path: str | Path, *, device: str | torch.device = "cpu"
+) -> TrainingCheckpoint: ...
+```
+
+Reads supported schema versions 1–5, authenticates tensor payloads and metadata, moves parameters/optimizer tensors to `device`, and returns `TrainingCheckpoint`. Invalid schemas, digests, shapes, dtypes or audited metadata fail. The training handler additionally checks graph/recipe identity, input protocol, initialization and iterator coordinates before resuming.
+
+```python
+from snnlab.sim import load_training_checkpoint, save_training_checkpoint
+
+# trained is the result of train(...).
+save_training_checkpoint("final.checkpoint", trained.training_checkpoint)
+checkpoint = load_training_checkpoint("final.checkpoint", device="cpu")
+```
+
+To resume built-in training, set `checkpoint` to the directory path. To run inference, the same directory supplies authenticated weights; optimizer/iterator state is not restored. A standalone PyTorch state dictionary is supported for inference but is not a built-in training-resume checkpoint.
+
+### CheckpointSelection and SelectionMetric
+
+```python
+class SelectionMetric:
+    kind: Literal["loss", "cross_entropy", "accuracy"]
+    objective: int = 0
+    direction: Literal["min", "max"] = "min"
+
+
+class CheckpointSelection:
+    split: Literal["train", "validation"] = "validation"
+    cadence: Literal["completed_epoch"] = "completed_epoch"
+    metric: SelectionMetric = SelectionMetric("cross_entropy")
+    tie_break: Sequence[SelectionMetric] = ()
+    include_initial: bool = False
+    mode: Literal["epoch_metrics", "legacy_training_batch_loss", "none"] = (
+        "epoch_metrics"
+    )
+```
+
+Epoch selection evaluates a fixed state on the full train or validation split. Validation requires `ValidationSpec`; epoch selection requires positive epochs. `kind="loss"` selects by total weighted objective and regularizer loss, supports nonclassification recipes, and requires the default `objective=0` because it measures the entire recipe. Cross entropy and accuracy identify a classification objective by zero-based index. Cross entropy is unweighted and excludes regularizers; accuracy uses that objective's predictions. Each metric explicitly chooses `direction="min"` or `"max"`; accuracy does not automatically switch to maximization.
+
+When `checkpoint_selection` is omitted and validation evaluation is enabled, training uses `CheckpointSelection(metric=SelectionMetric("loss"))`. An explicitly constructed `CheckpointSelection()` retains its cross-entropy default. Test data is never eligible for selection; final test evaluation uses the selected checkpoint, falling back to final weights when selection is disabled or unavailable.
+
+Tie-break metrics are compared in order after exact ties; an exact tie retains the earliest candidate. `include_initial=True` admits epoch zero. A run ending before any eligible boundary can return `selected_checkpoint=None`.
+
+| Method | Contract |
+| --- | --- |
+| `CheckpointSelection.disabled()` | Returns `mode="none"`; no selected candidate. |
+| `CheckpointSelection.legacy_training_batch_loss()` | Historical lowest pre-update weighted batch loss paired with post-update weights. Also used when selection is omitted. |
+| `to_dict()` / `from_dict(value)` | Round-trip JSON-compatible policies. |
+| `validate(training, *, epochs, has_validation)` | Checks supported modes, splits, metrics and compatible classification objectives; raises on invalid policy. |
+| `scores(metrics)` | Returns ordered finite scores from objective-indexed `cross_entropies` / `accuracies`; missing or nonfinite values fail. |
+| `better(values, previous)` | Lexicographic comparison under declared directions; `previous=None` accepts the first candidate. |
+
+Disabled and legacy modes reject extra epoch-metric settings. Resume authenticates selection/evaluation contracts and retains the best candidate across calls. See [request selection rules](/api/sim#inputs-and-execution-settings) and [selection results](/api/sim#checkpoint-selection).
+
+## Continuing dynamics
+
+`result.runtime_state` is an opaque `GraphRuntimeState` carrying ongoing neuron and synapse dynamics, delayed propagation and random state. Pass it as `runtime_state=` on the next simulation/model call; without it a call starts fresh dynamics. Use `retain_runtime_state=False` when continuation is unnecessary.
+
+Runtime state does not contain learned weights. Preserve the model parameters separately, and keep graph, timestep, device, dtype, input ordering and experimental policies compatible. Continuation detaches state and does not backpropagate through earlier chunks.
+
+## Runtime state persistence
+
+
+### save_runtime_state
+
+```python
+def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path: ...
+```
+
+Writes `manifest.json` and compressed `tensors.npz` to a directory, publishing each file by replacement, and returns the directory `Path`. This is portable JSON/NumPy storage, not pickle. Use a dedicated destination; the pair is not a transactional directory replacement for concurrent readers. Save does not capture model weights. Bfloat16 rows use lossless uint16 bit storage tagged `tensor_storage="snnlab.bfloat16-bits/v1"`; loading restores the original dtype and bits. Other dtypes keep their existing representation.
+
+### load_runtime_state
+
+```python
+def load_runtime_state(
+    path: str | Path, *, device: str | torch.device = "cpu"
+) -> GraphRuntimeState: ...
+```
+
+Authenticates the stored tensor digest, names, shapes and dtypes, loads tensors on `device`, and returns state. Readers support schema versions 1–4; segment/reduction metadata is checked when present. Missing files raise filesystem errors; invalid schemas, digests or metadata raise `ValueError`. Loading alone does not establish compatibility with a new model; the executor checks that on continuation.
+
+### Continue and persist
+
+```python
+from snnlab.sim import save_runtime_state, load_runtime_state
+
+first = model(first_inputs, diagnostics=False)
+save_runtime_state("trajectory.state", first.runtime_state)
+state = load_runtime_state("trajectory.state", device="cpu")
+second = model(next_inputs, diagnostics=False, runtime_state=state)
+```
+
+Here `model` is an existing CPU GraphExecutor and the two input mappings are consecutive chunks. Supply the same full [measurement](/api/sim#recording-and-measurement) and [decision](/api/sim#advanced-resets-and-decisions) policies on every call when used. A fresh call without state starts fresh dynamics. An execution timestep override cannot convert saved state. `retain_runtime_state=False` suppresses the returned continuation snapshot.
+
+Portable CPU copies of MPS measurement states are staged back to the execution device before stepping. Float64 reduction accumulators from CPU/CUDA cannot be restored on MPS; this raises an explicit error instead of silently lowering accumulation precision.
+
+## Advanced: spike interventions
+
+
+### Typed interventions
+
+```python
+class ReplaySpikes:
+    population_id: str
+    replay: SpikeReplay
+
+
+class DropSpikes:
+    population_id: str
+    probability: float
+    seed: int | None = None
+
+
+class AddPoissonSpikes:
+    population_id: str
+    rate_hz: float
+    seed: int | None = None
+```
+
+`Intervention` is the union of these three types. `SpikeReplay` (imported from `snnlab.sim`) is the union of `DenseSpikeReplay` and `SparseSpikeReplay`. Use the validated factory methods rather than constructing replay metadata manually.
+
+### Execution semantics
+
+`interventions` is an ordered sequence of typed objects, defaulting to `()`. It is supported by graph `simulate` and directly by `GraphExecutor.forward`. Graph training rejects interventions. Import the types from `snnlab.sim`:
+
+```python
+DropSpikes(population_id="E", probability=0.25, seed=None)
+AddPoissonSpikes(population_id="E", rate_hz=5.0, seed=None)
+ReplaySpikes(population_id="I", replay=payload)
+```
+
+`population_id` must be an exact spiking population ID. COBA LIF, current-based LIF, spiking leaky integrators and registered spiking neurons use the same intervention point. A repeated intervention kind on the same population is rejected. Drop probability must be finite in `[0, 1]`; add rate must be finite and non-negative with `rate_hz * dt_ms / 1000 <= 1`. Stochastic `seed=None` uses the execution seed (or module construction seed for direct `forward`); supplied seeds must be non-negative integers. Random streams use the intervention's ordered index, target and absolute timestep.
+
+Interventions run immediately after each targeted population's ordinary neuron update and before any zero-delay downstream consumer. They alter **emitted spikes**, preserving the neuron update's voltage, reset and refractory state. Replacement spikes enter recurrent/delayed histories, diagnostics and readouts. Changes can affect the target's later state through recurrent feedback. Replay consumes no random draws. List order is literal: replay then drop modifies replayed spikes; drop then replay replaces the dropped stream; replay then add unions replay with generated spikes.
+
+The previous `options["inference_interventions"]` mapping is rejected with a migration error. Move the ordered sequence to `interventions=(DropSpikes(...), AddPoissonSpikes(...), ReplaySpikes(...))`. Direct `GraphExecutor.forward` likewise requires typed objects instead of mappings. `options["inference_overrides"]` remains separate.
+
+#### DenseSpikeReplay
+
+```python
+class DenseSpikeReplay:
+    value: torch.Tensor  # Binary [time, batch, cells]
+    start_step: int  # Inclusive absolute timestep
+    dt_ms: float
+    sha256: str  # Expected canonical payload digest
+```
+
+For a caller-owned stream, create an independent, authenticated snapshot:
+
+```python
+from snnlab.sim import DenseSpikeReplay, ReplaySpikes, simulate
+
+payload = DenseSpikeReplay.from_tensor(
+    baseline_spikes,
+    start_step=0,
+    dt_ms=0.1,
+)
+result = simulate(
+    graph=bundle.graph,
+    input_bindings=input_bindings,
+    interventions=(ReplaySpikes("I", payload),),
+)
+```
+
+`.from_tensor` validates and copies values, then computes `sha256`. To verify an externally pinned payload, construct `DenseSpikeReplay(value, start_step, dt_ms, sha256=expected_digest)` instead. Every execution takes a private snapshot, verifies the digest before neuron stepping, and rejects later mutation of the supplied payload. Values must be real binary values; NaN, infinity and fractional spikes fail. Batch/cell dimensions must match the execution and target exactly. No broadcasting or repetition is inferred.
+
+#### SparseSpikeReplay
+
+```python
+class SparseSpikeReplay:
+    steps: torch.Tensor  # Absolute integer timesteps
+    batches: torch.Tensor
+    cells: torch.Tensor
+    start_step: int
+    steps_count: int
+    batch_size: int
+    cells_count: int
+    dt_ms: float
+    sha256: str
+```
+
+Use `SparseSpikeReplay.from_events(...)` with these coordinates and coverage fields, omitting `sha256`, to create a validated independent snapshot. All three coordinate vectors must be one-dimensional integer tensors of equal length, lexicographically ordered by `(step, batch, cell)`, without duplicates. Explicit dimensions define complete coverage; absent coordinates mean zero spikes. Empty event vectors represent an all-zero covered stream. Sparse replay remains sparse until the current batch/cell spike tensor is emitted.
+
+Dense and sparse payloads use `snnlab.spike-replay/v1`. Their digest is SHA-256 of the canonical header (sorted-key compact JSON plus a newline), followed by dense uint8 C-order bytes, or sparse `steps`, `batches`, `cells` in order as little-endian int64 bytes. The header binds representation, start step, step count, batch/cell dimensions and timestep. Digests use `sha256:HEX`; different representations have different payload identities even when their emitted spikes agree.
+
+#### Replay coverage and continuation
+
+Coverage is the half-open interval `[start_step, start_step + steps_count)`. Dense `steps_count` comes from its time axis. Coverage dimensions and counts must be positive integers; `start_step` must be a non-negative integer. `dt_ms` must match the effective execution timestep. Replay must cover the entire current execution window; there is no padding or fallback outside coverage.
+
+On continuation, the execution starts at `runtime_state.completed_steps`. Supply the original full replay or a separately authenticated absolute-coordinate slice covering that chunk. Unrelated call boundaries do not restart replay. The target's ordinary state and transmitted delayed histories are carried by runtime state, so chunked execution agrees with uninterrupted execution, including delayed-edge boundaries. Changing replay intentionally creates a new intervention identity.
+
+### Replay constructors
+
+```python
+def from_tensor(cls, value, *, start_step=0, dt_ms): ...
+
+
+def from_events(
+    cls,
+    *,
+    steps,
+    batches,
+    cells,
+    start_step=0,
+    steps_count,
+    batch_size,
+    cells_count,
+    dt_ms,
+): ...
+```
+
+Call these class methods as `DenseSpikeReplay.from_tensor(...)` and `SparseSpikeReplay.from_events(...)`; `cls` is supplied automatically. Both detach, validate and copy payload tensors to CPU, then compute canonical identity. Frozen dataclasses do not make exposed tensor storage immutable: do not mutate it after construction; subsequent authentication rejects altered content.
+
+## Advanced: resets and decisions
+
+
+### Types
+
+```python
+class Boundary:
+    step: int
+    batches: tuple[int, ...] | None = None
+
+
+class BoundarySchedule:
+    steps: tuple[int, ...] = ()
+    batches: tuple[int, ...] | None = None
+    events: tuple[Boundary, ...] = ()
+
+
+class ResetVoltage:
+    population_id: str
+    boundaries: BoundarySchedule
+    value_mv: float = 0.0
+
+
+class DecisionSegments:
+    boundaries: BoundarySchedule
+    end_step: int
+    population_totals: tuple[str, ...] = ()
+    output_spike_counts: tuple[str, ...] = ()
+```
+
+### resets
+
+`resets` accepts a sequence of `ResetVoltage(population_id, boundaries, value_mv=0.0)` objects. Only leaky-integrator populations are supported. Resets replace voltage before that population's update at the specified absolute timestep. Other populations, refractory counters, synaptic state and delayed spike histories continue normally. Overlapping resets for the same population, batch member and timestep are rejected.
+
+```python
+from pathlib import Path
+
+from snnlab.sim import Boundary, BoundarySchedule, DecisionSegments, ResetVoltage, simulate
+
+boundaries = BoundarySchedule(steps=(0, 200, 400))
+result = simulate(
+    bundle=Path("network.bundle"),
+    input_bindings=input_bindings,
+    resets=(ResetVoltage("out", boundaries, value_mv=0.0),),
+    decisions=DecisionSegments(
+        boundaries=boundaries,
+        end_step=600,
+        population_totals=("E", "I"),
+        output_spike_counts=("out",),
+    ),
+)
+```
+
+`BoundarySchedule(steps=(...), batches=None)` shares one strictly increasing schedule across all batch members. Pass a non-empty tuple of unique batch indices to select members. Alternatively, use `BoundarySchedule(events=(Boundary(0), Boundary(200, batches=(0,)), Boundary(250, batches=(1,))))`. Events must be increasing separately for each affected batch member. The `steps`/`batches` and `events` forms are mutually exclusive; steps and batch indices are non-negative integers. Boundary schedules may extend beyond the current execution chunk.
+
+### decisions
+
+`DecisionSegments(boundaries, end_step, population_totals=(), output_spike_counts=())` defines explicit, potentially nonuniform segments for each batch member. Each member must have an initial boundary before the common terminal `end_step`; activity before its first boundary and after `end_step` is excluded. At least one count population is required, and every counted population must emit spikes.
+
+A boundary at step 200 closes `[0, 200)` before any voltage reset and before the step-200 update. Step 200 belongs to the next segment. `end_step` closes the last segment even when it equals the current chunk's end. Reset events at a chunk's end are applied only when execution resumes and updates that timestep. An unrelated call boundary never closes a segment.
+
+Completed segments appear in `result.decisions`, ordered by closing timestep then batch index. Each record contains `batch`, `start_step`, `end_step`, `duration_ms`, integer `population_totals` and per-neuron integer `output_spike_counts`. Counts use emitted spikes after any replay/drop/add interventions. Output counts are neuron/class counts, not weighted hidden-population readout values. The same records are stored in inference `metrics.json`.
+
+Partial accumulators use one `int64` tensor of shape `(batch, population_size)` per counted population, with no additional dense spike history. `result.runtime_state` retains these counts and the boundary cursor. Reuse the original full reset/decision policy with every continuation call. Changing or removing the policy, or attaching one to an existing unaudited runtime trajectory, fails explicitly. `save_runtime_state`/`load_runtime_state` preserve the accumulators and digest-bound metadata through schema version 3; ordinary older runtime artifacts remain supported. Returned records grow with completed segments; this does not change retention of ordinary graph outputs or diagnostics.
+
+These fields are supported by graph simulation/inference and by `GraphExecutor.forward(..., resets=..., decisions=...)`. Training rejects them. Supply continuous streams through dense, event or Poisson bindings. Dataset snapshots encode independent sample batches and reject continuous reset/decision policies.
+
+For cache reuse, compute the resolved policy with `segment_identity(resets, decisions, graph=effective_graph, batch_size=batch_size)` and pass it as `validate_inference_artifacts(path, expected_segments=identity)`. Passing `expected_segments=None` requires a cache without this policy; omission checks internal integrity only. Reset targets, values, absolute schedules, timing and count selections are bound into the inference request digest. This is a policy check; complete expected-request verification remains separate.
+
+### Schedule methods
+
+`BoundarySchedule.resolved(batch_size)` returns one list of absolute steps per batch member. It validates mutually exclusive schedule forms, strictly increasing affected-member boundaries and unique in-range batch indices.
+
+`BoundarySchedule.from_dict(value)`, `ResetVoltage.from_dict(value)` and `DecisionSegments.from_dict(value)` construct typed policies from their corresponding field mappings. Nested schedules use the same dictionary form. Unknown fields are rejected; graph-dependent validation occurs when resolving/executing the policy.
+
+## Advanced: PyTorch execution
+
+
+### Constructor
+
+```python
+from snnlab.sim import GraphExecutor, plan_graph
+
+GraphExecutor(
+    plan,
+    *,
+    seed=0,
+    trainable_parameters=(),
+    surrogate_slope=5.0,
+    surrogate=None,
+    extension_validation="structural",
+    compile_mode="default",
+    compile_block_steps="auto",
+    precision="auto",
+    cuda_graphs="auto",
+    projection_mode="fast",
+)
+```
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `plan` | `GraphPlan` | Required execution plan returned by `plan_graph(graph)`. |
+| `seed` | `int` | Seeds parameter initialization. Construction calls `torch.manual_seed`, affecting the global PyTorch RNG. |
+| `trainable_parameters` | `Sequence[str]` | Graph parameter IDs whose tensors require gradients. The default selects none. |
+| `surrogate_slope` | `float` | Default slope for the executor's surrogate spike derivative. Neuron definitions can also specify their own slope. |
+| `surrogate` | `Mapping[str, Any]` or `None` | Serialized `FastSigmoid` or custom surrogate configuration. Built-in settings override `surrogate_slope`; registered implementations must be imported before use. |
+| `compile_mode` | `None` or `"default"` | Default `torch.compile` for built-in/custom dynamics, custom graph operations, surrogate derivatives and post-update weight constraints; `None` disables compilation. See [GPU performance controls](/api/sim#inputs-and-execution-settings). |
+
+`compile_block_steps="auto"` selects CUDA 16, MPS 4 and CPU 1; explicit integers from 1 to 64 override it. Forward metrics report `execution_path` with the selected block size and fallback reasons. `precision="auto"` selects supported CUDA BF16 autocast and TF32; `"highest"` opts out. `cuda_graphs="auto"` replays compatible repeated forward-only CUDA calls with bounded caches and independent result tensors. See [GPU performance controls](/api/sim#inputs-and-execution-settings).
+
+Compiled kernels preserve intermediate dtype casts. Forward metrics record `compiler_precision_policy="snnlab.eager-precision-casts/v1"`; eager execution records `None`. This keeps reduced-dtype rounding consistent with the reference equations without changing model or runtime-state dtype. PyTorch 2.10 reduced-precision CPU execution uses eager tensor graphs because its CPU backend cannot preserve these casts; `compiler_fallback` and `execution_path.fallback_reasons` record this limit.
+
+`extension_validation` accepts `"structural"` (default) or `"strict"`. Opt into strict mode while developing custom callbacks or investigating numerical failures. Structural mode skips custom neuron/synapse step value checks and surrogate derivative finite checks while retaining tensor contracts; initialization and restored state stay strict. Invalid values may propagate silently. See [validation policy](/api/sim#custom-dynamics-validation) for details. Surrogate dispatch is cached per executor; reconstruct the executor after changing its surrogate configuration. Resolved surrogate settings and `compile_mode` appear in build and forward metrics. Non-default built-in threshold conventions bind runtime-state compatibility; changing between inclusive and exclusive built-in thresholds rejects continuation. Default and registered-callback state identities retain their historical convention.
+
+`projection_mode="fast"` defaults to direct drive for built-in exactly-zero-decay projections. `"strict"` preserves historical zero multiplication and IEEE nonfinite propagation. This is independent of custom extension value validation. See [projection arithmetic and result snapshots](/api/sim#inputs-and-execution-settings) for gradients, caches and continuation compatibility.
+
+Construction initializes weights on the CPU. Move the module with `.to(device)` and supply inputs on the same device. Floating voltage, spike, synaptic and adaptive state follow the model dtype, including `.half()`, `.bfloat16()` and `.double()` with matching inputs. Refractory counters remain integer. MPS has no float64 support. Runtime/checkpoint/recording storage supports bfloat16 through versioned lossless bit payloads. NumPy inference-analysis caches instead widen bfloat16 values exactly to float32 and record `snnlab.inference-bfloat16/v1` in their manifest. Automatic CUDA precision can change spike decisions; reduced precision does not establish accuracy equivalence. CPU/CUDA support float16, bfloat16, float32 and float64; actual kernel/compiler support also depends on installed PyTorch and hardware.
+
+Selecting trainable parameters enables gradients; it does not create an optimizer or perform training.
+
+When using a compiled training recipe, pass its `resolved_parameters.trainable` and complete `surrogate` configuration explicitly, or let `build(graph=bundle.graph, training=bundle.training)` configure the executor.
+
+### forward
+
+```python
+result = model(
+    inputs,
+    diagnostics=True,
+    runtime_state=None,
+    interventions=(),
+    resets=(),
+    decisions=None,
+    measurement=None,
+    recording=None,
+    retain_outputs=True,
+    retain_parameters=True,
+    retain_final_state=True,
+    retain_runtime_state=True,
+)
+```
+
+Calling the module invokes `forward` and returns an [ExecutionResult](/api/sim#results).
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `inputs` | `Mapping[str, torch.Tensor]` | Dense tensors keyed by declared graph input IDs. Time-varying inputs normally use `(time, batch, *features)` axes. |
+| `diagnostics` | `bool` | Whether to retain declared diagnostic recordings. Defaults to `True`. |
+| `runtime_state` | `GraphRuntimeState` or `None` | Compatible dynamic state from a previous call. `None` starts with fresh dynamic state. |
+| `interventions` | `Sequence[Intervention]` | Ordered typed spike interventions, including replay. See [interventions](/api/sim#inputs-and-execution-settings). |
+| `resets` | `Sequence[ResetVoltage]` | Explicit selective voltage reset schedules. |
+| `decisions` | `DecisionSegments` or `None` | Per-batch decision boundaries and compact spike counts. |
+| `measurement` | `MeasurementWindow` or `None` | Absolute reduction window carried across continuation. |
+| `recording` | `RecordingSpec` or `None` | Selected dense cells, sparse events or recording sinks. |
+| `retain_outputs` | `bool` | Retain named outputs by default; sinks can consume them without accumulation. |
+| `retain_parameters` | `bool` | Return independent parameter snapshots; default `True`. |
+| `retain_final_state` | `bool` | Return detached final voltages; default `True`. |
+| `retain_runtime_state` | `bool` | Return complete continuation state; default `True`. |
+
+Inputs must agree on time length and batch size and match the graph's feature dimensions and signal contracts. Direct calls consume tensors; they do not load files, encode datasets or generate Poisson stimuli. Use the execution request's input bindings for those tasks.
+
+Supported inference reductions accumulate automatically when a full history is unnecessary. Autograd execution retains its dense histories; use `torch.no_grad()` for inference with trainable parameters. See [measurement and recording controls](/api/sim#inputs-and-execution-settings) for windows, sinks and retention limits.
+
+`result.outputs` contains named output tensors that retain their gradient path when retained. Diagnostics and returned dynamic state are detached. Compute losses from the output tensors; `.numpy()` is for plotting and analysis.
+
+### parameter_map
+
+```python
+parameters = model.parameter_map()
+weight = parameters["input_to_E.weight"]
+```
+
+`parameter_map() -> dict[str, torch.Tensor]` returns live parameter tensors keyed by graph parameter IDs. PyTorch registration replaces periods with `__`; this method restores the graph-facing names.
+
+Projection matrices are declared as `(target, source)` in the graph and stored as `(source, target)` at runtime. Projection initialization follows its serialized `initialization_scaling` policy: normalized by default or explicitly direct. Linear operation matrices also use reversed runtime orientation and retain their declared initialization policy. Consult `model.initialization_metadata` for realized shapes, scaling, statistics and declared autapse policies. `model.autapse_metadata` reports requested/effective policy and eligible fan-in for every projection, including historical permissive defaults. New native `state_dict()` files also record and validate this policy; older files without policy metadata must be loaded with a graph that retains permissive connectivity.
+
+The tensors in `result.parameters` are detached copies. Use `model.parameter_map()` or `model.parameters()` when an optimizer needs the live parameters.
+
+### enforce_constraints
+
+Same-population projections authored with `allow_autapses=False` mask self-connections during execution and gradient updates. Constraint enforcement also clears their stored diagonal after optimization, including optimizer momentum updates. Initially zero non-self entries remain trainable. Structural exclusion runs after value constraints and survives saving/loading. Runtime continuation rejects changes to the declared policy.
+
+```python
+optimizer.step()
+model.enforce_constraints()
+```
+
+`enforce_constraints() -> None` applies declared built-in and registered custom constraints to the live parameters without tracking gradients. Call it after an external optimizer step; ordinary PyTorch optimizers do not apply graph constraints automatically.
+
+### Continuing a simulation
+
+Built-in refractory counters are resolved once by `plan_graph` from each neuron's `refractory` ms quantity and graph timestep. Exact-grid validation fails before execution; zero disables the hold. New LIF, ALIF and AdEx neurons share following-step scheduling. `model.plan.refractory[population_id]` and `result.metrics["refractory"][population_id]` expose requested/realised duration, derived counter, actual held duration and the scheduling contract. See [Refractory durations](/api/extensions#neuron-models).
+
+```python
+first = model(first_inputs, diagnostics=False)
+second = model(
+    second_inputs,
+    diagnostics=False,
+    runtime_state=first.runtime_state,
+)
+```
+
+`GraphRuntimeState` stores voltages, refractory state, synaptic state, delay histories and custom dynamic state needed to continue a compatible trajectory. It excludes static weights. Continuation state is detached, so this does not retain a gradient path across calls.
+
+Use `save_runtime_state` and `load_runtime_state` from `snnlab.sim` to persist dynamic state. See [runtime state](/api/sim#inputs-and-execution-settings) for the execution request's continuation rules.
+
+### PyTorch module methods
+
+Inherited `.parameters()`, `.to(...)`, `.train()`, `.eval()` and `.state_dict()` follow PyTorch module conventions. `.train()` sets module mode; it does not run snnlab's training handler. Save and load the model's state dictionary for weights, and use runtime state separately for trajectory continuation.
+
+See [PyTorch integration](#advanced-pytorch-execution) for external layers and checkpoint conventions, and the runnable [PyTorch Integration guide](/pytorch-integration) for a complete training loop.
+
+### Direct construction
+
+Prefer `model = build(bundle=bundle, performance=policy).model` for bundle-aware construction. For explicit low-level integration, use `GraphExecutor(plan_graph(bundle.graph), ...)`. `plan_graph` validates backend capabilities and delays without initializing weights; treat its returned plan as opaque execution data. Direct construction requires explicitly supplying any trainable parameter IDs and surrogate configuration from the compiled training recipe.
+
+Register the resulting model as a child of your own `torch.nn.Module` to combine it with ordinary PyTorch layers. Use differentiable `result.outputs` for losses, call `model.enforce_constraints()` after optimizer steps, and save the complete wrapper with ordinary PyTorch state dictionaries. A wrapper state dictionary is a separate format from SNNLab training checkpoints. See [PyTorch Integration](/pytorch-integration) for a complete example.

@@ -1,0 +1,584 @@
+---
+title: snnlab.extensions
+description: Built-in neuron and synapse choices, custom component declarations and extension callback contracts.
+---
+
+Choose built-in neurons and synapses through `snnlab.lang`. Implement additional dynamics and training components through `snnlab.extensions`, then reference their registered names in `lang.Custom*` declarations.
+
+```python
+from snnlab import extensions, lang
+```
+
+COBA denotes conductance-based synaptic input; it does not imply intrinsic voltage-gated ionic channels. For an intrinsic sodium/potassium model, see the [Hodgkin–Huxley example](/hodgkin-huxley).
+
+## Built-in neurons and synapses
+
+
+### Neuron models
+
+| Constructor | Purpose | Graph executor support |
+| --- | --- | --- |
+| `lang.COBA_LIF(tau_mem=20 * lang.ms, **values)` | Conductance-based leaky integrate-and-fire neurons. | Supported. |
+| `lang.LeakyIntegrator(tau=20 * lang.ms, **values)` | Leaky-integrator populations; also used for readouts. | Supported. |
+| `lang.CUBA_LIF(...)` / `lang.LIF(...)` | Current-based leaky integrate-and-fire neurons. | Supported; `LIF` is a convenience alias. |
+| `lang.CUBA_ALIF(...)` / `lang.ALIF(...)` | Current-based LIF with an adaptive threshold. | Supported; `ALIF` is a convenience alias. |
+| `lang.COBA_ALIF(...)` | Conductance-based LIF with an adaptive threshold. | Supported. |
+| `lang.CUBA_ADEX(...)` / `lang.ADEX(...)` | Current-based adaptive exponential integrate-and-fire neurons. | Supported; `ADEX` is a convenience alias. |
+| `lang.COBA_ADEX(...)` | Conductance-based adaptive exponential integrate-and-fire neurons. | Supported. |
+
+These constructors produce specifications from keyword arguments. Backend support determines which models and settings can execute. `LeakyIntegrator` can also specify a [synapse](#synapses); its meaning depends on whether it is passed as `neuron` or `synapse`.
+
+#### Graph neuron parameters
+
+| Model | Required settings and runtime behaviour |
+| --- | --- |
+| `COBA_LIF` | Supply `tau_mem` as a time quantity. Runtime supports `capacitance_nf`, `leak_us`, `threshold_mv`, `refractory` in ms and `voltage_grad_dampen`. |
+| `LeakyIntegrator` | Supply `tau` as a time quantity. Optional `soft_reset_threshold` enables subtraction of the threshold when crossed; optional `surrogate_slope` controls that reset's backward derivative. Use `spiking=False` for a continuous readout. |
+| `CUBA_LIF` / `LIF` | Configurable current-based membrane dynamics; see below. |
+
+For `COBA_LIF`, omitted capacitance defaults to 1 nF when `tau_mem >= 15 ms`, otherwise 0.5 nF; omitted leak is capacitance divided by `tau_mem`. The threshold defaults to -50 mV. Default refractory duration is `3 * ms` for the first case and `1.5 * ms` for the second. These defaults must fit the timestep exactly; there is no rounding. The default voltage gradient dampening is 80.
+
+The current graph executor initializes COBA voltages at its fixed leak reversal (-65 mV) and leaky integrators at zero. Constructor values such as `initial_voltage_mv`, `resting_mv`, `reset_mv` and integrator `initial_voltage` are not applied as per-population overrides by this backend. Do not infer runtime support from arbitrary keyword acceptance.
+
+#### Current-based LIF
+
+```python
+def CUBA_LIF(
+    *,
+    tau_mem=20 * ms,
+    capacitance_nf=1.0,
+    resting_mv=-65.0,
+    threshold_mv=-50.0,
+    reset_mv=-65.0,
+    refractory=0 * ms,
+    initial_voltage_mv=None,
+    voltage_grad_dampen=1.0,
+) -> Spec: ...
+```
+
+`LIF(**values)` returns the same specification as `CUBA_LIF(**values)`. Synaptic drive is in nanoamperes (`nA`), membrane voltage in millivolts and capacitance in nanofarads. The membrane integrates net excitatory minus inhibitory current using an exponential update that holds current fixed for that step.
+
+All displayed settings are applied. `initial_voltage_mv=None` starts at `resting_mv`. `refractory=0 * ms` permits immediate recovery. A positive duration must be an exact multiple of graph `dt`; its derived number of following steps holds reset voltage and suppresses spikes. Reset must be below threshold, time constants/capacitance must be positive and values finite. During training, spikes use the configured surrogate.
+
+All built-in LIF, ALIF and AdEx constructors accept only `refractory` as a non-negative finite ms quantity. `refractory_steps` and `refractory_policy` are unsupported authoring arguments. Newly compiled graphs use `refractory_timing="following_steps"`; archived graphs retain their historical scheduling. Refractory durations must resolve to an exact number of timesteps.
+
+Connect current neurons with `ExponentialCurrent` or a compatible registered current synapse. A conductance/current mismatch fails compilation or planning. See [Customisation](/custom-neurons-and-synapses) for a comparison with custom adaptive dynamics.
+
+#### ALIF and AdEx
+
+`ALIF(**values)` and `ADEX(**values)` return `CUBA_ALIF` and `CUBA_ADEX` specifications. Both families accept every `CUBA_LIF` parameter above. Conductance variants additionally accept `excitatory_reversal_mv=0.0` and `inhibitory_reversal_mv=-80.0`. Leak is `capacitance_nf / tau_mem`; these models apply the supplied resting, reset and initial voltage values.
+
+| Family | Additional parameters and defaults |
+| --- | --- |
+| ALIF | `tau_adaptation=200 * ms`, `adaptation_increment_mv=1.0`, `initial_adaptation_mv=0.0`. |
+| AdEx | `tau_adaptation=200 * ms`, `delta_t_mv=2.0`, `spike_mv=-30.0`, `a_us=0.002`, `b_na=0.05`, `initial_adaptation_na=0.0`. |
+
+For ALIF, `threshold_mv` is the baseline threshold and `.state("adaptation")` is its offset in mV. For AdEx, `threshold_mv` is the exponential onset voltage, `spike_mv` is the detection cutoff and adaptation is a current in nA. AdEx reset voltage can exceed the onset voltage, but reset and onset must both remain below `spike_mv`. Time constants, capacitance and `delta_t_mv` must be positive; adaptation increments and `a_us` are non-negative. AdEx's initial adaptation current can have either sign.
+
+Adaptation participates in outputs, diagnostics, streamed recordings and saved continuation. Spikes use the configured surrogate during training. See `examples/neurons/neurons.py` for a runnable comparison; use the synapse and weight references for connection and initialization choices.
+
+#### Population and projection signals
+
+`population.voltage` has `(time, batch, size)` axes. A spiking population also has `.spikes`; accessing it on `spiking=False` raises `AttributeError`. `.excitatory`, `.inhibitory` and `.modulatory` are target port IDs. A projection provides `.conductance` for diagnostics and `.weight` for parameter selection. Use [output or expose](/api/lang#output) to return signals.
+
+### Synapses
+
+The public constructors accept keyword arguments and produce specifications. For the graph executor, supply `tau` as a time quantity, for example `tau=2 * lang.ms`.
+
+| Constructor | Purpose | Graph executor support |
+| --- | --- | --- |
+| `lang.AMPA(tau=2 * lang.ms)` | Excitatory conductance with exponential decay. | Supported. |
+| `lang.GABA(tau=5 * lang.ms)` | Inhibitory conductance with exponential decay. | Supported. |
+| `lang.LeakyIntegrator(tau=20 * lang.ms)` | Projection into a leaky-integrator population. Projection accumulation has no synaptic carry-over; the receiving population supplies integration dynamics. | Supported. |
+| `lang.ExponentialCurrent(tau=5 * lang.ms)` | Spike-weighted current with exponential decay; parameter unit `nA`. | Supported with current neurons. |
+| `lang.Modulatory(**values)` | Authoring specification for modulatory synapses. | Currently unsupported; graph compilation/execution rejects it. |
+
+`LeakyIntegrator` is also a neuron constructor. Using it as `synapse` specifies the projection, while using it as `neuron` specifies the receiving population. A constructor's availability does not guarantee backend support.
+
+### Custom neurons and synapses
+
+Use `lang.CustomNeuron(definition, **config)` and `lang.CustomSynapse(definition, **config)` after [registering their implementations](/api/extensions#implementing-extensions). Extra state ports are available through `.state(name)`, and participate in outputs, diagnostics and continuation.
+
+Current-based projections expose `.current`; conductance-based projections expose `.conductance`. Use the property matching the synapse family.
+
+### Constructor signatures
+
+Import these constructors from `snnlab.lang`. The signatures below are the authoring contracts; `**values` permits specification metadata and does not promise backend support for every key. Time parameters use `Quantity` values such as `20 * lang.ms`. The model tables above define supported runtime settings.
+
+```python
+def COBA_LIF(*, refractory=None, **values: Any) -> Spec: ...
+
+
+def CUBA_LIF(
+    *,
+    tau_mem=20 * ms,
+    capacitance_nf=1.0,
+    resting_mv=-65.0,
+    threshold_mv=-50.0,
+    reset_mv=-65.0,
+    refractory=0 * ms,
+    initial_voltage_mv=None,
+    voltage_grad_dampen=1.0,
+) -> Spec: ...
+
+
+def LIF(**values: Any) -> Spec: ...
+
+
+def CUBA_ALIF(
+    *,
+    tau_adaptation=200 * ms,
+    adaptation_increment_mv=1.0,
+    initial_adaptation_mv=0.0,
+    **lif_values: Any,
+) -> Spec: ...
+
+
+def COBA_ALIF(
+    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+) -> Spec: ...
+
+
+def ALIF(**values: Any) -> Spec: ...
+
+
+def CUBA_ADEX(
+    *,
+    tau_adaptation=200 * ms,
+    delta_t_mv=2.0,
+    spike_mv=-30.0,
+    a_us=0.002,
+    b_na=0.05,
+    initial_adaptation_na=0.0,
+    **lif_values: Any,
+) -> Spec: ...
+
+
+def COBA_ADEX(
+    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+) -> Spec: ...
+
+
+def ADEX(**values: Any) -> Spec: ...
+
+
+def LeakyIntegrator(**values: Any) -> Spec: ...
+
+
+def AMPA(**values: Any) -> Spec: ...
+
+
+def GABA(**values: Any) -> Spec: ...
+
+
+def ExponentialCurrent(*, tau=5 * ms) -> Spec: ...
+
+
+def Modulatory(**values: Any) -> Spec: ...
+
+
+def CustomNeuron(definition: str, **config: Any) -> Spec: ...
+
+
+def CustomSynapse(definition: str, **config: Any) -> Spec: ...
+```
+
+All return a `Spec` containing model kind and serialized settings. Custom constructors require a registered definition and JSON-compatible configuration. Compilation performs model validation; `Modulatory` remains unsupported by the graph executor.
+
+### Population and Projection objects
+
+Create these through `Network.population` and `Network.connect`. Their data fields are:
+
+```python
+class Population:
+    network: "Network" = field(repr=False)
+    id: str
+    size: int
+    neuron: Spec
+    spiking: bool
+    group: str | None
+
+
+class Projection:
+    network: "Network" = field(repr=False)
+    id: str
+    source: str
+    target: str
+    synapse: Spec
+    connection: str
+    delay: Quantity | None
+    parameter_ids: tuple[str, ...]
+    group: str | None
+    enabled: bool
+    allow_autapses: bool = False
+```
+
+| Accessor | Return and restrictions |
+| --- | --- |
+| `Population.spikes` | Binary `(time, batch, size)` Signal; raises `AttributeError` on non-spiking populations. |
+| `Population.voltage` | Membrane voltage Signal in mV. |
+| `Population.pre_reset_voltage` | Leaky-integrator voltage before reset; other model families raise `AttributeError`. |
+| `Population.excitatory`, `.inhibitory`, `.modulatory` | Target port ID strings for `Network.connect`. Availability does not imply backend support for every port. |
+| `Population.state(name)` | Named declared state Signal, including built-in adaptation or registered state ports. |
+| `Projection.current`, `.conductance` | Signal for the matching synapse family; select the declared port, rather than interchanging units. |
+| `Projection.state(name)` | Named declared synapse state Signal. |
+| `Projection.weight` | `ParameterRef` for the first projection parameter. |
+
+State and signal lookups resolve through the parent network and fail for undeclared ports. Pass returned signals to `Network.output` or `Network.expose`; merely accessing a property does not request result retention.
+
+## Implementing extensions
+
+
+### Registration
+
+Use the specialized registration functions below. Names must match a qualified identifier ending in `/v` and a positive version number. Duplicate category/name pairs raise `ValueError`; built-ins remain separate. `extensions.definitions(category=None)` returns registered immutable definition records for inspection.
+
+All registrations accept optional `validate(config)`. It should raise `ValueError` for invalid configuration. Configuration must serialize as JSON; use numeric values or explicit unit/value mappings. Implement differentiable runtime functions using PyTorch operations, and use the supplied device/dtype when initializing tensors.
+
+All registrations also accept `package=None, package_version=None`. `package` is the installed distribution name, which may differ from the import-module name. Supplying it records the installed version, or checks an explicitly supplied `package_version`. Every subsequent load checks the exact version, including when a definition is already cached. Missing packages and mismatches raise `ValueError`. Local project modules can omit this metadata; their compatibility is managed through the versioned definition name and the execution environment.
+
+### Writing efficient PyTorch callbacks
+
+Simulation compiles tensor updates by default through `Performance(compile_mode="default")`. Keep the ordinary importable Python callback signatures documented below; SNNLab prepares the compiled functions, so callbacks do not need `@torch.compile`. The graph-authoring `lang.compile(net)` is separate from this runtime tensor compilation. Use `performance=Performance(compile_mode=None)` on execution functions, `compile_mode=None` on `GraphExecutor`, or CLI `--compile-mode eager`, to debug an unsupported callback. See [Performance](/api/sim#performance) for execution controls.
+
+1. Operate on whole tensors with PyTorch broadcasting, reductions and elementwise operations. A neuron step receives all `(batch, cells)` values together; a synapse step receives a weight-projected drive for all target cells. Avoid Python loops over cells, samples or edges.
+1. Keep tensor shapes, state keys, dtypes and devices stable. Return new state tensors without modifying the previous state in place. Use `zeros_like`, `full_like` or the supplied initialization device/dtype rather than creating CPU tensors during an accelerator update.
+1. Keep tensor data on the device. Avoid `.item()`, `float(tensor)`, `bool(tensor)`, `.tolist()`, `.cpu()`, `.numpy()` and rebuilding tensors from Python lists in the update. Host reads can synchronize GPUs and prevent graph capture.
+1. Use `torch.where`, masks and other tensor expressions for decisions based on tensor values. An `if` on fixed JSON configuration is usually traceable; an `if` on `voltage.any()` is data-dependent Python control flow. Both branches of `torch.where` are evaluated, so make each numerically safe, for example by clamping a denominator before division.
+1. Put configuration checks in `validate(config)`, outside numerical updates. Fixed scalar math such as `math.exp(-context.dt_ms / config["tau_ms"])` can specialize during tracing. Avoid logging, file access, registry calls, global mutable state and random draws from Python/NumPy inside compiled updates.
+1. Preserve autograd for dynamics and operations. Use `context.spike` for the configured surrogate; avoid detaching state or converting it back into `torch.tensor(...)`. Keep trajectory state in the supplied mapping so saved continuation reproduces the dynamics.
+
+Compilation prepares separate kernels per population/projection and captures their configuration. Reuse the executor across calls; new batch shapes, devices, dtypes or gradient modes can trigger compilation again. Measure the first call separately from repeated calls, and synchronize the accelerator when measuring completed work. Compilation can fuse elementwise work, but it does not compile the entire timestep loop or guarantee faster short runs.
+
+Test new callbacks with `extension_validation="strict"`, comparing compiled and eager outputs, gradients and split-run continuation with appropriate floating-point tolerances. Strict value scans remain outside compiled updates and can synchronize GPUs. Structural mode is the default for steady execution and retains shape/device/dtype/state-key checks. Registered custom surrogates in strict mode keep an eager spike/autograd boundary for derivative checks; their derivative calculations still compile separately. Compiler errors are surfaced; opt out explicitly while adapting unsupported code.
+
+Weight/state initializers run eagerly during setup, preserving seeded initialization. Repeated weight constraints and custom graph operations compile; their validation remains outside the compiled calculation. Training objectives, regularizers, optimizer factories, dataset encoders and scalar weight-modulation callbacks are outside this compilation scope. Their code should still use vectorized PyTorch whenever it processes tensors.
+
+### Neurons
+
+```python
+def register_neuron(
+    name,
+    step,
+    *,
+    initialize,
+    input_unit="nA",
+    state_units=None,
+    validate=None,
+    package=None,
+    package_version=None,
+): ...
+```
+
+`initialize(StateContext)` returns a mapping containing `voltage` and any additional tensor state. `refractory` defaults to a zero-valued integer tensor. `step(NeuronContext)` returns `(new_state, spikes)`. Return a new state mapping and avoid mutating previous tensors in place. State keys, tensor shapes and dtypes must remain stable during execution; spikes must be binary and have `(batch, cells)` shape.
+
+`input_unit` is `"nA"` for current or `"uS"` for conductance. `state_units` maps additional state names to units; these exposed ports must have `(batch, cells)` floating tensors. Declare a diagnostic with `net.expose(cells.state("adaptation"), name="adaptation")`. The standard voltage/spikes/refractory ports cannot be redeclared.
+
+```python
+class StateContext:
+    shape: tuple[int, int]
+    device: Any
+    dtype: Any
+    dt_ms: float
+    config: Mapping[str, Any]
+```
+```python
+class NeuronContext:
+    state: Mapping[str, Any]
+    excitatory: Any
+    inhibitory: Any
+    dt_ms: float
+    config: Mapping[str, Any]
+    spike: Callable[[Any], Any]
+```
+
+`NeuronContext.spike(value)` emits hard threshold spikes with the configured backward surrogate. Custom neurons choose their integration, reset and refractory behaviour; receiving a refractory state tensor does not implement those dynamics automatically. Extra hidden state can have other fixed shapes and dtypes, but must remain finite and on the execution device. All state is detached and saved at continuation boundaries.
+
+```python
+neuron = lang.CustomNeuron("my_lab.adaptive/v1", tau_ms=20.0)
+```
+
+The existing `step(context)` interface compiles directly when the body follows the [efficient callback guidance](#writing-efficient-pytorch-callbacks). Preserve auxiliary state with `{**context.state, "voltage": next_voltage, ...}`. See [Customisation](/custom-neurons-and-synapses) for a complete adaptive neuron definition and its response plots.
+
+### Synapses
+
+```python
+def register_synapse(
+    name,
+    step,
+    *,
+    initialize=None,
+    output_unit="nA",
+    input_unit=None,
+    state_units=None,
+    validate=None,
+    package=None,
+    package_version=None,
+): ...
+```
+```python
+class SynapseContext:
+    state: Mapping[str, Any]
+    drive: Any
+    dt_ms: float
+    config: Mapping[str, Any]
+```
+
+`initialize(StateContext)` optionally returns synapse state with a required `value` tensor. Without it, `value` starts at zero. `step(SynapseContext)` receives delayed source activity already multiplied by the projection weights as `drive`. Return the complete updated state mapping, including `value`, which is added to the target's excitatory or inhibitory input.
+
+`output_unit` is `"nA"` or `"uS"`; it must match the target neuron. Additional `state_units` expose diagnostic ports through `projection.state(name)`. The standard `value`, `current` and `conductance` names are reserved. Arbitrary auxiliary tensor state survives continuation; built-in delay routing and graph topology remain in effect.
+
+```python
+synapse = lang.CustomSynapse("my_lab.synapse/v1", tau_ms=5.0)
+```
+
+A vectorized step for an exponential custom synapse can be written as:
+
+```python
+import math
+
+def exponential_step(context):
+    decay = math.exp(-context.dt_ms / context.config["tau_ms"])
+    previous = context.state["value"]
+    drive = context.drive.to(previous.dtype)
+    return {**context.state, "value": previous * decay + drive}
+```
+
+Register this importable function with `register_synapse`; omitting `initialize` supplies the zero-valued `value` state. There is no per-cell loop or host read, and the fixed scalar decay can specialize during compilation. The drive cast preserves state dtype under autocast. The weighted drive is already supplied: do not multiply weights or loop over source edges again. The [runnable customisation example](/custom-neurons-and-synapses) includes a state initializer, configuration validation and capture-safe registration.
+
+#### Voltage-driven graded connections
+
+A custom synapse can declare `input_unit="mV"` and receive `pre.voltage` or a declared `pre.state("activation")` port with matching units. Explicit drive units may be `"1"`, `"mV"`, `"nA"` or `"uS"`. Projection weights then have unit `"1"`; `output_unit` still specifies the current or conductance delivered to the postsynaptic neuron. Omitting `input_unit` preserves the historical spike/external-input contract, including weight units and saved bundle descriptors.
+
+```python
+import torch
+from snnlab import extensions, lang
+
+def graded_init(context):
+    gate = torch.full(context.shape, -60.0,
+                      device=context.device, dtype=context.dtype)
+    return {"gate": gate, "value": torch.zeros_like(gate)}
+
+def graded_step(context):
+    gate = context.state["gate"]
+    gate = gate + context.dt_ms / 2.0 * (context.drive - gate)
+    conductance = 0.04 * torch.sigmoid(0.3 * (gate + 50.0))
+    return {"gate": gate, "value": conductance}
+
+extensions.register_synapse(
+    "my_lab.graded/v1", graded_step, initialize=graded_init,
+    input_unit="mV", output_unit="uS", state_units={"gate": "mV"},
+)
+edge = net.connect(
+    pre.voltage, post.inhibitory, name="graded_inhibition",
+    synapse=lang.CustomSynapse("my_lab.graded/v1"),
+    weight=lang.Constant(1.0), initialization_scaling="direct",
+    connection="recurrent",
+)
+net.output("gate", edge.state("gate"))
+net.output("conductance", edge.conductance)
+net.output("voltage", post.voltage)
+```
+
+The constants above use milliseconds, millivolts and microsiemens. The gate filters voltage with a 2 ms time constant, and maximum output conductance is 0.04 uS. The postsynaptic conductance-based neuron converts this output into current using its reversal potential and its own beginning-of-step voltage. A custom target neuron chooses its own reversal potential.
+
+1. All continuous population sources sample beginning-of-step state, after any explicit voltage reset and before any membrane advances. Reciprocal edges therefore read the same time origin regardless of population order. Gates update from that snapshot and their new outputs contribute to the current membrane step. Zero-delay continuous edges may form cycles, including with the default `connection="feedforward"`; spike feedforward scheduling is unchanged.
+2. A custom state source samples the previous completed state, including its initializer on the first step. It does **not** expose an activation newly computed during this step. Models needing a gate calculated from old voltage should implement that gate in the synapse callback. Newly updated activation sampling is unsupported.
+3. `drive = sampled_source @ weight` occurs **before** the nonlinear callback, including the usual initialization scaling, autapse mask and optional gain modulation. There is one gate per target cell, filtering the weighted aggregate; this is not a separate gate per source-target pair. Use `initialization_scaling="direct"` for literal weights. Put maximum conductance/output scaling in the callback; multiplying voltage before a sigmoid changes its activation curve.
+4. An explicit delay of `d * dt` adds `d` whole steps to the beginning-of-step sample. For `d=0` the callback reads the current step's initial state; for `d=1` it reads the preceding step's initial state. Prehistory holds each source's initialized value. Delayed source history and synapse gates survive saved runtime continuation. Recurrent continuous edges add no implicit delay; existing spike edges retain their causal delay rules. The `feedback` connection label still requires an explicit positive delay.
+5. Direct voltage and declared neuron state ports are supported. Pre-reset voltage, projection outputs and operation chains over continuous population signals are unsupported projection sources. Source units must match `input_unit`; weights must be dimensionless and synapse output units must match the target neuron input units.
+
+The [reciprocal graded-synapse example](https://github.com/eoinmurray/snnlab/tree/main/examples/graded-synapses) compares two passive membranes with an independent gate-first NumPy Euler implementation in CPU float64 and exports gate, conductance and voltage traces. It demonstrates reusable graph coupling; it does not reproduce the intrinsic neuron dynamics of the Neuromorphic Toolbox half-centre oscillator.
+
+### Initializers and constraints
+
+```python
+def register_initializer(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
+```
+```python
+def register_constraint(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
+```
+
+Initializer callback: `function(shape, config, *, device, dtype) -> Tensor`. Return finite values with the exact requested shape/device/dtype. Use PyTorch's seeded generator for reproducible draws, rather than hidden random state. Projection runtime shape is `(source, target)`; ordinary custom-operation parameters retain their declared shape.
+
+Constraint callback: `function(parameter, config) -> Tensor`. Return the constrained tensor with unchanged shape/device/dtype. Constraints apply after initialization and the selected scaling policy, and after built-in training optimizer steps. An external PyTorch loop should call `module.enforce_constraints()` after its optimizer step. A masking constraint can enforce persistent zero connections; execution still uses dense matrices. Initializers run eagerly at construction, while constraints compile for repeated post-update use. Vectorize both across the full weight tensor, allocate directly with the requested device/dtype, and avoid scalar loops over connections. See [efficient custom weights](/api/lang#weights) for examples.
+
+```python
+initializer = lang.CustomInitializer("my_lab.distribution/v1", scale=1.0)
+constraint = lang.CustomConstraint("my_lab.mask/v1", mask=[[1, 0], [0, 1]])
+```
+
+### Operations and readouts
+
+```python
+def register_operation(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
+```
+```python
+def custom_operation(
+    definition: str,
+    sources,
+    *,
+    name: str,
+    shape,
+    unit: str,
+    parameters=(),
+    signal_type="continuous",
+    **config,
+) -> Signal: ...
+```
+
+Callback: `function(sources, parameters, config) -> Tensor`. `sources` is a tuple of input tensors; `parameters` maps declared graph parameter IDs to live tensors. Return the declared output shape on the execution device/dtype, retaining autograd. Explicitly list any trainable parameters through `parameters=(ref, ...)` and select them in the training recipe. Captured Python modules or tensors are not automatically registered model parameters.
+
+Custom readouts can be operations, explicit graph populations, or ordinary external PyTorch layers. Custom architecture builders are normal Python functions that call the Network methods; they expand before serialization. This API does not add arbitrary connection routing or sparse storage backends.
+
+### Objectives and regularizers
+
+```python
+def register_objective(
+    name,
+    function,
+    *,
+    classification=False,
+    validate=None,
+    package=None,
+    package_version=None,
+): ...
+```
+```python
+def register_regularizer(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
+```
+
+Objective callback: `function(prediction, target, config) -> scalar Tensor`. Use `lang.CustomObjective(definition, prediction=signal, target="name", weight=1.0, **config)`. Non-classification objectives accept finite real target tensors with a leading sample axis, including multidimensional regression targets. `classification=True` requires one-dimensional integer labels and enables argmax accuracy metrics.
+
+Regularizer callback: `function(signals, duration_s, config) -> scalar Tensor`. Use `lang.CustomRegularizer(definition, signals=(signal, ...), strength=..., **config)`. Signals are supplied even when diagnostics are disabled. The executor multiplies objective and regularizer values by their declared weight or strength. Returned scalars must be finite, on the execution device and use the prediction/signal dtype.
+
+### Optimizers
+
+```python
+def register_optimizer(
+    name, factory, *, validate=None, package=None, package_version=None
+): ...
+```
+
+Factory: `factory(parameter_groups, config) -> torch.optim.Optimizer`. Use `lang.CustomOptimizer(definition, **config)`. The executor supplies selected parameter groups and their learning rates, then calls standard `zero_grad`, `step` and constraint enforcement.
+
+Checkpointing supports per-parameter tensor state and JSON scalar state, including stateless optimizers. Load the same recipe and make its referenced implementation modules available before resuming; registration is restored automatically. Scheduler state, arbitrary Python objects and custom global optimizer state are not automatically captured. External training loops can manage these separately.
+
+### Surrogate gradients
+
+```python
+def register_surrogate(
+    name, derivative, *, validate=None, package=None, package_version=None
+): ...
+```
+
+Callback: `derivative(value, config) -> Tensor`, with the same shape/device/dtype as `value`. Use `lang.CustomSurrogate(definition, **config)`. The executor keeps a hard threshold in the forward pass and multiplies the backward gradient by this derivative. This applies to built-in spiking neurons and custom neurons using `context.spike`; a custom neuron that thresholds independently owns its own backward behaviour.
+
+For direct PyTorch construction, pass the serialized custom specification as `GraphExecutor(..., surrogate=recipe["surrogate"])`.
+
+### Dataset encoders and inputs
+
+```python
+def register_encoder(
+    name, function, *, validate=None, package=None, package_version=None
+): ...
+```
+
+Callback: `function(arrays, selected, *, dt_ms, channels, config, seed) -> Tensor`. Return binary `(time, selected_samples, channels)` spikes. Use `DatasetEncoder(kind="custom", definition="my_lab.encoder/v1", config={...}, seed=...)` inside `DatasetSnapshotBinding`. The resolved protocol retains the definition, configuration, seed and snapshot identity. Dataset snapshot labels remain integer labels.
+
+Encoders can opt into device preparation by adding an explicit optional keyword, `device="cpu"`, to that signature. The resolver passes the execution device; generate tensors and local seeded `torch.Generator(device=device)` draws there when supported. Legacy callbacks receive their original arguments. Accelerator preparation records `snnlab.encoder-device/v1`, backend and PyTorch version in encoder provenance; CPU identities remain unchanged. use a new versioned definition if the random stream changes. Encoders still run on the caller thread, including prefetched lookahead, so scoped global RNG restoration cannot race training. CPU encoder outputs use bounded pinned/asynchronous transfer queues on CUDA.
+
+Dataset encoders belong to external execution bindings, so the network bundle does not carry their definitions. Register the encoder's import reference when constructing that binding in each process.
+
+For arbitrary generators, temporal patterns or preprocessing, a normal Python function can instead produce a tensor supplied through [DenseArrayBinding](/api/sim#densearraybinding). This also supports non-spike continuous inputs. No new generator interface is necessary.
+
+### Runtime validation policy
+
+Custom neuron/synapse steps and surrogate derivatives use structural validation by default. Opt into `extension_validation="strict"` while developing custom callbacks or investigating numerical failures. `simulate(..., extension_validation="structural")` or the same keyword on `GraphExecutor` keeps tensor contracts but skips per-step finite and binary-spike checks and backward derivative finite checks. Test callback numerical behaviour with strict mode before relying on structural mode. Invalid values may propagate silently. Initialization and restored state remain strictly checked. See [Execution Options](/api/sim#inputs-and-execution-settings) for the exact scope and CLI option.
+
+## Custom weight initialization and constraints
+
+
+### Custom initializers and constraints
+
+Use `CustomInitializer(definition, **config)` and `CustomConstraint(definition, **config)` after registering Python callbacks. Custom initializers receive the runtime tensor shape/device/dtype. Constraints apply after the selected initialization scaling and after optimizer updates. Call `GraphExecutor.enforce_constraints()` in an external PyTorch loop. See [Extensions](/api/extensions#initializers-and-constraints) for callback contracts and persistent masking.
+
+## Custom graph operations
+
+
+### Custom operations
+
+`lang.custom_operation(definition, sources, *, name, shape, unit, parameters=(), signal_type="continuous", **config)` declares a registered differentiable operation. It can implement a custom readout without changing the executor. See [Extensions](/api/extensions#operations-and-readouts).
+
+### Readout and custom-operation signatures
+
+```python
+class Readout:
+    signal: Signal
+    parameters: tuple = ()
+```
+
+```python
+def custom_operation(
+    definition: str,
+    sources,
+    *,
+    name: str,
+    shape,
+    unit: str,
+    parameters=(),
+    signal_type="continuous",
+    **config,
+) -> Signal: ...
+```
+
+`Readout.id` delegates to its signal ID; other missing attributes delegate to the underlying signal. The wrapper's `parameters` tuple contains helper-reported parameter IDs and is not itself an optimizer parameter collection. `lang.custom_operation` returns a declared `Signal` and requires a registered operation; callback output shape/unit/dtype and differentiability remain part of its contract. See [Extensions](/api/extensions#operations-and-readouts).
+
+## Custom training components
+
+
+### Custom training definitions
+
+`CustomObjective`, `CustomRegularizer`, `CustomOptimizer` and `CustomSurrogate` select versioned registered definitions. See [Extensions](/api/extensions#objectives-and-regularizers) for callback contracts, regression targets, optional classification metrics and checkpoint limits.
+
+### Custom training constructors
+
+Import these from `snnlab.lang`. Each returns the corresponding declarative objective, regularizer, optimizer or surrogate specification after checking the registered name.
+
+```python
+def CustomObjective(
+    definition: str,
+    *,
+    prediction: SignalLike | str,
+    target: str,
+    weight: float = 1.0,
+    **config: Any,
+) -> Objective: ...
+
+
+def CustomRegularizer(
+    definition: str, *, signals: Sequence[Signal | str], strength: float, **config: Any
+) -> Regularizer: ...
+
+
+def CustomOptimizer(definition: str, **config: Any) -> Optimizer: ...
+
+
+def CustomSurrogate(definition: str, **config: Any) -> Spec: ...
+```
+
+`weight` and `strength` scale scalar callback results. A custom classification objective enables integer target/argmax metric semantics through its registration; other objectives support real-valued targets. Explicit regularizer signals are retained for loss computation even when diagnostics are disabled. See [callback contracts](/api/extensions#objectives-and-regularizers).
+
+## Registration and portability
+
+Use `register_neuron`, `register_synapse`, `register_initializer`, `register_constraint`, `register_operation`, `register_objective`, `register_regularizer`, `register_optimizer`, `register_surrogate` and `register_encoder` for the corresponding extension categories. Prefer these typed helpers over the generic registry machinery. `extensions.definitions()` can inspect registrations while developing a plugin.
+
+Use versioned definition names and importable module-level callbacks. Saved bundles retain implementation references and configuration; install the implementation module in every execution environment. A closure or callback defined only in `__main__` cannot be portably saved. Develop custom dynamics with strict extension validation and keep state shapes, dtypes, devices and physical units consistent.

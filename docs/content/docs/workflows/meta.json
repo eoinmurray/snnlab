@@ -6,9 +6,10 @@
     "../snnlang",
     "../training",
     "../inference",
-    "../pytorch-integration",
     "../current-lif",
     "../custom-neurons-and-synapses",
+    "../hodgkin-huxley",
+    "../pytorch-integration",
     "../animated-neuron"
   ]
 }

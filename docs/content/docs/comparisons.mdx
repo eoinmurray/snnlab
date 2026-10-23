@@ -62,8 +62,8 @@ The description makes several useful choices visible:
 1. **The circuit is inspectable data.** Compilation produces `graph.json`, an optional `training.json`, a manifest and a report. Compilation validates and serializes declarations; it does not generate a standalone native simulation binary.
 2. **Signals carry meaning.** Shapes, signal types and physical units support compatibility checks. Authoring, graph validation and execution planning check different parts of the contract; compilation alone does not guarantee that every declared feature can execute on a backend. Review `bundle.diagnostics` for capability reports and warnings before execution.
 3. **Observations belong to the description.** Named outputs and optional diagnostics identify the spikes, voltages and conductances the experiment will expose.
-4. **Diagrams follow the graph.** `lang.diagram(bundle)` produces a structural diagram from the compiled description. Rendering it with `viz.render_diagram` requires Graphviz. [Groups and reusable components](/api/lang/components) help organise larger circuits.
-5. **The architecture can travel between runs.** Save a bundle once, then supply different input bindings and execution settings. Optional [training recipes](/api/lang/training) record parameter selection and training configuration alongside the graph.
+4. **Diagrams follow the graph.** `lang.diagram(bundle)` produces a structural diagram from the compiled description. Rendering it with `viz.render_diagram` requires Graphviz. [Groups and reusable components](/api/extensions#built-in-neurons-and-synapses) help organise larger circuits.
+5. **The architecture can travel between runs.** Save a bundle once, then supply different input bindings and execution settings. Optional [training recipes](/api/lang#trainspec) record parameter selection and training configuration alongside the graph.
 
 Continue the example with a short simulation of the saved bundle:
 
@@ -83,7 +83,7 @@ print(data.outputs["spikes"].shape)  # (1000, 16)
 print(data.diagnostics["e_voltage"].shape)  # (1000, 16)
 ```
 
-This runs 100 ms at a 0.1 ms timestep. Changing the input stimulus does not require rebuilding the circuit. See [Quickstart](/quickstart) for a complete plotting workflow and [Compilation and bundles](/api/lang/compilation) for the persistence contract.
+This runs 100 ms at a 0.1 ms timestep. Changing the input stimulus does not require rebuilding the circuit. See [Quickstart](/quickstart) for a complete plotting workflow and [Compilation and bundles](/api/lang#compilation-and-bundles) for the persistence contract.
 
 A bundle stores architecture, initializers and optional recipes; learned weights need a checkpoint, and continuing a running simulation needs its runtime state. File digests help detect changed bundle contents, but do not guarantee scientific reproducibility across environments. Custom extensions retain import references, so their external Python modules must be available when loading the bundle.
 
@@ -131,4 +131,4 @@ Choose Norse when you want to compose state transitions and modules directly in 
 
 SNNLab is a good fit when you want to **describe a circuit once, inspect it, train it and analyse its activity using the same named structure**. Its strengths are the combination of explicit current/conductance dynamics, declarative authoring, saved graph contracts and integrated experimental outputs.
 
-Other libraries offer broader model catalogues, dataset ecosystems, equation languages or established large-scale execution. We aim to make SNNLab's particular workflow clear and useful, while leaving those trade-offs visible. Start with [Quickstart](/quickstart), then explore [Training](/training), [PyTorch Integration](/pytorch-integration) and the [Lang API](/api/lang/network).
+Other libraries offer broader model catalogues, dataset ecosystems, equation languages or established large-scale execution. We aim to make SNNLab's particular workflow clear and useful, while leaving those trade-offs visible. Start with [Quickstart](/quickstart), then explore [Training](/training), [PyTorch Integration](/pytorch-integration) and the [Lang API](/api/lang#constructor).

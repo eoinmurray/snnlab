@@ -1,0 +1,906 @@
+---
+title: snnlab.lang
+description: Define networks, parameters, operations, readouts and training recipes; compile and save bundles.
+---
+
+Import authoring tools with `from snnlab import lang`. Build a `Network`, declare inputs and populations, connect them, and compile the result into a `Bundle`. Use [snnlab.extensions](/api/extensions) for neuron models, synapses and custom implementations, and [snnlab.sim](/api/sim) to execute the bundle.
+
+This page documents the intended authoring interface. Returned signals and parameter references identify declarations; live tensors belong to the built simulation model.
+
+## Network construction
+
+
+### Constructor
+
+```python
+lang.Network(name: str, *, dt: Quantity = 0.1 * lang.ms)
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | The network's name, retained in its compiled graph. |
+| `dt` | Simulation timestep as a time quantity; defaults to 0.1 ms. |
+
+Shapes are tuples of integers and symbolic axes, such as `("time", "batch", 4)`. Execution inputs supply the concrete time and batch sizes. Quantities use unit constructors such as `0.1 * lang.ms`; available units include `ms`, `mV`, `Hz`, `nS`, `uS` and `nA`.
+
+Named elements share a network namespace: inputs, populations, explicitly named parameters, projections, operations, outputs, exposed diagnostics, assets and groups. Names must be non-empty, contain no whitespace and be unique. Methods check basic authoring conditions; compilation and execution perform additional shape, unit and backend validation.
+
+### Methods
+
+| Method | Purpose | Returns |
+| --- | --- | --- |
+| [input](#input) | Declare an external signal. | `Signal` |
+| [population](#population) | Declare a neuron population. | `Population` |
+| [connect](#connect) | Connect a signal to a population port. | `Projection` |
+| [parameter](#parameter) | Declare a named parameter with an initializer. | `ParameterRef` |
+| [constant](#constant) | Declare a constant in graph metadata. | `str` |
+| [operation](#operation) | Declare a graph operation. | `Signal` |
+| [output](#output) | Declare an official network result. | The supplied signal-like object |
+| [expose](#expose) | Declare an optional diagnostic signal. | `None` |
+| [asset](#asset) | Declare asset metadata. | `str` |
+| [group](#group) | Group elements created inside a context. | Context manager yielding `Component` |
+
+### input
+
+```python
+net.input(name, *, shape, signal_type, unit="1", spatial_shape=None)
+```
+
+Declares an external signal and returns a `Signal` with ID `"<name>.value"` that can be connected to populations or used by operations. It does not generate or load input data.
+
+| Argument | Type / default | Meaning |
+| --- | --- | --- |
+| `name` | `str`, required | Unique, non-empty network name without whitespace. Bindings use this exact name as `input_id`. |
+| `shape` | `Shape`, required | Signal axes, commonly `("time", "batch", channels)`. Time and batch sizes are supplied by the binding. |
+| `signal_type` | `str`, required | Signal kind, for example `"spikes"`. Must be compatible with the receiving graph port. |
+| `unit` | `str = "1"` | Physical unit, for example `"spike"` for spikes. |
+| `spatial_shape` | `(channels, height, width)`, optional | Channel-major spatial geometry over a flat input. Requires `shape=("time", "batch", channels * height * width)`. |
+
+```python
+inputs = net.input(
+    "inputs", shape=("time", "batch", 16), signal_type="spikes", unit="spike"
+)
+```
+
+The network timestep determines the physical duration of each time step. Sixteen channels means sixteen input signals per time step and batch item; it does not specify the number of neurons in the receiving population.
+
+See [Execution input bindings](/api/sim#input_bindings) for supplying dense tensors, sparse events, Poisson spike trains or datasets.
+
+### population
+
+```python
+net.population(name, *, size=None, neuron, spiking=True, spatial_shape=None)
+```
+
+| Argument | Type / default | Meaning |
+| --- | --- | --- |
+| `name` | `str`, required | Unique population name. |
+| `size` | `int`, optional with `spatial_shape` | Positive number of neurons. |
+| `spatial_shape` | `(channels, height, width)`, optional | Infers size from the product; an explicitly supplied size must match. State, recordings and spike tensors retain the flat final axis. |
+| `neuron` | `Spec`, required | Neuron dynamics; see [neuron models](#neuron-models). |
+| `spiking` | `bool = True` | Whether to declare a spikes port. |
+
+Returns a `Population`. `cells.voltage` is a `Signal` with `(time, batch, size)` axes and unit `mV`. For a leaky integrator it records voltage after any subtractive reset. `cells.pre_reset_voltage` exposes its voltage after integration but before reset, with the same axes and units. The pre-reset property is supported only for leaky-integrator populations; other neuron types raise `AttributeError`. See [Voltage sampling](/api/lang#voltage-sampling). `cells.spikes` has the same axes and unit `spike`; accessing it on a non-spiking population raises `AttributeError`.
+
+The `cells.excitatory`, `cells.inhibitory` and `cells.modulatory` properties return target port strings for `connect`. Population metadata includes `id`, `size`, `neuron`, `spiking` and `group`.
+
+```python
+cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
+```
+
+#### Neuron models
+
+See [Components](/api/extensions#neuron-models) for neuron specifications, parameters, signals and backend support.
+
+### connect
+
+```python
+net.connect(
+    source,
+    target,
+    *,
+    name,
+    synapse,
+    weight=lang.Constant(1.0),
+    constraint=None,
+    connection="feedforward",
+    delay=None,
+    enabled=True,
+    initialization_scaling=None,
+    allow_autapses=False,
+    modulation=None,
+    connectivity=None,
+)
+```
+
+#### Arguments
+
+| Argument | Type / default | Meaning |
+| --- | --- | --- |
+| `source` | `Signal`, required | A signal from this network, such as `inputs` or `cells.spikes`. |
+| `target` | `str`, required | A population input port: `cells.excitatory`, `cells.inhibitory` or `cells.modulatory`. These properties return strings. |
+| `name` | `str`, required | Unique, non-empty network name without whitespace. |
+| `synapse` | `Spec`, required | The projection dynamics; see [synapses](/api/extensions#synapses). |
+| `weight` | `Spec` or `ParameterRef`, default `Constant(1.0)` | A [weight initializer](#weights) or an existing parameter. |
+| `constraint` | `Spec` or `None`, default `None` | A [parameter constraint](#constraints), applied to automatically created weights. |
+| `connection` | `str = "feedforward"` | One of `"feedforward"`, `"recurrent"`, `"feedback"`, `"modulatory"`. |
+| `delay` | `Quantity` or `None`, default `None` | Additional transmission delay, expressed using `lang.ms`. |
+| `enabled` | `bool = True` | Whether this projection participates in execution. |
+| `modulation` | Gain specification, importable callable or `None` | Optional nonnegative scalar schedule applied to new arriving drive. See [Weight modulation](/api/lang#modulation). |
+| `connectivity` | `lang.Conv2d(...)` or `None` | Shared-kernel spatial projection, or the existing dense projection when omitted. |
+| `allow_autapses` | `bool = False` | Permit a neuron to feed its own output back to itself. Exclusion applies to same-population identity regardless of routing label; different populations retain matching-index connections. |
+| `initialization_scaling` | `str` or `None`, default `None` | `"direct"` or `"fan_in_normalized"`. Omission normalizes new weights or inherits an existing parameter policy; conflicting shared-parameter settings fail. See [Initialization scaling](/api/lang#initialization-scaling). |
+
+The connection kind describes graph routing; the target port determines excitatory, inhibitory or modulatory polarity. Feedback requires an explicit positive delay. Graph execution requires delays to be integer multiples of the network timestep. Recurrent and feedback connections from populations use at least one timestep of causal delay.
+
+Newly authored projections always serialize `allow_autapses`. The returned object exposes `projection.allow_autapses`. Exclusion is structural: forbidden diagonal entries remain ineffective during execution and are cleared after optimization and checkpoint restoration. Initially zero non-self entries remain trainable. Shared parameters requiring different exclusion masks fail compilation/planning. Historical graphs without the field retain permissive behaviour.
+
+#### Convolutional connectivity
+
+`lang.Conv2d(*, kernel_size, stride=1, padding=0)` declares shared-kernel 2D cross-correlation. Pass it to `connect(connectivity=...)`. Kernel size and stride accept a positive integer or `(height, width)` pair; padding accepts nonnegative integers in the same forms. Padding is symmetric zero padding, with floor output sizing. There is no bias, dilation, grouping or string-valued padding in this initial API.
+
+Both source and target need `spatial_shape=(channels, height, width)`. Tensor axes remain `(time, batch, flattened_channels)`, flattened in channel, row, column order. A downsampled two-polarity 32-by-32 sensor therefore declares input spatial shape `(2, 32, 32)` and flat width 2048. Dataset bindings continue to receive flat tensors or channel-indexed events.
+
+Target height and width must match the convolution output; its channel count specifies the number of filters. Authoring, graph validation and execution planning reject invalid geometry and incompatible shared-kernel shapes before simulation. Pooling outputs retain geometry and can feed either convolutional or dense projections. A pooled population source participates in the same timestep ordering and causal delay rules as its underlying spikes; temporal reduction and arbitrary custom-operation outputs cannot serve as projection sources.
+
+Connectivity is separate from synaptic dynamics. Use `ExponentialCurrent` with current neurons, AMPA/GABA with conductance neurons, or the existing leaky-integrator synapse/readout. Convolution computes the arriving drive before the existing synaptic filter, gain modulation and membrane update. Units and excitatory/inhibitory target ports retain their existing meanings.
+
+The compact kernel parameter has graph shape `(output_channels, input_channels * kernel_height * kernel_width)` and runtime shape `(input_channels * kernel_height * kernel_width, output_channels)`. Transpose the runtime matrix and reshape to `(output_channels, input_channels, kernel_height, kernel_width)` for PyTorch filter ordering. Kernels are shared across spatial positions without expanding to a dense neuron-to-neuron matrix. Default fan-in normalization divides by `input_channels * kernel_height * kernel_width`, including padded kernel positions; `"direct"` skips normalization. A compatible `ParameterRef` can share one kernel across projections with different spatial extents.
+
+Select `projection.weight` in a `TrainSpec` parameter group to train the kernel. Gradients, constraints, checkpoint loading and start/end snapshots use the same compact parameter. Authenticated graph data retains spatial metadata, connectivity and pooling configuration. Runtime continuation checks those definitions as well as dimensions.
+
+Same-population convolution currently requires explicit `allow_autapses=True`; structural removal of only a kernel's self-connections is not supported. Existing dense self-connection defaults are unchanged.
+
+### parameter
+
+```python
+net.parameter(name, *, shape, initializer, unit="1", constraint=None, initialization_scaling=None)
+```
+
+Declares a parameter and returns a `ParameterRef`. `shape` explicitly defines its axes, `initializer` specifies initial values, and `constraint` optionally constrains the parameter. See [weights](#weights) and [constraints](#constraints) for available constructors.
+
+Dense projection parameters require unit `"uS"` for conductance synapses or `"nA"` for current synapses and graph shape `(target_cells, source_channels)`. Use a returned reference as `connect(..., weight=weights)` to reuse that parameter. Set its initializer, constraint and optional `initialization_scaling` (`"direct"` or `"fan_in_normalized"`) here; the projection's `constraint` argument does not modify an existing parameter.
+
+### constant
+
+```python
+net.constant(name, value, *, unit="1")
+```
+
+Adds named constant data and its unit to `net.constants`, converting quantity/specification values to their serialized representation. Returns the name string. This is a metadata declaration; it does not create a connectable `Signal` or an execution input.
+
+### operation
+
+```python
+net.operation(
+    kind, sources, *, name, shape, unit,
+    signal_type="continuous", parameters=(), **config
+)
+```
+
+Adds an operation consuming one signal or a sequence of signals from this network. Returns a `Signal` with ID `"<name>.value"` and the explicitly declared shape, unit and signal type. `parameters` supplies `ParameterRef` objects; `config` supplies operation-specific settings.
+
+This is the lower-level operation declaration API. Prefer the public helpers such as `lang.linear`, `lang.reduce` and `lang.MeanVoltage` when they cover the desired operation. All are exported directly from `snnlab.lang`; see [Operations and Readouts](/api/lang#operations). Declaring an arbitrary `kind` does not make it executable; compilation/execution check backend capabilities.
+
+### output
+
+```python
+net.output(name, signal)
+```
+
+Names an official network result and returns the supplied signal-like object. Multiple outputs are allowed; each output name must be unique. The signal must resolve in the compiled graph.
+
+```python
+net.output("spikes", cells.spikes)
+```
+
+The result appears in `result.outputs["spikes"]`. Declared outputs always return, independently of the diagnostic setting. Outputs retain their computation graph for training and can supply training objective predictions.
+
+### expose
+
+```python
+net.expose(*signals, name=None)
+```
+
+Declares diagnostic signals and returns `None`. Inputs, population spikes/voltages, operation signals and projection conductance can be exposed.
+
+```python
+net.expose(inputs, name="input_spikes")
+net.expose(cells.voltage, name="e_voltage")
+net.expose(projection.conductance, name="input_conductance")
+```
+
+With one signal and an explicit name, that name becomes the diagnostic key. With multiple signals and a name, keys are `"<name>_0"`, `"<name>_1"`, and so on. Without a name, each key is `"<signal-owner>_<signal-port>"`, for example `"E_voltage"`. These names must be unique in the network.
+
+Exposed signals return by default as detached tensors in `result.diagnostics`. Set `diagnostics=False` to disable them for one run without changing official outputs. Use [result.numpy](/api/sim#numpy) to retrieve independent NumPy arrays for plotting.
+
+### asset
+
+```python
+net.asset(name, *, media_type, description="")
+```
+
+Declares an asset's name, media type and optional description, and returns its name string. It records metadata; it does not read, download or embed an asset file.
+
+### group
+
+```python
+with net.group(name, parent=None) as component:
+    # Declare elements belonging to this group.
+    ...
+```
+
+`parent` is keyword-only and, when supplied, must identify an existing group. The context yields a `Component` with `name`, `members` and `parent`. Elements declared inside are added to the current group's membership. Nested contexts use the innermost group; supply `parent` explicitly to record the group hierarchy.
+
+`net.current_group` returns the active group's name, or `None` outside a context. Exiting the context restores the previous active group, including when its body raises an exception.
+
+### Signal
+
+Network methods return `Signal` objects for inputs and operation outputs, and populations/projections provide additional signal properties. A signal is an authoring reference, not an execution tensor.
+
+```python
+class Signal:
+    network: "Network" = field(compare=False, repr=False)
+    id: str
+    shape: Shape
+    unit: str
+    signal_type: str
+    owner: str
+    port: str
+```
+
+`Signal.json_ref()` returns its graph ID string. Shape entries can be integer feature sizes or symbolic axes such as `"time"` and `"batch"`. `unit` and `signal_type` describe the declared value, and `owner` / `port` locate its producer. Use a signal from the same network when connecting declarations. The dataclass is frozen; execution values are obtained through result outputs or diagnostics.
+
+## Weights, constraints and units
+
+
+### Weights
+
+When `weight` is an initializer, `connect` automatically sizes and creates a parameter named `"<projection-name>.weight"`, with graph shape `(target_cells, source_channels)` and unit `uS` (microsiemens) for conductance synapses or `nA` (nanoamperes) for current synapses.
+
+| Constructor | Initial values |
+| --- | --- |
+| `lang.Constant(value)` | Every entry starts at the same value. The default is `Constant(1.0)`. |
+| `lang.Zeros()` | All entries start at zero. |
+| `lang.Uniform(low, high)` | Uniform random samples between the supplied bounds. |
+| `lang.LowerClampedNormal(mean, std, initial_zero_fraction=0.0, zeroing="bernoulli")` | Normal random samples with negative draws clamped to zero; optionally zero additional entries. The final two arguments are keyword-only. |
+| `lang.Normal(mean, std)` | Compatibility alias for `LowerClampedNormal(mean, std)`. Negative draws are clamped to zero. |
+| `lang.SignedNormal(mean, std)` | Normal random samples retaining both signs, unless a constraint clamps them. |
+
+The execution seed controls random initialization. By default, the graph executor divides initialized projection weights by the eligible source channel count (fan-in). Select `initialization_scaling="direct"` to store the initialized values without this division; see [Initialization scaling](#initialization-scaling). Runtime weights use `(source_channels, target_cells)` ordering.
+
+For `LowerClampedNormal`, `initial_zero_fraction` must satisfy `0 <= fraction < 1`. `zeroing="bernoulli"` independently removes entries; `zeroing="exact_k"` keeps a fixed number of incoming entries per target cell. Both rescale retained values to compensate for initial zeroing. This specifies initial sparsity rather than a persistent connectivity constraint. For same-population projections, `connect(..., allow_autapses=False)` excludes self-connections structurally and calculates sparsity and normalization from eligible other neurons.
+
+#### Initialization scaling
+
+`Network.connect`, `Network.parameter` and `lang.MeanVoltage` accept `initialization_scaling="fan_in_normalized"` or `"direct"`. Scaling is separate from the parameter's physical unit and initializer distribution.
+
+| Policy | Stored initial weights |
+| --- | --- |
+| `"fan_in_normalized"` | Divide initialized values by the eligible source channel count. For four channels, `Constant(2.0)` stores 0.5 per edge. |
+| `"direct"` | Store initialized values without fan-in division. `Constant(2.0)` stores 2.0 per edge. |
+
+For lower-clamped normals, execution draws and lower-clamps first, then applies optional initial zeroing and its existing compensation, then applies the selected scaling, then the declared constraint. Direct scaling skips only the fan-in division; it does not disable zeroing compensation. Initially zero entries remain trainable unless a separate constraint forbids them.
+
+For example, a directly initialized mean-voltage readout preserves the legacy readout initializer's scale:
+
+```python
+scores = lang.MeanVoltage(
+    source=cells.spikes,
+    classes=10,
+    name="scores",
+    weight=lang.LowerClampedNormal(0.05, 0.04),
+    initialization_scaling="direct",
+)
+```
+
+The serialized parameter stores `initialization_scaling`. Omitted (`None`) settings on automatically created projection parameters and MeanVoltage select fan-in normalization. For an explicit parameter, omission leaves the policy unspecified until its first connection, which selects fan-in normalization unless explicitly overridden. Subsequent connections inherit its policy; an explicit conflicting request is rejected. Set a shared parameter's policy on `net.parameter` to make its intent independent of connection order. A shared projection parameter with a declared policy is initialized once.
+
+Older graphs and bundles without the field retain normalized projection initialization and direct operation-parameter initialization, including historical repeated draws for shared projection parameters. Explicit policies also apply to operation parameters. Build metrics and `model.initialization_metadata` report the effective policy as `scaling`, alongside the initializer, units and realized statistics. Loaded checkpoint tensors are copied as stored, without applying initialization scaling again. The legacy COBANet bundle adapter accepts only normalized projection initialization and rejects direct policies; execute direct-initialization bundles with the graph executor. Changing the serialized policy changes graph identity and requires a compatible checkpoint; it does not reinterpret an old checkpoint.
+
+#### Existing parameters
+
+Supply a `ParameterRef` to reuse a parameter declared with `net.parameter`. Its graph shape must match `(target_cells, source_channels)` and its unit must match the synapse (`"uS"` or `"nA"`).
+
+For a convolutional projection, the required graph shape is instead `(output_channels, input_channels * kernel_height * kernel_width)`. Sharing is valid across different image sizes when kernel dimensions, channel counts, physical unit and initialization policy match. See [Convolutional connectivity](/api/lang#convolutional-connectivity).
+
+```python
+weights = net.parameter(
+    "input_weights",
+    shape=(16, 4),
+    unit="uS",
+    initializer=lang.Uniform(0.1, 0.5),
+    constraint=lang.NonNegative(),
+)
+projection = net.connect(
+    inputs,
+    cells.excitatory,
+    name="input_to_E",
+    synapse=lang.AMPA(tau=2 * lang.ms),
+    weight=weights,
+)
+```
+
+With an existing parameter, set its initializer and constraint on `net.parameter`. The `constraint` argument to `connect` does not modify that parameter.
+
+For custom distributions and restrictions, see [efficient custom initializers and constraints](/api/lang#weights). Initializers run eagerly at setup; repeated post-update constraint calculations compile by default. Use vectorized torch operations and the supplied device/dtype, with no host scalar reads or per-weight Python loops.
+
+### Constraints
+
+| Value | Behavior |
+| --- | --- |
+| `None` | No explicit parameter constraint. An initializer may still clamp its own initial draws. |
+| `lang.NonNegative()` | Clamp weights to zero or above at initialization and after training optimizer updates. |
+
+`NonNegative` is the built-in constraint; registered custom constraints are also supported. Use the inhibitory target port and GABA synapse to express inhibition with non-negative conductance weights. A non-negative initializer alone does not constrain later training updates.
+
+### Constructor signatures
+
+#### Normal
+
+```python
+def Normal(mean: float, std: float) -> Spec: ...
+```
+
+#### LowerClampedNormal
+
+```python
+def LowerClampedNormal(
+    mean: float,
+    std: float,
+    *,
+    initial_zero_fraction: float = 0.0,
+    zeroing: str = "bernoulli",
+) -> Spec: ...
+```
+
+#### SignedNormal
+
+```python
+def SignedNormal(mean: float, std: float) -> Spec: ...
+```
+
+#### Uniform
+
+```python
+def Uniform(low: float, high: float) -> Spec: ...
+```
+
+#### Zeros
+
+```python
+def Zeros() -> Spec: ...
+```
+
+#### Constant
+
+```python
+def Constant(value: float) -> Spec: ...
+```
+
+#### NonNegative
+
+```python
+def NonNegative() -> Spec: ...
+```
+
+### References and units
+
+`ParameterRef.network` identifies its authoring network; `.id` is the graph name. `projection.weight` returns this reference. Put it in a [ParameterGroup](/api/lang#parameter-groups) to make it trainable.
+
+Projection matrices require `unit="uS"` for conductance or `unit="nA"` for current. Quantity helpers `ms`, `mV`, `Hz`, `nS`, `uS` and `nA` create `Quantity(value, unit)` when multiplied by a number. `Quantity.json()` returns its value and unit. Declared units are validated metadata, not automatic conversions of arbitrary numeric arrays.
+
+Built-in graph training enforces supported constraints after optimizer steps. Ordinary PyTorch optimizers do not read graph constraints; external loops must enforce them explicitly, as shown in [PyTorch Integration](/pytorch-integration).
+
+### Reference constructors
+
+```python
+class Quantity:
+    value: float
+    unit: str
+
+
+class ParameterRef:
+    network: "Network" = field(compare=False, repr=False)
+    id: str
+
+
+def CustomInitializer(definition: str, **config: Any) -> Spec: ...
+
+
+def CustomConstraint(definition: str, **config: Any) -> Spec: ...
+```
+
+`Quantity` is a frozen value/unit record. `Quantity.json()` returns `{"value": value, "unit": unit}`. Multiplication by exported unit helpers constructs one; it does not convert between nS and uS. `ParameterRef` identifies an existing authoring parameter and retains its network association. Prefer `Network.parameter` or `projection.weight` over constructing references manually.
+
+`CustomInitializer` and `CustomConstraint` return registered specifications; unknown names fail during construction. Callback signatures and supported state are defined in [Extensions](/api/extensions#implementing-extensions).
+
+## Operations and readouts
+
+
+### Operations
+
+#### pool2d
+
+```python
+def pool2d(
+    source: Signal, *, kernel_size, name: str,
+    stride=None, padding=0, mode="avg",
+) -> Signal: ...
+```
+
+Pools each timestep and batch item over spatial neighbourhoods. The source must have channel-major `spatial_shape=(channels, height, width)` metadata and flat `(time, batch, channels * height * width)` tensor shape. The output retains spatial metadata and a flat final axis, so it can feed another projection directly.
+
+`kernel_size`, `stride` and `padding` accept an integer or a two-integer pair. Stride defaults to the kernel size. Padding is symmetric; output sizes use floor division without ceil mode. Padding must not exceed half the corresponding kernel dimension. Empty outputs, mismatched shapes and invalid settings fail validation.
+
+`mode="avg"` excludes padded positions from the average and returns a continuous signal with the source's unit. Averaging binary spikes produces fractional activity; it does not emit a new binary spike or represent event multiplicity. A receiving projection uses that value as a fractional synaptic drive. `mode="max"` preserves the source signal type: max pooling binary spikes remains binary; max pooling voltage remains voltage. Max-pool gradients follow PyTorch's selected maximum, including its tie behaviour.
+
+Both modes support gradients, output/recording history and streaming time reductions. Pooling chains over inputs or population spikes can feed dense or convolutional projections, including delayed connections. See [Convolutional connectivity](/api/lang#convolutional-connectivity) for geometry and kernel contracts.
+
+#### linear
+
+```python
+def linear(
+    source: Signal, *, size: int, name: str, trainable: bool = True
+) -> Signal: ...
+```
+
+#### reduce
+
+```python
+def reduce(
+    source: Signal,
+    *,
+    operation: str,
+    over: str,
+    name: str,
+    window: str = "full",
+    mask: Signal | None = None,
+) -> Signal: ...
+```
+
+#### divide
+
+```python
+def divide(source: Signal, denominator: Signal, *, name: str, unit: str) -> Signal: ...
+```
+
+| Helper | Behaviour |
+| --- | --- |
+| `linear` | Creates a zero-initialized parameter named `<name>.weight`, graph shape `(size, source_channels)`, and a projected signal preserving leading axes. No bias. The operation's `trainable` flag is metadata; select parameters in the training recipe to optimize them. |
+| `reduce` | Reduces an explicit time axis and removes it from the output shape. The graph supports sum and mean; `over` must be `"time"`. An optional mask specifies valid samples. The current backend supports only `window="full"`. |
+| `divide` | Divides two signals and declares the resulting unit explicitly. Its output shape is the numerator's declared shape. |
+
+`Network.operation` is the lower-level declaration surface. An arbitrary operation name does not provide an executable implementation; compile and plan the graph to check support.
+
+### Readout wrapper
+
+`lang.Readout(signal, parameters=())` delegates signal attributes, exposes `.id`, and retains a tuple of parameter IDs for helpers that supply them. `net.output` and objective declarations accept its signal-like ID. Check the graph or parameter map when selecting all generated parameters: `.parameters` is not a universal inventory for every helper.
+
+### Voltage sampling
+
+A leaky integrator has two explicit voltage signals. Choose the signal before applying an operation:
+
+| Signal | Measurement point |
+| --- | --- |
+| `integrator.voltage` | After integration and any threshold-triggered subtractive reset; also the voltage carried into the next timestep. |
+| `integrator.pre_reset_voltage` | After integration, immediately before subtractive reset. |
+
+Both have `(time, batch, cells)` axes and unit `mV`. The pre-reset signal is currently supported only by leaky-integrator populations. If no reset occurs, the two samples agree. Threshold crossings can make them differ even for a non-spiking integrator, because its soft reset still applies.
+
+```python
+scores = lang.reduce(
+    integrator.pre_reset_voltage,
+    operation="mean",
+    over="time",
+    name="scores",
+    mask=valid,
+)
+```
+
+A valid-time mask selects samples from the declared signal; it never selects a different voltage phase. All-true masked and unmasked reductions agree within normal floating-point reduction tolerances. Direct pre-reset reductions retain legacy step-by-step accumulation order, including when masked, to preserve classifier numerical parity. Sum, mean, final selection and composed operations use the same signal values. MeanVoltage explicitly reduces pre-reset voltage, preserving the legacy classifier readout convention. Ordinary `.voltage` diagnostics retain their post-reset meaning.
+
+Each execution call reduces its own returned time window. Continuation carries post-reset dynamic voltage into the next call, so concatenated pre/post traces match uninterrupted execution. Combine chunk sums, or duration-weighted chunk means, to recover whole-window measurements. Automatic cross-call or decision-segment accumulators belong to the separate streaming-reduction contract. Returned continuation state is detached; gradients do not span calls automatically.
+
+#### Older serialized graphs
+
+Newly compiled graphs declare `voltage_sampling="explicit"` and serialize MeanVoltage's source as `<integrator>.pre_reset_voltage`. Graphs and bundles without the marker keep their historical interpretation: an unmasked direct mean of leaky-integrator `.voltage` reads the pre-reset accumulator; masked means, sums, final selection and diagnostics read post-reset values. This compatibility path intentionally preserves existing artifacts, including their historical inconsistency. Loading does not rewrite them or their identity.
+
+Reauthor and compile a graph to adopt the explicit contract, choosing the intended signal for each reduction. This changes graph identity; retained checkpoints and continuation state remain bound to their original graph. Do not add the marker to an old artifact without reviewing its reductions. Unknown sampling-contract values are rejected. The legacy COBANet bundle adapter accepts explicit pre-reset MeanVoltage readouts and historical implicit ones, but rejects explicit post-reset readouts because it cannot preserve their meaning.
+
+### Readout constructors
+
+#### MeanVoltage
+
+```python
+def MeanVoltage(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+    tau=2 * ms,
+    weight: Spec = Normal(1.0, 0.1),
+    initialization_scaling: str | None = None,
+) -> Readout: ...
+```
+
+#### FinalVoltage
+
+```python
+def FinalVoltage(*, source: Signal, classes: int, name: str) -> Readout: ...
+```
+
+#### SpikeCount
+
+```python
+def SpikeCount(*, source: Signal, classes: int, name: str) -> Readout: ...
+```
+
+#### SpikeRate
+
+```python
+def SpikeRate(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+    duration: float | None = None,
+    mask: Signal | None = None,
+    window: str = "full",
+) -> Readout: ...
+```
+
+#### CumulativePotential
+
+```python
+def CumulativePotential(*, source: Signal, classes: int, name: str) -> Readout: ...
+```
+
+| Helper | Expanded graph |
+| --- | --- |
+| `MeanVoltage` | Adds a non-spiking leaky-integrator population, projection constrained non-negative and mean pre-reset voltage over time. `tau` defaults to 2 ms and weights to lower-clamped `Normal(1.0, 0.1)`. Its generated integrator has a soft reset threshold of 1. `initialization_scaling=None` retains fan-in normalization; select `"direct"` for directly stored readout initialization. See [Initialization scaling](/api/lang#initialization-scaling). |
+| `FinalVoltage` | Applies a linear projection and selects its final time sample. |
+| `SpikeCount` | Applies a linear projection and sums it over time. The generated weight is `<name>_projection.weight`. |
+| `SpikeRate` | Projects and sums over valid time, then normalizes to Hz. Requires `duration` in seconds or a valid-time mask. |
+| `CumulativePotential` | Applies a linear projection and a cumulative time sum, preserving the time axis. |
+
+`classes` is the output width and `name` identifies the generated group and operations. The helpers expand into normal graph declarations rather than opaque layers. FinalVoltage, SpikeCount, SpikeRate and CumulativePotential inherit the linear helper's zero initializer. Explicit populations, connections and reductions can be clearer when teaching how the readout weights are defined; see [Training](/training).
+
+## Modulation
+
+Pass a gain specification to `net.connect(..., modulation=...)`. Omission keeps the existing static-weight behaviour and adds no schedule field to the graph. Every constructor below is exported from `snnlab.lang`.
+
+### Built-in schedules
+
+| Constructor and defaults | Behaviour |
+| --- | --- |
+| `lang.ConstantGain(value=1.0)` | Fixed gain. |
+| `lang.StepGain(at=0 * lang.ms, before=1.0, after=0.0)` | `before` until `at`, then `after`. The default disables new input from time zero. |
+| `lang.RampGain(start=0 * lang.ms, end=100 * lang.ms, before=0.0, after=1.0)` | Linear interpolation from `before` to `after`; holds those values outside the interval. Descending ramps are supported. |
+| `lang.SineGain(frequency=40 * lang.Hz, depth=0.5, offset=1.0, phase=0.0)` | Sine oscillation around `offset`; `phase` is in radians. Defaults span 0.5–1.5 at 40 Hz. |
+| `lang.PiecewiseGain(times=[...], values=[...])` | Successive constant values at strictly increasing transition times. Requires one more value than times. An empty `times` list with one value gives a constant. |
+
+All arguments except `ConstantGain.value` are keyword-only. Time and frequency arguments require quantities in ms and Hz respectively. Gains, times, frequency, depth and offset must be finite and nonnegative; phase can be any finite real number. Ramp end must exceed start. Sine depth must not exceed offset, keeping the entire oscillation nonnegative. Booleans are not gains.
+
+```python
+projection = net.connect(
+    inputs, cells.excitatory, name="oscillating_input",
+    synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
+    weight=lang.Constant(1.0),
+    modulation=lang.SineGain(frequency=40 * lang.Hz, depth=0.5),
+)
+
+# Alternative schedules for modulation=:
+step = lang.StepGain(at=100 * lang.ms, before=1, after=0)
+ramp = lang.RampGain(start=50 * lang.ms, end=150 * lang.ms)
+blocks = lang.PiecewiseGain(
+    times=[100 * lang.ms, 200 * lang.ms], values=[1, 0, 2],
+)
+```
+
+### Timing and dynamics
+
+The effective matrix is
+
+$$W_{\mathrm{eff}}(t)=g(t)W_0.$$
+
+Here $W_0$ is the stored baseline matrix, $g(t)$ is a dimensionless scalar gain, $t$ is absolute simulation time, and $W_{\mathrm{eff}}(t)$ has the same physical unit as $W_0$. The gain applies to the entire projection, identically across batch items and connections. It scales new input before synaptic filtering, including custom synapse callbacks. It does not multiply already accumulated current or conductance, alter connectivity masks, or modify the stored parameter.
+
+For sine schedules,
+
+$$g(t)=b+a\sin(2\pi f t+\phi),$$
+
+where $b$ is `offset`, $a$ is `depth`, $f$ is `frequency` in Hz, $t$ is time in seconds for this equation, and $\phi$ is `phase` in radians. Custom callbacks receive time in **milliseconds**.
+
+1. The first sample is at time zero. Continuing a run uses `runtime_state.completed_steps * dt_ms` as its next sample time.
+2. Step and piecewise changes take effect on the first timestep at or after the requested time. Near-integer timestep ratios are corrected for floating-point roundoff. Several transitions within one timestep resolve to the latest applicable value.
+3. Ramps are sampled on the same grid and hold their endpoint values outside the interval. Oscillations are sampled without averaging or antialiasing; choose a timestep fine enough to resolve them.
+4. Delayed spikes use the gain at **arrival**, rather than emission. A zero gain stops new drive; existing synaptic state still decays normally.
+5. Each fresh simulation or fresh training presentation starts at time zero. Only runtime-state continuation advances the clock across calls; voltage resets do not restart it.
+
+### CustomGain
+
+```python
+lang.CustomGain(function, *, config=None)
+```
+
+`function` is an importable callable or a `"module:function"` reference. Put the implementation in an importable module, for example `timing_functions.py`:
+
+```python
+import math
+
+def gated_sine(t_ms, config):
+    if t_ms < config["start_ms"]:
+        return 0.0
+    elapsed_s = (t_ms - config["start_ms"]) / 1000
+    return 1 + config["depth"] * math.sin(
+        2 * math.pi * config["frequency_hz"] * elapsed_s
+    )
+```
+
+Then attach it:
+
+```python
+gain = lang.CustomGain(
+    "timing_functions:gated_sine",
+    config={"start_ms": 100, "frequency_hz": 40, "depth": 0.5},
+)
+# Pass gain as modulation= when connecting the projection.
+```
+
+An importable function passed directly as `modulation=some_function` is shorthand for `lang.CustomGain(some_function)` with an empty configuration. Its signature is still `(t_ms, config)`.
+
+The callback must be a pure function returning one finite nonnegative real scalar. It must not rely on call count, mutable globals, random state, batch contents or neural activity. Callback exceptions propagate; invalid returns raise `ValueError` with the sample time. Configuration must be a JSON object containing finite JSON values and string keys. Each callback invocation receives a fresh deep copy of its configuration.
+
+Schedules are precomputed on the CPU once per enabled projection per execution call, with one sample per requested timestep. Python callbacks do not run inside the tensor timestep loop. This requires memory proportional to scheduled projections times timesteps and does not establish a performance speedup. Disabled projections do not evaluate their callbacks.
+
+### Bundles, training and continuation
+
+Bundles store the gain kind, settings and custom `module:function` reference plus configuration inside the authenticated projection declaration. Loading or planning resolves the reference automatically. No registration call, Python source or pickled function is stored. Lambdas, closures and functions defined in `__main__` are rejected at authoring. Make the module importable in every execution environment, and version its code externally: a reference authenticates its location and configuration, not the contents of the Python file.
+
+Schedule changes alter graph identity and runtime-state compatibility. Baseline weights remain ordinary parameters: gradients flow through the gain multiplication to them, constraints and autapse masks remain active, and shared parameters can have different schedules on different projections. Schedule coefficients and custom callbacks are not trainable. Weight checkpoints, `parameter_map()` and `result.parameters` contain baseline weights, not a sampled effective matrix. Continuation preserves the schedule's absolute clock; changing the schedule requires starting a new trajectory.
+
+## Training recipes
+
+
+### TrainSpec
+
+```python
+class TrainSpec:
+    objectives: Sequence[Objective]
+    parameter_groups: Sequence[ParameterGroup]
+    optimizer: Optimizer
+    regularizers: Sequence[Regularizer] = ()
+    stop_gradients: Sequence[StopGradient] = ()
+    epochs: int = 1
+    gradient_clip: float | None = None
+    surrogate: Spec | None = None
+    presentation_duration: Quantity | None = None
+```
+
+| Field | Behaviour |
+| --- | --- |
+| `objectives` | Predictions, target names and objective weights. |
+| `parameter_groups` | Named parameter selections, learning rates and frozen flags. |
+| `optimizer` | Serializable optimizer specification; graph training supports AdamW and registered optimizer factories. |
+| `regularizers` | Optional additional loss terms. |
+| `stop_gradients` | Signal locations where the training graph should detach. |
+| `epochs` | Recipe metadata; specify run iteration using `epochs`. |
+| `gradient_clip` | Optional global gradient norm limit. |
+| `surrogate` | Spike backward rule; `FastSigmoid(slope=1.0)` is the public helper. |
+| `presentation_duration` | Time quantity used by the recipe, including rate regularizers. |
+
+### Objectives
+
+#### CrossEntropy
+
+```python
+def CrossEntropy(
+    *, prediction: SignalLike | str, target: str, weight: float = 1.0
+) -> Objective: ...
+```
+
+#### Objective
+
+```python
+class Objective:
+    kind: str
+    prediction: str
+    target: str
+    weight: float = 1.0
+    config: dict[str, Any] = field(default_factory=dict)
+    definition: str | None = None
+```
+
+`prediction` accepts a signal-like object or signal ID. `target` names a label tensor supplied through the execution request. Cross entropy uses class logits and integer class labels. Do not apply softmax before this loss. `weight` scales the objective contribution to total loss. Multiple objectives are allowed.
+
+### Parameter groups
+
+#### ParameterGroup
+
+```python
+class ParameterGroup:
+    parameters: Sequence[ParameterRef | str]
+    name: str
+    lr: float
+    frozen: bool = False
+```
+
+Use `projection.weight`, an explicit `ParameterRef`, or a graph parameter ID. `ids()` returns the resolved ID strings. Each group supplies its own learning rate; `frozen=True` excludes its parameters from optimization. Merely declaring a network parameter does not select it for training. Group membership and objective references are validated at compilation.
+
+### Optimizer and surrogate
+
+#### AdamW
+
+```python
+def AdamW(**config: Any) -> Optimizer: ...
+```
+
+#### Optimizer
+
+```python
+class Optimizer:
+    kind: str
+    config: dict[str, Any] = field(default_factory=dict)
+    definition: str | None = None
+```
+
+#### FastSigmoid
+
+```python
+def FastSigmoid(
+    *,
+    slope: float = 1.0,
+    gradient_scale: float = 1.0,
+    threshold_inclusive: bool = True,
+) -> Spec: ...
+```
+
+`AdamW` stores keyword configuration for the runtime optimizer, such as `weight_decay=0.0`. Group learning rates come from `ParameterGroup`.
+
+`FastSigmoid` supplies a hard threshold event in the forward pass and this backward derivative:
+
+$$D(v) = \frac{a s}{(1+s|v|)^2}.$$
+
+Here $v$ is voltage relative to threshold, $s$ is the positive finite `slope` in inverse voltage units, and $a$ is the nonnegative finite, dimensionless `gradient_scale`. The default $a=1$ preserves the existing derivative. `threshold_inclusive=True` fires at $v \geq 0$; `False` fires at $v > 0$, matching the registered custom-surrogate convention. These settings change neither voltage gradient damping nor reset equations.
+
+For the SHD paper derivative with a 15 mV threshold-to-rest gap and dimensionless steepness 100, use:
+
+```python
+surrogate = lang.FastSigmoid(
+    slope=100 / 15,
+    gradient_scale=1 / 100,
+    threshold_inclusive=False,
+)
+```
+
+This is a configuration of the existing fast-sigmoid derivative. Choose the threshold convention to match your original model. Both extra fields serialize through the training recipe and its resolved gradient contract; omitted fields in historical recipes mean scale 1 and inclusive threshold. Default authoring retains the historical serialized recipe identity. Runtime states from the exclusive built-in threshold carry that forward policy; continuing them with an inclusive built-in executor, or vice versa, fails explicitly. Gradient amplitude and slope affect the backward pass, so they do not change forward-state compatibility. Build and forward metrics report the resolved surrogate and compilation policy. Built-in training applies the complete configuration automatically. For an external [GraphExecutor](/api/sim#advanced-pytorch-execution), pass `surrogate=bundle.training["surrogate"]`. Built-in and registered custom surrogate derivatives participate in default compilation. Strict custom-surrogate validation keeps an eager autograd boundary for diagnostic value checks while compiling the derivative calculation separately; structural mode allows the surrogate inside the compiled neuron graph.
+
+### Regularizers
+
+#### SpikeBudgetPenalty
+
+```python
+def SpikeBudgetPenalty(
+    *, signals: Sequence[Signal | str], ceiling_hz: float, strength: float
+) -> Regularizer: ...
+```
+
+#### UpperRatePenalty
+
+```python
+def UpperRatePenalty(
+    *, signal: Signal, threshold: float, strength: float
+) -> Regularizer: ...
+```
+
+#### Regularizer
+
+```python
+class Regularizer:
+    kind: str
+    signals: tuple[str, ...]
+    strength: float
+    config: dict[str, Any] = field(default_factory=dict)
+    definition: str | None = None
+```
+
+`SpikeBudgetPenalty` penalizes population mean rates exceeding `ceiling_hz`, using a squared hinge. It averages presentations and then layers. Supply spike signals or IDs and the penalty strength. `UpperRatePenalty` is the single-signal convenience wrapper: `threshold` is in Hz. Rate evaluation requires an appropriate presentation duration. Regularizers are part of both total training and validation loss.
+
+### StopGradient
+
+```python
+class StopGradient:
+    signal: str
+```
+
+`StopGradient.at(signal)` constructs a declaration from a signal ID. It prevents downstream losses from propagating through that location; it does not remove the forward signal.
+
+### Execution and validation
+
+Call `train(graph=bundle.graph, training=bundle.training, ...)` once to run the built-in loop. Use positive `epochs`, optional `batch_size`, and `shuffle` for dataset iteration. [ValidationSpec](/api/sim#validation) supplies held-out inputs and targets; it evaluates without updates. [ExecutionResult metrics](/api/sim#epoch-metrics) distinguish initial baseline, completed epochs and per-update losses.
+
+See [Training](/training) for a complete recipe and [PyTorch Integration](/pytorch-integration) for an external optimizer loop.
+
+## Compilation and bundles
+
+
+### compile
+
+```python
+def compile(
+    network: Network,
+    *,
+    training: TrainSpec | None = None,
+    target: str | None = None,
+    assets: Mapping[str, str | Path] | None = None,
+    refractory_timing: str = "following_steps",
+) -> Bundle: ...
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `network` | The authored `Network`. |
+| `training` | Optional [TrainSpec](/api/lang#trainspec) recipe. |
+| `target` | Optional backend capability target, such as `"tools/snnsim"`. |
+| `refractory_timing` | `"following_steps"` (default) or `"legacy_coba"` for historical COBA LIF replay. |
+| `assets` | Mapping of declared logical asset names to physical files. |
+
+Graph and training validation errors raise `ValueError`. Backend capability diagnostics are retained in the bundle; inspect them before execution. Every declared asset needs a physical path, and undeclared or missing files are rejected. The manifest records digests, target, required capabilities and extension dependencies. Register importable callbacks or `module:function` references when authoring custom definitions. Their locations, units and optional exact package versions are recorded in the graph or recipe and covered by its digest. Bundle loading automatically imports the referenced external modules; no Python source or pickled callbacks are included in the bundle. See [Extensions](/api/extensions#implementing-extensions).
+
+### Bundle
+
+```python
+class Bundle:
+    graph: dict[str, Any]
+    training: dict[str, Any] | None
+    manifest: dict[str, Any]
+    diagnostics: list[Diagnostic]
+    asset_sources: dict[str, Path] = field(default_factory=dict)
+```
+
+`graph` and `training` are serialized data mappings; optional recipes are `None` when absent. `manifest` describes integrity and capabilities. `diagnostics` contains compiler reports. `asset_sources` tracks physical files for writing.
+
+```python
+bundle = lang.compile(net, training=recipe, target="tools/snnsim")
+path = bundle.write("network.bundle")
+loaded = lang.load_bundle(path)
+```
+
+`Bundle.write(path, *, visualise=False)` returns a `Path` to a directory containing `graph.json`, optional `training.json`, `manifest.json`, bundled assets and `reports/summary.md`. With `visualise=True`, it also renders structural diagrams; Graphviz is required. Use a fresh destination when changing which optional recipes exist: writing does not clear an existing directory.
+
+Saving a custom callback that cannot be resolved through an importable module raises `ValueError` before creating files. Move closures, lambdas and functions defined in `__main__` into a module first.
+
+#### Bundle.visualise
+
+```python
+bundle.visualise(path, *, view="circuit", scale=1)
+```
+
+Renders one selected view to the given path and returns its `Path`. The suffix selects the output format. All groups show their contents. This combines `lang.diagram` with `viz.render_diagram` without changing the bundle.
+
+### load_bundle
+
+Loading verifies saved file digests before resolving external extension modules. Missing bundle paths raise `FileNotFoundError("bundle not found: ...")`; incomplete bundle directories raise `ValueError`. Referenced callbacks and declared exact package versions must be available in the current environment.
+
+```python
+def load_bundle(path: str | Path) -> Bundle: ...
+```
+
+Loads the directory, validates graph/recipe data and checks declared file digests. Missing or invalid files fail rather than silently recompiling the network. It returns a `Bundle` for inspection or reuse; supply its path to `bundle` or its graph to `graph`.
+
+A bundle stores architecture, initializers and recipes. A training checkpoint stores learned parameters, optimizer state and resume metadata. Loading a bundle alone initializes fresh weights when executed; [Inference](/inference) also supplies a checkpoint. An external PyTorch model uses its own `state_dict`, as shown in [PyTorch Integration](/pytorch-integration).
+
+### Structural diagrams
+
+```python
+def diagram(
+    bundle: Bundle, *, view: str = "circuit"
+) -> Diagram: ...
+```
+
+`lang.diagram` returns a renderer-neutral `viz.Diagram`. `view` accepts `"circuit"`, `"training"` or `"expanded"`. Every view shows all populations, operations and projections explicitly; groups are labelled boundaries, never collapsed boxes. The training view additionally shows parameter groups and objectives. `"expanded"` remains an alias for the explicit circuit view. The former `expand_groups` argument has been removed. Unsupported views raise `ValueError`. All static views reject graphs with more than 120 projections plus operations. See [diagram rendering](/api/viz#advanced-custom-diagrams).
+
+## Physical time
+
+Use `lang.ms` for durations and `lang.Hz` for rates. `duration_steps(duration_ms, dt_ms)` converts a duration to integer steps using the library timing rules. Use physical quantities in declarations, for example `dt=0.1 * lang.ms`, rather than encoding time in implementation metadata. `lang.compile` reports invalid declarations before execution.
