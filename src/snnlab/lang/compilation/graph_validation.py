@@ -9,6 +9,7 @@ from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.connectivity import resolve_autapses
 from snnlab._shared.gains import validate as validate_gain
+from snnlab._shared.projections import delay_steps, validate_source
 from snnlab._shared.spatial import projection_shape, source_root, validate_spatial
 from snnlab.lang.compilation.diagnostics import Diagnostic, ValidationResult
 
@@ -251,6 +252,9 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                         row["id"],
                     )
                 )
+            validate_source(graph, row)
+            delay_steps(row, float(graph["timebase"]["dt"]["value"]))
+            unit = E.synapse_weight_unit(synapse)
             if synapse.get("kind") == "exponential_current":
                 tau = synapse.get("tau", {})
                 if (

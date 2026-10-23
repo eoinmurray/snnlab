@@ -378,14 +378,14 @@ class Network:
                 existing or initialization_scaling or "fan_in_normalized"
             )
         else:
-            from snnlab.extensions import synapse_unit
+            from snnlab.extensions import synapse_weight_unit
 
             parameter_id = f"{name}.weight"
             self.parameters.append(
                 {
                     "id": parameter_id,
                     "shape": expected_shape,
-                    "unit": synapse_unit(synapse.json()),
+                    "unit": synapse_weight_unit(synapse.json()),
                     "initializer": weight.json(),
                     "initialization_scaling": initialization_scaling
                     or "fan_in_normalized",

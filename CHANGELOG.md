@@ -6,6 +6,12 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-23
+
+### Added
+
+1. Continuous population voltage and declared neuron-state sources for custom synapses with explicit `input_unit`. Dimensionless weights act before nonlinear gating; continuous sources sample beginning-of-step state, with explicit whole-step delays and persistent source/gate histories. Reciprocal graph connections update gates before membrane integration without an implicit recurrent delay. Includes a CPU float64 graded-inhibition example and independent Euler, batching, saved continuation and unit-validation tests. Existing spike projections and legacy extension descriptors retain their contracts.
+
 ## [0.23.0] - 2026-10-20
 
 ### Added

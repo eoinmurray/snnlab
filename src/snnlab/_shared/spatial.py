@@ -57,7 +57,7 @@ def signal_spatial_shape(graph, signal):
 
 
 def source_root(graph, signal, *, projection=True):
-    """Follow instantaneous spatial operations to their input or spike source."""
+    """Follow instantaneous spatial operations to their population or input source."""
     operations = {f"{row['id']}.value": row for row in graph.get("operations", [])}
     seen = set()
     while signal in operations:
@@ -72,13 +72,6 @@ def source_root(graph, signal, *, projection=True):
                 "projection operation sources must be spatial pooling chains"
             )
         signal = row["sources"][0]
-    owner, _, port = signal.partition(".")
-    if (
-        projection
-        and any(p["id"] == owner for p in graph.get("populations", []))
-        and port != "spikes"
-    ):
-        raise ValueError("population projection sources must use the spikes port")
     return signal
 
 

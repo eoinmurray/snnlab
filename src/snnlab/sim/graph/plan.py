@@ -12,6 +12,7 @@ from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.connectivity import resolve_autapses
 from snnlab._shared.gains import validate as validate_gain
+from snnlab._shared.projections import continuous_source, delay_steps, validate_source
 from snnlab._shared.spatial import source_root, validate_spatial
 
 
@@ -193,6 +194,7 @@ class PlannedProjection:
     parameter: str
     enabled: bool
     root_source: str = ""
+    continuous: bool = False
 
 
 @dataclass(frozen=True)
@@ -258,6 +260,7 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
     parameter_rows = {row["id"]: row for row in graph.get("parameters", [])}
     planned = []
     for row in graph.get("projections", []):
+        validate_source(graph, row)
         expected_unit = E.synapse_unit(row["synapse"])
         if "modulation" in row:
             validate_gain(row["modulation"])
@@ -272,26 +275,22 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
             )
         for parameter_id in row.get("parameters", []):
             unit = parameter_rows.get(parameter_id, {}).get("unit")
-            if unit != expected_unit:
+            weight_unit = E.synapse_weight_unit(row["synapse"])
+            if unit != weight_unit:
                 raise ValueError(
-                    f"{row['id']}: projection parameter {parameter_id} requires unit {expected_unit}, got {unit}"
+                    f"{row['id']}: projection parameter {parameter_id} requires unit {weight_unit}, got {unit}"
                 )
-        delay = row.get("delay")
-        delay_ms = 0.0 if delay is None else float(delay["value"])
-        raw_steps = delay_ms / dt
-        steps = int(round(raw_steps))
-        if not math.isclose(raw_steps, steps, abs_tol=1e-9):
-            raise ValueError(
-                f"{row['id']}: delay {delay_ms} ms is not an integer number of dt={dt} ms steps"
-            )
+        steps = delay_steps(row, dt)
         root = source_root(graph, row["source"])
+        continuous = continuous_source(graph, row)
         source_owner = root.partition(".")[0]
-        # Recurrent/feedback edges are causal even when the author declares
-        # zero additional delay. Feedforward population edges may consume the
-        # current-step source after topological scheduling.
+        # Spike recurrent/feedback edges are causal at zero declared delay.
+        # Continuous population edges always read beginning-of-step snapshots;
+        # feedforward spike edges can consume current-step emissions.
         if (
             source_owner in {p["id"] for p in graph.get("populations", [])}
             and row.get("connection") != "feedforward"
+            and not continuous
         ):
             steps = max(1, steps)
         tau = float(row["synapse"].get("tau", {"value": 1.0})["value"])
@@ -311,6 +310,7 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
                 parameter=row["parameters"][0],
                 enabled=row.get("enabled", True),
                 root_source=root,
+                continuous=continuous,
             )
         )
     populations = list(graph.get("populations", []))
@@ -320,6 +320,7 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
         for p in planned
         if p.enabled
         and p.delay_steps == 0
+        and not p.continuous
         and p.root_source.partition(".")[0] in population_ids
     ]
     ordered: list[Mapping[str, Any]] = []

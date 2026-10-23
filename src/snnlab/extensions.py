@@ -31,6 +31,7 @@ class Definition:
     package: str | None = None
     package_version: str | None = None
     capture_safe: bool = False
+    input_unit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -147,6 +148,7 @@ def register(
     package=None,
     package_version=None,
     capture_safe=False,
+    input_unit=None,
 ) -> Definition:
     """Register a definition once; identifiers look like ``my_lab.model/v1``."""
     if category not in _CATEGORIES:
@@ -188,6 +190,10 @@ def register(
         raise ValueError("extension unit must be non-empty")
     if category in {"neuron", "synapse"} and unit not in {"nA", "uS"}:
         raise ValueError("neuron input and synapse output units must be nA or uS")
+    if input_unit is not None and (
+        category != "synapse" or input_unit not in {"1", "mV", "nA", "uS"}
+    ):
+        raise ValueError("synapse input_unit must be 1, mV, nA or uS")
     if category == "neuron" and initialize is None:
         raise ValueError("custom neurons require an initializer for their tensor state")
     units = dict(state_units or {})
@@ -215,6 +221,7 @@ def register(
         package,
         package_version,
         capture_safe,
+        input_unit,
     )
     _REGISTRY[key] = definition
     return definition
@@ -246,6 +253,15 @@ def synapse_unit(spec: Mapping[str, Any]) -> str:
     if spec.get("kind") == "custom_synapse":
         return resolve("synapse", spec).unit
     return "uS"
+
+
+def synapse_input_unit(spec: Mapping[str, Any]) -> str | None:
+    """None retains the historical weighted-drive contract."""
+    return resolve("synapse", spec).input_unit if is_custom(spec) else None
+
+
+def synapse_weight_unit(spec: Mapping[str, Any]) -> str:
+    return "1" if synapse_input_unit(spec) is not None else synapse_unit(spec)
 
 
 def neuron_unit(spec: Mapping[str, Any]) -> str:
@@ -298,6 +314,7 @@ def register_synapse(
     *,
     initialize=None,
     output_unit="nA",
+    input_unit=None,
     state_units=None,
     validate=None,
     package=None,
@@ -310,6 +327,7 @@ def register_synapse(
         step,
         initialize=initialize,
         unit=output_unit,
+        input_unit=input_unit,
         state_units=state_units,
         validate=validate,
         package=package,
@@ -506,6 +524,8 @@ def _descriptor(category, definition):
     }
     if definition.capture_safe:
         row["capture_safe"] = True
+    if definition.input_unit is not None:
+        row["input_unit"] = definition.input_unit
     if roles <= definition.references.keys():
         row["implementation"] = dict(definition.references)
     if definition.package is not None:
@@ -637,6 +657,7 @@ def restore(data):
             initialize=implementation.get("initialize"),
             validate=implementation.get("validate"),
             unit=row.get("unit", "1"),
+            input_unit=row.get("input_unit"),
             state_units=row.get("state_units", {}),
             classification=row.get("classification", False),
             capture_safe=row.get("capture_safe", False),

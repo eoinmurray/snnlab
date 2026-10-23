@@ -103,6 +103,7 @@ def register_synapse(
     *,
     initialize=None,
     output_unit="nA",
+    input_unit=None,
     state_units=None,
     validate=None,
     package=None,
@@ -138,6 +139,50 @@ def exponential_step(context):
 ```
 
 Register this importable function with `register_synapse`; omitting `initialize` supplies the zero-valued `value` state. There is no per-cell loop or host read, and the fixed scalar decay can specialize during compilation. The drive cast preserves state dtype under autocast. The weighted drive is already supplied: do not multiply weights or loop over source edges again. The [runnable customisation example](/custom-neurons-and-synapses) includes a state initializer, configuration validation and capture-safe registration.
+
+### Voltage-driven graded connections
+
+A custom synapse can declare `input_unit="mV"` and receive `pre.voltage` or a declared `pre.state("activation")` port with matching units. Explicit drive units may be `"1"`, `"mV"`, `"nA"` or `"uS"`. Projection weights then have unit `"1"`; `output_unit` still specifies the current or conductance delivered to the postsynaptic neuron. Omitting `input_unit` preserves the historical spike/external-input contract, including weight units and saved bundle descriptors.
+
+```python
+import torch
+from snnlab import extensions, lang
+
+def graded_init(context):
+    gate = torch.full(context.shape, -60.0,
+                      device=context.device, dtype=context.dtype)
+    return {"gate": gate, "value": torch.zeros_like(gate)}
+
+def graded_step(context):
+    gate = context.state["gate"]
+    gate = gate + context.dt_ms / 2.0 * (context.drive - gate)
+    conductance = 0.04 * torch.sigmoid(0.3 * (gate + 50.0))
+    return {"gate": gate, "value": conductance}
+
+extensions.register_synapse(
+    "my_lab.graded/v1", graded_step, initialize=graded_init,
+    input_unit="mV", output_unit="uS", state_units={"gate": "mV"},
+)
+edge = net.connect(
+    pre.voltage, post.inhibitory, name="graded_inhibition",
+    synapse=lang.CustomSynapse("my_lab.graded/v1"),
+    weight=lang.Constant(1.0), initialization_scaling="direct",
+    connection="recurrent",
+)
+net.output("gate", edge.state("gate"))
+net.output("conductance", edge.conductance)
+net.output("voltage", post.voltage)
+```
+
+The constants above use milliseconds, millivolts and microsiemens. The gate filters voltage with a 2 ms time constant, and maximum output conductance is 0.04 uS. The postsynaptic conductance-based neuron converts this output into current using its reversal potential and its own beginning-of-step voltage. A custom target neuron chooses its own reversal potential.
+
+1. All continuous population sources sample beginning-of-step state, after any explicit voltage reset and before any membrane advances. Reciprocal edges therefore read the same time origin regardless of population order. Gates update from that snapshot and their new outputs contribute to the current membrane step. Zero-delay continuous edges may form cycles, including with the default `connection="feedforward"`; spike feedforward scheduling is unchanged.
+2. A custom state source samples the previous completed state, including its initializer on the first step. It does **not** expose an activation newly computed during this step. Models needing a gate calculated from old voltage should implement that gate in the synapse callback. Newly updated activation sampling is unsupported.
+3. `drive = sampled_source @ weight` occurs **before** the nonlinear callback, including the usual initialization scaling, autapse mask and optional gain modulation. There is one gate per target cell, filtering the weighted aggregate; this is not a separate gate per source-target pair. Use `initialization_scaling="direct"` for literal weights. Put maximum conductance/output scaling in the callback; multiplying voltage before a sigmoid changes its activation curve.
+4. An explicit delay of `d * dt` adds `d` whole steps to the beginning-of-step sample. For `d=0` the callback reads the current step's initial state; for `d=1` it reads the preceding step's initial state. Prehistory holds each source's initialized value. Delayed source history and synapse gates survive saved runtime continuation. Recurrent continuous edges add no implicit delay; existing spike edges retain their causal delay rules. The `feedback` connection label still requires an explicit positive delay.
+5. Direct voltage and declared neuron state ports are supported. Pre-reset voltage, projection outputs and operation chains over continuous population signals are unsupported projection sources. Source units must match `input_unit`; weights must be dimensionless and synapse output units must match the target neuron input units.
+
+The [reciprocal graded-synapse example](https://github.com/eoinmurray/snnlab/tree/main/examples/graded-synapses) compares two passive membranes with an independent gate-first NumPy Euler implementation in CPU float64 and exports gate, conductance and voltage traces. It demonstrates reusable graph coupling; it does not reproduce the intrinsic neuron dynamics of the Neuromorphic Toolbox half-centre oscillator.
 
 ## Initializers and constraints
 

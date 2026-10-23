@@ -1078,6 +1078,38 @@ class GraphExecutor(nn.Module):
                     refractory[owner] = state["refractory"]
                 else:
                     synapse_states[owner] = state
+        continuous_delays = {}
+        for projection in self.plan.projections:
+            if projection.continuous:
+                continuous_delays[projection.source] = max(
+                    continuous_delays.get(projection.source, 0), projection.delay_steps
+                )
+
+        def continuous_value(signal):
+            owner, _, port = signal.partition(".")
+            return voltage[owner] if port == "voltage" else neuron_states[owner][port]
+
+        continuous_histories = {}
+        for signal, length in continuous_delays.items():
+            if not length:
+                continue
+            state_key = f"continuous_history/{signal}"
+            initial = continuous_value(signal)
+            if runtime_state is None:
+                values = initial.unsqueeze(0).expand(length, *initial.shape).clone()
+            else:
+                if state_key not in saved_custom:
+                    raise ValueError(f"runtime state missing {state_key}")
+                values = saved_custom[state_key].to(device)
+                X.checked_tensor(
+                    values,
+                    shape=(length, *initial.shape),
+                    device=device,
+                    dtype=parameter_dtype,
+                    name=state_key,
+                )
+            continuous_histories[signal] = list(values.unbind(0))
+            custom_state[state_key] = values
         if set(saved_custom) - set(custom_state):
             raise ValueError("runtime state has unexpected custom state tensors")
         state_traces = {}
@@ -1349,6 +1381,12 @@ class GraphExecutor(nn.Module):
                 step_pre_reset = {}
                 new_spikes: dict[str, torch.Tensor] = {}
                 source_cache = {}
+                # Freeze every continuous population source before any membrane
+                # update. Reciprocal edges therefore share the same time origin.
+                old_continuous = {
+                    signal: continuous_value(signal).clone()
+                    for signal in continuous_delays
+                }
 
                 def projection_source(signal, delay):
                     key = (signal, delay)
@@ -1359,13 +1397,20 @@ class GraphExecutor(nn.Module):
                         operation = spatial_operations[signal]
                         pending.append(operation)
                         signal = operation["sources"][0]
-                    owner = signal.partition(".")[0]
+                    owner, _, port = signal.partition(".")
                     if owner in populations:
-                        result = (
-                            new_spikes[owner]
-                            if delay == 0
-                            else histories[owner]._values[-delay]
-                        )
+                        if port != "spikes":
+                            result = (
+                                old_continuous[signal]
+                                if delay == 0
+                                else continuous_histories[signal][-delay]
+                            )
+                        else:
+                            result = (
+                                new_spikes[owner]
+                                if delay == 0
+                                else histories[owner]._values[-delay]
+                            )
                     else:
                         source_t = t - delay
                         result = (
@@ -1598,6 +1643,10 @@ class GraphExecutor(nn.Module):
                     voltage_traces[name].append(voltage[name])
                 for name in populations:
                     histories[name].push(spikes[name])
+                for signal, values in continuous_histories.items():
+                    values.append(old_continuous[signal])
+                    del values[0]
+                    custom_state[f"continuous_history/{signal}"] = torch.stack(values)
                 for projection_id in conductance_traces:
                     projection = next(
                         p for p in self.plan.projections if p.id == projection_id
