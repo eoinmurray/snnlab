@@ -20,6 +20,7 @@ from snnlab.sim.graph import dynamics as M
 from snnlab.sim.graph import extensions as X
 from snnlab.sim.graph.blocks import network_block, signal_parameters
 from snnlab.sim.graph.kernels import (
+    compiler_wrapper_policy,
     constraint_kernel,
     neuron_kernel,
     operation_kernel,
@@ -655,6 +656,7 @@ class GraphExecutor(nn.Module):
         retain_final_state: bool = True,
         retain_runtime_state: bool = True,
     ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
+        probe = getattr(self, "_stream_probe", None)
         trace = current_trace()
         if trace is not None and not trace.active:
             trace = None
@@ -733,20 +735,27 @@ class GraphExecutor(nn.Module):
             )
             for row in self.plan.graph.get("inputs", [])
         }
-        expected_compatibility = runtime_state_compatibility(
-            self.plan,
-            projection_mode=self.projection_mode,
-            threshold_inclusive=self.surrogate_threshold_inclusive
-            if self.surrogate is None
-            else True,
-        )
-        expected_signature = runtime_state_signature(
-            self.plan,
-            projection_mode=self.projection_mode,
-            threshold_inclusive=self.surrogate_threshold_inclusive
-            if self.surrogate is None
-            else True,
-        )
+        prepared = getattr(self, "_stream_metadata", None)
+        if prepared is None:
+            expected_compatibility = runtime_state_compatibility(
+                self.plan,
+                projection_mode=self.projection_mode,
+                threshold_inclusive=self.surrogate_threshold_inclusive
+                if self.surrogate is None
+                else True,
+            )
+            expected_signature = runtime_state_signature(
+                self.plan,
+                projection_mode=self.projection_mode,
+                threshold_inclusive=self.surrogate_threshold_inclusive
+                if self.surrogate is None
+                else True,
+            )
+        else:
+            expected_compatibility = prepared["compatibility"]
+            expected_signature = prepared["signature"]
+        if probe is not None:
+            probe.mark("State restore / init")
         if runtime_state is None:
             voltage = {
                 name: (
@@ -908,6 +917,8 @@ class GraphExecutor(nn.Module):
                         f"runtime state input_histories.{name} dtype expected {inputs[name].dtype}, got {value.dtype}"
                     )
             completed_steps = int(runtime_state.completed_steps)
+        if probe is not None:
+            probe.mark("Execution setup / metadata")
         segments = SegmentAccumulator(
             segment_identity(
                 resets, decisions, graph=self.plan.graph, batch_size=batch
@@ -1117,7 +1128,9 @@ class GraphExecutor(nn.Module):
             raise TypeError("retain_outputs must be boolean")
         if type(batch_offset) is not int or batch_offset < 0:
             raise ValueError("batch_offset must be a non-negative integer")
-        signal_axes = _signal_axes(self.plan.graph)
+        signal_axes = (
+            prepared["axes"] if prepared is not None else _signal_axes(self.plan.graph)
+        )
         recorder = Recorder(
             recording,
             axes=signal_axes,
@@ -1199,10 +1212,14 @@ class GraphExecutor(nn.Module):
             if f"{p.id}.{projection_ports[p.id]}" in needed_signals
         }
 
-        effective_weights = {
-            name: self._mask_autapses(name, value)
-            for name, value in self.parameter_map().items()
-        }
+        effective_weights = (
+            prepared["effective_weights"]
+            if prepared is not None
+            else {
+                name: self._mask_autapses(name, value)
+                for name, value in self.parameter_map().items()
+            }
+        )
         projection_gains = {
             projection.id: sample_gain(
                 projection_rows[projection.id]["modulation"],
@@ -1324,6 +1341,8 @@ class GraphExecutor(nn.Module):
             }
             for begin in range(0, steps, self.compile_block_steps):
                 end = min(begin + self.compile_block_steps, steps)
+                if probe is not None:
+                    probe.mark("Compiled numerical block")
                 (
                     voltage,
                     refractory,
@@ -1346,6 +1365,8 @@ class GraphExecutor(nn.Module):
                     {name: value[begin:end] for name, value in gain_tensors.items()},
                     integrator_sum,
                 )
+                if probe is not None:
+                    probe.mark("Output / history assembly")
                 for name in spike_traces:
                     spike_traces[name].extend(samples[f"{name}.spikes"].unbind())
                 for name in voltage_traces:
@@ -1375,6 +1396,8 @@ class GraphExecutor(nn.Module):
                 for key, value in state.items():
                     custom_state[f"neuron/{name}/{key}"] = value
         else:
+            if probe is not None:
+                probe.mark("Eager simulation / histories")
             for t in range(steps):
                 segments.boundary(completed_steps + t, self.plan.dt_ms)
                 segments.reset(completed_steps + t, voltage)
@@ -1655,6 +1678,8 @@ class GraphExecutor(nn.Module):
                         conductance[(projection.id, projection.polarity)]
                     )
 
+        if probe is not None:
+            probe.mark("Output / history assembly")
         outputs: dict[str, torch.Tensor] = {}
         signal_values: dict[str, torch.Tensor] = {
             f"{name}.value": value for name, value in inputs.items()
@@ -1865,6 +1890,8 @@ class GraphExecutor(nn.Module):
         )
         segments.boundary(completed_steps + steps, self.plan.dt_ms)
         segments.finish_records()
+        if probe is not None:
+            probe.mark("Runtime-state snapshot")
         next_runtime_state = None
         if retain_runtime_state:
             next_input_histories = {
@@ -1914,7 +1941,8 @@ class GraphExecutor(nn.Module):
                 if measurement is not None
                 else {},
             )
-        signal_axes = _signal_axes(self.plan.graph)
+        if probe is not None:
+            probe.mark("Executor result / metadata")
         result = ExecutionResult(
             executor="graph",
             outputs=outputs,
@@ -1969,6 +1997,9 @@ class GraphExecutor(nn.Module):
                 "extension_validation": self.extension_validation,
                 "projection_mode": self.projection_mode,
                 "compile_mode": self.compile_mode,
+                "compiler_wrapper": compiler_wrapper_policy(
+                    device, parameter_dtype, self.compile_mode
+                ),
                 "compiler_precision_policy": "snnlab.eager-precision-casts/v1"
                 if self.compile_mode is not None
                 else None,

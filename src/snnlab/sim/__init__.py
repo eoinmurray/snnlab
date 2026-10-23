@@ -45,6 +45,8 @@ _EXPORTS = {
     "EpochReport": "training.policies",
     "build": "requests.api",
     "simulate": "requests.api",
+    "prepare_stream": "runtime.streaming",
+    "StreamSession": "runtime.streaming",
     "train": "requests.api",
     "resolve_device": "requests.handlers",
     "GraphExecutor": "graph.executor",

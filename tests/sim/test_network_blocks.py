@@ -370,9 +370,259 @@ def test_actual_inductor_block_forward_backward(device):
         result = model(
             {"events": torch.ones(13, 2, 2, device=device)}, diagnostics=False
         )
+        wrapper = result.metrics["compiler_wrapper"]
+        assert wrapper["selected"] == (
+            "eager" if size == 1 else "python" if device == "mps" else "cpp"
+        )
+        if size > 1 and device == "mps":
+            assert "get_mps_lib" in wrapper["reason"]
         result.outputs["voltage"].sum().backward()
         results.append(
             (result.outputs["voltage"], model.parameter_map()[parameter].grad)
         )
     for expected, actual in zip(*results, strict=True):
         torch.testing.assert_close(expected, actual, atol=3e-4, rtol=3e-4)
+
+
+def projection_batching_circuit(constructor, delay, feedback):
+    net = lang.Network("projection-batching", dt=0.5 * lang.ms)
+    source = net.input(
+        "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+    )
+    cells = net.population("cells", size=3, neuron=constructor())
+    readouts = [
+        net.population(name, size=2, neuron=constructor())
+        for name in ("readout", "other")
+    ]
+    synapse = (
+        lang.ExponentialCurrent if cells.neuron.kind.startswith("cuba_") else lang.AMPA
+    )(tau=3 * lang.ms)
+    net.connect(
+        source,
+        cells.excitatory,
+        name="drive",
+        synapse=synapse,
+        delay=delay * lang.ms,
+        weight=lang.Constant(0.8),
+    )
+    net.connect(
+        cells.spikes,
+        cells.excitatory,
+        name="recurrence",
+        synapse=synapse,
+        connection="recurrent",
+        delay=0.5 * lang.ms,
+        weight=lang.Constant(0.1),
+    )
+    for readout in readouts:
+        edge = net.connect(
+            cells.spikes,
+            readout.excitatory,
+            name=f"to_{readout.id}",
+            synapse=synapse,
+            delay=delay * lang.ms,
+            weight=lang.Constant(0.3),
+        )
+        net.output(
+            f"{readout.id}_current",
+            edge.current if cells.neuron.kind.startswith("cuba_") else edge.conductance,
+        )
+    if feedback:
+        net.connect(
+            readouts[0].spikes,
+            cells.excitatory,
+            name="feedback",
+            synapse=synapse,
+            delay=0.5 * lang.ms,
+            weight=lang.Constant(0.1),
+        )
+    for pop in [cells, *readouts]:
+        net.output(f"{pop.id}_voltage", pop.voltage)
+        net.output(f"{pop.id}_spikes", pop.spikes)
+    return lang.compile(net).graph
+
+
+@pytest.mark.parametrize("constructor", [lang.CUBA_LIF, lang.COBA_ALIF])
+@pytest.mark.parametrize("delay", [0, 1, 3])
+@pytest.mark.parametrize("feedback", [False, True])
+@pytest.mark.parametrize("all_gradients", [False, True])
+def test_window_projection_batching_gradients_delays_and_continuation(
+    constructor, delay, feedback, all_gradients, capture_backend
+):
+    graph = projection_batching_circuit(constructor, delay, feedback)
+    if all_gradients:
+        graph["outputs"] = [
+            row for row in graph["outputs"] if row["id"].startswith("readout_")
+        ]
+    trainable = tuple(
+        p["id"]
+        for p in graph["parameters"]
+        if (all_gradients and p["id"] != "to_other.weight") or p["id"] == "drive.weight"
+    )
+    results = []
+    for block_steps in (1, 8):
+        model = GraphExecutor(
+            plan_graph(graph),
+            compile_block_steps=block_steps,
+            compile_mode="default" if block_steps > 1 else None,
+            trainable_parameters=trainable,
+        )
+        inputs = torch.linspace(0.1, 1.9, 116).reshape(29, 2, 2).requires_grad_()
+        result = model({"events": inputs}, diagnostics=False)
+        if block_steps > 1:
+            assert result.metrics["execution_path"]["selected"] == "compiled_blocks"
+        loss = sum(value.sum() for value in result.outputs.values())
+        loss.backward()
+        results.append((result, inputs.grad, [p.grad for p in model.parameters()]))
+        with torch.no_grad():
+            first = model({"events": inputs[:3]}, diagnostics=False)
+            tail = model(
+                {"events": inputs[3:]},
+                diagnostics=False,
+                runtime_state=first.runtime_state,
+            )
+        for name, expected in result.outputs.items():
+            torch.testing.assert_close(
+                torch.cat((first.outputs[name], tail.outputs[name])),
+                expected,
+                atol=3e-5,
+                rtol=3e-5,
+            )
+    expected, actual = results
+    for name in expected[0].outputs:
+        torch.testing.assert_close(
+            actual[0].outputs[name], expected[0].outputs[name], atol=3e-5, rtol=3e-5
+        )
+    torch.testing.assert_close(actual[1], expected[1], atol=3e-5, rtol=3e-5)
+    for a, b in zip(actual[2], expected[2], strict=True):
+        torch.testing.assert_close(a, b, atol=3e-5, rtol=3e-5)
+
+
+def test_window_projection_batching_matrix_call_count(capture_backend):
+    graph = projection_batching_circuit(lang.CUBA_LIF, 0, False)
+    model = GraphExecutor(
+        plan_graph(graph), compile_mode="default", compile_block_steps=10
+    )
+    inputs = {"events": torch.ones(10, 1, 2)}
+    with torch.no_grad():
+        model(inputs, diagnostics=False)
+        with torch.profiler.profile(
+            activities=[torch.profiler.ProfilerActivity.CPU]
+        ) as profile:
+            result = model(inputs, diagnostics=False)
+    assert result.metrics["execution_path"]["selected"] == "compiled_blocks"
+    counts = {row.key: row.count for row in profile.key_averages()}
+    # Ten recurrent products plus one input and two terminal readout products.
+    assert counts.get("aten::mm", 0) == 13
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="MPS unavailable"
+            ),
+        ),
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_actual_inductor_batched_readout_forward_backward(device):
+    graph = projection_batching_circuit(lang.CUBA_LIF, 1, False)
+    graph["outputs"] = [
+        row for row in graph["outputs"] if row["id"].startswith("readout_")
+    ]
+    results = []
+    for steps in (1, 4):
+        model = GraphExecutor(
+            plan_graph(graph),
+            compile_mode="default" if steps > 1 else None,
+            compile_block_steps=steps,
+            trainable_parameters=tuple(
+                p["id"] for p in graph["parameters"] if p["id"] != "to_other.weight"
+            ),
+        ).to(device)
+        values = torch.ones(17, 2, 2, device=device, requires_grad=True)
+        result = model({"events": values}, diagnostics=False)
+        if steps > 1:
+            assert result.metrics["execution_path"]["selected"] == "compiled_blocks"
+        sum(value.sum() for value in result.outputs.values()).backward()
+        results.append(
+            (result.outputs, values.grad, [p.grad for p in model.parameters()])
+        )
+    expected, actual = results
+    for name in expected[0]:
+        torch.testing.assert_close(
+            actual[0][name], expected[0][name], atol=3e-5, rtol=3e-5
+        )
+    torch.testing.assert_close(actual[1], expected[1], atol=3e-5, rtol=3e-5)
+    for a, b in zip(actual[2], expected[2], strict=True):
+        torch.testing.assert_close(a, b, atol=3e-5, rtol=3e-5)
+
+
+@pytest.mark.parametrize("feedback_mode", ["enabled", "disabled", "self"])
+def test_batched_projection_gains_and_readout_dependencies(
+    feedback_mode, capture_backend
+):
+    graph = projection_batching_circuit(lang.CUBA_LIF, 1, True)
+    for row in graph["projections"]:
+        row["modulation"] = {
+            "kind": "ramp_gain",
+            "start_ms": 0.5,
+            "end_ms": 5.0,
+            "before": 0.2,
+            "after": 1.7,
+        }
+        if row["id"] == "feedback":
+            if feedback_mode == "disabled":
+                row["enabled"] = False
+            elif feedback_mode == "self":
+                row["target"] = "readout.excitatory"
+                row["connection"] = "recurrent"
+                parameter = next(
+                    p for p in graph["parameters"] if p["id"] == row["parameters"][0]
+                )
+                parameter["shape"] = [2, 2]
+    values = torch.ones(19, 2, 2)
+    results = []
+    with torch.no_grad():
+        for size in (1, 4):
+            model = GraphExecutor(
+                plan_graph(graph),
+                compile_mode="default" if size > 1 else None,
+                compile_block_steps=size,
+            )
+            first = model({"events": values[:7]}, diagnostics=False)
+            tail = model(
+                {"events": values[7:]},
+                diagnostics=False,
+                runtime_state=first.runtime_state,
+            )
+            if size > 1:
+                assert tail.metrics["execution_path"]["selected"] == "compiled_blocks"
+            results.append((first, tail))
+    for expected, actual in zip(*results, strict=True):
+        for name in expected.outputs:
+            torch.testing.assert_close(
+                actual.outputs[name], expected.outputs[name], atol=3e-5, rtol=3e-5
+            )
+        for group in (
+            "voltages",
+            "currents",
+            "population_histories",
+            "input_histories",
+        ):
+            for name, state in getattr(expected.runtime_state, group).items():
+                torch.testing.assert_close(
+                    getattr(actual.runtime_state, group)[name],
+                    state,
+                    atol=3e-5,
+                    rtol=3e-5,
+                )

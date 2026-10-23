@@ -11,7 +11,7 @@ from typing import Literal
 
 @dataclass(frozen=True, kw_only=True)
 class Performance:
-    """Execution optimizations shared by build, simulate and train.
+    """Execution optimizations shared by build, simulate, train and prepared streams.
 
     Defaults preserve the automatic execution policy. Compilation and capture
     add startup cost; use ``compile_mode=None`` for short eager runs.
@@ -88,6 +88,7 @@ def _performance_from_spec(spec):
 
 def _performance_report(spec, model, metrics, *, device, executed, dataset=None):
     """Report policy separately from observed paths; never imply build ran work."""
+    from snnlab.sim.graph.kernels import compiler_wrapper_policy
     from snnlab.sim.graph.precision import amp_enabled
     from snnlab.sim.inputs.bindings import DatasetSnapshotBinding
 
@@ -119,6 +120,11 @@ def _performance_report(spec, model, metrics, *, device, executed, dataset=None)
         "resolved": {
             "device": str(device),
             "compile_mode": model.compile_mode,
+            "compiler_wrapper": compiler_wrapper_policy(
+                parameter.device, parameter.dtype, model.compile_mode
+            )
+            if executed and parameter is not None
+            else {"selected": "not_run"},
             "compile_block_steps": model.compile_block_steps,
             "projection_mode": model.projection_mode,
             "precision": precision,

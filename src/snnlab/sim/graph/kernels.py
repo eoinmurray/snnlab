@@ -21,37 +21,47 @@ def precision_fallback(device, dtype):
     )
 
 
+def compiler_wrapper_policy(device, dtype, compile_mode):
+    if compile_mode is None:
+        return {"requested": "off", "selected": "eager", "reason": None}
+    if precision_fallback(device, dtype):
+        return {
+            "requested": "native",
+            "selected": "eager_tensor_graph",
+            "reason": "PyTorch 2.10 reduced-precision CPU fallback",
+        }
+    if device.type == "mps":
+        return {
+            "requested": "native",
+            "selected": "python",
+            "reason": "MPS native wrapper code generation fails with undeclared get_mps_lib_*_handle symbols; compiled Metal kernels retain Python dispatch",
+        }
+    return {"requested": "native", "selected": "cpp", "reason": None}
+
+
 def prepare_kernel(step, compile_mode, *, fullgraph=True):
     if compile_mode is not None:
         # Each prepared closure owns its compiler guards. Sharing a code object
         # across unrelated configurations exhausts Dynamo's cache limit.
         step.__code__ = step.__code__.replace(co_name=f"tensor_step_{id(step)}")
-        options = {"emulate_precision_casts": True}
-        if torch.__version__.split("+")[0].startswith("2.10."):
-            # 2.10 CPU vector codegen rejects precision casts; scalar codegen
-            # compiles but still changes recurrent gradients. Choose the eager
-            # tensor graph at compile time, without per-step argument scans.
-            def backend(graph, examples):
-                if any(
-                    isinstance(value, torch.Tensor)
-                    and precision_fallback(value.device, value.dtype)
-                    for value in examples
-                ):
-                    return graph.forward
-                return torch._inductor.compile(graph, examples, options=options)
 
-            return torch.compile(
-                step, backend=backend, fullgraph=fullgraph, dynamic=False
-            )
-        return torch.compile(
-            # Fusion must retain eager rounding at intermediate dtype casts.
-            # In bfloat16, dropping those casts changed recurrent gradients by
-            # over 30%, even for compiled individual kernels.
-            step,
-            options=options,
-            fullgraph=fullgraph,
-            dynamic=False,
-        )
+        def backend(graph, examples):
+            tensors = [value for value in examples if isinstance(value, torch.Tensor)]
+            if any(precision_fallback(value.device, value.dtype) for value in tensors):
+                # Preserve the existing PyTorch 2.10 CPU precision fallback.
+                return graph.forward
+            # Device is known at compilation, after model/input movement. MPS
+            # currently has broken C++ wrapper codegen, so keep its Metal kernels
+            # compiled with Python dispatch. Other devices use native dispatch.
+            # Keep eager rounding at intermediate casts; omitting these casts
+            # previously changed recurrent BF16 gradients substantially.
+            options = {
+                "emulate_precision_casts": True,
+                "cpp_wrapper": not any(value.device.type == "mps" for value in tensors),
+            }
+            return torch._inductor.compile(graph, examples, options=options)
+
+        return torch.compile(step, backend=backend, fullgraph=fullgraph, dynamic=False)
     return step
 
 

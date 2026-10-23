@@ -3,7 +3,7 @@ title: snnlab.sim
 description: Build, simulate and train networks; bind inputs, record results, save state and integrate with PyTorch.
 ---
 
-Import execution tools with `from snnlab import sim`. The three entry points are `build`, `simulate` and `train`; inference uses `simulate` with a weight checkpoint. Configure execution with keyword arguments and the types below.
+Import execution tools with `from snnlab import sim`. Use `build`, `simulate` and `train` for finite runs, and `prepare_stream` for prepared, stateful inference windows. Finite inference uses `simulate` with a weight checkpoint. Configure execution with keyword arguments and the types below.
 
 A typical workflow is `lang.compile(net)`, `sim.simulate(bundle=bundle, ...)`, then `result.numpy(batch=0)` for analysis. `build(...).model` provides a PyTorch module for external optimization loops or repeated forward calls. All public imports on this page come from `snnlab.sim`.
 
@@ -233,6 +233,15 @@ or choose a device. In the full 20-epoch digits L4 run, automatic execution took
 were 22.56 ms versus 312.37 ms. The previous CPU call took 3.90 s. These are single
 measurements, and BF16 changed the final accuracy; see the retained
 [GPU benchmark report](https://github.com/eoinmurray/snnlab/blob/main/benchmarks/execution/results/automatic-defaults/digits-gpu-20261020/README.md).
+
+Compiled CPU/CUDA execution uses a native C++ dispatch wrapper while preserving
+precision-cast emulation. MPS uses compiled Metal kernels with Python dispatch:
+native-wrapper generation currently fails on undeclared `get_mps_lib_*_handle`
+symbols. The PyTorch 2.10 reduced-precision CPU eager-tensor fallback is unchanged.
+`result.metrics["compiler_wrapper"]`,
+`result.metrics["performance"]["resolved"]["compiler_wrapper"]`, and
+`stream.info["compiler_wrapper"]` report the selection and reason. A native wrapper
+adds compilation cost and does not establish an end-to-end speedup.
 
 `result.metrics["performance"]` records the requested object, resolved device and
 policies, observed execution paths, capture counts and fallback reasons. The
@@ -1343,6 +1352,118 @@ Tie-break metrics are compared in order after exact ties; an exact tie retains t
 | `better(values, previous)` | Lexicographic comparison under declared directions; `previous=None` accepts the first candidate. |
 
 Disabled and legacy modes reject extra epoch-metric settings. Resume authenticates selection/evaluation contracts and retains the best candidate across calls. See [request selection rules](/api/sim#inputs-and-execution-settings) and [selection results](/api/sim#checkpoint-selection).
+
+## Prepared streaming sessions
+
+Use `prepare_stream` to run a fixed network repeatedly on consecutive input
+windows. The session owns continuing neuron, synapse and delay state; application
+code supplies inputs and schedules each call. This is inference with frozen
+weights, rather than a training loop.
+
+The following complete example uses 0.1 ms numerical steps and 1 ms windows:
+
+```python
+import torch
+from snnlab import lang, sim
+
+network = lang.Network("streaming-example", dt=0.1 * lang.ms)
+events = network.input(
+    "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+)
+cells = network.population(
+    "cells", size=8, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms)
+)
+network.connect(
+    events, cells.excitatory, name="drive",
+    synapse=lang.AMPA(tau=5 * lang.ms), weight=lang.Constant(0.1),
+)
+network.output("spikes", cells.spikes)
+
+# Example input source: 100 Hz Poisson counts in 0.1 ms bins.
+incoming_windows = (
+    torch.poisson(torch.full((10, 1, 2), 0.01)) for _ in range(3)
+)
+with sim.prepare_stream(
+    network, window_steps=10, batch_size=1, device="cpu"
+) as stream:
+    for window in incoming_windows:
+        result = stream.advance({"events": window})
+        spikes = result.outputs["spikes"]  # (10, 1, 8), independent per call
+    snapshot = stream.export_state()
+    print(stream.completed_steps)  # 30 steps = 3 ms of model time
+    stream.reset()                 # Restart with initial dynamic state.
+    stream.reset(snapshot)         # Resume the saved 3 ms state.
+```
+
+This loop runs as fast as execution permits; it does not sleep for 1 ms between
+calls. Input window duration describes model time, independently of elapsed wall
+time. The input mapping keys are the network's declared input names, and output
+keys come from `network.output(...)`.
+
+### Preparation and execution contract
+
+At a network timestep of 0.1 ms, `window_steps=10` advances 1 ms of model time per
+call. `prepare_stream` accepts a `lang.Network`, compiled graph mapping,
+`GraphPlan`, `lang.Bundle`, bundle path or `GraphExecutor`. It copies the graph
+and owns frozen weights; an executor supplies its current weights, while other
+inputs use `seed=0` by default. Preparing a session never freezes or changes the
+source training model.
+
+The keyword arguments are `window_steps` (required positive integer),
+`batch_size=1`, `device=None`, `dtype=None`, `seed=0`, `performance=None`,
+`retain_outputs=True`, and `warmup_windows=2`. Window/batch size and input feature
+shapes stay fixed. Device/dtype inherit an existing executor or default to normal
+automatic device selection and float32. Mask inputs use bool. Pass
+`Performance(...)` for compile/block/precision settings. Without an explicit
+policy, blocks span the window up to 64 steps (four on MPS), precision is highest
+(or inherited from a source executor), and CUDA replay is off. Stateful sessions
+always disable replay, including when a supplied policy requests it; `info`
+reports this resolution. Optimizer/prefetch policy fields do not apply.
+
+Preparation allocates private input buffers, caches topology metadata/signatures
+and frozen masked weights, then warms initial and continuation execution with
+zero inputs. Warmup requires at least two windows and retains no model progress.
+`stream.info` returns independent preparation metadata and execution-path
+fallbacks. `stream.completed_steps` counts committed numerical steps.
+
+`advance(inputs)` requires exactly the declared input IDs and tensors of shape
+`(window_steps, batch_size, *features)`, matching the prepared device/dtype and
+without `requires_grad`. It copies inputs and returns an `ExecutionResult` with
+independently owned output tensors and time coordinates. Results remain valid
+after subsequent calls; `model` and `runtime_state` are `None`. Use
+`retain_outputs=False` to suppress time histories; ordinary executor online
+reductions retain their continuation semantics.
+
+`export_state()` requires at least one committed window and returns an independent
+`GraphRuntimeState` for portable persistence. It includes dynamic state, not
+weights. `reset()` returns to initial model state; `reset(state)` copies and
+validates imported state through a discarded probe call, without committing that
+probe's progress. Incompatible state or invalid input leaves progress unchanged.
+`close()` releases the private model/state/buffers and is idempotent; context exit
+closes automatically. Sessions do not support concurrent or reentrant use.
+
+This inference path does not expose training, recording, per-window interventions,
+or a wall-clock scheduler. It still performs safe state restoration and cloning;
+it is not yet an in-place state engine. Application code owns pacing, buffering
+and deadlines. The single-file `benchmarks/streaming/benchmark.py` generates
+unpaced callback and internal-phase timing bar charts; it does not check deadlines.
+`prepare_stream` itself establishes no real-time guarantee.
+
+### Session methods
+
+| Member | Behaviour |
+| --- | --- |
+| `advance(inputs) -> ExecutionResult` | Process exactly one prepared window and retain its dynamic state internally. |
+| `export_state() -> GraphRuntimeState` | Copy the current dynamic state after at least one advance. Persist it with `save_runtime_state` and restore it with `load_runtime_state`. |
+| `reset(state=None)` | Restart at step zero, or restore a compatible independent state snapshot. |
+| `completed_steps` | Number of committed numerical steps; warmup is excluded. |
+| `info` | Independent metadata describing preparation, performance policy and selected execution path. |
+| `close()` | Release the private executor, state and buffers. Context manager exit calls this automatically. |
+
+A snapshot contains no weights. To stream trained weights, pass the trained
+`GraphExecutor` to `prepare_stream`; the session copies its current weights and
+later training updates do not change that snapshot. Retain the same weights when
+restoring dynamic state; state compatibility validation is not a weight checkpoint.
 
 ## Continuing dynamics
 

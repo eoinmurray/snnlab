@@ -56,6 +56,58 @@ call. `parameter_map()` exposes parameters by graph parameter ID;
 `enforce_constraints()` applies declared constraints after an external
 optimizer step.
 
+## Prepared streaming inference
+
+`prepare_stream(network, window_steps=10, batch_size=1)` creates a `StreamSession`
+that owns a frozen model snapshot, fixed input buffers and continuing runtime
+state. `network` accepts a `lang.Network`, compiled graph, `GraphPlan`, `Bundle`,
+bundle path or existing `GraphExecutor`. Passing an executor copies its current
+weights without modifying it; other inputs use seeded initialization.
+
+```python
+from snnlab.sim import prepare_stream
+
+# For network dt=0.1 ms, each float32 CPU input has shape (10, 1, channels).
+with prepare_stream(network, window_steps=10, device="cpu") as stream:
+    result = stream.advance({"events": first_window})
+    next_result = stream.advance({"events": next_window})
+    checkpoint = stream.export_state()
+    stream.reset()             # Return to initial model state.
+    stream.reset(checkpoint)   # Restore an independent dynamic-state snapshot.
+```
+
+Each input must have exactly `(window_steps, batch_size, *features)` on the
+prepared device and dtype; mask inputs use bool. Inputs are copied into private
+buffers. Returned `ExecutionResult.outputs` are independent tensors, have no
+training graph, and remain valid across later advances/resets. Runtime state and
+the model stay private (`result.runtime_state` and `result.model` are `None`). Use
+`export_state()` after advancing to obtain an independent `GraphRuntimeState`,
+compatible with `save_runtime_state`/`load_runtime_state`. Exports contain dynamic
+state, not weights. `reset(snapshot)` validates a copied snapshot with a discarded
+probe call; a failed restore leaves progress unchanged.
+
+Preparation caches topology metadata, state signatures and fixed masked weights,
+and warms at least two zero-input windows without retaining their state.
+`stream.info` reports preparation costs and the selected/fallback execution path.
+Default blocks span the window up to 64 steps (four on MPS); defaults use highest
+precision and disable CUDA replay. Pass `performance=Performance(...)` to choose
+compilation/block/precision policy; continuation still disables replay. `dtype`
+defaults to float32, or the source executor's dtype; `device` inherits a source
+executor's device or uses the normal automatic device resolver. `retain_outputs`
+controls output retention; `warmup_windows` defaults to two and must be at least
+two. `close()` releases the session and is automatic on context exit.
+
+This is a single-caller inference API, with fixed model weights and input layout.
+Training, recording, interventions and scheduling remain separate. The initial
+implementation still uses the executor's safe runtime-state restoration and
+cloning; it does not yet implement an in-place state engine. Per-window shape,
+dtype and device checks remain enabled. Application code owns pacing, buffering and deadline checks.
+[The single-file streaming benchmark](../../../benchmarks/streaming/README.md)
+generates unpaced callback and internal-phase timing bar charts; it does not
+measure deadline compliance. `advance()` supplies no real-time guarantee.
+See the [streaming API reference](../../../docs/content/docs/api/sim.mdx#prepared-streaming-sessions)
+for a complete runnable network and input-window example.
+
 ## Execution requests
 
 `Performance` groups shared execution optimizations for all three public functions:
@@ -67,6 +119,15 @@ performance = Performance()  # Automatic settings; also used when omitted.
 eager = Performance(compile_mode=None, cuda_graphs="off")
 full_precision = Performance(precision="highest")
 ```
+
+When compilation is enabled, CPU/CUDA kernels and network blocks use Inductor's
+native C++ dispatch wrapper, preserving precision-cast emulation. MPS retains
+compiled Metal kernels with Python dispatch because native wrapper generation
+currently fails on missing `get_mps_lib_*_handle` symbols. The existing PyTorch
+2.10 reduced-precision CPU fallback is preserved. `metrics["compiler_wrapper"]`
+and `stream.info["compiler_wrapper"]` record the selected policy and reason;
+execution reports also include it under `performance.resolved.compiler_wrapper`.
+Native dispatch adds compilation cost and does not guarantee an end-to-end gain.
 
 Defaults enable compilation, device-selected blocks (CUDA 16 / MPS 4 / CPU 1),
 eligible CUDA replay, native CUDA BF16/TF32, fused CUDA Adam/AdamW, one dataset

@@ -77,7 +77,9 @@ def retention_identity(
         }
         if measurement
         else None,
-        "recording": recording_identity(recording, axes=_signal_axes(graph)),
+        "recording": recording_identity(
+            recording, axes=_signal_axes(graph) if recording is not None else {}
+        ),
         "retain_outputs": retain_outputs,
         "window": {
             "start_step": start_step,

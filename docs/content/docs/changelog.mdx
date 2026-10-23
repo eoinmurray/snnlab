@@ -9,6 +9,18 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-10-23
+
+### Added
+
+1. `sim.prepare_stream` and `sim.StreamSession` for fixed-window inference with private frozen weights/state, warmed execution, cached metadata/masked weights, independently retained outputs, reset and portable state export. The API reference includes a complete runnable 1 ms window example, input/output contracts, session methods, trained-weight snapshots and application-owned scheduling.
+2. `benchmarks/streaming/benchmark.py` measures scalable random networks using 0.1 ms numerical steps and 1 ms model windows. One script generates callback and internal `stream.advance` timing bar charts, saves raw measurements and redraws saved reports with `--plot-only`. Measurements are warmed and unpaced; deadline scheduling, latency plots, operator/cProfile captures and separate helper scripts have been removed. Renamed from the development `benchmarks/realtime` harness.
+
+### Changed
+
+1. Compiled CPU/CUDA tensor kernels and network blocks now select native C++ wrapper dispatch, preserving precision-cast emulation and the existing PyTorch 2.10 reduced-precision CPU fallback. MPS keeps compiled Metal kernels with Python dispatch after native code generation failed on missing `get_mps_lib_*_handle` symbols. Execution/stream metadata records wrapper selection and fallback reasons.
+2. Compiled network blocks batch dense external input projections across each block and defer terminal populations to batch eligible readout projections. Recurrent dependencies, delays, per-step gains and numerical timesteps are preserved; pooled/convolutional projections remain per-step. The shared block path supports streaming, simulation and training, with forward, gradient and continuation checks.
+
 ## [0.24.1] - 2026-10-23
 
 ### Added
