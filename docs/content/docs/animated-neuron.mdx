@@ -137,9 +137,8 @@ Create an index.html that uses PixiJS to replay this recording.
 ## Code
 
 ```python
-"""Record a pulsed LIF neuron for the documentation's PixiJS replay."""
-
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -151,11 +150,21 @@ from snnlab.sim import (
     simulate,
 )
 
+OUTPUT_DIR = Path(__file__).resolve().parent / "results"
+
 DT_MS = 0.25
 DURATION_MS = 360
 CURRENT_NA = 5.6
 TAU_MS = 30
 CAPACITANCE_NF = 0.2
+
+
+def prepare_results():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
 
 
 def record_neuron():
@@ -168,7 +177,7 @@ def record_neuron():
         size=1,
         neuron=lang.CUBA_LIF(tau_mem=TAU_MS * lang.ms, capacitance_nf=CAPACITANCE_NF),
     )
-    # A very short synaptic time constant makes each pulse last one step.
+
     projection = net.connect(
         inputs,
         cell.excitatory,
@@ -182,7 +191,6 @@ def record_neuron():
     net.expose(projection.current, name="current")
     bundle = lang.compile(net)
 
-    # Dots travel for 6 ms before the current is applied; motion is schematic.
     departures = np.arange(8.0, DURATION_MS - 6, 12.0)
     arrivals = departures + 6
     pulses = torch.zeros(round(DURATION_MS / DT_MS), 1, 1)
@@ -194,8 +202,6 @@ def record_neuron():
         input_bindings=(DenseArrayBinding("pulses", pulses),),
     ).numpy(batch=0)
 
-    # Slot k applies input at k*dt, then records the integrated/reset voltage.
-    # Replay uses integration-end times, with the initial state prepended.
     time_ms = np.arange(pulses.shape[0] + 1) * DT_MS
     voltage = np.r_[-65.0, result.diagnostics["voltage"][:, 0]]
     spike_steps = np.flatnonzero(result.outputs["spikes"][:, 0])
@@ -219,11 +225,11 @@ def record_neuron():
 
 
 if __name__ == "__main__":
-    output = Path(__file__).resolve().parent
+    prepare_results()
+    output = OUTPUT_DIR
     bundle, recording, _ = record_neuron()
     (output / "recording.json").write_text(
         json.dumps(recording, separators=(",", ":"), allow_nan=False) + "\n"
     )
     viz.render_diagram(lang.diagram(bundle), output / "network.png", scale=2)
-    print(f"Saved recording.json: {len(recording['spike_times_ms'])} spikes")
 ```

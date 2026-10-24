@@ -1,19 +1,13 @@
 # snnTorch / SNNLab comparison
 
-The 20 October 2026 [Modal before/automatic-default comparison](../execution/results/automatic-defaults/README.md) retains fresh full-workload timings, accuracy, actual execution paths and source hashes. Earlier results below retain their original protocols.
+`benchmark.py` contains the matched models, local training, verification,
+plotting and optional Modal launcher. Each local training run and cloud collection
+replaces `results/` beside the script, including stale reports and figures.
+`--output PATH` selects a replacement directory for local runs or plotting.
+`--verify` and `--plot` leave training results intact.
 
-Three code files:
-
-1. `benchmark.py`: matched models, MNIST training, verification and pass timings.
-2. `modal_app.py`: concurrent Modal training, isolated profiling and collection.
-3. `plot.py`: the two-panel Pinglab house-style figure.
-
-Three local result files:
-
-1. `results/results.json`: protocol, provenance, both learning histories and all
-   available profiling samples. Its `cloud` section locates the retained data/checkpoints.
-2. `results/training-curves.png`: inline/display figure.
-3. `results/training-curves.pdf`: vector figure.
+Results contain `results.json`, `training-curves.png` and `training-curves.pdf`.
+Cloud submissions replace these with a `cloud.json` ticket until collection.
 
 ## Protocol
 
@@ -51,12 +45,13 @@ Adam, gradient clearing and transfers. All raw samples remain in `results.json`.
 Run from the repository root after `uv sync --dev`:
 
 ```sh
+uv run python benchmarks/snntorch-comparison/benchmark.py
 uv run python benchmarks/snntorch-comparison/benchmark.py --verify
 uv run python benchmarks/snntorch-comparison/benchmark.py --smoke --output /tmp/snn-smoke
-uv run --with modal==1.6.1 modal run --detach benchmarks/snntorch-comparison/modal_app.py --mode train
-uv run --with modal==1.6.1 modal run --detach benchmarks/snntorch-comparison/modal_app.py --mode profile --run-id mnist-30fabde19a1a7aa1
-uv run --with modal==1.6.1 modal run benchmarks/snntorch-comparison/modal_app.py --mode collect --run-id mnist-30fabde19a1a7aa1
-uv run python benchmarks/snntorch-comparison/plot.py benchmarks/snntorch-comparison/results
+uv run --with modal==1.6.1 python benchmarks/snntorch-comparison/benchmark.py --modal --mode train
+uv run --with modal==1.6.1 python benchmarks/snntorch-comparison/benchmark.py --modal --mode profile --run-id mnist-30fabde19a1a7aa1
+uv run --with modal==1.6.1 python benchmarks/snntorch-comparison/benchmark.py --modal --mode collect --run-id mnist-30fabde19a1a7aa1
+uv run python benchmarks/snntorch-comparison/benchmark.py --plot
 ```
 
 `train` uploads the current source and returns a new run ID. `profile` and

@@ -10,10 +10,10 @@ Four independent Poisson spike trains drive 16 current-based leaky integrate-and
 Run from the repository root:
 
 ```bash
-uv run python examples/current-lif/current_lif.py
+uv run python examples/current-lif/example.py
 ```
 
-The script saves `network.png` and `current-lif.png` beside itself. Graphviz's `dot` executable is required for the diagram.
+The script saves `network.png` and `current-lif.png` in `results/`. Each run replaces that directory. Graphviz's `dot` executable is required for the diagram.
 
 ## 1. Imports and network definition
 
@@ -85,9 +85,9 @@ The bundle stays in a Python variable here. You can also save it with `bundle.wr
 
 ## 8. Full example
 
-[Download current_lif.py](/current-lif/current_lif.py).
+[Download example.py](/current-lif/example.py).
 
-```python title="examples/current-lif/current_lif.py"
+```python title="examples/current-lif/example.py"
 {{SCRIPT}}
 ```
 

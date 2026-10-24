@@ -19,14 +19,12 @@ from snnlab.sim.requests.handlers import build
 from snnlab.sim.requests.spec import ExecutionSpec
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 HERE = ROOT / "benchmarks/shd"
 sys.path.insert(0, str(HERE))
-data = importlib.import_module("shd_data")
-recipe = importlib.import_module("shd_recipe")
 
-spec = importlib.util.spec_from_file_location("shd_runner", HERE / "benchmark.py")
-runner = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(runner)
+runner = importlib.import_module("benchmarks.shd.benchmark")
+data = recipe = runner
 
 
 def test_default_recipe_and_full_data_tail():
@@ -231,8 +229,12 @@ def test_native_smoke_updates_all_learned_weights_and_exports_portable_bundle(tm
             "PYTHONPATH": os.pathsep.join((str(ROOT / "src"), str(HERE))),
         },
     )
-    with pytest.raises(FileExistsError):
-        runner.run(cfg, output, tmp_path, device="cpu", smoke=True)
+    stale = output / "old-report.json"
+    stale.write_text("{}")
+    repeated = runner.run(cfg, output, tmp_path, device="cpu", smoke=True)
+    assert not stale.exists()
+    assert repeated["completed_updates"] == summary["completed_updates"]
+    assert (output / "final.checkpoint").is_dir()
 
 
 def test_benchmark_tracing_is_a_separate_native_call_and_preserves_baseline(tmp_path):

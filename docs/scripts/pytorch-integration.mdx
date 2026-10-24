@@ -3,13 +3,13 @@ title: PyTorch Integration
 description: Reuse a saved snnlab network inside a PyTorch module and train it with your own data loaders, loss, optimizer and epoch loop.
 ---
 
-Combine snnlab's spiking network with ordinary PyTorch layers in one trainable model. This example reuses **`examples/training/network.bundle`** and trains fresh weights for the same task: recognise which pair of four input channels is more active.
+Combine snnlab's spiking network with ordinary PyTorch layers in one trainable model. This example reuses **`examples/training/results/network.bundle`** and trains fresh weights for the same task: recognise which pair of four input channels is more active.
 
 The saved bundle supplies the spiking architecture, trainable parameter names, learning rates, constraints and surrogate configuration. Its two output values feed an external **Linear(2, 8) → ReLU → Linear(8, 2)** head, defined with ordinary PyTorch modules. PyTorch handles batching, loss calculation, backpropagation, optimizer steps, evaluation and saving weights. There are no calls to `snnlab.sim.train` or `simulate`.
 
 ![Hybrid classifier: the saved spiking network produces two features, followed by an ordinary PyTorch head with Linear 2 to 8, ReLU, and Linear 8 to 2 layers producing final class logits.](/pytorch/network.png)
 
-Unlike [Inference](/inference), this example does **not** load Training's `trained.checkpoint`. It starts a new training run using the same architecture and initialization rules. Its outputs live separately in `examples/pytorch/`.
+Unlike [Inference](/inference), this example does **not** load Training's `trained.checkpoint`. It starts a new training run using the same architecture and initialization rules. Its outputs live separately in `examples/pytorch/results/`.
 
 ## 1. Load the bundle
 
@@ -136,13 +136,13 @@ This file saves weights only. It is distinct from snnlab's `trained.checkpoint`,
 Run the paired examples in this order:
 
 ```sh
-uv run python examples/training/training.py
-uv run python examples/pytorch/training.py
+uv run python examples/training/example.py
+uv run python examples/pytorch/example.py
 ```
 
-Download the [complete PyTorch script](/pytorch/training.py) and keep it in `examples/pytorch/` alongside the Training directory.
+Download the [complete PyTorch script](/pytorch/example.py) and keep it in `examples/pytorch/` alongside the Training directory.
 
-It writes these outputs beside itself:
+It writes these outputs in `results/`:
 
 1. `network.png`: diagram of the SNN and external PyTorch head.
 2. `trained.pt`: learned PyTorch state dictionary.

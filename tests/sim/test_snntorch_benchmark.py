@@ -13,7 +13,7 @@ pytest.importorskip("snntorch")
 BENCHMARK = Path(__file__).resolve().parents[2] / "benchmarks" / "snntorch-comparison"
 sys.path.insert(0, str(BENCHMARK))
 comparison = runner = importlib.import_module("benchmark")
-plotter = importlib.import_module("plot")
+plotter = runner
 pytestmark = [pytest.mark.integration, pytest.mark.snntorch]
 
 
@@ -201,8 +201,6 @@ def test_two_epoch_training_and_plot_artifacts_keep_partial_batches(
 def test_minimal_layout_and_retained_results():
     assert sorted(path.name for path in BENCHMARK.glob("*.py")) == [
         "benchmark.py",
-        "modal_app.py",
-        "plot.py",
     ]
     assert sorted(path.name for path in (BENCHMARK / "results").iterdir()) == [
         "results.json",
@@ -237,3 +235,17 @@ def test_runtime_gate_accepts_newer_release_and_checks_timing_api(monkeypatch):
     monkeypatch.setattr(comparison, "train", lambda: None)
     with pytest.raises(RuntimeError, match="training_timing"):
         comparison.require_optimized_runtime()
+
+
+def test_smoke_cli_replaces_stale_results(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        sys, "argv", ["benchmark.py", "--smoke", "--output", str(tmp_path)]
+    )
+    stale = tmp_path / "old-report.json"
+    stale.write_text("{}")
+    runner.main()
+    assert not stale.exists()
+    report = json.loads((tmp_path / "results.json").read_text())
+    assert report["protocol"]["synthetic"]
+    assert all(result["complete"] for result in report["training"].values())
+    assert (tmp_path / "training-curves.png").is_file()

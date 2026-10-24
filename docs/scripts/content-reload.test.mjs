@@ -8,9 +8,11 @@ const file = relative => fileURLToPath(new URL(relative, import.meta.url));
 test('maps authoring sources to generators without watching generated output as a source', () => {
   expect(syncScriptFor(file('../../CHANGELOG.md'))).toBe('sync-changelog.ts');
   expect(syncScriptFor(file('./pytorch-integration.mdx'))).toBe('sync-pytorch.ts');
-  expect(syncScriptFor(file('../../examples/quickstart/quickstart.py'))).toBe('sync-quickstart.ts');
-  expect(syncScriptFor(file('../../examples/training/network.png'))).toBe('sync-training.ts');
-  expect(syncScriptFor(file('../../examples/training/trained.checkpoint'))).toBeUndefined();
+  expect(syncScriptFor(file('../../examples/quickstart/example.py'))).toBe('sync-quickstart.ts');
+  expect(syncScriptFor(file('../../examples/training/results/network.png'))).toBe('sync-training.ts');
+  expect(syncScriptFor(file('../../examples/native-training/example.py'))).toBe('sync-training.ts');
+  expect(syncScriptFor(file('../../examples/animated-neuron/results/recording.json'))).toBe('sync-animated-neuron.ts');
+  expect(syncScriptFor(file('../../examples/training/results/trained.checkpoint'))).toBeUndefined();
   expect(syncScriptFor(file('../content/docs/quickstart.mdx'))).toBeUndefined();
   expect(isContentFile(file('../content/docs/api/sim/meta.json'))).toBe(true);
   expect(isContentFile(file('../../src/snnlab/sim/README.md'))).toBe(false);

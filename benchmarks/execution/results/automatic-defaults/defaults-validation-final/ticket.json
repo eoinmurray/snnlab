@@ -1,7 +1,0 @@
-{
-  "run_id": "defaults-validation-final",
-  "volume": "snnlab-automatic-defaults",
-  "jobs": {
-    "validate": "fc-01M5C0GV0WN1PZATZKKFCM3H79"
-  }
-}

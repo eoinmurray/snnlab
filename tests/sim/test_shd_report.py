@@ -4,17 +4,15 @@ import importlib.util
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "benchmarks/shd/results/shd-59e3371bb384"
-spec = importlib.util.spec_from_file_location(
-    "shd_report_plot", ROOT / "benchmarks/shd/plot.py"
-)
-plot = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(plot)
+sys.path.insert(0, str(ROOT))
+SOURCE = ROOT / "docs/public/shd-benchmark/shd-59e3371bb384"
+plot = importlib.import_module("benchmarks.shd.benchmark")
 
 
 def test_streaming_decoder_handles_large_events_and_escaped_strings(tmp_path):
@@ -116,6 +114,6 @@ def test_report_links_and_published_figures_match_retained_run():
         assert (ROOT / "docs/public" / link.lstrip("/")).is_file(), link
     public = ROOT / "docs/public/shd-benchmark" / plot.RUN_ID
     manifest = json.loads((SOURCE / "presentation.json").read_text())
-    assert manifest["renderer_sha256"] == plot.digest(plot.__file__)
+    assert manifest["renderer_sha256"] == plot.digest(SOURCE / "plot.py")
     for name, expected in manifest["figures"].items():
         assert plot.digest(SOURCE / name) == plot.digest(public / name) == expected

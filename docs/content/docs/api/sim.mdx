@@ -1424,7 +1424,12 @@ Preparation allocates private input buffers, caches topology metadata/signatures
 and frozen masked weights, then warms initial and continuation execution with
 zero inputs. Warmup requires at least two windows and retains no model progress.
 `stream.info` returns independent preparation metadata and execution-path
-fallbacks. `stream.completed_steps` counts committed numerical steps.
+fallbacks. `info["persistent_state"]` reports whether the session bypasses the
+general executor between windows. Compiled sessions with retained outputs and no
+graph operations reuse the same numerical blocks and keep dynamic state private
+between calls, without per-window restoration or runtime-state snapshots. Other
+graphs use the general executor. `stream.completed_steps` counts committed
+numerical steps.
 
 `advance(inputs)` requires exactly the declared input IDs and tensors of shape
 `(window_steps, batch_size, *features)`, matching the prepared device/dtype and
@@ -1443,10 +1448,17 @@ probe's progress. Incompatible state or invalid input leaves progress unchanged.
 closes automatically. Sessions do not support concurrent or reentrant use.
 
 This inference path does not expose training, recording, per-window interventions,
-or a wall-clock scheduler. It still performs safe state restoration and cloning;
-it is not yet an in-place state engine. Application code owns pacing, buffering
-and deadlines. The single-file `benchmarks/streaming/benchmark.py` generates
-unpaced callback and internal-phase timing bar charts; it does not check deadlines.
+or a wall-clock scheduler. Input and output ownership copies remain in every
+window; explicit state export and restore also copy. Active execution tracing
+switches a persistent session back to the general executor while preserving its
+trajectory. Application code owns pacing, buffering and deadlines. The single-file
+`benchmarks/streaming/benchmark.py` combines unpaced callback/internal-phase
+breakdowns with a separate paced deadline pass in one multipanel figure. Its
+standard 1 ms releases have deadlines 1 ms after release. It records per-window
+callback and release-to-completion times, missed deadlines (including late starts),
+and callback budget overruns; late windows catch up without dropping model steps.
+`--period-ms` changes release spacing and budget independently of model window
+size. These host measurements do not establish application deadline guarantees.
 `prepare_stream` itself establishes no real-time guarantee.
 
 ### Session methods

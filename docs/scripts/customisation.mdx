@@ -12,22 +12,14 @@ The stimulus starts at 20 Hz, rises to 120 Hz between 100 and 400 ms, then retur
 Run from the repository root:
 
 ```bash
-uv run python examples/customisation/customisation.py
-uv run python examples/customisation/customisation.py --simulate
-uv run python examples/customisation/customisation.py --simulate --eager --extension-validation strict
+uv run python examples/customisation/example.py
 ```
 
-The first command builds and saves `network.bundle`, `network.png`, `customisation.png` and `metrics.json` beside itself. The second starts a fresh process, loads the saved bundle and regenerates the same seeded stimulus without registering definitions or rebuilding the network. The third selects eager execution and strict callback value checks for debugging. Keep `custom_neurons.py` beside the script so its callbacks are importable. A missing bundle raises `FileNotFoundError`; a missing callback module raises a descriptive error. Graphviz's `dot` executable is needed for the diagram. In a headless environment you can set `MPLBACKEND=Agg` when running the script.
-
-The default device is CPU. Use `--simulate --device cuda:0` on a CUDA host;
-that option changes execution placement without changing the fixed CPU-generated
-stimulus. This small plotting example is not a throughput benchmark. The
-[Performance reference](/api/sim#performance)
-explains compilation, replay eligibility, mixed precision and current limits.
+The script builds the custom models, runs them on CPU, and saves `network.bundle`, `network.png`, `customisation.png` and `metrics.json` in `results/`. Each run replaces that directory. Keep `example.py` importable so saved callback references can be resolved. Graphviz's `dot` executable is needed for the diagram; use `MPLBACKEND=Agg` for headless plotting.
 
 ## 1. Define the custom neuron
 
-A custom neuron has an initial tensor state and a step function. Put these functions in `custom_neurons.py`, an importable module outside the bundle. The step receives previous state, excitatory and inhibitory input, timestep, configuration and a spike function compatible with the run's surrogate gradient.
+A custom neuron has an initial tensor state and a step function. Keep these functions in `example.py`, importable outside the bundle. The step receives previous state, excitatory and inhibitory input, timestep, configuration and a spike function compatible with the run's surrogate gradient.
 
 ```python
 {{NEURON}}
@@ -61,7 +53,7 @@ so the comparison still isolates neuron adaptation.
 {{INITIALIZER}}
 ```
 
-The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. Keep this function in `custom_neurons.py` too.
+The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. Keep this function in the same file too.
 
 This initializer draws the whole weight tensor on the requested device with the requested dtype. Initialization runs eagerly during setup to preserve seeded draws; speeding up per-timestep dynamics is separate. Repeated custom weight constraints compile after optimizer updates. Prefer whole-tensor expressions such as `parameter.clamp(...)` to loops over weights; see [Weights](/api/lang#weights).
 
@@ -117,13 +109,9 @@ reasons. Exposed diagnostic histories are retained for the plots and add work.
 
 ## 7. Full example
 
-Download [customisation.py](/customisation/customisation.py) and [custom_neurons.py](/customisation/custom_neurons.py) into the same directory.
+Download [example.py](/customisation/example.py). Each run replaces its `results/` directory; `--simulate` loads the existing bundle before replacing the generated outputs.
 
-```python title="examples/customisation/custom_neurons.py"
-{{CALLBACKS}}
-```
-
-```python title="examples/customisation/customisation.py"
+```python title="examples/customisation/example.py"
 {{SCRIPT}}
 ```
 

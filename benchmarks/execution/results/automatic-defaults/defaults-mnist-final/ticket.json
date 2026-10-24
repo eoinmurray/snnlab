@@ -1,7 +1,0 @@
-{
-  "run_id": "defaults-mnist-final",
-  "volume": "snnlab-automatic-defaults",
-  "jobs": {
-    "mnist": "fc-01M5C0JVCZ8SC2ERJ6NDAV926V"
-  }
-}

@@ -1,7 +1,5 @@
 # SHD native-training benchmark
 
-The 20 October 2026 [Modal before/automatic-default comparison](../execution/results/automatic-defaults/README.md) retains fresh full-workload timings, accuracy, actual execution paths and source hashes. Earlier results below retain their original protocols.
-
 A feedforward **700 → 128 COBA LIF → 128 COBA LIF → 20 leaky readout**
 classifier, using the calibrated COBA settings from Pinglab's SHD experiment.
 The default is **10 epochs, batch 256, seed 42, 1,000 timesteps at 1 ms**.
@@ -9,7 +7,7 @@ There are no inhibitory populations or recurrent connections.
 
 ## Implementation and protocol
 
-1. `shd_recipe.py` declares the graph and `TrainSpec` with `snnlab.lang`.
+1. `benchmark.py` declares the graph and `TrainSpec` with `snnlab.lang`.
    `benchmark.py` calls `snnlab.sim.train()` once. The native trainer
    owns initialization, batches, encoding seeds, forward/backward, Adam, constraints,
    validation, observations, timings and the final resumable checkpoint.
@@ -55,11 +53,12 @@ There are no inhibitory populations or recurrent connections.
 From the repository root after `uv sync --dev`:
 
 ```sh
-uv run python benchmarks/shd/benchmark.py --device cuda:0 --output artifacts/shd/run-001
+uv run python benchmarks/shd/benchmark.py --device cuda:0
 ```
 
-The cache defaults to `artifacts/shd-cache`. `--cache` changes it. Output must
-be a new directory, preventing accidental replacement of checkpoints/results.
+The cache defaults to `artifacts/shd-cache`. `--cache` changes it. Each run
+replaces `results/` beside the script, removing previous reports and checkpoints.
+`--output PATH` replaces that directory instead; keep caches outside it.
 `--epochs` permits shorter pilots; `--compile-mode eager` disables compilation.
 
 Download-free CPU plumbing check (40 synthetic training / 20 validation items,
@@ -72,7 +71,7 @@ uv run python benchmarks/shd/benchmark.py --smoke --device cpu --output /tmp/shd
 ## Modal H100
 
 ```sh
-uv run --with modal==1.6.1 python benchmarks/shd/modal_app.py
+uv run --with modal==1.6.1 python benchmarks/shd/benchmark.py --modal
 ```
 
 This Python launcher uses **`app.run(detach=True)`** and submits one worker
@@ -82,27 +81,18 @@ down.** Source upload and submission must finish first. The worker owns training
 the optional diagnostic, report creation and the final volume commit; nothing
 needs a local process to continue orchestrating work.
 
-The equivalent explicit Modal CLI command is:
-
-```sh
-uv run --with modal==1.6.1 modal run --detach benchmarks/shd/modal_app.py
-```
-
-Keep `--detach` when using `modal run` directly; an attached Modal app still
-follows the client's lifetime. See [Modal detached apps](https://modal.com/docs/guide/apps#ephemeral-apps).
-
 Add `--smoke` for a small compiled CUDA check or `--epochs 1` for a one-epoch
-pilot. Each launch uses a new run ID. Resources: four CPU cores, 16 GiB host RAM,
+pilot. Each cloud launch uses a new remote run ID; its local ticket replaces `results/`. Resources: four CPU cores, 16 GiB host RAM,
 one H100 and a two-hour worker timeout. Logs remain in the Modal dashboard.
 The cache, snapshot, bundle, checkpoint, reports and completion manifest persist
 on the `snnlab-shd` volume. After successful completion, collect later with:
 
 ```sh
-uv run --with modal==1.6.1 python benchmarks/shd/modal_app.py --mode collect --run-id shd-REPLACE_WITH_RUN_ID
+uv run --with modal==1.6.1 python benchmarks/shd/benchmark.py --modal --mode collect --run-id shd-REPLACE_WITH_RUN_ID
 ```
 
 Collection reads the volume directly and **does not start a GPU worker or rerun
-training**. Small reports go to `benchmarks/shd/results/<run-id>/`, preserving the
+training**. Small reports go to `benchmarks/shd/results/`, preserving the
 submission ticket's call ID. A missing completion manifest is an error; check
 whether the job is still running or failed in the dashboard. Worker exceptions
 propagate and its `finally` block commits partial artifacts for inspection.
@@ -150,8 +140,7 @@ Dataset: [SHD](https://zenkelab.org/resources/spiking-heidelberg-datasets-shd/),
 4. The two-epoch synthetic smoke run changed all three learned matrices, left the
    gain unchanged and wrote a bundle that loads in a fresh Python process.
 5. The launcher imports with Modal 1.6.1. The subsequent full H100 trajectory
-   is retained in `results/shd-59e3371bb384`; the 20 October automatic-default
-   rerun is linked at the top of this page.
+   is retained in `results/` (run `shd-59e3371bb384`).
 
 
 ## Optional tracing
@@ -163,8 +152,8 @@ per-timestep projection/neuron labels; the Modal Boolean option is
 `--no-trace-detailed-labels` as well.
 
 ```sh
-uv run python benchmarks/shd/benchmark.py --device cuda:0 --output artifacts/shd/profile-001 --trace-mode profile --trace-skip-updates 5 --trace-updates 3
-uv run --with modal==1.6.1 python benchmarks/shd/modal_app.py --trace-mode both --trace-skip-updates 5 --trace-updates 3
+uv run python benchmarks/shd/benchmark.py --device cuda:0  --trace-mode profile --trace-skip-updates 5 --trace-updates 3
+uv run --with modal==1.6.1 python benchmarks/shd/benchmark.py --modal --trace-mode both --trace-skip-updates 5 --trace-updates 3
 ```
 
 Download-free combined-mode CPU check:
@@ -197,11 +186,12 @@ uv run python benchmarks/shd/benchmark.py --smoke --device cpu --output /tmp/shd
 
 ## Retained-run report
 
-The docs report and four PNG/SVG/PDF figures use only `shd-59e3371bb384`.
+The retained report and four PNG/SVG/PDF figures use only `shd-59e3371bb384`.
+Recipe, data preparation, plotting and optional Modal launching live in `benchmark.py`.
 Generate them without training:
 
 ```sh
-uv run python benchmarks/shd/plot.py benchmarks/shd/results/shd-59e3371bb384
+uv run python benchmarks/shd/benchmark.py --plot
 ```
 
 To regenerate the compact timeline excerpt, retrieve the raw trace to temporary
@@ -209,8 +199,11 @@ storage and add `--trace /tmp/shd-trace.json`. The extractor streams the file
 and aggregates only actual CUDA kernel events, excluding annotation spans.
 `report-data.json` and `presentation.json` bind metrics, trace excerpt and figures
 with source hashes. The report's spike/gradient measurements cover diagnostic
-batches 6–8, not the final trained checkpoint. `docs/scripts/sync-shd.ts` validates
-and copies the retained figures/data for the site.
+batches 6–8, not the final trained checkpoint. The published docs keep their own pinned evidence in
+`docs/public/shd-benchmark/shd-59e3371bb384/`, verified by `docs/scripts/sync-shd.ts`.
+Overwriting local results does not change that published snapshot. `--plot` is
+for this retained run and requires its collected diagnostic artifacts, including
+the timeline excerpt; it does not render arbitrary fresh training runs.
 
 ## Encoder device policy
 

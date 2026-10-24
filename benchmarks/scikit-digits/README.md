@@ -1,12 +1,5 @@
 # Scikit-learn digits / conductance LIF
 
-The 20 October 2026 [Modal before/automatic-default comparison](../execution/results/automatic-defaults/README.md) retains fresh full-workload timings, accuracy, actual execution paths and source hashes. Earlier results below retain their original protocols.
-
-The subsequent [L4 GPU rerun](../execution/results/automatic-defaults/digits-gpu-20261020/README.md)
-reached 94.17% with automatic settings: 80.51 s including compilation/capture,
-and 22.56 ms per warm epoch. The small CPU recipe remains faster for a single
-complete run because GPU startup dominates this workload.
-
 A small training benchmark using the 1,797 bundled 8×8 handwritten digits
 from `sklearn.datasets.load_digits`. The default runs eagerly on CPU and needs
 no downloads or compilation warmup. CUDA runs use the automatic compiled
@@ -43,14 +36,12 @@ is reported, with no best-epoch checkpoint selection. All training samples,
 including the final partial batch, are retained. This is a quick single-seed
 sanity/performance benchmark, with no independent generalization study.
 
-Each run creates a new directory under `artifacts/` (or `--output`, which must
-not exist), containing:
+Each run replaces `results/` beside `benchmark.py`, including old checkpoints.
+`--output PATH` replaces that directory instead. It contains:
 
-- `results.json`: configuration, dataset hash and split indices, encoding seeds,
-  software/platform information, epoch losses/accuracies, native phase timings,
-  update count and overall timing.
-- `network.bundle/`: portable built-in graph and training recipe.
-- `final.checkpoint/`: native final training checkpoint for inference or resume.
+1. `results.json`: configuration, split indices, environment, learning metrics and timings.
+2. `network.bundle/`: portable graph and training recipe.
+3. `final.checkpoint/`: final resumable native checkpoint.
 
 `native_train_s` covers the native trainer, including setup, initial and epoch
 evaluations, and checkpoint writing. `workflow_s` additionally covers loading,

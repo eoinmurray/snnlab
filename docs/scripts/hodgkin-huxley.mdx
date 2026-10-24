@@ -14,17 +14,14 @@ The model follows [Hodgkin and Huxley (1952)](https://doi.org/10.1113/jphysiol.1
 Run from the repository root:
 
 ```bash
-uv run python examples/hodgkin-huxley/hodgkin_huxley.py
-uv run python examples/hodgkin-huxley/scipy_comparison.py
+uv run python examples/hodgkin-huxley/example.py
 uv run pytest tests/sim/test_hodgkin_huxley_example.py -q
 ```
 
-Keep `hh_neuron.py`, `hodgkin_huxley.py` and `scipy_comparison.py` in the same directory. The first command generates the voltage/gating figure and network diagram. The second independently integrates the density equations with SciPy and writes `scipy-comparison.png` and `comparison.json`. Both scripts render `network.png` and require Graphviz's `dot` command. Use `MPLBACKEND=Agg` for headless plotting. The simulation runs eagerly on CPU with strict extension validation; this is a forward-simulation example, without surrogate gradients for the binary spike events.
+The single `example.py` contains the callbacks, simulation and independent SciPy reference. Running it replaces `results/` with the network diagram, voltage/gating figure, comparison plot and `comparison.json`. Graphviz's `dot` command is required. Use `MPLBACKEND=Agg` for headless plotting. The simulation runs eagerly on CPU with strict extension validation and no surrogate gradients for binary spike events.
 
-1. [Download the neuron callbacks](/hodgkin-huxley/hh_neuron.py).
-2. [Download the runnable simulation](/hodgkin-huxley/hodgkin_huxley.py).
-3. [Download the SciPy comparison](/hodgkin-huxley/scipy_comparison.py).
-4. [Download the measured comparison report](/hodgkin-huxley/comparison.json).
+1. [Download example.py](/hodgkin-huxley/example.py).
+2. [Download the measured comparison report](/hodgkin-huxley/comparison.json).
 
 ## Membrane and channel equations
 
@@ -107,20 +104,20 @@ These are numerical agreement measurements for this pulse protocol, not validati
 
 ## Extension callbacks
 
-The initializer supplies voltage and the three gates. `state_units` exposes each gate for recording; the executor adds the standard refractory tensor. The step returns the updated tensor state and binary events. Callback references remain importable through `hh_neuron.py` when a compiled bundle is reloaded in another process. See [Custom Neurons and Synapses](/custom-neurons-and-synapses) for the registration contract.
+The initializer supplies voltage and the three gates. `state_units` exposes each gate for recording; the executor adds the standard refractory tensor. The step returns the updated tensor state and binary events. Callback references remain importable through `example.py` when a compiled bundle is reloaded in another process. See [Custom Neurons and Synapses](/custom-neurons-and-synapses) for the registration contract.
 
-```python title="hh_neuron.py"
+```python title="example.py — callbacks"
 {{CALLBACKS}}
 ```
 
 ## Complete simulation
 
-```python title="hodgkin_huxley.py"
+```python title="example.py"
 {{SCRIPT}}
 ```
 
 ## Complete independent comparison
 
-```python title="scipy_comparison.py"
+```python title="example.py — independent comparison"
 {{COMPARISON}}
 ```

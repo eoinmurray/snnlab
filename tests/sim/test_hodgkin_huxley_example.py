@@ -1,6 +1,7 @@
 """Validate the extension example against an independent adaptive ODE solver."""
 
-import importlib
+import importlib.util
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +18,12 @@ def example():
     with pytest.MonkeyPatch.context() as patch:
         patch.syspath_prepend(str(EXAMPLE))
         patch.setattr(extensions, "_REGISTRY", {})
-        module = importlib.import_module("hodgkin_huxley")
+        spec = importlib.util.spec_from_file_location(
+            "hh_example", EXAMPLE / "example.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        patch.setitem(sys.modules, spec.name, module)
+        spec.loader.exec_module(module)
         result = module.run_example()
         yield module, result
 
@@ -25,7 +31,7 @@ def example():
 def test_trajectory_and_spikes_match_independent_solver(example):
     module, result = example
     times = (np.arange(len(result.outputs["voltage"])) + 1) * module.DT_MS
-    comparison = importlib.import_module("scipy_comparison")
+    comparison = module
     _, _, reference, metrics = comparison.compare(result)
     event_times = metrics["scipy_spike_times_ms"]
 
@@ -53,7 +59,7 @@ def test_trajectory_and_spikes_match_independent_solver(example):
 def test_rate_singularities_have_finite_values_and_gradients(example):
     module, _ = example
     v = torch.tensor([-65.0, -55.0, -40.0, 0.0, 40.0], requires_grad=True)
-    rates = module.hh_neuron.rates(v)
+    rates = module.rates(v)
     for alpha, beta in rates:
         assert torch.isfinite(alpha).all() and torch.isfinite(beta).all()
     sum((alpha + beta).sum() for alpha, beta in rates).backward()

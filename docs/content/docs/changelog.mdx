@@ -9,6 +9,19 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+
+## [0.26.0] - 2026-10-24
+
+### Added
+
+1. Persistent prepared-stream execution for eligible compiled graphs, reusing privately owned dynamic state and the existing numerical blocks without per-window executor setup or runtime-state snapshots. Windows fitting one block avoid temporary input views and chunk assembly. Explicit export/restore, independent outputs, and general-executor fallbacks remain supported.
+2. Streaming deadline measurements with absolute 1 ms releases, configurable sleep/spin waiting, per-window timing and miss counts, and five-seed summaries. One combined figure displays mean ± sample SD across seeds, interval miss rates and worst individual completions. Results overwrite a flat `benchmarks/streaming/results/report.json` and `streaming.png`; saved JSON supports redraw without rerunning simulations. The default input rate is 25 Hz/channel and the default 1,000 µs spin guard can occupy a full CPU thread; observed misses are not hard-real-time guarantees.
+
+### Changed
+
+1. Standardized executable examples on one `example.py` with generated files under `results/`, and updated documentation sync scripts, downloadable examples, tests and package contents for the new layout. Training checkpoint and bundle references follow the relocated result paths.
+2. Consolidated benchmark entry points and result directories, preserving pinned SHD documentation evidence independently of overwritten local results. Removed the retired execution benchmark and obsolete helper/example files.
+
 ## [0.25.0] - 2026-10-23
 
 ### Added

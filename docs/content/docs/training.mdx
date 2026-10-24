@@ -11,7 +11,7 @@ The network passes these inputs through 16 excitatory neurons into two readout c
 
 Both the input-to-E weights (`w_in`) and E-to-readout weights (`w_out`) learn. Surrogate gradients carry the loss backward through the E neurons’ spikes. The curves below show loss and accuracy after each epoch.
 
-This extends [Quickstart](/quickstart) with labelled data, minibatches, validation and saved weights. No dataset download is needed. All files live in `examples/training/`; the saved model can later be reused from the [Inference example](/inference).
+This extends [Quickstart](/quickstart) with labelled data, minibatches, validation and saved weights. No dataset download is needed. Generated files live in `examples/training/results/`; the saved model can later be reused from the [Inference example](/inference).
 
 Training uses the automatic [Performance defaults](/api/sim#performance).
 Import `Performance` from `snnlab.sim`.
@@ -59,7 +59,6 @@ The dataset helper makes balanced classes. Class A has nominal rates `[100, 100,
 
 ```python
 def make_dataset(samples, seed):
-    """Balanced classes with independent rate variation and Poisson spike draws."""
     rng = np.random.default_rng(seed)
     labels = np.arange(samples) % 2
     rng.shuffle(labels)
@@ -107,14 +106,14 @@ input_projection = net.connect(
     constraint=lang.NonNegative(),
 )
 w_in = input_projection.weight
-# Two non-spiking readout cells, one per class.
+
 readout = net.population(
     "readout",
     size=2,
     neuron=lang.LeakyIntegrator(tau=20 * lang.ms, initial_voltage=0.0),
     spiking=False,
 )
-# Explicit output weights: 2 readout cells receive spikes from 16 E cells.
+
 w_out = net.parameter(
     "w_out", shape=(2, 16), unit="uS", initializer=lang.Normal(0.0, 0.1)
 )
@@ -211,6 +210,7 @@ result = train(
     input_bindings=(train_input,),
     targets={"class": train_labels},
     validation=validation,
+    metrics=TrainingMetrics(train="evaluate", initial=("train", "validation")),
     seed=SEED,
     device="cpu",
     diagnostics=False,
@@ -218,16 +218,8 @@ result = train(
     batch_size=BATCH_SIZE,
     shuffle=True,
 )
-assert result.training_checkpoint is not None
 save_training_checkpoint(checkpoint_path, result.training_checkpoint)
 history = result.metrics["epochs"]
-for row in history:
-    print(
-        f"Epoch {row['epoch']:02d}: train loss={row['train_loss']:.3f}, "
-        f"validation loss={row['validation_loss']:.3f}, "
-        f"train accuracy={row['train_accuracy']:.1%}, "
-        f"validation accuracy={row['validation_accuracy']:.1%}",
-    )
 ```
 
 `train` handles all 20 epochs internally. Each epoch processes four minibatches of 32 training samples, with `shuffle=True` changing their order each epoch. Validation samples are evaluated without gradients or optimizer updates.
@@ -308,13 +300,13 @@ The plotting code makes one two-row figure with a shared epoch axis: cross-entro
 
 ## 9. Full example
 
-Save the [complete script](/training/training.py) as `examples/training/training.py`. In a repository checkout it is already there.
+Save the [complete script](/training/example.py) as `examples/training/example.py`. In a repository checkout it is already there.
 
 ```sh
-uv run python examples/training/training.py
+uv run python examples/training/example.py
 ```
 
-It saves these files beside the script, regardless of the working directory:
+It saves these files in `results/`, regardless of the working directory:
 
 1. `network.bundle/`: compiled graph and training recipe.
 2. `trained.checkpoint/`: final learned weights, optimizer state and resume coordinates.
@@ -324,12 +316,11 @@ It saves these files beside the script, regardless of the working directory:
 
 Rendering the network diagram requires Graphviz’s `dot` executable on your PATH; on macOS, install it with `brew install graphviz`.
 
-Rerunning starts training from scratch and replaces those generated outputs. It does not automatically resume an earlier run. The [Inference example](/inference) loads `examples/training/network.bundle` and `examples/training/trained.checkpoint`, rather than creating new weights or retraining.
+Rerunning starts training from scratch and replaces those generated outputs. It does not automatically resume an earlier run. The [Inference example](/inference) loads `examples/training/results/network.bundle` and `examples/training/results/trained.checkpoint`, rather than creating new weights or retraining.
 
 ```python
-"""Train a spike-pattern classifier and save weights and epoch curves beside it."""
-
 import json
+import shutil
 from pathlib import Path
 
 import matplotlib
@@ -342,12 +333,13 @@ import torch
 from snnlab import lang, viz
 from snnlab.sim import (
     DenseArrayBinding,
+    TrainingMetrics,
     ValidationSpec,
     save_training_checkpoint,
     train,
 )
 
-OUTPUT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = Path(__file__).resolve().parent / "results"
 DT_MS = 0.5
 DURATION_MS = 200
 HIGH_RATE_HZ = 100
@@ -361,8 +353,15 @@ READOUT_LEARNING_RATE = 1.0
 SEED = 17
 
 
+def prepare_results():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
+
+
 def make_dataset(samples, seed):
-    """Balanced classes with independent rate variation and Poisson spike draws."""
     rng = np.random.default_rng(seed)
     labels = np.arange(samples) % 2
     rng.shuffle(labels)
@@ -382,9 +381,10 @@ def make_dataset(samples, seed):
 
 
 def main():
-    # 1. Create the network.
+    prepare_results()
+
     net = lang.Network("spike_pattern_classifier", dt=DT_MS * lang.ms)
-    # 2. Define inputs, labelled datasets and bindings.
+
     inputs = net.input(
         "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
     )
@@ -395,7 +395,6 @@ def main():
     train_input = DenseArrayBinding(input_id="inputs", value=train_spikes)
     validation_input = DenseArrayBinding(input_id="inputs", value=validation_spikes)
 
-    # 3. Define the excitatory layer and two-class readout.
     cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
     input_projection = net.connect(
         inputs,
@@ -406,14 +405,14 @@ def main():
         constraint=lang.NonNegative(),
     )
     w_in = input_projection.weight
-    # Two non-spiking readout cells, one per class.
+
     readout = net.population(
         "readout",
         size=2,
         neuron=lang.LeakyIntegrator(tau=20 * lang.ms, initial_voltage=0.0),
         spiking=False,
     )
-    # Explicit output weights: 2 readout cells receive spikes from 16 E cells.
+
     w_out = net.parameter(
         "w_out", shape=(2, 16), unit="uS", initializer=lang.Normal(0.0, 0.1)
     )
@@ -427,13 +426,12 @@ def main():
     scores = lang.reduce(
         readout.voltage, operation="mean", over="time", name="mean_readout_voltage"
     )
-    # 4. Declare the official output and optional diagnostics.
+
     net.output("class_scores", scores)
     net.expose(inputs, name="input_spikes")
     net.expose(cells.spikes, name="e_spikes")
     net.expose(readout.voltage, name="readout_voltage")
 
-    # 5. Define the loss, trainable parameters and optimizer.
     objective = lang.CrossEntropy(prediction=scores, target="class")
     readout_parameters = lang.ParameterGroup(
         (w_out,), name="readout", lr=READOUT_LEARNING_RATE
@@ -449,7 +447,7 @@ def main():
         gradient_clip=1.0,
         presentation_duration=DURATION_MS * lang.ms,
     )
-    # 6. Compile and save the bundle for training and later inference.
+
     bundle = lang.compile(net, training=recipe, target="tools/snnsim")
     diagram = lang.diagram(bundle, view="expanded")
     viz.render_diagram(
@@ -462,7 +460,6 @@ def main():
     bundle_path = bundle.write(OUTPUT_DIR / "network.bundle")
     checkpoint_path = OUTPUT_DIR / "trained.checkpoint"
 
-    # 7. Train and measure each epoch in one call.
     validation = ValidationSpec(
         input_bindings=(validation_input,),
         targets={"class": validation_labels},
@@ -472,6 +469,7 @@ def main():
         input_bindings=(train_input,),
         targets={"class": train_labels},
         validation=validation,
+        metrics=TrainingMetrics(train="evaluate", initial=("train", "validation")),
         seed=SEED,
         device="cpu",
         diagnostics=False,
@@ -479,21 +477,12 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=True,
     )
-    assert result.training_checkpoint is not None
     save_training_checkpoint(checkpoint_path, result.training_checkpoint)
     history = result.metrics["epochs"]
-    for row in history:
-        print(
-            f"Epoch {row['epoch']:02d}: train loss={row['train_loss']:.3f}, "
-            f"validation loss={row['validation_loss']:.3f}, "
-            f"train accuracy={row['train_accuracy']:.1%}, "
-            f"validation accuracy={row['validation_accuracy']:.1%}",
-        )
 
-    # 8. Save epoch metrics and plot training curves.
     metrics_path = OUTPUT_DIR / "metrics.json"
     metrics_path.write_text(json.dumps(history, indent=2) + "\n")
-    # Plot the epoch curves.
+
     grid = viz.FigureGrid(
         rows=2, columns=1, bounds=(0.13, 0.1, 0.83, 0.82), row_gap=0.09
     )
@@ -531,9 +520,6 @@ def main():
     figure_path = OUTPUT_DIR / "training.png"
     figure.savefig(figure_path, bbox_inches="tight")
     plt.close(figure)
-    print(f"Saved {figure_path}")
-    print(f"Saved {metrics_path}")
-    print(f"Inference can load {bundle_path} and {checkpoint_path}")
 
 
 if __name__ == "__main__":
@@ -556,56 +542,44 @@ This separate native example uses synthetic 700-channel, 20-class rate inputs wi
 
 ![Native training readout network](/native-training/network.png)
 
-Download [progress.py](/native-training/progress.py) and [progress_objectives.py](/native-training/progress_objectives.py) into the same directory. The second file makes the optional custom objective importable for saved bundles. Graphviz is needed for the diagram.
+Download [example.py](/native-training/example.py). Each run replaces `results/`. Graphviz is needed for the diagram.
 
 ```sh
-python progress.py --output /tmp/native-training
-python progress.py --output /tmp/native-weighted --equal-class-loss
+python example.py
 ```
 
-The script prints natural class counts and a report after each completed epoch: online train accuracy, held-out validation accuracy, global update/example counts and measured seconds. It saves a partial checkpoint after the first update, resumes the same schedule, then writes final and validation-selected checkpoints plus `results.json`. Online training has no epoch-zero measurement and no extra training evaluation. The optional equal-class objective uses only training counts; unweighted classification CE is retained separately. Synthetic accuracy does not establish performance on real SHD.
+The script generates synthetic inputs with 700 channels and 20 imbalanced classes, saves a partial checkpoint after the first update, resumes the same schedule, and writes final and validation-selected checkpoints plus `results.json`. The report contains online training metrics, held-out validation measurements, timing and schedule metadata. Synthetic accuracy does not establish performance on real SHD.
 
 For a larger SHD-shaped scheduling demonstration, add `--samples 8156 --batch-size 256 --steps 1000 --device cuda`. This needs an available CUDA device and substantial runtime; sample counts and rates here remain synthetic. The [Execution Options reference](/api/sim#metrics) specifies aggregation, RNG, conflict, timing and resume rules.
 
 ```python
-"""Native online metrics, unequal-class batching and resumable epoch progress.
-
-Synthetic SHD-shaped inputs exercise the API; this is not an SHD accuracy study.
-Run: python examples/native-training/progress.py --output /tmp/native-training
-Full shape: add --samples 8156 --batch-size 256 --steps 1000 (substantial runtime).
-"""
-
-import argparse
 import json
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-from progress_objectives import equal_class_loss
 
-from snnlab import extensions, lang, viz
+from snnlab import lang, viz
 from snnlab.sim import (
     Batching,
     CheckpointSelection,
     DatasetEncoder,
     DatasetSnapshotBinding,
-    EpochReport,
     TrainingMetrics,
     ValidationSpec,
-    save_training_checkpoint,
     train,
 )
 
+OUTPUT_DIR = Path(__file__).resolve().parent / "results"
 
-def report_epoch(report: EpochReport):
-    seconds = f"; {report.timing.total_s:.2f}s" if report.timing is not None else ""
-    print(
-        f"epoch {report.epoch}/{report.total_epochs}: "
-        f"online train={report.train.accuracy:.1%}; "
-        f"validation={report.validation.accuracy:.1%}; "
-        f"updates={report.updates}; examples={report.examples}{seconds}",
-        flush=True,
-    )
+
+def prepare_results():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
 
 
 def snapshot(path, count, seed):
@@ -613,32 +587,17 @@ def snapshot(path, count, seed):
     probabilities = np.linspace(1, 3, 20)
     probabilities /= probabilities.sum()
     labels = rng.choice(20, size=count, p=probabilities)
-    # 700 channels with class-dependent rates, generated independently by split.
+
     features = np.full((count, 700), 0.02, dtype=np.float32)
     for label in range(20):
         features[labels == label, label * 35 : (label + 1) * 35] = 0.6
     np.savez_compressed(path, features=features, labels=labels)
-    return np.bincount(labels, minlength=20)
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output", type=Path, default=Path(__file__).resolve().parent / "artifacts"
-    )
-    parser.add_argument("--samples", type=int, default=200)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--steps", type=int, default=16)
-    parser.add_argument("--epochs", type=int, default=2)
-    parser.add_argument("--device", default="cpu")
-    parser.add_argument("--equal-class-loss", action="store_true")
-    args = parser.parse_args()
-    if min(args.samples, args.batch_size, args.steps, args.epochs) <= 0:
-        parser.error("counts must be positive")
-    args.output.mkdir(parents=True, exist_ok=True)
-    counts = snapshot(args.output / "train.npz", args.samples, 43)
-    snapshot(args.output / "validation.npz", 80, 44)
-    print(f"training class counts: {counts.tolist()}", flush=True)
+    prepare_results()
+    snapshot(OUTPUT_DIR / "train.npz", 200, 43)
+    snapshot(OUTPUT_DIR / "validation.npz", 80, 44)
 
     net = lang.Network("native_progress", dt=1 * lang.ms)
     inputs = net.input(
@@ -646,39 +605,23 @@ def main():
     )
     scores = lang.SpikeCount(source=inputs, classes=20, name="scores")
     net.output("class_scores", scores)
-    if args.equal_class_loss:
-        extensions.register_objective(
-            "examples.equal-class-progress/v1", equal_class_loss, classification=True
-        )
-        weights = args.samples / (
-            max(1, int((counts > 0).sum())) * np.maximum(counts, 1)
-        )
-        objective = lang.CustomObjective(
-            "examples.equal-class-progress/v1",
-            prediction=scores,
-            target="class",
-            weights=weights.tolist(),
-        )
-    else:
-        objective = lang.CrossEntropy(prediction=scores, target="class")
+    objective = lang.CrossEntropy(prediction=scores, target="class")
     recipe = lang.TrainSpec(
         objectives=(objective,),
         parameter_groups=(
             lang.ParameterGroup(("scores_projection.weight",), name="readout", lr=0.01),
         ),
         optimizer=lang.AdamW(weight_decay=0),
-        presentation_duration=args.steps * lang.ms,
+        presentation_duration=16 * lang.ms,
     )
     bundle = lang.compile(net, training=recipe)
-    bundle.write(args.output / "network.bundle")
+    bundle.write(OUTPUT_DIR / "network.bundle")
     viz.render_diagram(
-        lang.diagram(bundle, view="expanded"), args.output / "network.png", scale=2
+        lang.diagram(bundle, view="expanded"), OUTPUT_DIR / "network.png", scale=2
     )
-    encoder = DatasetEncoder(
-        "rate_poisson", duration_ms=args.steps, max_rate_hz=500, seed=45
-    )
+    encoder = DatasetEncoder("rate_poisson", duration_ms=16, max_rate_hz=500, seed=45)
     binding = DatasetSnapshotBinding(
-        args.output / "train.npz",
+        OUTPUT_DIR / "train.npz",
         "events",
         "synthetic-shd-shape",
         "train",
@@ -687,7 +630,7 @@ def main():
     )
     validation = ValidationSpec(
         input_bindings=(
-            replace(binding, path=args.output / "validation.npz", split="validation"),
+            replace(binding, path=OUTPUT_DIR / "validation.npz", split="validation"),
         )
     )
     training_kwargs = dict(
@@ -695,15 +638,15 @@ def main():
         training=bundle.training,
         input_bindings=(binding,),
         validation=validation,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
+        epochs=2,
+        batch_size=64,
         seed=42,
-        device=args.device,
+        device="cpu",
         batching=Batching(
             order="stratified",
             stratify_by="class",
             remainder="merge_small",
-            min_batch_size=min(20, args.batch_size),
+            min_batch_size=20,
         ),
         metrics=TrainingMetrics(
             train="online",
@@ -713,35 +656,24 @@ def main():
         ),
         checkpoint_selection=CheckpointSelection(),
         training_timing=True,
-        on_epoch_end=report_epoch,
         diagnostics=False,
     )
-    # Persist a partial epoch, then resume the same schedule without replaying reports.
-    partial_path = args.output / "partial.checkpoint"
-    partial = train(**training_kwargs, updates=1, save_final_checkpoint=partial_path)
-    if partial.training_checkpoint.data_state["epoch"] == args.epochs:
-        result = partial
-        save_training_checkpoint(
-            args.output / "final.checkpoint", result.training_checkpoint
-        )
-        save_training_checkpoint(
-            args.output / "selected.checkpoint", result.selected_checkpoint
-        )
-    else:
-        result = train(
-            **training_kwargs,
-            checkpoint=partial_path,
-            save_final_checkpoint=args.output / "final.checkpoint",
-            save_selected_checkpoint=args.output / "selected.checkpoint",
-        )
+
+    partial_path = OUTPUT_DIR / "partial.checkpoint"
+    train(**training_kwargs, updates=1, save_final_checkpoint=partial_path)
+    result = train(
+        **training_kwargs,
+        checkpoint=partial_path,
+        save_final_checkpoint=OUTPUT_DIR / "final.checkpoint",
+        save_selected_checkpoint=OUTPUT_DIR / "selected.checkpoint",
+    )
     payload = {
         "epochs": result.metrics["epochs"],
         "timing_this_call": result.metrics["training_timing"],
         "selection": result.selected_checkpoint.selection_record,
         "schedule": result.metrics["execution_protocol"]["training_iteration"],
     }
-    (args.output / "results.json").write_text(json.dumps(payload, indent=2) + "\n")
-    print(f"saved final/selected checkpoints and results to {args.output}", flush=True)
+    (OUTPUT_DIR / "results.json").write_text(json.dumps(payload, indent=2) + "\n")
 
 
 if __name__ == "__main__":
@@ -749,18 +681,3 @@ if __name__ == "__main__":
 ```
 
 The importable optional loss is:
-
-```python
-"""Importable custom classification objective for the native training example."""
-
-import torch
-
-
-def equal_class_loss(scores, labels, config):
-    """Mean weighted per-example CE; weights use training counts only."""
-    weights = scores.new_tensor(config["weights"])
-    per_example = torch.nn.functional.cross_entropy(
-        scores, labels.long(), reduction="none"
-    )
-    return (per_example * weights[labels.long()]).mean()
-```

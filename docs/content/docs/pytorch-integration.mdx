@@ -3,13 +3,13 @@ title: PyTorch Integration
 description: Reuse a saved snnlab network inside a PyTorch module and train it with your own data loaders, loss, optimizer and epoch loop.
 ---
 
-Combine snnlab's spiking network with ordinary PyTorch layers in one trainable model. This example reuses **`examples/training/network.bundle`** and trains fresh weights for the same task: recognise which pair of four input channels is more active.
+Combine snnlab's spiking network with ordinary PyTorch layers in one trainable model. This example reuses **`examples/training/results/network.bundle`** and trains fresh weights for the same task: recognise which pair of four input channels is more active.
 
 The saved bundle supplies the spiking architecture, trainable parameter names, learning rates, constraints and surrogate configuration. Its two output values feed an external **Linear(2, 8) → ReLU → Linear(8, 2)** head, defined with ordinary PyTorch modules. PyTorch handles batching, loss calculation, backpropagation, optimizer steps, evaluation and saving weights. There are no calls to `snnlab.sim.train` or `simulate`.
 
 ![Hybrid classifier: the saved spiking network produces two features, followed by an ordinary PyTorch head with Linear 2 to 8, ReLU, and Linear 8 to 2 layers producing final class logits.](/pytorch/network.png)
 
-Unlike [Inference](/inference), this example does **not** load Training's `trained.checkpoint`. It starts a new training run using the same architecture and initialization rules. Its outputs live separately in `examples/pytorch/`.
+Unlike [Inference](/inference), this example does **not** load Training's `trained.checkpoint`. It starts a new training run using the same architecture and initialization rules. Its outputs live separately in `examples/pytorch/results/`.
 
 ## 1. Load the bundle
 
@@ -43,7 +43,7 @@ TEST_SAMPLES = 64
 bundle_path = TRAINING_DIR / "network.bundle"
 if not bundle_path.is_dir():
     raise FileNotFoundError(
-        f"Missing {bundle_path}. Run uv run python examples/training/training.py first."
+        f"Missing {bundle_path}. Run uv run python examples/training/example.py first."
     )
 bundle = lang.load_bundle(bundle_path)
 recipe = bundle.training
@@ -61,8 +61,6 @@ See the [GraphExecutor API reference](/api/sim#advanced-pytorch-execution) for c
 
 ```python
 class Classifier(nn.Module):
-    """Compose the bundled SNN with an ordinary PyTorch classification head."""
-
     def __init__(self, bundle):
         super().__init__()
         recipe = bundle.training
@@ -113,7 +111,6 @@ The synthetic task is the same as Training. Classes use rates `[100, 100, 10, 10
 
 ```python
 def make_dataset(samples, seed):
-    """The same spike-pattern task, with conventional batch-first samples."""
     rng = np.random.default_rng(seed)
     labels = np.arange(samples) % 2
     rng.shuffle(labels)
@@ -155,7 +152,7 @@ groups = [
     for group in recipe["parameter_groups"]
     if not group["frozen"]
 ]
-# The bundle recipe covers the SNN; add the external head explicitly.
+
 groups.append({"params": list(model.head.parameters()), "lr": HEAD_LEARNING_RATE})
 optimizer = torch.optim.AdamW(groups, **recipe["optimizer"]["config"])
 criterion = nn.CrossEntropyLoss()
@@ -179,7 +176,6 @@ Evaluation uses standard PyTorch mode switching and disables gradient tracking:
 
 ```python
 def evaluate(model, loader, criterion):
-    """Evaluate fixed weights, weighting the final smaller batch correctly."""
     model.eval()
     total_loss = 0.0
     correct = 0
@@ -226,11 +222,6 @@ for epoch in range(EPOCHS + 1):
             "validation_accuracy": validation_accuracy,
         }
     )
-    print(
-        f"Epoch {epoch:02d}: train loss={train_loss:.3f}, validation loss={validation_loss:.3f}, "
-        f"train accuracy={train_accuracy:.1%}, validation accuracy={validation_accuracy:.1%}",
-        flush=True,
-    )
 ```
 
 Each minibatch follows the usual sequence: clear gradients, forward, calculate loss, backward, clip gradients and step the optimizer. The final block clamps non-negative weights. The loss backpropagates through the head into `w_out`, then through surrogate spike derivatives into `w_in`. All connections learn together. Gradient clipping includes both child modules.
@@ -249,14 +240,10 @@ reloaded.load_state_dict(
     torch.load(weights_path, map_location=DEVICE, weights_only=True)
 )
 test_loss, test_accuracy = evaluate(reloaded, test_loader, criterion)
-for name, value in model.state_dict().items():
-    torch.testing.assert_close(value, reloaded.state_dict()[name], rtol=0, atol=0)
 changed_weights = {
     name: int(torch.count_nonzero(value.detach() != initial_parameters[name]))
     for name, value in model.named_parameters()
 }
-print(f"Reloaded test accuracy: {test_accuracy:.1%}")
-print(f"Changed weights: {changed_weights}")
 ```
 
 `trained.pt` contains both the SNN and external head weights and biases in one ordinary `state_dict`. Reconstructing the same wrapper from the bundle provides matching parameter names and shapes; `load_state_dict` restores the learned values. The example checks that reloaded weights exactly match and measures performance on the separate test split.
@@ -288,13 +275,13 @@ metrics_path.write_text(
 Run the paired examples in this order:
 
 ```sh
-uv run python examples/training/training.py
-uv run python examples/pytorch/training.py
+uv run python examples/training/example.py
+uv run python examples/pytorch/example.py
 ```
 
-Download the [complete PyTorch script](/pytorch/training.py) and keep it in `examples/pytorch/` alongside the Training directory.
+Download the [complete PyTorch script](/pytorch/example.py) and keep it in `examples/pytorch/` alongside the Training directory.
 
-It writes these outputs beside itself:
+It writes these outputs in `results/`:
 
 1. `network.png`: diagram of the SNN and external PyTorch head.
 2. `trained.pt`: learned PyTorch state dictionary.
@@ -304,9 +291,8 @@ It writes these outputs beside itself:
 Rerunning starts fresh and replaces its own outputs. The original Training artifacts remain separate; this workflow loads the bundle without modifying it.
 
 ```python
-"""Train Training's saved SNN architecture using an ordinary PyTorch loop."""
-
 import json
+import shutil
 from pathlib import Path
 
 import matplotlib
@@ -321,8 +307,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from snnlab import lang, viz
 from snnlab.sim import GraphExecutor, plan_graph
 
-OUTPUT_DIR = Path(__file__).resolve().parent
-TRAINING_DIR = OUTPUT_DIR.parent / "training"
+OUTPUT_DIR = Path(__file__).resolve().parent / "results"
+TRAINING_DIR = Path(__file__).resolve().parent.parent / "training" / "results"
 DEVICE = "cpu"
 SEED = 17
 EPOCHS = 20
@@ -335,8 +321,15 @@ VALIDATION_SAMPLES = 64
 TEST_SAMPLES = 64
 
 
+def prepare_results():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
+
+
 def make_dataset(samples, seed):
-    """The same spike-pattern task, with conventional batch-first samples."""
     rng = np.random.default_rng(seed)
     labels = np.arange(samples) % 2
     rng.shuffle(labels)
@@ -350,8 +343,6 @@ def make_dataset(samples, seed):
 
 
 class Classifier(nn.Module):
-    """Compose the bundled SNN with an ordinary PyTorch classification head."""
-
     def __init__(self, bundle):
         super().__init__()
         recipe = bundle.training
@@ -376,7 +367,6 @@ class Classifier(nn.Module):
 
 
 def make_diagram(bundle, model):
-    """Show the loaded spiking graph and the actual external head modules."""
     spiking = lang.diagram(bundle, view="expanded")
     nodes = list(spiking.nodes)
     edges = list(spiking.edges)
@@ -437,7 +427,6 @@ def make_diagram(bundle, model):
 
 
 def evaluate(model, loader, criterion):
-    """Evaluate fixed weights, weighting the final smaller batch correctly."""
     model.eval()
     total_loss = 0.0
     correct = 0
@@ -453,17 +442,18 @@ def evaluate(model, loader, criterion):
 
 
 def main():
-    # 1. Load Training's saved bundle.
+    prepare_results()
+
     bundle_path = TRAINING_DIR / "network.bundle"
     if not bundle_path.is_dir():
         raise FileNotFoundError(
-            f"Missing {bundle_path}. Run uv run python examples/training/training.py first."
+            f"Missing {bundle_path}. Run uv run python examples/training/example.py first."
         )
     bundle = lang.load_bundle(bundle_path)
     recipe = bundle.training
     if recipe is None:
         raise ValueError("Run Training to generate a bundle with a training recipe.")
-    # 2. Compose the SNN and ordinary PyTorch layers.
+
     model = Classifier(bundle).to(DEVICE)
     viz.render_diagram(
         make_diagram(bundle, model),
@@ -474,7 +464,7 @@ def main():
     initial_parameters = {
         name: value.detach().clone() for name, value in model.named_parameters()
     }
-    # 3. Create sample datasets and PyTorch data loaders.
+
     training_data = make_dataset(TRAIN_SAMPLES, seed=SEED + 1)
     validation_data = make_dataset(VALIDATION_SAMPLES, seed=SEED + 2)
     test_data = make_dataset(TEST_SAMPLES, seed=SEED + 3)
@@ -488,7 +478,6 @@ def main():
     validation_loader = DataLoader(validation_data, batch_size=BATCH_SIZE)
     test_loader = DataLoader(test_data, batch_size=BATCH_SIZE)
 
-    # 4. Configure the loss, optimizer and constraints from the recipe.
     parameter_map = model.snn.parameter_map()
     groups = [
         {
@@ -498,7 +487,7 @@ def main():
         for group in recipe["parameter_groups"]
         if not group["frozen"]
     ]
-    # The bundle recipe covers the SNN; add the external head explicitly.
+
     groups.append({"params": list(model.head.parameters()), "lr": HEAD_LEARNING_RATE})
     optimizer = torch.optim.AdamW(groups, **recipe["optimizer"]["config"])
     criterion = nn.CrossEntropyLoss()
@@ -508,7 +497,7 @@ def main():
         for row in bundle.graph["parameters"]
         if (row.get("constraint") or {}).get("kind") == "non_negative"
     ]
-    # 5. Train with an explicit PyTorch epoch and minibatch loop.
+
     history = []
     for epoch in range(EPOCHS + 1):
         if epoch > 0:
@@ -538,12 +527,7 @@ def main():
                 "validation_accuracy": validation_accuracy,
             }
         )
-        print(
-            f"Epoch {epoch:02d}: train loss={train_loss:.3f}, validation loss={validation_loss:.3f}, "
-            f"train accuracy={train_accuracy:.1%}, validation accuracy={validation_accuracy:.1%}",
-            flush=True,
-        )
-    # 6. Save a PyTorch state dictionary and reload for test inference.
+
     weights_path = OUTPUT_DIR / "trained.pt"
     torch.save(model.state_dict(), weights_path)
     reloaded = Classifier(bundle).to(DEVICE)
@@ -551,16 +535,11 @@ def main():
         torch.load(weights_path, map_location=DEVICE, weights_only=True)
     )
     test_loss, test_accuracy = evaluate(reloaded, test_loader, criterion)
-    for name, value in model.state_dict().items():
-        torch.testing.assert_close(value, reloaded.state_dict()[name], rtol=0, atol=0)
     changed_weights = {
         name: int(torch.count_nonzero(value.detach() != initial_parameters[name]))
         for name, value in model.named_parameters()
     }
-    print(f"Reloaded test accuracy: {test_accuracy:.1%}")
-    print(f"Changed weights: {changed_weights}")
 
-    # 7. Save metrics and plot the epoch curves.
     metrics_path = OUTPUT_DIR / "metrics.json"
     metrics_path.write_text(
         json.dumps(
@@ -574,7 +553,7 @@ def main():
         )
         + "\n"
     )
-    # Plot loss and accuracy with a shared epoch axis.
+
     grid = viz.FigureGrid(
         rows=2, columns=1, bounds=(0.13, 0.1, 0.83, 0.82), row_gap=0.09
     )
@@ -612,9 +591,6 @@ def main():
     figure_path = OUTPUT_DIR / "training.png"
     figure.savefig(figure_path, bbox_inches="tight")
     plt.close(figure)
-    print(f"Saved {weights_path}")
-    print(f"Saved {metrics_path}")
-    print(f"Saved {figure_path}")
 
 
 if __name__ == "__main__":

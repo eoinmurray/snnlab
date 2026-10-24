@@ -1,7 +1,0 @@
-{
-  "run_id": "digits-gpu-20261020",
-  "volume": "snnlab-automatic-defaults",
-  "jobs": {
-    "digits-gpu": "fc-01M5C8F1X758DKJ81SF5T0XY2R"
-  }
-}

@@ -5,11 +5,11 @@ description: Load the training example's saved network and learned weights, clas
 
 Use the network from [Training](/training) to recognise new spike patterns. The task is the same: decide whether channels 0–1 or channels 2–3 are more active. This time, the network uses the weights it has already learned. It makes predictions without updating them.
 
-The script loads **`examples/training/network.bundle` and `examples/training/trained.checkpoint`**. It generates 64 fresh samples, chooses the class with the higher readout score, and compares those predictions with the known labels.
+The script loads **`examples/training/results/network.bundle` and `examples/training/results/trained.checkpoint`**. It generates 64 fresh samples, chooses the class with the higher readout score, and compares those predictions with the known labels.
 
 ![The saved training network: four input channels feed sixteen excitatory neurons, then two readout cells. Mean readout voltages produce the two class scores.](/inference/network.png)
 
-The diagram is generated from the saved bundle. This walkthrough loads that network rather than defining or compiling a new one. Run the Training example first; all inference outputs are saved separately in `examples/inference/`.
+The diagram is generated from the saved bundle. This walkthrough loads that network rather than defining or compiling a new one. Run the Training example first; all inference outputs are saved separately in `examples/inference/results/`.
 
 Use `simulate` with `checkpoint` to run inference with learned weights. It accepts
 the same immutable [Performance policy](/api/sim#performance) as
@@ -109,13 +109,13 @@ The plotting code selects one fresh sample from each class. Each column shows it
 In a repository checkout, run these commands in order:
 
 ```sh
-uv run python examples/training/training.py
-uv run python examples/inference/inference.py
+uv run python examples/training/example.py
+uv run python examples/inference/example.py
 ```
 
-Download the [complete inference script](/inference/inference.py) and place it in `examples/inference/` alongside the paired `examples/training/` directory.
+Download the [complete inference script](/inference/example.py) and place it in `examples/inference/` alongside the paired `examples/training/` directory.
 
-It saves these files beside the inference script:
+It saves these files in `results/`:
 
 1. `network.png`: diagram generated from Training's saved bundle.
 2. `predictions.json`: predictions, accuracy and loaded checkpoint provenance.

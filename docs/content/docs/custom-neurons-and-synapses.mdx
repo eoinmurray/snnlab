@@ -12,22 +12,14 @@ The stimulus starts at 20 Hz, rises to 120 Hz between 100 and 400 ms, then retur
 Run from the repository root:
 
 ```bash
-uv run python examples/customisation/customisation.py
-uv run python examples/customisation/customisation.py --simulate
-uv run python examples/customisation/customisation.py --simulate --eager --extension-validation strict
+uv run python examples/customisation/example.py
 ```
 
-The first command builds and saves `network.bundle`, `network.png`, `customisation.png` and `metrics.json` beside itself. The second starts a fresh process, loads the saved bundle and regenerates the same seeded stimulus without registering definitions or rebuilding the network. The third selects eager execution and strict callback value checks for debugging. Keep `custom_neurons.py` beside the script so its callbacks are importable. A missing bundle raises `FileNotFoundError`; a missing callback module raises a descriptive error. Graphviz's `dot` executable is needed for the diagram. In a headless environment you can set `MPLBACKEND=Agg` when running the script.
-
-The default device is CPU. Use `--simulate --device cuda:0` on a CUDA host;
-that option changes execution placement without changing the fixed CPU-generated
-stimulus. This small plotting example is not a throughput benchmark. The
-[Performance reference](/api/sim#performance)
-explains compilation, replay eligibility, mixed precision and current limits.
+The script builds the custom models, runs them on CPU, and saves `network.bundle`, `network.png`, `customisation.png` and `metrics.json` in `results/`. Each run replaces that directory. Keep `example.py` importable so saved callback references can be resolved. Graphviz's `dot` executable is needed for the diagram; use `MPLBACKEND=Agg` for headless plotting.
 
 ## 1. Define the custom neuron
 
-A custom neuron has an initial tensor state and a step function. Put these functions in `custom_neurons.py`, an importable module outside the bundle. The step receives previous state, excitatory and inhibitory input, timestep, configuration and a spike function compatible with the run's surrogate gradient.
+A custom neuron has an initial tensor state and a step function. Keep these functions in `example.py`, importable outside the bundle. The step receives previous state, excitatory and inhibitory input, timestep, configuration and a spike function compatible with the run's surrogate gradient.
 
 ```python
 def validate_adaptive(config):
@@ -50,7 +42,7 @@ def adaptive_step(context):
     voltage = context.state["voltage"]
     adaptation = context.state["adaptation"]
     beta = math.exp(-context.dt_ms / context.config["tau_mem_ms"])
-    # State retains its dtype even when an upstream CUDA matmul uses BF16.
+
     current = (
         context.excitatory.to(voltage.dtype)
         - context.inhibitory.to(voltage.dtype)
@@ -62,7 +54,7 @@ def adaptive_step(context):
         + current * context.config["tau_mem_ms"] * (1 - beta)
     )
     spikes = context.spike(voltage + 50)
-    # Broadcast the reset scalar; no per-step full-sized reset allocation.
+
     voltage = torch.where(spikes.bool(), -65.0, voltage)
     adaptation = adaptation * math.exp(-context.dt_ms / context.config["tau_adapt_ms"])
     adaptation = adaptation + spikes * context.config["adaptation_na"]
@@ -91,7 +83,6 @@ def exponential_initial_state(context):
 
 def exponential_step(context):
     previous = context.state["value"]
-    # Configuration is fixed per prepared kernel; the scalar specializes.
     decay = math.exp(-context.dt_ms / context.config["tau_ms"])
     drive = context.drive.to(previous.dtype)
     return {**context.state, "value": previous * decay + drive}
@@ -115,7 +106,7 @@ def clipped_normal(shape, config, *, device, dtype):
     return (values * config["std"] + config["mean"]).clamp(min=config["minimum"])
 ```
 
-The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. Keep this function in `custom_neurons.py` too.
+The initializer receives the runtime shape, configuration, device and dtype. It draws normal values and clips them at a configurable minimum. With the default initialization scaling, projection initialization subsequently divides by fan-in, and then applies the declared constraint. Keep this function in the same file too.
 
 This initializer draws the whole weight tensor on the requested device with the requested dtype. Initialization runs eagerly during setup to preserve seeded draws; speeding up per-timestep dynamics is separate. Repeated custom weight constraints compile after optimizer updates. Prefer whole-tensor expressions such as `parameter.clamp(...)` to loops over weights; see [Weights](/api/lang#weights).
 
@@ -125,25 +116,24 @@ Register the callbacks by their `module:function` references when building the n
 def register_definitions():
     extensions.register_neuron(
         "example.adaptive_lif/v1",
-        "custom_neurons:adaptive_step",
-        initialize="custom_neurons:adaptive_initial_state",
+        f"{__name__}:adaptive_step",
+        initialize=f"{__name__}:adaptive_initial_state",
         input_unit="nA",
         state_units={"adaptation": "nA"},
-        validate="custom_neurons:validate_adaptive",
+        validate=f"{__name__}:validate_adaptive",
         capture_safe=True,
     )
     extensions.register_synapse(
         "example.exponential_current/v1",
-        "custom_neurons:exponential_step",
-        initialize="custom_neurons:exponential_initial_state",
+        f"{__name__}:exponential_step",
+        initialize=f"{__name__}:exponential_initial_state",
         output_unit="nA",
-        validate="custom_neurons:validate_exponential",
+        validate=f"{__name__}:validate_exponential",
         capture_safe=True,
     )
     extensions.register_initializer(
-        # Random weight initialization happens once, outside replay.
         "example.clipped_normal/v1",
-        "custom_neurons:clipped_normal",
+        f"{__name__}:clipped_normal",
     )
 ```
 
@@ -170,8 +160,229 @@ input_spikes = (
 ).float()
 binding = DenseArrayBinding("inputs", input_spikes)
 
-# Compare built-in and custom neuron dynamics with matched input weights.
-if not args.simulate:
+register_definitions()
+net = lang.Network("customisation", dt=DT_MS * lang.ms)
+inputs = net.input(
+    "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
+)
+standard = net.population(
+    "standard", size=8, neuron=lang.CUBA_LIF(tau_mem=20 * lang.ms)
+)
+adaptive = net.population(
+    "adaptive",
+    size=8,
+    neuron=lang.CustomNeuron(
+        "example.adaptive_lif/v1",
+        tau_mem_ms=20,
+        tau_adapt_ms=100,
+        adaptation_na=0.35,
+    ),
+)
+weights = net.parameter(
+    "weights",
+    shape=(8, 4),
+    unit="nA",
+    initializer=lang.CustomInitializer(
+        "example.clipped_normal/v1", mean=5.0, std=1.0, minimum=0.0
+    ),
+    constraint=lang.NonNegative(),
+)
+for cells in (standard, adaptive):
+    projection = net.connect(
+        inputs,
+        cells.excitatory,
+        name=f"input_to_{cells.id}",
+        synapse=lang.CustomSynapse("example.exponential_current/v1", tau_ms=5.0),
+        weight=weights,
+    )
+    net.output(f"{cells.id}_spikes", cells.spikes)
+    net.expose(cells.voltage, name=f"{cells.id}_voltage")
+    net.expose(projection.current, name=f"{cells.id}_current")
+net.expose(inputs, name="input_spikes")
+net.expose(adaptive.state("adaptation"), name="adaptation")
+
+bundle = lang.compile(net, target="tools/snnsim")
+bundle.write(bundle_path)
+```
+
+`DenseArrayBinding` supplies the custom stimulus. The shared parameter has graph shape `(8, 4)` and unit `"nA"`; both projections reference it, so differences in response come from neuron dynamics. `CustomSynapse("example.exponential_current/v1", tau_ms=5.0)` adds incoming spike-weighted current and lets it decay with a 5 ms time constant. Inhibitory current projections would subtract from membrane drive.
+
+The standard neuron uses the new [CUBA_LIF](/api/extensions#current-based-lif), and the adaptive population uses `CustomNeuron`. Both expect current input. Mixing these with a conductance synapse is rejected rather than silently interpreting incompatible units.
+
+## 5. Declare outputs and diagnostics
+
+The loop declares official spike outputs and exposes voltage and synaptic current for both populations. The custom adaptation signal is also exposed. `.current` belongs to current-based projections; `.conductance` belongs to conductance-based projections.
+
+Custom state ports participate in normal outputs, diagnostics and operations. Their declared units and `(time, batch, cells)` axes are preserved in the compiled graph's signal validation.
+
+## 6. Compile and simulate
+
+```python
+viz.render_diagram(
+    lang.diagram(bundle, view="expanded"),
+    OUTPUT_DIR / "network.png",
+    scale=2,
+    height_to_width_ratio=None,
+    canvas_size=(1920, 900),
+)
+result = simulate(
+    bundle=bundle_path,
+    input_bindings=(binding,),
+    seed=SEED,
+    device="cpu",
+    performance=Performance(compile_mode=None),
+)
+(OUTPUT_DIR / "metrics.json").write_text(
+    json.dumps(result.metrics, indent=2, allow_nan=False) + "\n"
+)
+data = result.numpy(batch=0)
+```
+
+The graph and manifest list required extension names and callback references. `lang.load_bundle` and the simulator resolve these references automatically from modules available in the current environment. The graph digest covers the implementation references; Python source and pickled functions are never saved in the bundle. Additional custom state is included in runtime continuation artifacts, so splitting an execution does not reset adaptation or synaptic history.
+
+`Performance()` retains automatic compilation, precision and replay policies.
+This example selects eager execution only with `--eager`. Custom neurons and
+synapses currently use the individual compiled-kernel loop; they do not use
+compiled timestep blocks even when marked capture-safe. The single CPU
+simulation does not replay a CUDA Graph. Eligible repeated CUDA shapes can
+replay, and the registrations above permit that path. See
+`metrics.json` → `performance` for requested settings, selected paths and fallback
+reasons. Exposed diagnostic histories are retained for the plots and add work.
+
+## 7. Full example
+
+Download [example.py](/customisation/example.py). Each run replaces its `results/` directory; `--simulate` loads the existing bundle before replacing the generated outputs.
+
+```python title="examples/customisation/example.py"
+import json
+import math
+import shutil
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from snnlab import extensions, lang, viz
+from snnlab.sim import (
+    DenseArrayBinding,
+    Performance,
+    simulate,
+)
+
+
+def prepare_results():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
+
+
+def validate_adaptive(config):
+    for name in ("tau_mem_ms", "tau_adapt_ms"):
+        if not math.isfinite(config[name]) or config[name] <= 0:
+            raise ValueError(f"{name} must be finite and positive")
+    if not math.isfinite(config["adaptation_na"]) or config["adaptation_na"] < 0:
+        raise ValueError("adaptation_na must be finite and nonnegative")
+
+
+def adaptive_initial_state(context):
+    shape, device, dtype = context.shape, context.device, context.dtype
+    return {
+        "voltage": torch.full(shape, -65.0, device=device, dtype=dtype),
+        "adaptation": torch.zeros(shape, device=device, dtype=dtype),
+    }
+
+
+def adaptive_step(context):
+    voltage = context.state["voltage"]
+    adaptation = context.state["adaptation"]
+    beta = math.exp(-context.dt_ms / context.config["tau_mem_ms"])
+
+    current = (
+        context.excitatory.to(voltage.dtype)
+        - context.inhibitory.to(voltage.dtype)
+        - adaptation
+    )
+    voltage = (
+        -65
+        + (voltage + 65) * beta
+        + current * context.config["tau_mem_ms"] * (1 - beta)
+    )
+    spikes = context.spike(voltage + 50)
+
+    voltage = torch.where(spikes.bool(), -65.0, voltage)
+    adaptation = adaptation * math.exp(-context.dt_ms / context.config["tau_adapt_ms"])
+    adaptation = adaptation + spikes * context.config["adaptation_na"]
+    return {**context.state, "voltage": voltage, "adaptation": adaptation}, spikes
+
+
+def validate_exponential(config):
+    if not math.isfinite(config["tau_ms"]) or config["tau_ms"] <= 0:
+        raise ValueError("tau_ms must be finite and positive")
+
+
+def exponential_initial_state(context):
+    return {
+        "value": torch.zeros(context.shape, device=context.device, dtype=context.dtype)
+    }
+
+
+def exponential_step(context):
+    previous = context.state["value"]
+    decay = math.exp(-context.dt_ms / context.config["tau_ms"])
+    drive = context.drive.to(previous.dtype)
+    return {**context.state, "value": previous * decay + drive}
+
+
+def clipped_normal(shape, config, *, device, dtype):
+    values = torch.randn(shape, device=device, dtype=dtype)
+    return (values * config["std"] + config["mean"]).clamp(min=config["minimum"])
+
+
+OUTPUT_DIR = Path(__file__).resolve().parent / "results"
+DT_MS = 0.5
+DURATION_MS = 500
+SEED = 17
+
+
+def register_definitions():
+    extensions.register_neuron(
+        "example.adaptive_lif/v1",
+        f"{__name__}:adaptive_step",
+        initialize=f"{__name__}:adaptive_initial_state",
+        input_unit="nA",
+        state_units={"adaptation": "nA"},
+        validate=f"{__name__}:validate_adaptive",
+        capture_safe=True,
+    )
+    extensions.register_synapse(
+        "example.exponential_current/v1",
+        f"{__name__}:exponential_step",
+        initialize=f"{__name__}:exponential_initial_state",
+        output_unit="nA",
+        validate=f"{__name__}:validate_exponential",
+        capture_safe=True,
+    )
+    extensions.register_initializer(
+        "example.clipped_normal/v1",
+        f"{__name__}:clipped_normal",
+    )
+
+
+def main():
+    prepare_results()
+    bundle_path = OUTPUT_DIR / "network.bundle"
+
+    steps = round(DURATION_MS / DT_MS)
+    rates = torch.full((steps, 1, 4), 20.0)
+    rates[round(100 / DT_MS) : round(400 / DT_MS)] = 120.0
+    generator = torch.Generator().manual_seed(SEED)
+    input_spikes = (
+        torch.rand(rates.shape, generator=generator) < rates * DT_MS / 1000
+    ).float()
+    binding = DenseArrayBinding("inputs", input_spikes)
+
     register_definitions()
     net = lang.Network("customisation", dt=DT_MS * lang.ms)
     inputs = net.input(
@@ -204,9 +415,7 @@ if not args.simulate:
             inputs,
             cells.excitatory,
             name=f"input_to_{cells.id}",
-            synapse=lang.CustomSynapse(
-                "example.exponential_current/v1", tau_ms=5.0
-            ),
+            synapse=lang.CustomSynapse("example.exponential_current/v1", tau_ms=5.0),
             weight=weights,
         )
         net.output(f"{cells.id}_spikes", cells.spikes)
@@ -217,264 +426,7 @@ if not args.simulate:
 
     bundle = lang.compile(net, target="tools/snnsim")
     bundle.write(bundle_path)
-```
 
-`DenseArrayBinding` supplies the custom stimulus. The shared parameter has graph shape `(8, 4)` and unit `"nA"`; both projections reference it, so differences in response come from neuron dynamics. `CustomSynapse("example.exponential_current/v1", tau_ms=5.0)` adds incoming spike-weighted current and lets it decay with a 5 ms time constant. Inhibitory current projections would subtract from membrane drive.
-
-The standard neuron uses the new [CUBA_LIF](/api/extensions#current-based-lif), and the adaptive population uses `CustomNeuron`. Both expect current input. Mixing these with a conductance synapse is rejected rather than silently interpreting incompatible units.
-
-## 5. Declare outputs and diagnostics
-
-The loop declares official spike outputs and exposes voltage and synaptic current for both populations. The custom adaptation signal is also exposed. `.current` belongs to current-based projections; `.conductance` belongs to conductance-based projections.
-
-Custom state ports participate in normal outputs, diagnostics and operations. Their declared units and `(time, batch, cells)` axes are preserved in the compiled graph's signal validation.
-
-## 6. Compile and simulate
-
-```python
-bundle = lang.load_bundle(bundle_path)
-viz.render_diagram(
-    lang.diagram(bundle, view="expanded"),
-    OUTPUT_DIR / "network.png",
-    scale=2,
-    height_to_width_ratio=None,
-    canvas_size=(1920, 900),
-)
-result = simulate(
-    bundle=bundle_path,
-    input_bindings=(binding,),
-    seed=SEED,
-    device=args.device,
-    performance=Performance(compile_mode=None if args.eager else "default"),
-    extension_validation=args.extension_validation,
-)
-(OUTPUT_DIR / "metrics.json").write_text(
-    json.dumps(result.metrics, indent=2, allow_nan=False) + "\n"
-)
-data = result.numpy(batch=0)
-assert data.time_ms is not None
-```
-
-The graph and manifest list required extension names and callback references. `lang.load_bundle` and the simulator resolve these references automatically from modules available in the current environment. The graph digest covers the implementation references; Python source and pickled functions are never saved in the bundle. Additional custom state is included in runtime continuation artifacts, so splitting an execution does not reset adaptation or synaptic history.
-
-`Performance()` retains automatic compilation, precision and replay policies.
-This example selects eager execution only with `--eager`. Custom neurons and
-synapses currently use the individual compiled-kernel loop; they do not use
-compiled timestep blocks even when marked capture-safe. The single CPU
-simulation does not replay a CUDA Graph. Eligible repeated CUDA shapes can
-replay, and the registrations above permit that path. See
-`metrics.json` → `performance` for requested settings, selected paths and fallback
-reasons. Exposed diagnostic histories are retained for the plots and add work.
-
-## 7. Full example
-
-Download [customisation.py](/customisation/customisation.py) and [custom_neurons.py](/customisation/custom_neurons.py) into the same directory.
-
-```python title="examples/customisation/custom_neurons.py"
-"""Importable custom callbacks; kept outside the saved network bundle."""
-
-import math
-
-import torch
-
-
-# 1. Define a neuron using tensor state and a normal Python step function.
-def validate_adaptive(config):
-    for name in ("tau_mem_ms", "tau_adapt_ms"):
-        if not math.isfinite(config[name]) or config[name] <= 0:
-            raise ValueError(f"{name} must be finite and positive")
-    if not math.isfinite(config["adaptation_na"]) or config["adaptation_na"] < 0:
-        raise ValueError("adaptation_na must be finite and nonnegative")
-
-
-def adaptive_initial_state(context):
-    shape, device, dtype = context.shape, context.device, context.dtype
-    return {
-        "voltage": torch.full(shape, -65.0, device=device, dtype=dtype),
-        "adaptation": torch.zeros(shape, device=device, dtype=dtype),
-    }
-
-
-def adaptive_step(context):
-    voltage = context.state["voltage"]
-    adaptation = context.state["adaptation"]
-    beta = math.exp(-context.dt_ms / context.config["tau_mem_ms"])
-    # State retains its dtype even when an upstream CUDA matmul uses BF16.
-    current = (
-        context.excitatory.to(voltage.dtype)
-        - context.inhibitory.to(voltage.dtype)
-        - adaptation
-    )
-    voltage = (
-        -65
-        + (voltage + 65) * beta
-        + current * context.config["tau_mem_ms"] * (1 - beta)
-    )
-    spikes = context.spike(voltage + 50)
-    # Broadcast the reset scalar; no per-step full-sized reset allocation.
-    voltage = torch.where(spikes.bool(), -65.0, voltage)
-    adaptation = adaptation * math.exp(-context.dt_ms / context.config["tau_adapt_ms"])
-    adaptation = adaptation + spikes * context.config["adaptation_na"]
-    return {**context.state, "voltage": voltage, "adaptation": adaptation}, spikes
-
-
-# 2. Define a synapse using the already weight-projected drive.
-def validate_exponential(config):
-    if not math.isfinite(config["tau_ms"]) or config["tau_ms"] <= 0:
-        raise ValueError("tau_ms must be finite and positive")
-
-
-def exponential_initial_state(context):
-    return {
-        "value": torch.zeros(context.shape, device=context.device, dtype=context.dtype)
-    }
-
-
-def exponential_step(context):
-    previous = context.state["value"]
-    # Configuration is fixed per prepared kernel; the scalar specializes.
-    decay = math.exp(-context.dt_ms / context.config["tau_ms"])
-    drive = context.drive.to(previous.dtype)
-    return {**context.state, "value": previous * decay + drive}
-
-
-# 3. Define an initialization distribution with ordinary PyTorch.
-def clipped_normal(shape, config, *, device, dtype):
-    values = torch.randn(shape, device=device, dtype=dtype)
-    return (values * config["std"] + config["mean"]).clamp(min=config["minimum"])
-```
-
-```python title="examples/customisation/customisation.py"
-"""Compare a built-in current LIF with a registered adaptive current neuron.
-
-Run from the repository root: uv run python examples/customisation/customisation.py
-Outputs are saved beside this script. Diagram rendering requires Graphviz.
-"""
-
-import argparse
-import json
-from pathlib import Path
-
-import numpy as np
-import torch
-
-from snnlab import extensions, lang, viz
-from snnlab.sim import (
-    DenseArrayBinding,
-    Performance,
-    simulate,
-)
-
-OUTPUT_DIR = Path(__file__).resolve().parent
-DT_MS = 0.5
-DURATION_MS = 500
-SEED = 17
-
-
-# Register references to functions in the sibling importable module.
-def register_definitions():
-    extensions.register_neuron(
-        "example.adaptive_lif/v1",
-        "custom_neurons:adaptive_step",
-        initialize="custom_neurons:adaptive_initial_state",
-        input_unit="nA",
-        state_units={"adaptation": "nA"},
-        validate="custom_neurons:validate_adaptive",
-        capture_safe=True,
-    )
-    extensions.register_synapse(
-        "example.exponential_current/v1",
-        "custom_neurons:exponential_step",
-        initialize="custom_neurons:exponential_initial_state",
-        output_unit="nA",
-        validate="custom_neurons:validate_exponential",
-        capture_safe=True,
-    )
-    extensions.register_initializer(
-        # Random weight initialization happens once, outside replay.
-        "example.clipped_normal/v1",
-        "custom_neurons:clipped_normal",
-    )
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--simulate",
-        action="store_true",
-        help="Load the saved bundle in a fresh process; do not build or register definitions.",
-    )
-    parser.add_argument(
-        "--device", default="cpu", help="Torch device, e.g. cpu or cuda:0"
-    )
-    parser.add_argument(
-        "--eager", action="store_true", help="Disable runtime compilation"
-    )
-    parser.add_argument(
-        "--extension-validation", choices=("structural", "strict"), default="structural"
-    )
-    args = parser.parse_args()
-    bundle_path = OUTPUT_DIR / "network.bundle"
-    # 4. Define a stimulus with custom tensors: quiet, then sustained activity.
-    steps = round(DURATION_MS / DT_MS)
-    rates = torch.full((steps, 1, 4), 20.0)
-    rates[round(100 / DT_MS) : round(400 / DT_MS)] = 120.0
-    generator = torch.Generator().manual_seed(SEED)
-    input_spikes = (
-        torch.rand(rates.shape, generator=generator) < rates * DT_MS / 1000
-    ).float()
-    binding = DenseArrayBinding("inputs", input_spikes)
-
-    # Compare built-in and custom neuron dynamics with matched input weights.
-    if not args.simulate:
-        register_definitions()
-        net = lang.Network("customisation", dt=DT_MS * lang.ms)
-        inputs = net.input(
-            "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
-        )
-        standard = net.population(
-            "standard", size=8, neuron=lang.CUBA_LIF(tau_mem=20 * lang.ms)
-        )
-        adaptive = net.population(
-            "adaptive",
-            size=8,
-            neuron=lang.CustomNeuron(
-                "example.adaptive_lif/v1",
-                tau_mem_ms=20,
-                tau_adapt_ms=100,
-                adaptation_na=0.35,
-            ),
-        )
-        weights = net.parameter(
-            "weights",
-            shape=(8, 4),
-            unit="nA",
-            initializer=lang.CustomInitializer(
-                "example.clipped_normal/v1", mean=5.0, std=1.0, minimum=0.0
-            ),
-            constraint=lang.NonNegative(),
-        )
-        for cells in (standard, adaptive):
-            projection = net.connect(
-                inputs,
-                cells.excitatory,
-                name=f"input_to_{cells.id}",
-                synapse=lang.CustomSynapse(
-                    "example.exponential_current/v1", tau_ms=5.0
-                ),
-                weight=weights,
-            )
-            net.output(f"{cells.id}_spikes", cells.spikes)
-            net.expose(cells.voltage, name=f"{cells.id}_voltage")
-            net.expose(projection.current, name=f"{cells.id}_current")
-        net.expose(inputs, name="input_spikes")
-        net.expose(adaptive.state("adaptation"), name="adaptation")
-
-        bundle = lang.compile(net, target="tools/snnsim")
-        bundle.write(bundle_path)
-
-    # 6. Compile and execute: the bundle stores names/config, not Python code.
-    bundle = lang.load_bundle(bundle_path)
     viz.render_diagram(
         lang.diagram(bundle, view="expanded"),
         OUTPUT_DIR / "network.png",
@@ -486,17 +438,14 @@ def main():
         bundle=bundle_path,
         input_bindings=(binding,),
         seed=SEED,
-        device=args.device,
-        performance=Performance(compile_mode=None if args.eager else "default"),
-        extension_validation=args.extension_validation,
+        device="cpu",
+        performance=Performance(compile_mode=None),
     )
     (OUTPUT_DIR / "metrics.json").write_text(
         json.dumps(result.metrics, indent=2, allow_nan=False) + "\n"
     )
     data = result.numpy(batch=0)
-    assert data.time_ms is not None
 
-    # 7. Plot the same stimulus, both responses and the custom adaptation state.
     import matplotlib.pyplot as plt
 
     layout = viz.FigureGrid(
@@ -546,13 +495,12 @@ def main():
         axis.tick_params(labelbottom=False)
     figure.savefig(OUTPUT_DIR / "customisation.png", dpi=160)
     plt.close(figure)
-    for prefix in ("standard", "adaptive"):
-        print(f"{prefix}: {int(data.outputs[f'{prefix}_spikes'].sum())} spikes")
-    print(f"Saved {OUTPUT_DIR / 'customisation.png'}")
 
 
 if __name__ == "__main__":
-    main()
+    import example
+
+    example.main()
 ```
 
 ## 8. Plots

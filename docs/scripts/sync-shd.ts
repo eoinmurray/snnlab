@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const run = 'shd-59e3371bb384';
-const source = join(repo, 'benchmarks/shd/results', run);
-const destination = join(repo, 'docs/public/shd-benchmark', run);
+// Published scientific evidence stays pinned when benchmark results are overwritten.
+const source = join(repo, 'docs/public/shd-benchmark', run);
 const load = (name: string) => JSON.parse(readFileSync(join(source, name), 'utf8'));
 const hash = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
 const presentation = load('presentation.json');
@@ -14,7 +14,7 @@ const configuration = load('configuration.json');
 if (load('cloud.json').status !== 'complete' || presentation.run_id !== run) {
   throw new Error('SHD documentation requires the pinned completed run');
 }
-const renderer = join(repo, 'benchmarks/shd/plot.py');
+const renderer = join(source, 'plot.py');
 if (hash(renderer) !== presentation.renderer_sha256) {
   throw new Error('SHD figures need regeneration after plot.py changes');
 }
@@ -26,12 +26,3 @@ const pinnedRecipe = join(source, 'shd_recipe.py');
 if (hash(pinnedRecipe) !== configuration.source_sha256[recipe]) {
   throw new Error('Retained SHD recipe differs from the uploaded numerical source');
 }
-const files = readdirSync(source).filter((name) => /\.(json|png|pdf|svg)$/.test(name));
-files.push(...readdirSync(join(source, 'tracing')).filter((name) => /\.(json|csv)$/.test(name) && name !== 'trace.json').map((name) => `tracing/${name}`));
-for (const name of files) {
-  const target = join(destination, name);
-  mkdirSync(dirname(target), { recursive: true });
-  copyFileSync(join(source, name), target);
-}
-copyFileSync(renderer, join(destination, 'plot.py'));
-copyFileSync(pinnedRecipe, join(destination, 'shd_recipe.py'));

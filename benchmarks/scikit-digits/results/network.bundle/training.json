@@ -1,0 +1,68 @@
+{
+  "epochs": 1,
+  "gradient_clip": 1.0,
+  "graph_digest": "sha256:363512db93d157b0a1221034e49f06c426d60b24a851ea6377dedf037ec0dd37",
+  "objectives": [
+    {
+      "kind": "cross_entropy",
+      "prediction": "classifier.value",
+      "target": "class",
+      "weight": 1.0
+    }
+  ],
+  "optimizer": {
+    "config": {
+      "weight_decay": 0.0
+    },
+    "kind": "adamw"
+  },
+  "parameter_groups": [
+    {
+      "frozen": false,
+      "id": "conductance",
+      "lr": 0.0003,
+      "parameters": [
+        "pixels_to_hidden.weight"
+      ]
+    },
+    {
+      "frozen": false,
+      "id": "readout",
+      "lr": 0.01,
+      "parameters": [
+        "classifier.weight"
+      ]
+    }
+  ],
+  "presentation_duration": {
+    "unit": "ms",
+    "value": 16.0
+  },
+  "regularizers": [],
+  "resolved_gradients": {
+    "surrogate": {
+      "kind": "fast_sigmoid",
+      "slope": 1.0
+    },
+    "voltage_gradient_dampening": {
+      "hidden": 1.0
+    }
+  },
+  "resolved_parameters": {
+    "frozen": [],
+    "learning_rates": {
+      "classifier.weight": 0.01,
+      "pixels_to_hidden.weight": 0.0003
+    },
+    "trainable": [
+      "classifier.weight",
+      "pixels_to_hidden.weight"
+    ]
+  },
+  "schema": "snnlang.training/v1",
+  "stop_gradients": [],
+  "surrogate": {
+    "kind": "fast_sigmoid",
+    "slope": 1.0
+  }
+}

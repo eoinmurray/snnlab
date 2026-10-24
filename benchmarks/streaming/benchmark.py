@@ -1,12 +1,13 @@
-"""Generate callback and stream.advance timing bar charts for random SNNs."""
+"""Measure streaming deadlines and processing phases in one multipanel report."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import math
+import platform
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -38,9 +39,11 @@ class Config:
     inputs: int = 64
     readouts: int = 8
     sparsity: float = 0.9
-    rate_hz: float = 100.0
+    rate_hz: float = 25.0
     dt_ms: float = 0.1
     window_ms: float = 1.0
+    period_ms: float = 1.0
+    spin_us: float = 1000.0
     windows: int = 256
     seed: int = 7
     device: str = "cpu"
@@ -53,9 +56,13 @@ class Config:
         for name in ("hidden", "inputs", "readouts", "windows", "threads"):
             if type(getattr(self, name)) is not int or getattr(self, name) < 1:
                 raise ValueError(f"{name} must be a positive integer")
-        for name in ("dt_ms", "window_ms"):
+        for name in ("dt_ms", "window_ms", "period_ms"):
             if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive and finite")
+        if round(self.period_ms * 1e6) < 1:
+            raise ValueError("period_ms must resolve to at least one nanosecond")
+        if not math.isfinite(self.spin_us) or self.spin_us < 0:
+            raise ValueError("spin_us must be finite and nonnegative")
         ratio = self.window_ms / self.dt_ms
         if ratio < 1 or not math.isclose(ratio, round(ratio), rel_tol=0, abs_tol=1e-6):
             raise ValueError("window / timestep must be a positive integer")
@@ -300,7 +307,7 @@ class PhaseProbe:
 
 
 @torch.inference_mode()
-def measure_advance_phases(cfg, session, prefix, windows):
+def measure_advance_phases(cfg, session, windows):
     rng = np.random.default_rng(cfg.seed + 3)
     inputs = [input_window(cfg, rng) for _ in range(windows)]
 
@@ -347,10 +354,7 @@ def measure_advance_phases(cfg, session, prefix, windows):
             torch.testing.assert_close(
                 getattr(observed_state, group)[name], value, atol=0, rtol=0
             )
-    prefix = Path(prefix)
-    target = prefix.with_name(prefix.name + "-advance-phases.npz")
     names = ("Full advance", *PHASES, "Other / measurement")
-    np.savez_compressed(target, phase_ns=data, phases=np.array(names))
     return {
         "windows": windows,
         "execution_path": warm_result.metrics["execution_path"],
@@ -358,7 +362,6 @@ def measure_advance_phases(cfg, session, prefix, windows):
         "statistic": "arithmetic mean per prepared advance",
         "scope": "Separate warmed unpaced pass with phase-boundary wall/thread-CPU clocks and device completion fences; no PyTorch profiler or cProfile active.",
         "limits": "Phases are nonoverlapping. Full advance is inclusive. Other includes timer bookkeeping and API entry/exit. Compiled block includes dispatch, input views, invocation and completion wait, not just numerical kernels. Thread CPU excludes workers/device compute. Instrumentation changes timing.",
-        "samples_file": target.name,
         "stages": [
             {
                 "name": name,
@@ -371,7 +374,7 @@ def measure_advance_phases(cfg, session, prefix, windows):
     }
 
 
-def measure_breakdown(cfg, model, prefix):
+def measure_breakdown(cfg, model):
     """Unpaced callback timing, separate from the internal phase capture."""
     rows = np.empty((cfg.windows, len(BREAKDOWN_STAGES), 2), dtype=np.int64)
     rng = np.random.default_rng(cfg.seed + 2)
@@ -397,11 +400,8 @@ def measure_breakdown(cfg, model, prefix):
         rows[index, 3] = extracted - executed
         rows[index, 4] = rows[index, 0] - rows[index, 1:4].sum(axis=0)
 
-    target = prefix.with_name(prefix.name + "-breakdown.npz")
-    np.savez_compressed(target, stage_ns=rows, stages=np.array(BREAKDOWN_STAGES))
     return {
         "windows": cfg.windows,
-        "samples_file": target.name,
         "stages": [
             {
                 "name": name,
@@ -413,130 +413,494 @@ def measure_breakdown(cfg, model, prefix):
     }
 
 
+def deadline_schedule(
+    callback, windows, period_ns, *, spin_ns=0, clock=None, sleep=None
+):
+    """Absolute monotonic releases; catch up without dropping or shifting windows.
+
+    Columns contain scheduled release, callback start and completed callback end,
+    in nanoseconds relative to one epoch. Array writes happen after callback end;
+    their overhead, like waiting/scheduling overhead, can delay the next start.
+    Clock/sleep injection lets tests exercise overruns without wall-clock timing.
+    """
+    clock = time.perf_counter_ns if clock is None else clock
+    sleep = time.sleep if sleep is None else sleep
+    samples = np.empty((windows, 3), dtype=np.int64)
+    epoch = clock()
+    for index in range(windows):
+        release = epoch + index * period_ns
+        while True:
+            now = clock()
+            if now >= release:
+                break
+            remaining = release - now
+            if remaining > spin_ns:
+                sleep((remaining - spin_ns) / 1e9)
+            # The final guard is spent polling the same monotonic clock. No
+            # early releases, shifted deadlines or skipped model windows.
+        started = clock()
+        callback()
+        finished = clock()
+        samples[index] = (release - epoch, started - epoch, finished - epoch)
+    return samples
+
+
+def deadline_arrays(samples, period_ns):
+    release, started, finished = samples.T
+    return {
+        "release_ns": release,
+        "start_ns": started,
+        "finish_ns": finished,
+        "deadline_ns": release + period_ns,
+        "callback_ns": finished - started,
+        "response_ns": finished - release,
+        "start_lag_ns": started - release,
+        "lateness_ns": finished - (release + period_ns),
+        "deadline_missed": finished > release + period_ns,
+        "callback_overrun": finished - started > period_ns,
+    }
+
+
+def measure_deadlines(cfg, model):
+    """Paced end-to-end windows, without internal phase instrumentation."""
+    rng = np.random.default_rng(cfg.seed + 4)
+
+    def callback():
+        values = input_window(cfg, rng)
+        result = advance(model, values)
+        extract_output(values, result)
+        synchronize(cfg.device)
+
+    model.reset()
+    for _ in range(cfg.warmup_windows):
+        callback()
+    synchronize(cfg.device)
+    model.reset()
+    rng = np.random.default_rng(cfg.seed + 4)
+    period_ns = round(cfg.period_ms * 1e6)
+    wall_started = time.perf_counter_ns()
+    cpu_started = time.thread_time_ns()
+    samples = deadline_schedule(
+        callback, cfg.windows, period_ns, spin_ns=round(cfg.spin_us * 1000)
+    )
+    cpu_ns = time.thread_time_ns() - cpu_started
+    wall_ns = time.perf_counter_ns() - wall_started
+    arrays = deadline_arrays(samples, period_ns)
+    if model.completed_steps != cfg.windows * cfg.steps:
+        raise RuntimeError("deadline pass dropped or added model steps")
+
+    def stats(key):
+        ms = arrays[key] / 1e6
+        return {
+            "median": float(np.median(ms)),
+            "p95": float(np.percentile(ms, 95)),
+            "maximum": float(ms.max()),
+        }
+
+    return {
+        "windows": cfg.windows,
+        "period_ms": period_ns / 1e6,
+        "spin_us": cfg.spin_us,
+        "caller_thread_cpu_percent": 100 * cpu_ns / wall_ns,
+        "paced_elapsed_ms": wall_ns / 1e6,
+        "sample_columns": ["release_ns", "start_ns", "finish_ns"],
+        "samples": samples.tolist(),
+        "missed_deadlines": int(arrays["deadline_missed"].sum()),
+        "miss_rate": float(arrays["deadline_missed"].mean()),
+        "callback_budget_overruns": int(arrays["callback_overrun"].sum()),
+        "callback_ms": stats("callback_ns"),
+        "response_ms": stats("response_ns"),
+        "start_lag_ms": stats("start_lag_ns"),
+        "lateness_ms": stats("lateness_ns"),
+        "completed_steps": model.completed_steps,
+        "scope": "Separate warmed paced pass: input generation/transfer, stream.advance, host event extraction, and device completion. One monotonic clock for releases, starts and completion.",
+        "schedule": "Absolute releases spaced by period_ms; each deadline is release + period_ms. Sleep until spin_us before release, then poll the clock. Late windows catch up without dropping model steps or shifting the epoch.",
+        "limits": "Observed soft-real-time timing on this host, not a hard-deadline guarantee. Sleep and OS scheduling can cause misses even when callback duration is below budget. Timing/storage overhead can delay subsequent starts. No ROS, external sensor or actuator I/O.",
+    }
+
+
 @torch.inference_mode()
-def run(cfg, prefix):
+def run(cfg):
     cfg.validate()
-    prefix = Path(prefix)
     torch.set_num_threads(cfg.threads)
     torch.set_float32_matmul_precision("highest")
     plan = plan_graph(circuit(cfg))
     with stream(cfg, plan) as model:
         validation = warm_and_validate(cfg, model, plan)
-        breakdown = measure_breakdown(cfg, model, prefix)
-        internal = measure_advance_phases(cfg, model, prefix, cfg.windows)
+        deadlines = measure_deadlines(cfg, model)
+        breakdown = measure_breakdown(cfg, model)
+        internal = measure_advance_phases(cfg, model, cfg.windows)
         return {
             "config": asdict(cfg),
             "validation": validation,
             "compiler_wrapper": model.info["compiler_wrapper"],
+            "deadlines": deadlines,
             "breakdown": breakdown,
             "advance_breakdown": internal,
         }
 
 
-def plot_breakdown(report_path, output=None, *, internal=False):
+def deadline_rates(release_ns, missed, overrun, interval_ms=100):
+    """Rates in fixed release-time intervals; partial bins use actual samples.
+
+    Empty intervals are missing data, not zero misses. The final interval is
+    labelled with its observed window count when plotted.
+    """
+    interval_ns = round(interval_ms * 1e6)
+    bins = np.asarray(release_ns) // interval_ns
+    count = np.bincount(bins)
+    missed_count = np.bincount(bins, weights=missed, minlength=len(count))
+    overrun_count = np.bincount(bins, weights=overrun, minlength=len(count))
+    return {
+        "edges_ms": np.arange(len(count) + 1) * interval_ms,
+        "windows": count,
+        "miss_pct": np.divide(
+            100 * missed_count, count, out=np.full(len(count), np.nan), where=count > 0
+        ),
+        "overrun_pct": np.divide(
+            100 * overrun_count, count, out=np.full(len(count), np.nan), where=count > 0
+        ),
+    }
+
+
+def mean_sd(values):
+    """Across-seed sample SD (ddof=1); single-run error bars are omitted."""
+    values = np.asarray(values, dtype=float)
+    mean = values.mean(axis=0)
+    sd = values.std(axis=0, ddof=1) if len(values) > 1 else np.zeros_like(mean)
+    return mean, sd
+
+
+def summarize_seeds(runs):
+    """Equal-weight seed summaries; compute misses before averaging timings."""
+    summary = {
+        "seed_count": len(runs),
+        "sd_defined": len(runs) > 1,
+        "validation_passed": all(
+            r.get("validation", {}).get("passed", True) for r in runs
+        ),
+    }
+    for key in ("breakdown", "advance_breakdown"):
+        names = list(
+            dict.fromkeys(
+                s["name"] for r in runs for s in r.get(key, {}).get("stages", ())
+            )
+        )
+        stages = []
+        for name in names:
+            row = {"name": name}
+            for metric in ("wall_us", "thread_cpu_us"):
+                values = [
+                    next(
+                        (
+                            s[metric]
+                            for s in r.get(key, {}).get("stages", ())
+                            if s["name"] == name
+                        ),
+                        0,
+                    )
+                    for r in runs
+                ]
+                mean, sd = mean_sd(values)
+                row[metric] = float(mean)
+                row[metric + "_sd"] = float(sd)
+            stages.append(row)
+        summary[key] = {"stages": stages}
+    deadlines = [r["deadlines"] for r in runs if r.get("deadlines")]
+    if deadlines:
+        data = {
+            "total_windows": sum(d["windows"] for d in deadlines),
+            "total_missed_deadlines": sum(d["missed_deadlines"] for d in deadlines),
+            "total_callback_overruns": sum(
+                d["callback_budget_overruns"] for d in deadlines
+            ),
+            "worst_response_ms": max(d["response_ms"]["maximum"] for d in deadlines),
+        }
+        for metric in (
+            "missed_deadlines",
+            "miss_rate",
+            "callback_budget_overruns",
+            "caller_thread_cpu_percent",
+        ):
+            mean, sd = mean_sd([d.get(metric, 0) for d in deadlines])
+            data[metric + "_mean"] = float(mean)
+            data[metric + "_sd"] = float(sd)
+        summary["deadlines"] = data
+    return summary
+
+
+def interval_seed_series(runs, interval_ms=100):
+    """One mean per seed per fixed interval, then mean/SD across seeds.
+
+    Timing means do not determine misses: rates use each original completion.
+    All seeds in a group must use the same release schedule and window count.
+    """
+    per_seed = []
+    edges = None
+    for run in runs:
+        d = run["deadlines"]
+        raw = deadline_arrays(
+            np.asarray(d["samples"], dtype=np.int64), round(d["period_ms"] * 1e6)
+        )
+        rates = deadline_rates(
+            raw["release_ns"],
+            raw["deadline_missed"],
+            raw["callback_overrun"],
+            interval_ms,
+        )
+        if edges is not None and not np.array_equal(edges, rates["edges_ms"]):
+            raise ValueError("seed release intervals must match")
+        edges = rates["edges_ms"]
+        bins = raw["release_ns"] // round(interval_ms * 1e6)
+        row = {"miss_pct": rates["miss_pct"], "overrun_pct": rates["overrun_pct"]}
+        for metric in ("callback_ns", "response_ns"):
+            sums = np.bincount(
+                bins, weights=raw[metric] / 1e6, minlength=len(rates["windows"])
+            )
+            row[metric.replace("_ns", "_ms")] = np.divide(
+                sums,
+                rates["windows"],
+                out=np.full(len(sums), np.nan),
+                where=rates["windows"] > 0,
+            )
+        per_seed.append(row)
+    result = {"edges_ms": edges, "centres_ms": (edges[:-1] + edges[1:]) / 2}
+    for metric in per_seed[0]:
+        result[metric], result[metric + "_sd"] = mean_sd(
+            [row[metric] for row in per_seed]
+        )
+    return result
+
+
+def plot_report(report_path, output=None):
+    """Means and SD across seeds; one row per network, four measurement panels."""
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
+    from matplotlib.ticker import PercentFormatter
 
     report_path = Path(report_path)
     report = json.loads(report_path.read_text())
-    if internal:
-        cases = []
-        for case in report["cases"]:
-            data = case.get("advance_breakdown")
-            if data:
-                cases.append(
-                    {
-                        **case,
-                        "breakdown": {
-                            **data,
-                        },
-                    }
-                )
-    else:
-        cases = [
-            case
-            for case in report["cases"]
-            if (case.get("breakdown") or {}).get("stages")
-        ]
-    if not cases:
-        return None
-    columns = min(2, len(cases))
-    rows = (len(cases) + columns - 1) // columns
-    panel_height = 2 + max(len(case["breakdown"]["stages"]) for case in cases) * 0.4
-    fig = Figure(figsize=(8 * columns, panel_height * rows + 1), layout="constrained")
-    FigureCanvasAgg(fig)
-    axes = list(fig.subplots(rows, columns, squeeze=False).flat)
-    limit = (
-        max(
-            max(stage["wall_us"], stage["thread_cpu_us"])
-            for case in cases
-            for stage in case["breakdown"]["stages"]
-        )
-        * 1.35
-    )
-    for ax, case in zip(axes, cases):
-        data = case["breakdown"]
-        stages = data["stages"]
-        y = np.arange(len(stages))
-        wall = [s["wall_us"] for s in stages]
-        cpu = [s["thread_cpu_us"] for s in stages]
-        ax.barh(y - 0.18, wall, height=0.34, color="#b6cee3", label="Elapsed wall time")
-        ax.barh(
-            y + 0.18, cpu, height=0.34, color="#2c67a2", label="Calling-thread CPU time"
-        )
-        for i, (w, c) in enumerate(zip(wall, cpu)):
-            ax.text(
-                max(w, c) + limit * 0.012,
-                i,
-                f"{w:.1f} / {c:.1f}",
-                va="center",
-                fontsize=9,
+    groups = []
+    for case in report["cases"]:
+        runs = case.get("runs", [case])
+        if runs:
+            groups.append(
+                {
+                    "config": case["config"],
+                    "runs": runs,
+                    "summary": summarize_seeds(runs),
+                }
             )
-        ax.set_yticks(y, [s["name"] for s in stages])
-        ax.invert_yaxis()
-        ax.set_xlim(0, limit)
-        ax.set_xlabel(
-            "Mean time per advance (µs); labels = wall / thread CPU"
-            if internal
-            else "Mean time per callback (µs); labels = wall / thread CPU"
+    if not groups:
+        return None
+    height = max(
+        5,
+        1.7
+        + 0.32 * max(len(g["summary"]["advance_breakdown"]["stages"]) for g in groups),
+    )
+    fig = Figure(figsize=(28, height * len(groups) + 2), layout="constrained")
+    FigureCanvasAgg(fig)
+    axes = fig.subplots(len(groups), 4, squeeze=False)
+    limits = {}
+    for key in ("breakdown", "advance_breakdown"):
+        limits[key] = (
+            max(
+                (
+                    s[m] + s[m + "_sd"]
+                    for g in groups
+                    for s in g["summary"][key]["stages"]
+                    for m in ("wall_us", "thread_cpu_us")
+                ),
+                default=1,
+            )
+            * 1.35
         )
-        title = f"{case['config']['hidden']} hidden neurons — diagnostic windows n={data['windows']:,}"
-        if data.get("aborted", False):
-            title += " (PARTIAL)"
-        ax.set_title(title, fontsize=12)
-        ax.grid(axis="x", alpha=0.2)
-        ax.set_axisbelow(True)
-        ax.legend(fontsize=9, loc="lower right")
-    for ax in axes[len(cases) :]:
-        ax.set_visible(False)
+    series = {
+        i: interval_seed_series(g["runs"])
+        for i, g in enumerate(groups)
+        if all(r.get("deadlines") for r in g["runs"])
+    }
+    time_limit = (
+        max(
+            (
+                max(
+                    g["runs"][0]["deadlines"]["period_ms"],
+                    float(
+                        np.nanmax(
+                            series[i]["response_ms"] + series[i]["response_ms_sd"]
+                        )
+                    ),
+                )
+                for i, g in enumerate(groups)
+                if i in series
+            ),
+            default=1,
+        )
+        * 1.1
+    )
+    rate_limit = min(
+        100,
+        max(
+            0.2,
+            max(
+                (
+                    float(np.nanmax(s[m] + s[m + "_sd"]))
+                    for s in series.values()
+                    for m in ("miss_pct", "overrun_pct")
+                ),
+                default=0,
+            ),
+        )
+        * 1.15,
+    )
+    for index, (row, group) in enumerate(zip(axes, groups)):
+        hidden = group["config"]["hidden"]
+        summary = group["summary"]
+        n = summary["seed_count"]
+        for column, key in enumerate(("breakdown", "advance_breakdown")):
+            ax = row[column]
+            stages = summary[key]["stages"]
+            y = np.arange(len(stages))
+            for offset, metric, colour, label in (
+                (-0.18, "wall_us", "#b6cee3", "Wall"),
+                (0.18, "thread_cpu_us", "#2c67a2", "Thread CPU"),
+            ):
+                ax.barh(
+                    y + offset,
+                    [s[metric] for s in stages],
+                    xerr=[s[metric + "_sd"] for s in stages] if n > 1 else None,
+                    height=0.34,
+                    color=colour,
+                    label=label,
+                    capsize=2,
+                    error_kw={"elinewidth": 0.8},
+                )
+            for i, stage in enumerate(stages):
+                end = max(
+                    stage[m] + stage[m + "_sd"] for m in ("wall_us", "thread_cpu_us")
+                )
+                ax.text(
+                    end + limits[key] * 0.012,
+                    i,
+                    f"{stage['wall_us']:.1f} / {stage['thread_cpu_us']:.1f}",
+                    va="center",
+                    fontsize=8,
+                )
+            ax.set_yticks(y, [s["name"] for s in stages], fontsize=9)
+            ax.invert_yaxis()
+            ax.set_xlim(0, limits[key])
+            ax.set_xlabel(
+                "Mean µs ± SD across seeds; labels = wall / thread CPU"
+                if n > 1
+                else "Single-run mean µs; SD unavailable"
+            )
+            ax.set_title(
+                f"{hidden} hidden • "
+                + ("Callback breakdown" if column == 0 else "Inside stream.advance")
+                + f" • n={n} seeds",
+                fontsize=11,
+            )
+            ax.grid(axis="x", alpha=0.2)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=8, loc="lower right")
+        if index not in series:
+            for ax in row[2:]:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No paced deadline data in this saved report",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+                ax.set_axis_off()
+            continue
+        s = series[index]
+        d = summary["deadlines"]
+        ax = row[2]
+        for metric, colour, label in (
+            ("response_ms", "#df8425", "Release → completion"),
+            ("callback_ms", "#2c67a2", "Callback duration"),
+        ):
+            ax.errorbar(
+                s["centres_ms"],
+                s[metric],
+                yerr=s[metric + "_sd"] if n > 1 else None,
+                color=colour,
+                label=label,
+                linewidth=1,
+                capsize=2,
+                elinewidth=0.8,
+            )
+        period = group["runs"][0]["deadlines"]["period_ms"]
+        ax.axhline(
+            period,
+            color="#b72e35",
+            linestyle="--",
+            linewidth=1,
+            label=f"{period:g} ms budget",
+        )
+        ax.set(
+            xlabel="Scheduled release time (ms); 100 ms interval means",
+            ylabel="Mean elapsed ms ± SD",
+            title=f"{hidden} hidden • {n} seeds; {group['runs'][0]['deadlines']['windows']:,} windows/seed\nWorst individual completion {d['worst_response_ms']:.3f} ms; caller CPU {d['caller_thread_cpu_percent_mean']:.1f}%",
+        )
+        ax.set_ylim(0, time_limit)
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8)
+        ax = row[3]
+        for metric, colour, label, style in (
+            ("miss_pct", "#b72e35", "Deadline miss rate", "-"),
+            ("overrun_pct", "#2c67a2", "Callback overrun rate", "--"),
+        ):
+            ax.errorbar(
+                s["centres_ms"],
+                s[metric],
+                yerr=s[metric + "_sd"] if n > 1 else None,
+                color=colour,
+                label=label,
+                linestyle=style,
+                linewidth=1,
+                capsize=2,
+                elinewidth=0.8,
+            )
+        ax.set(
+            xlabel="Scheduled release time (ms); fixed 100 ms intervals",
+            ylabel="Mean fraction of windows ± SD",
+            title=f"{hidden} hidden • pooled misses {d['total_missed_deadlines']:,}/{d['total_windows']:,}\nMisses/seed {d['missed_deadlines_mean']:.2f} ± {d['missed_deadlines_sd']:.2f} SD",
+        )
+        ax.set_ylim(0, rate_limit)
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8)
+        for ax in row[2:]:
+            ax.set_xlim(s["edges_ms"][0], s["edges_ms"][-1])
+    cfg = groups[0]["config"]
     fig.suptitle(
-        "Inside stream.advance\nExclusive phases; separate warmed diagnostic pass"
-        if internal
-        else "Where window processing time is spent\nWarmed unpaced diagnostic pass; arithmetic means",
-        fontsize=16,
+        f"Streaming benchmark • {cfg['device'].upper()} • input {cfg.get('rate_hz', 25):g} Hz/channel • spin {cfg.get('spin_us', 0):g} µs\nMeans ± SD across seeds; separate paced deadline and unpaced diagnostic passes",
+        fontsize=17,
     )
     fig.supxlabel(
-        "Phases + other sum to full advance. Compiled block includes dispatch and completion waits, not just numerical kernels.\nInstrumentation perturbs timing; thread CPU excludes workers/GPU compute. Input generation and host event decoding excluded."
-        if internal
-        else "Executor includes SNNLab, Python, PyTorch and completion waits; it does not isolate kernels.\nThread CPU excludes worker threads and GPU compute. Substages + other sum to full callback; full callback is not an extra stage.",
+        "SD = sample standard deviation (ddof=1) across seed-level measurements; windows are not independent replicates. Timing panels average within each 100 ms interval before combining seeds.\nMisses are counted from each original window before averaging: mean timing can hide isolated deadline failures. Full totals are inclusive; remaining diagnostic phases sum to them.\nLate windows catch up without dropping steps. Thread CPU excludes workers/device compute. Seed variation also includes host scheduling variation; SD is not a hard-deadline guarantee.",
         fontsize=10,
     )
-    output = (
-        Path(output)
-        if output
-        else report_path.with_name(
-            "advance-internals.png" if internal else "breakdown.png"
-        )
-    )
+    output = Path(output) if output else report_path.with_name("streaming.png")
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=160, facecolor="white")
+    fig.savefig(output, dpi=150, facecolor="white")
     return output
 
 
 def main():
+    wall_started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--plot-only", type=Path, help="Redraw charts from a saved report or directory"
+    )
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        help="Explicit distinct seeds; default is five consecutive seeds starting at --seed (7)",
     )
     parser.add_argument(
         "--hidden-sizes", nargs="+", type=int, default=[64, 128, 256, 512]
@@ -545,9 +909,11 @@ def main():
         ("inputs", int, 64),
         ("readouts", int, 8),
         ("sparsity", float, 0.9),
-        ("rate-hz", float, 100.0),
+        ("rate-hz", float, 25.0),
         ("dt-ms", float, 0.1),
         ("window-ms", float, 1.0),
+        ("period-ms", float, 1.0),
+        ("spin-us", float, 1000.0),
         ("windows", int, 256),
         ("seed", int, 7),
         ("block-steps", int, 10),
@@ -562,40 +928,90 @@ def main():
     parser.add_argument(
         "--output",
         type=Path,
-        help="New directory for charts and measurements",
+        help="Output directory (overwritten each run); defaults to benchmarks/streaming/results",
     )
     args = vars(parser.parse_args())
     plot_only = args.pop("plot_only")
     output = args.pop("output")
     if plot_only is not None:
         report_path = plot_only / "report.json" if plot_only.is_dir() else plot_only
-        for internal in (False, True):
-            print(plot_breakdown(report_path, internal=internal))
+        print(plot_report(report_path))
         return
     if output is None:
-        parser.error("--output is required unless using --plot-only")
+        output = Path(__file__).resolve().parent / "results"
     sizes = args.pop("hidden_sizes")
+    seeds = args.pop("seeds")
+    seeds = list(range(args["seed"], args["seed"] + 5)) if seeds is None else seeds
+    if len(set(seeds)) != len(seeds) or any(seed < 0 for seed in seeds):
+        parser.error("--seeds must be distinct nonnegative integers")
     configs = [Config(hidden=size, **args) for size in sizes]
     try:
         for cfg in configs:
             cfg.validate()
     except ValueError as error:
         parser.error(str(error))
-    output.mkdir(parents=True, exist_ok=False)
+    output.mkdir(parents=True, exist_ok=True)
+    # Remove prior generated products, including legacy sample files.
+    # An explicit output directory may also contain unrelated files; preserve them.
+    for pattern in (
+        "case-*-breakdown.npz",
+        "case-*-advance-phases.npz",
+        "case-*-deadlines.npz",
+        "report.json",
+        "streaming.png",
+        "breakdown.png",
+        "advance-internals.png",
+    ):
+        for previous in output.glob(pattern):
+            if previous.is_file():
+                previous.unlink()
     report = {
-        "schema": "snnlab.streaming-timings/v1",
+        "schema": "snnlab.streaming-timings/v5",
         "torch_version": torch.__version__,
-        "scope": "Separate warmed, unpaced diagnostic passes; instrumented wall and calling-thread CPU times. No deadline measurement.",
-        "cases": [],
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "python_version": platform.python_version(),
+        "clock": time.get_clock_info("perf_counter").implementation,
+        "scope": "Separate warmed paced deadline pass and unpaced phase diagnostics. Deadlines include input generation, inference, host output extraction and device completion; absolute monotonic releases, no dropped steps.",
+        "seeds": seeds,
+        "statistics": "Equal-weight mean and SD across seeds; SD uses sample standard deviation (ddof=1), without division by sqrt(n). Per-window samples are not independent seed replicates.",
+        "execution_order": [],
+        "complete": False,
+        "cases": [
+            {
+                "config": {
+                    key: value for key, value in asdict(cfg).items() if key != "seed"
+                },
+                "runs": [],
+            }
+            for cfg in configs
+        ],
     }
-    for index, cfg in enumerate(configs):
-        print(f"hidden={cfg.hidden}: warmup, validation and timing", flush=True)
-        report["cases"].append(
-            run(cfg, output / f"case-{index:03d}-hidden-{cfg.hidden}")
-        )
-        (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
-    for internal in (False, True):
-        print(plot_breakdown(output / "report.json", internal=internal), flush=True)
+    report_path = output / "report.json"
+    for seed_index, seed in enumerate(seeds):
+        # Rotate size order to reduce a fixed size/time-of-run confound.
+        order = list(range(len(configs)))
+        rotation = seed_index % len(order)
+        order = order[rotation:] + order[:rotation]
+        for index in order:
+            cfg = replace(configs[index], seed=seed)
+            print(
+                f"seed={seed} hidden={cfg.hidden}: warmup, validation and timing",
+                flush=True,
+            )
+            case = report["cases"][index]
+            case["runs"].append(run(cfg))
+            case["summary"] = summarize_seeds(case["runs"])
+            report["execution_order"].append({"seed": seed, "hidden": cfg.hidden})
+            report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    print(plot_report(report_path), flush=True)
+    report["complete"] = True
+    report["wall_time_seconds"] = time.perf_counter() - wall_started
+    report["wall_time_scope"] = (
+        "main entry through final plot generation; excludes Python/import startup and final JSON write"
+    )
+    report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    print(f"Benchmark wall time: {report['wall_time_seconds']:.2f} s", flush=True)
 
 
 if __name__ == "__main__":

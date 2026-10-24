@@ -1,6 +1,7 @@
 """Validate the actual documented custom callbacks against native execution."""
 
-import importlib
+import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,14 @@ EXAMPLE = Path(__file__).resolve().parents[2] / "examples/customisation"
 def callbacks(monkeypatch):
     monkeypatch.syspath_prepend(str(EXAMPLE))
     monkeypatch.setattr(extensions, "_REGISTRY", {})
-    importlib.import_module("customisation").register_definitions()
-    return importlib.import_module("custom_neurons")
+    spec = importlib.util.spec_from_file_location(
+        "customisation_example", EXAMPLE / "example.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    module.register_definitions()
+    return module
 
 
 def bundle(*, custom_synapse=True, adaptation=0.35, tau_ms=5.0, tau_adapt_ms=100):

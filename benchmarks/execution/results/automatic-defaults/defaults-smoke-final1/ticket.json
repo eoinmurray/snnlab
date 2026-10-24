@@ -1,8 +1,0 @@
-{
-  "run_id": "defaults-smoke-final1",
-  "volume": "snnlab-automatic-defaults",
-  "jobs": {
-    "validate": "fc-01M5C085BQRD5QYD0GSN46W30B",
-    "shd": "fc-01M5C085HWASSZR83TDPH9XEVW"
-  }
-}

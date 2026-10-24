@@ -16,9 +16,9 @@ from snnlab import analysis, lang, sim, viz
 4. `snnlab.analysis` measures population activity, rhythmicity and conductance trajectories from recorded NumPy data.
 5. `snnlab.extensions` registers versioned Python definitions for custom dynamics, weights, operations, training and encoders. Saved bundles retain import references and automatically load available implementations in fresh processes, without embedding Python code.
 
-The graph simulator supports LIF, ALIF and AdEx populations with current or conductance synapses, plus leaky-integrator readouts, recurrent/feedback connections and integer-timestep delays. `lang.ALIF()` and `lang.ADEX()` select current models; `lang.COBA_ALIF()` and `lang.COBA_ADEX()` select conductance models. See `examples/neurons/neurons.py` for a LIF/ALIF/AdEx comparison and the [neuron and synapse reference](docs/content/docs/api/extensions.mdx) and [weight reference](docs/content/docs/api/lang.mdx). Register importable Python callbacks when authoring custom models; bundle loaders automatically resolve their saved references in each execution process. See `examples/current-lif/current_lif.py` for a built-in current-based simulation and `examples/customisation/customisation.py` with its sibling `custom_neurons.py` for a custom adaptive current neuron and weight distribution. Run the Customisation script with `--simulate` to execute its saved bundle without rebuilding or manually registering callbacks.
+The graph simulator supports LIF, ALIF and AdEx populations with current or conductance synapses, plus leaky-integrator readouts, recurrent/feedback connections and integer-timestep delays. `lang.ALIF()` and `lang.ADEX()` select current models; `lang.COBA_ALIF()` and `lang.COBA_ADEX()` select conductance models. See `examples/neurons/example.py` for a LIF/ALIF/AdEx comparison and the [neuron and synapse reference](docs/content/docs/api/extensions.mdx) and [weight reference](docs/content/docs/api/lang.mdx). Register importable Python callbacks when authoring custom models; bundle loaders automatically resolve their saved references in each execution process. See `examples/current-lif/example.py` for a built-in current-based simulation and `examples/customisation/example.py` with its callbacks in the same file for a custom adaptive current neuron and weight distribution.
 
-For a single-compartment Hodgkin–Huxley neuron with sodium, potassium and leak conductances, run `uv run python examples/hodgkin-huxley/hodgkin_huxley.py`. The [extension example](examples/hodgkin-huxley/hh_neuron.py) evolves voltage and channel gates continuously without a spike reset, and plots its current-pulse response. The [Hodgkin–Huxley example guide](docs/content/docs/hodgkin-huxley.mdx) gives the equations and a reproducible independent SciPy comparison. It demonstrates forward simulation rather than surrogate-gradient training.
+For a single-compartment Hodgkin–Huxley neuron with sodium, potassium and leak conductances, run `uv run python examples/hodgkin-huxley/example.py`. The [extension example](examples/hodgkin-huxley/example.py) evolves voltage and channel gates continuously without a spike reset, and plots its current-pulse response. The [Hodgkin–Huxley example guide](docs/content/docs/hodgkin-huxley.mdx) gives the equations and a reproducible independent SciPy comparison. It demonstrates forward simulation rather than surrogate-gradient training.
 
 New same-population projections exclude self-connections by default. Use `Network.connect(..., allow_autapses=True)` for deliberate self-feedback. Exclusion persists through training and checkpoints; historical bundles without the policy retain their original behaviour. See [Weights](docs/content/docs/api/lang.mdx) for eligible fan-in, initialization and compatibility.
 
@@ -26,15 +26,16 @@ The simulator executes authored graph bundles. Legacy Config/COBANet execution,
 flag-built networks and config replay have been removed; see the
 [CLI reference](docs/content/docs/api/sim.mdx) for current inputs and controls.
 
-Native training also supports online minibatch metrics, validation-only epoch evaluation, stratified schedules with configurable tails, and immutable epoch progress callbacks. See `examples/native-training/progress.py` for partial checkpoint resume and final/selected checkpoints, and the [execution policies](docs/content/docs/api/sim#inputs-and-execution-settings.mdx) for measurement and RNG contracts.
+Each directory under `examples/` has one `example.py`. Run it with `uv run python examples/<name>/example.py`; generated files go into its `results/` directory, which is replaced on every run. Inference and PyTorch reuse the saved model in `examples/training/results/`.
+
+Native training also supports online minibatch metrics, validation-only epoch evaluation, stratified schedules with configurable tails, and immutable epoch progress callbacks. See `examples/native-training/example.py` for partial checkpoint resume and final/selected checkpoints, and the [execution policies](docs/content/docs/api/sim#inputs-and-execution-settings.mdx) for measurement and RNG contracts.
 
 Use `sim.TrainingHistory` and `sim.NetworkSnapshot` to read native experiment evidence,
 `sim.DatasetSnapshot` for named partitions with original sample identities, and explicit
 result exporters for portable metrics/recordings. NumPy results include retained recordings
 with per-signal coordinates; `viz.plot_raster` and `viz.plot_learning_curves` draw on your axes.
-See the [experiment utilities](docs/content/docs/api/sim#traininghistory.mdx) and run
-`uv run python examples/native-training/digits.py --smoke --output /tmp/digits-evidence`
-with a fresh output directory for a complete offline example.
+See the [experiment utilities](docs/content/docs/api/sim#traininghistory.mdx) for
+configuration, readers and exporters.
 
 For a quick offline training benchmark with conductance-based LIF neurons, run
 `uv run python benchmarks/scikit-digits/benchmark.py`. See the

@@ -52,6 +52,19 @@ def eager():
     return Performance(compile_mode=None, cuda_graphs="off", precision="highest")
 
 
+@pytest.fixture(params=[False, True])
+def stream_policy(request, monkeypatch):
+    if not request.param:
+        return eager()
+    original = torch.compile
+    monkeypatch.setattr(
+        torch,
+        "compile",
+        lambda fn, **kw: original(fn, backend="eager", fullgraph=True, dynamic=False),
+    )
+    return Performance(compile_block_steps=3, precision="highest")
+
+
 @pytest.mark.parametrize("compiled", [False, True])
 def test_prepared_windows_match_uninterrupted_and_restored_state(compiled, monkeypatch):
     original = torch.compile
@@ -118,7 +131,7 @@ def test_prepared_windows_match_uninterrupted_and_restored_state(compiled, monke
     stream.close()
 
 
-def test_outputs_snapshots_and_source_model_are_independent():
+def test_outputs_snapshots_and_source_model_are_independent(stream_policy):
     graph = lang.compile(circuit()).graph
     source = GraphExecutor(
         plan_graph(graph),
@@ -130,7 +143,7 @@ def test_outputs_snapshots_and_source_model_are_independent():
     source_weights = {
         name: value.detach().clone() for name, value in source.parameter_map().items()
     }
-    with prepare_stream(source, window_steps=5, performance=eager()) as stream:
+    with prepare_stream(source, window_steps=5, performance=stream_policy) as stream:
         assert source.training
         assert source.parameter_map()["drive.weight"].requires_grad
         first = stream.advance({"events": torch.ones(5, 1, 3)})
@@ -158,8 +171,8 @@ def test_outputs_snapshots_and_source_model_are_independent():
     )
 
 
-def test_invalid_windows_and_restore_leave_progress_unchanged():
-    with prepare_stream(circuit(), window_steps=5, performance=eager()) as stream:
+def test_invalid_windows_and_restore_leave_progress_unchanged(stream_policy):
+    with prepare_stream(circuit(), window_steps=5, performance=stream_policy) as stream:
         stream.advance({"events": torch.ones(5, 1, 3)})
         for inputs in (
             {},
@@ -211,13 +224,13 @@ def test_invalid_preparation(kwargs):
         prepare_stream(circuit(), performance=eager(), **kwargs)
 
 
-def test_parameterless_stream_owns_passthrough_buffers():
+def test_parameterless_stream_owns_passthrough_buffers(stream_policy):
     net = lang.Network("passthrough", dt=0.1 * lang.ms)
     events = net.input(
         "events", shape=("time", "batch", 3), signal_type="spikes", unit="spike"
     )
     net.output("echo", events)
-    with prepare_stream(net, window_steps=5, performance=eager()) as stream:
+    with prepare_stream(net, window_steps=5, performance=stream_policy) as stream:
         result = stream.advance({"events": torch.ones(5, 1, 3)})
         stream.advance({"events": torch.zeros(5, 1, 3)})
         assert result.outputs["echo"].sum() == 15
@@ -244,3 +257,206 @@ def test_bundle_path_and_float64_state_roundtrip(tmp_path):
         with pytest.raises(ValueError, match="nonnegative"):
             stream.reset(state)
         assert stream.completed_steps == 5
+
+
+@pytest.mark.parametrize(
+    "constructor",
+    [
+        lang.CUBA_LIF,
+        lang.COBA_LIF,
+        lang.CUBA_ALIF,
+        lang.COBA_ALIF,
+        lang.CUBA_ADEX,
+        lang.COBA_ADEX,
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("block_steps", [3, 7])
+def test_persistent_blocks_match_executor_with_long_delays_gains_and_restore(
+    constructor,
+    dtype,
+    block_steps,
+    monkeypatch,
+    tmp_path,
+):
+    from snnlab.sim import load_runtime_state, save_runtime_state
+
+    original = torch.compile
+    monkeypatch.setattr(
+        torch,
+        "compile",
+        lambda fn, **kw: original(fn, backend="eager", fullgraph=True, dynamic=False),
+    )
+    net = lang.Network("persistent", dt=0.1 * lang.ms)
+    events = net.input(
+        "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+    )
+    cells = net.population(
+        "cells",
+        size=3,
+        neuron=constructor(tau_mem=20 * lang.ms, refractory=0.3 * lang.ms),
+    )
+    current = cells.neuron.kind.startswith("cuba_")
+    synapse = lang.ExponentialCurrent if current else lang.AMPA
+    drive = net.connect(
+        events,
+        cells.excitatory,
+        name="drive",
+        synapse=synapse(tau=2 * lang.ms),
+        weight=lang.Constant(15 if current else 0.2),
+        delay=1.1 * lang.ms,
+        modulation=lang.StepGain(at=2.3 * lang.ms, before=1, after=0.4),
+    )
+    net.connect(
+        cells.spikes,
+        cells.excitatory,
+        name="recur",
+        connection="recurrent",
+        delay=0.9 * lang.ms,
+        synapse=synapse(tau=3 * lang.ms),
+        weight=lang.Constant(0.1),
+    )
+    net.output("voltage", cells.voltage)
+    net.output("spikes", cells.spikes)
+    net.output("drive_trace", drive.current if current else drive.conductance)
+    net.output("echo", events)
+    if "alif" in cells.neuron.kind or "adex" in cells.neuron.kind:
+        net.output("adaptation", cells.state("adaptation"))
+    policy = Performance(compile_block_steps=block_steps, precision="highest")
+    fast = prepare_stream(
+        net, window_steps=7, batch_size=2, dtype=dtype, performance=policy
+    )
+    regular = prepare_stream(
+        net, window_steps=7, batch_size=2, dtype=dtype, performance=policy
+    )
+    assert fast.info["persistent_state"]
+    # A/B against the original, independently initialized compiled executor.
+    regular._blocks = None
+    values = (
+        torch.rand(84, 2, 2, generator=torch.Generator().manual_seed(9)) > 0.3
+    ).to(dtype)
+    first = None
+    snapshot = None
+    for begin in range(0, len(values), 7):
+        a = fast.advance({"events": values[begin : begin + 7]})
+        b = regular.advance({"events": values[begin : begin + 7]})
+        for name, expected in b.outputs.items():
+            torch.testing.assert_close(a.outputs[name], expected, atol=0, rtol=0)
+        if begin == 0:
+            first = {name: value.clone() for name, value in a.outputs.items()}
+            a.outputs["voltage"].fill_(999)
+            a.outputs["echo"].zero_()
+        if begin == 35:
+            snapshot = fast.export_state()
+    observed, expected = fast.export_state(), regular.export_state()
+    for group in (
+        "voltages",
+        "refractory",
+        "conductances",
+        "currents",
+        "population_histories",
+        "input_histories",
+        "custom_state",
+    ):
+        assert getattr(observed, group).keys() == getattr(expected, group).keys()
+        for name, value in getattr(expected, group).items():
+            torch.testing.assert_close(
+                getattr(observed, group)[name], value, atol=0, rtol=0
+            )
+    # Portable export, independent restore, and replay across a scheduled gain.
+    save_runtime_state(tmp_path / "state", snapshot)
+    restored = load_runtime_state(tmp_path / "state")
+    fast.reset(restored)
+    restored.voltages["cells"].fill_(999)
+    for begin in range(42, 84, 7):
+        fast.advance({"events": values[begin : begin + 7]})
+    for name, value in expected.voltages.items():
+        torch.testing.assert_close(
+            fast.export_state().voltages[name], value, atol=0, rtol=0
+        )
+    fast.reset()
+    replay = fast.advance({"events": values[:7]})
+    for name, value in first.items():
+        torch.testing.assert_close(replay.outputs[name], value, atol=0, rtol=0)
+    # No general forward or per-window state snapshot is needed after preparation.
+    monkeypatch.setattr(
+        fast, "_execute", lambda *a: pytest.fail("general executor entered")
+    )
+    monkeypatch.setattr(fast._blocks, "snapshot", lambda: pytest.fail("state copied"))
+    fast.advance({"events": values[7:14]})
+    fast.close()
+    regular.close()
+
+
+def test_failed_persistent_window_does_not_commit_partial_state(monkeypatch):
+    # Exercise a failure after a complete numerical block, before window commit.
+    monkeypatch.setattr(torch, "compile", lambda fn, **kw: fn)
+    stream = prepare_stream(
+        circuit(),
+        window_steps=7,
+        performance=Performance(compile_block_steps=3, precision="highest"),
+    )
+    values = {"events": torch.ones(7, 1, 3)}
+    stream.advance(values)
+    before = stream.export_state()
+    expected = stream.advance(values)
+    stream.reset(before)
+    kernel = stream._blocks.kernel
+    calls = 0
+
+    def interrupted(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("interrupted window")
+        return kernel(*args)
+
+    monkeypatch.setattr(stream._blocks, "kernel", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted window"):
+        stream.advance(values)
+    assert stream.completed_steps == before.completed_steps
+    after = stream.export_state()
+    for group in (
+        "voltages",
+        "refractory",
+        "currents",
+        "population_histories",
+        "input_histories",
+    ):
+        for name, value in getattr(before, group).items():
+            torch.testing.assert_close(
+                getattr(after, group)[name], value, atol=0, rtol=0
+            )
+    monkeypatch.setattr(stream._blocks, "kernel", kernel)
+    actual = stream.advance(values)
+    for name, value in expected.outputs.items():
+        torch.testing.assert_close(actual.outputs[name], value, atol=0, rtol=0)
+    stream.close()
+
+
+def test_persistent_trace_fallback_preserves_progress(monkeypatch):
+    from importlib import import_module
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(torch, "compile", lambda fn, **kw: fn)
+    stream = prepare_stream(
+        circuit(),
+        window_steps=5,
+        performance=Performance(compile_block_steps=3, precision="highest"),
+    )
+    values = {"events": torch.ones(5, 1, 3)}
+    stream.advance(values)
+    state = stream.export_state()
+    expected = stream.advance(values)
+    stream.reset(state)
+    monkeypatch.setattr(
+        import_module("snnlab.sim.runtime.streaming"),
+        "current_trace",
+        lambda: SimpleNamespace(active=True),
+    )
+    actual = stream.advance(values)
+    assert not stream.info["persistent_state"]
+    assert stream.completed_steps == 10
+    for name, value in expected.outputs.items():
+        torch.testing.assert_close(actual.outputs[name], value, atol=0, rtol=0)
+    stream.close()

@@ -75,8 +75,11 @@ def test_default_learns_and_checkpoint_reproduces_final_accuracy(tmp_path):
         (result.outputs["class_scores"].argmax(-1) == labels).float().mean().item()
     )
     assert accuracy == pytest.approx(report["summary"]["test_accuracy"])
-    with pytest.raises(FileExistsError):
-        benchmark.run(cfg, output)
+    stale = output / "old-report.json"
+    stale.write_text("{}")
+    repeated = benchmark.run(cfg, output)
+    assert not stale.exists()
+    assert repeated["summary"]["test_accuracy"] == report["summary"]["test_accuracy"]
 
 
 @pytest.mark.integration

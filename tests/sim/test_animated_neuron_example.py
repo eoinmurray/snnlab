@@ -13,14 +13,14 @@ EXAMPLE = Path(__file__).resolve().parents[2] / "examples/animated-neuron"
 
 @pytest.fixture(scope="module")
 def recording():
-    module = runpy.run_path(str(EXAMPLE / "animated_neuron.py"))
+    module = runpy.run_path(str(EXAMPLE / "example.py"))
     _, data, result = module["record_neuron"]()
     return data, result
 
 
 def test_recording_matches_saved_export_and_actual_results(recording):
     data, result = recording
-    assert data == json.loads((EXAMPLE / "recording.json").read_text())
+    assert data == json.loads((EXAMPLE / "results/recording.json").read_text())
     assert data["schema"] == "snnlab.neuron-replay/v1"
     assert len(data["time_ms"]) == len(data["voltage_mv"]) == 1441
     assert data["time_ms"][0] == 0

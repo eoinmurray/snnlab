@@ -1,0 +1,157 @@
+{
+  "assets": [],
+  "constants": [],
+  "groups": [],
+  "inputs": [
+    {
+      "id": "pixels",
+      "shape": [
+        "time",
+        "batch",
+        64
+      ],
+      "signal_type": "spikes",
+      "unit": "spike"
+    }
+  ],
+  "name": "scikit_digits_coba",
+  "observables": [],
+  "operations": [
+    {
+      "config": {
+        "size": 10,
+        "trainable": true
+      },
+      "group": null,
+      "id": "classifier",
+      "kind": "linear",
+      "parameters": [
+        "classifier.weight"
+      ],
+      "shape": [
+        "batch",
+        10
+      ],
+      "signal_type": "continuous",
+      "sources": [
+        "counts.value"
+      ],
+      "unit": "spike"
+    },
+    {
+      "config": {
+        "mask": null,
+        "window": "full"
+      },
+      "group": null,
+      "id": "counts",
+      "kind": "reduce_sum",
+      "parameters": [],
+      "shape": [
+        "batch",
+        64
+      ],
+      "signal_type": "continuous",
+      "sources": [
+        "hidden.spikes"
+      ],
+      "unit": "spike"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "class_scores",
+      "signal": "classifier.value"
+    }
+  ],
+  "parameters": [
+    {
+      "constraint": null,
+      "group": null,
+      "id": "classifier.weight",
+      "initializer": {
+        "kind": "constant",
+        "value": 0.0
+      },
+      "shape": [
+        10,
+        64
+      ],
+      "unit": "1"
+    },
+    {
+      "constraint": {
+        "kind": "non_negative"
+      },
+      "group": null,
+      "id": "pixels_to_hidden.weight",
+      "initialization_scaling": "direct",
+      "initializer": {
+        "high": 0.02,
+        "kind": "uniform",
+        "low": 0.0
+      },
+      "shape": [
+        64,
+        64
+      ],
+      "unit": "uS"
+    }
+  ],
+  "populations": [
+    {
+      "group": null,
+      "id": "hidden",
+      "neuron": {
+        "capacitance_nf": 1.0,
+        "kind": "coba_lif",
+        "leak_us": 0.05,
+        "refractory": {
+          "unit": "ms",
+          "value": 0.0
+        },
+        "reset_mv": -65.0,
+        "resting_mv": -65.0,
+        "tau_mem": {
+          "unit": "ms",
+          "value": 20.0
+        },
+        "threshold_mv": -50.0,
+        "voltage_grad_dampen": 1.0
+      },
+      "size": 64,
+      "spiking": true
+    }
+  ],
+  "projections": [
+    {
+      "allow_autapses": false,
+      "connection": "feedforward",
+      "delay": null,
+      "group": null,
+      "id": "pixels_to_hidden",
+      "parameters": [
+        "pixels_to_hidden.weight"
+      ],
+      "polarity": "excitatory",
+      "source": "pixels.value",
+      "synapse": {
+        "kind": "ampa",
+        "tau": {
+          "unit": "ms",
+          "value": 2.0
+        }
+      },
+      "target": "hidden.excitatory"
+    }
+  ],
+  "refractory_timing": "following_steps",
+  "schema": "snnlang.graph/v1",
+  "timebase": {
+    "dt": {
+      "unit": "ms",
+      "value": 1.0
+    }
+  },
+  "voltage_sampling": "explicit"
+}

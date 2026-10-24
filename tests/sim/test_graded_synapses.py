@@ -1,7 +1,8 @@
 """Continuous population source timing, physical units and persistence."""
 
 import copy
-import importlib
+import importlib.util
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -22,13 +23,41 @@ KEYS = (
 )
 
 
+def reference(steps, *, delay_steps=0, state_source=False, weight=1.0):
+    """Independent NumPy gate-first forward Euler, including held prehistory."""
+    voltage = np.array([-40.0, -65.0], dtype=np.float64)
+    activation = voltage.copy()
+    gate = np.full(2, -60.0, dtype=np.float64)
+    past = []
+    samples = []
+    for step in range(steps):
+        old_source = activation.copy() if state_source else voltage.copy()
+        past.append(old_source)
+        source = past[max(0, step - delay_steps)] * weight
+        gate = gate + 0.1 / 2.0 * (source - gate)
+        conductance = 0.04 / (1.0 + np.exp(-0.3 * (gate + 50.0)))
+        current = (
+            0.01 * (-60.0 - voltage)
+            + np.array([0.2, 0.1])
+            + conductance[::-1] * (-80.0 - voltage)
+        )
+        voltage = voltage + 0.1 * current / 0.2
+        activation = voltage + 5.0
+        samples.append(np.concatenate((gate, conductance, voltage)))
+    return np.asarray(samples)
+
+
 @pytest.fixture
 def example(monkeypatch):
     monkeypatch.setattr(ext, "_REGISTRY", {})
     monkeypatch.syspath_prepend(
         str(Path(__file__).resolve().parents[2] / "examples/graded-synapses")
     )
-    module = importlib.import_module("graded_synapses")
+    path = Path(__file__).resolve().parents[2] / "examples/graded-synapses/example.py"
+    spec = importlib.util.spec_from_file_location("graded_example", path)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
     module.register()
     return module
 
@@ -48,7 +77,7 @@ def test_reference_batch_and_saved_continuation(
     )
     clock = torch.zeros(80, 3, 1, dtype=torch.float64)
     full = model({"clock": clock})
-    expected = example.reference(
+    expected = reference(
         80, delay_steps=delay_steps, state_source=state_source, weight=0.75
     )
     for column, key in enumerate(KEYS):
@@ -203,7 +232,7 @@ def test_default_feedforward_continuous_cycle_is_valid(example):
     result = model({"clock": torch.zeros(10, 1, 1, dtype=torch.float64)})
     np.testing.assert_allclose(
         result.outputs["a_voltage"][:, 0, 0].detach().numpy(),
-        example.reference(10)[:, 4],
+        reference(10)[:, 4],
         atol=1e-12,
         rtol=1e-12,
     )

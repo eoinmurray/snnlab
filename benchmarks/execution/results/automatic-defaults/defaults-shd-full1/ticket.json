@@ -1,7 +1,0 @@
-{
-  "run_id": "defaults-shd-full1",
-  "volume": "snnlab-automatic-defaults",
-  "jobs": {
-    "shd": "fc-01M5C0E4YW5VVBV3Z0HS05FW5J"
-  }
-}

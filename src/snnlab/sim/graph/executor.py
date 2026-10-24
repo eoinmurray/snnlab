@@ -1335,6 +1335,32 @@ class GraphExecutor(nn.Module):
                 name: history._values for name, history in histories.items()
             }
             block_input_histories = input_histories
+            # Prepared sessions can reuse the exact functional block and its
+            # validated initial state without rebuilding a forward invocation.
+            # Operation/reduction graphs retain the general executor path.
+            if (
+                prepared is not None
+                and retain_outputs
+                and not self.plan.graph.get("operations")
+            ):
+                self._stream_block_context = {
+                    "kernel": kernel,
+                    "state": (
+                        voltage,
+                        refractory,
+                        neuron_states,
+                        conductance,
+                        history_values,
+                        block_input_histories,
+                    ),
+                    "completed_steps": completed_steps,
+                    "gain_specs": {
+                        p.id: projection_rows[p.id]["modulation"]
+                        for p in self.plan.projections
+                        if p.enabled and "modulation" in projection_rows[p.id]
+                    },
+                    "ports": projection_ports,
+                }
             gain_tensors = {
                 name: torch.as_tensor(values, device=device, dtype=parameter_dtype)
                 for name, values in projection_gains.items()

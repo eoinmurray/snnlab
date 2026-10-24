@@ -6,6 +6,7 @@ const docsDir = fileURLToPath(new URL('../', import.meta.url));
 const repoDir = path.dirname(docsDir);
 const examples = new Map([
   ['snnlang', 'snnlang'],
+  ['native-training', 'training'], ['animated-neuron', 'animated-neuron'],
   ['quickstart', 'quickstart'], ['training', 'training'],
   ['pytorch', 'pytorch'], ['inference', 'inference'],
   ['current-lif', 'current-lif'], ['customisation', 'customisation'],
@@ -23,7 +24,7 @@ export function syncScriptFor(file) {
     return generator[1];
   }
   const example = path.relative(path.join(repoDir, 'examples'), absolute).split(path.sep).join('/');
-  const asset = /^([^/]+)\/[^/]+\.(py|png|json)$/.exec(example);
+  const asset = /^([^/]+)\/(?:results\/)?[^/]+\.(py|png|json)$/.exec(example);
   if (asset && examples.has(asset[1])) return `sync-${examples.get(asset[1])}.ts`;
 }
 

@@ -10,10 +10,10 @@ Four independent Poisson spike trains drive 16 current-based leaky integrate-and
 Run from the repository root:
 
 ```bash
-uv run python examples/current-lif/current_lif.py
+uv run python examples/current-lif/example.py
 ```
 
-The script saves `network.png` and `current-lif.png` beside itself. Graphviz's `dot` executable is required for the diagram.
+The script saves `network.png` and `current-lif.png` in `results/`. Each run replaces that directory. Graphviz's `dot` executable is required for the diagram.
 
 ## 1. Imports and network definition
 
@@ -53,7 +53,7 @@ The network input declares four spike channels. The binding supplies 500 ms of P
 cells = net.population(
     "E", size=16, neuron=lang.CUBA_LIF(tau_mem=20 * lang.ms, capacitance_nf=1.0)
 )
-# Connect all 4 input channels to all 16 E cells using 64 weights.
+
 projection = net.connect(
     inputs,
     cells.excitatory,
@@ -73,9 +73,8 @@ Current synapses use `nA`; conductance synapses use `uS`. The compiler checks co
 ## 4. Choose outputs and expose diagnostics
 
 ```python
-# The official network output: spikes.
 net.output("spikes", cells.spikes)
-# Expose input spikes and membrane voltage for diagnostics.
+
 net.expose(inputs, name="input_spikes")
 net.expose(cells.voltage, name="e_voltage")
 net.expose(projection.current, name="e_current")
@@ -121,18 +120,16 @@ spikes = data.outputs["spikes"]
 voltages = data.diagnostics["e_voltage"]
 currents = data.diagnostics["e_current"]
 time_ms = data.time_ms
-assert time_ms is not None
 ```
 
 `result.numpy(batch=0)` converts tensors into NumPy arrays and selects the only batch item. Outputs and diagnostics retain their names, while `time_ms` supplies the shared time axis. Plotting code is included in the full script below.
 
 ## 8. Full example
 
-[Download current_lif.py](/current-lif/current_lif.py).
+[Download example.py](/current-lif/example.py).
 
-```python title="examples/current-lif/current_lif.py"
-"""Simulate current-based LIF cells and plot their input, spikes, voltage and current."""
-
+```python title="examples/current-lif/example.py"
+import shutil
 from pathlib import Path
 
 import matplotlib
@@ -147,17 +144,26 @@ from snnlab.sim import (
     simulate,
 )
 
-OUTPUT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = Path(__file__).resolve().parent / "results"
 DT_MS = 0.5
 DURATION_MS = 500
 INPUT_RATE_HZ = 80
 SEED = 17
 
 
+def prepare_results():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
+
+
 def main():
-    # 1. Create the network.
+    prepare_results()
+
     net = lang.Network("current_lif", dt=DT_MS * lang.ms)
-    # 2. Define the input and its stimulus binding.
+
     inputs = net.input(
         "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
     )
@@ -167,11 +173,11 @@ def main():
         rates_hz=(INPUT_RATE_HZ,),
         seed=SEED,
     )
-    # 3. Define the excitatory layer and its input projection.
+
     cells = net.population(
         "E", size=16, neuron=lang.CUBA_LIF(tau_mem=20 * lang.ms, capacitance_nf=1.0)
     )
-    # Connect all 4 input channels to all 16 E cells using 64 weights.
+
     projection = net.connect(
         inputs,
         cells.excitatory,
@@ -180,14 +186,13 @@ def main():
         weight=lang.Uniform(4.0, 6.0),
         constraint=lang.NonNegative(),
     )
-    # 4. Choose outputs and exposed diagnostics.
-    # The official network output: spikes.
+
     net.output("spikes", cells.spikes)
-    # Expose input spikes and membrane voltage for diagnostics.
+
     net.expose(inputs, name="input_spikes")
     net.expose(cells.voltage, name="e_voltage")
     net.expose(projection.current, name="e_current")
-    # 5. Compile the network into a bundle.
+
     bundle = lang.compile(net, target="tools/snnsim")
     diagram = lang.diagram(bundle, view="expanded")
     viz.render_diagram(
@@ -198,23 +203,20 @@ def main():
         canvas_size=(1920, 900),
     )
 
-    # 6. Simulate with explicit execution settings.
     result = simulate(
         graph=bundle.graph,
         input_bindings=(poisson_input,),
         seed=SEED,
         device="cpu",
     )
-    # 7. Retrieve named results and select the first (only) batch item.
+
     data = result.numpy(batch=0)
     input_spikes = data.diagnostics["input_spikes"]
     spikes = data.outputs["spikes"]
     voltages = data.diagnostics["e_voltage"]
     currents = data.diagnostics["e_current"]
     time_ms = data.time_ms
-    assert time_ms is not None
 
-    # Plot the results with snnlab.viz and Matplotlib.
     grid = viz.FigureGrid(
         rows=4, columns=1, bounds=(0.14, 0.07, 0.82, 0.86), row_gap=0.07
     )
@@ -255,11 +257,6 @@ def main():
     path = OUTPUT_DIR / "current-lif.png"
     figure.savefig(path, bbox_inches="tight")
     plt.close(figure)
-    print(f"Saved {path}")
-
-    counts = spikes.sum(axis=0)
-    print(f"Total spikes: {int(counts.sum())}")
-    print(f"Spikes per cell: {counts.astype(int).tolist()}")
 
 
 if __name__ == "__main__":

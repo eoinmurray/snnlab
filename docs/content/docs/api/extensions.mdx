@@ -75,7 +75,7 @@ Connect current neurons with `ExponentialCurrent` or a compatible registered cur
 
 For ALIF, `threshold_mv` is the baseline threshold and `.state("adaptation")` is its offset in mV. For AdEx, `threshold_mv` is the exponential onset voltage, `spike_mv` is the detection cutoff and adaptation is a current in nA. AdEx reset voltage can exceed the onset voltage, but reset and onset must both remain below `spike_mv`. Time constants, capacitance and `delta_t_mv` must be positive; adaptation increments and `a_us` are non-negative. AdEx's initial adaptation current can have either sign.
 
-Adaptation participates in outputs, diagnostics, streamed recordings and saved continuation. Spikes use the configured surrogate during training. See `examples/neurons/neurons.py` for a runnable comparison; use the synapse and weight references for connection and initialization choices.
+Adaptation participates in outputs, diagnostics, streamed recordings and saved continuation. Spikes use the configured surrogate during training. See `examples/neurons/example.py` for a runnable comparison; use the synapse and weight references for connection and initialization choices.
 
 #### Population and projection signals
 
@@ -388,7 +388,7 @@ The constants above use milliseconds, millivolts and microsiemens. The gate filt
 4. An explicit delay of `d * dt` adds `d` whole steps to the beginning-of-step sample. For `d=0` the callback reads the current step's initial state; for `d=1` it reads the preceding step's initial state. Prehistory holds each source's initialized value. Delayed source history and synapse gates survive saved runtime continuation. Recurrent continuous edges add no implicit delay; existing spike edges retain their causal delay rules. The `feedback` connection label still requires an explicit positive delay.
 5. Direct voltage and declared neuron state ports are supported. Pre-reset voltage, projection outputs and operation chains over continuous population signals are unsupported projection sources. Source units must match `input_unit`; weights must be dimensionless and synapse output units must match the target neuron input units.
 
-The [reciprocal graded-synapse example](https://github.com/eoinmurray/snnlab/tree/main/examples/graded-synapses) compares two passive membranes with an independent gate-first NumPy Euler implementation in CPU float64 and exports gate, conductance and voltage traces. It demonstrates reusable graph coupling; it does not reproduce the intrinsic neuron dynamics of the Neuromorphic Toolbox half-centre oscillator.
+The [reciprocal graded-synapse example](https://github.com/eoinmurray/snnlab/tree/main/examples/graded-synapses) exports gate, conductance and voltage traces from two passive membranes in CPU float64. Its tests compare those traces with an independent gate-first NumPy Euler implementation. It demonstrates reusable graph coupling; it does not reproduce the intrinsic neuron dynamics of the Neuromorphic Toolbox half-centre oscillator.
 
 ### Initializers and constraints
 

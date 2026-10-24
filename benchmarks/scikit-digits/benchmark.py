@@ -6,6 +6,8 @@ import argparse
 import hashlib
 import json
 import platform
+import shutil
+import sys
 import time
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -28,6 +30,19 @@ from snnlab.sim import (
     encode_images_poisson,
     train,
 )
+
+
+def reset_results(output):
+    """Replace a run directory so stale reports/checkpoints cannot survive a rerun."""
+    output = Path(output).absolute()
+    source = Path(__file__).resolve()
+    if output.is_symlink() or output.resolve() in source.parents:
+        raise ValueError("output must be a dedicated results directory")
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    return output
+
 
 HERE = Path(__file__).resolve().parent
 
@@ -163,7 +178,7 @@ def run(cfg, output, *, smoke=False, cpu_threads=1, device="cpu"):
     if type(cpu_threads) is not int or cpu_threads < 1:
         raise ValueError("cpu_threads must be a positive integer")
     output = Path(output)
-    output.mkdir(parents=True, exist_ok=False)
+    output = reset_results(output)
     torch.set_num_threads(cpu_threads)
     device = torch.device(device)
     compile_mode = "default" if device.type == "cuda" else None
@@ -221,7 +236,9 @@ def run(cfg, output, *, smoke=False, cpu_threads=1, device="cpu"):
             "sklearn": sklearn.__version__,
             "cpu_threads": torch.get_num_threads(),
             "device": str(device),
-            "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
+            "gpu": torch.cuda.get_device_name(device)
+            if device.type == "cuda"
+            else None,
             "compile_mode": compile_mode,
         },
         "summary": {
@@ -249,7 +266,7 @@ def main():
     parser.add_argument(
         "--output",
         type=Path,
-        default=HERE / "artifacts" / time.strftime("%Y%m%d-%H%M%S"),
+        default=HERE / "results",
     )
     parser.add_argument("--epochs", type=int, default=Config.epochs)
     parser.add_argument("--batch-size", type=int, default=Config.batch_size)
@@ -257,7 +274,9 @@ def main():
     parser.add_argument("--steps", type=int, default=Config.steps)
     parser.add_argument("--seed", type=int, default=Config.seed)
     parser.add_argument("--cpu-threads", type=int, default=1)
-    parser.add_argument("--device", default="cpu", help="Torch device, e.g. cpu or cuda:0")
+    parser.add_argument(
+        "--device", default="cpu", help="Torch device, e.g. cpu or cuda:0"
+    )
     parser.add_argument(
         "--smoke",
         action="store_true",
@@ -283,4 +302,5 @@ def main():
 
 
 if __name__ == "__main__":
+    sys.dont_write_bytecode = True
     main()

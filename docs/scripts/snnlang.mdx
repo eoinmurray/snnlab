@@ -17,9 +17,9 @@ Define a network, compile it and draw it with `snnlab.lang` and `snnlab.viz`. Si
 
 `input` declares the incoming signal's shape and units; `population` defines each layer; `connect` joins them through named projections. The weight initializer and nonnegative constraint describe the excitatory weights, and `output` names the spikes to return when the network is executed. `compile` validates the description and creates a bundle; `diagram` derives its structure and `render_diagram` saves the image.
 
-Run `uv run python examples/snnlang/feedforward.py` from the repository root. The script saves `feedforward.png` beside itself. [Download feedforward.py](/snnlang/feedforward.py).
+Run `uv run python examples/snnlang/example.py` from the repository root. The script saves both `feedforward.png` and `recurrent.png` in `results/`. Each run replaces that directory. [Download example.py](/snnlang/example.py).
 
-```python title="examples/snnlang/feedforward.py"
+```python title="examples/snnlang/example.py"
 {{FEEDFORWARD}}
 ```
 
@@ -37,9 +37,9 @@ Build on the first example with two layers, each containing an excitatory popula
 
 A short loop declares both layers, and `net.group` keeps each layer's populations and local projections together. AMPA projections target `.excitatory`; GABA projections target `.inhibitory`. Both use nonnegative weights: the target port determines their excitatory or inhibitory effect. Local connections are marked as recurrent or feedback and have an explicit delay. The two remaining projections define the forward path from the input through both layers.
 
-Run `uv run python examples/snnlang/recurrent.py` from the repository root. The script saves `recurrent.png` beside itself. [Download recurrent.py](/snnlang/recurrent.py).
+Run `uv run python examples/snnlang/example.py` from the repository root. The same script also saves `recurrent.png` in `results/`. Each run replaces that directory. [Download example.py](/snnlang/example.py).
 
-```python title="examples/snnlang/recurrent.py"
+```python title="examples/snnlang/example.py"
 {{RECURRENT}}
 ```
 

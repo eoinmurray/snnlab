@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
 
 @pytest.fixture
@@ -58,13 +59,8 @@ def launcher(tmp_path, monkeypatch):
         enable_output=nullcontext,
     )
     monkeypatch.setitem(sys.modules, "modal", sdk)
-    spec = importlib.util.spec_from_file_location(
-        "shd_modal_test", ROOT / "benchmarks/shd/modal_app.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    monkeypatch.setattr(module, "LOCAL_ROOT", tmp_path)
-    monkeypatch.setattr(module, "DATA_ROOT", tmp_path / "remote")
+    module = importlib.import_module("benchmarks.shd.benchmark")
+    module = module.modal_launcher(local_root=tmp_path, data_root=tmp_path / "remote")
     monkeypatch.syspath_prepend(str(ROOT / "benchmarks/shd"))
     return module
 
@@ -77,15 +73,13 @@ def test_python_launch_is_detached_and_returns_after_submission(launcher, monkey
         return SimpleNamespace(object_id="fc-persisted")  # No get()/remote() method.
 
     monkeypatch.setattr(launcher.worker, "spawn", spawn, raising=False)
-    monkeypatch.setattr(sys, "argv", ["modal_app.py", "--trace-mode", "both"])
+    monkeypatch.setattr(sys, "argv", ["benchmark.py", "--trace-mode", "both"])
     ticket = launcher.cli()
     assert launcher.app.contexts == [{"detach": True}]
     assert len(calls) == 1
     assert calls[0][3] == "both"
     assert ticket["call_id"] == "fc-persisted"
-    path = (
-        launcher.LOCAL_ROOT / "benchmarks/shd/results" / ticket["run_id"] / "cloud.json"
-    )
+    path = launcher.LOCAL_ROOT / "benchmarks/shd/results" / "cloud.json"
     assert json.loads(path.read_text()) == ticket
 
 
@@ -107,11 +101,13 @@ def test_collect_reads_volume_without_app_context_or_gpu(launcher, monkeypatch):
 
     monkeypatch.setattr(launcher.worker, "spawn", forbidden, raising=False)
     monkeypatch.setattr(
-        sys, "argv", ["modal_app.py", "--mode", "collect", "--run-id", run_id]
+        sys, "argv", ["benchmark.py", "--mode", "collect", "--run-id", run_id]
     )
-    destination = launcher.LOCAL_ROOT / "benchmarks/shd/results" / run_id
+    destination = launcher.LOCAL_ROOT / "benchmarks/shd/results"
     destination.mkdir(parents=True)
-    (destination / "cloud.json").write_text('{"call_id":"fc-original"}')
+    (destination / "cloud.json").write_text(
+        json.dumps({"call_id": "fc-original", "run_id": run_id})
+    )
     assert launcher.cli() == destination
     assert launcher.app.contexts == []
     assert (
@@ -139,7 +135,13 @@ def test_worker_persists_completion_manifest_without_local_collector(
         ):
             (output / name).write_text("{}")
 
-    monkeypatch.setitem(sys.modules, "benchmark", SimpleNamespace(run=run))
+    monkeypatch.setitem(
+        sys.modules,
+        "benchmark",
+        SimpleNamespace(
+            run=run, Config=importlib.import_module("benchmarks.shd.benchmark").Config
+        ),
+    )
     result = launcher.worker("shd-cloud", 10, False)
     manifest = launcher.DATA_ROOT / "runs/shd-cloud/cloud.json"
     saved = json.loads(manifest.read_text())
@@ -156,7 +158,13 @@ def test_worker_commits_partial_artifacts_and_propagates_failure(launcher, monke
         (output / "configuration.json").write_text("{}")
         raise RuntimeError("injected worker failure")
 
-    monkeypatch.setitem(sys.modules, "benchmark", SimpleNamespace(run=run))
+    monkeypatch.setitem(
+        sys.modules,
+        "benchmark",
+        SimpleNamespace(
+            run=run, Config=importlib.import_module("benchmarks.shd.benchmark").Config
+        ),
+    )
     with pytest.raises(RuntimeError, match="injected worker failure"):
         launcher.worker("shd-failure", 10, False)
     assert launcher.volume.commits == 1
@@ -188,8 +196,6 @@ def test_unfinished_run_is_not_reported_as_complete(launcher):
 def test_worker_module_import_does_not_assume_local_launcher_depth(
     tmp_path, monkeypatch
 ):
-    from types import ModuleType
-
     class App:
         def function(self, **kwargs):
             return lambda fn: fn
@@ -203,12 +209,5 @@ def test_worker_module_import_does_not_assume_local_launcher_depth(
         is_local=lambda: False,
     )
     monkeypatch.setitem(sys.modules, "modal", sdk)
-    module = ModuleType("remote_shd_modal")
-    module.__file__ = "/root/modal_app.py"
-    exec(
-        compile(
-            (ROOT / "benchmarks/shd/modal_app.py").read_text(), module.__file__, "exec"
-        ),
-        module.__dict__,
-    )
-    assert module.LOCAL_ROOT == Path("/workspace")
+    module = importlib.import_module("benchmarks.shd.benchmark")
+    assert module.modal_launcher().LOCAL_ROOT == Path("/workspace")

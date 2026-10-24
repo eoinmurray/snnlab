@@ -1,0 +1,51 @@
+{
+  "assets": [],
+  "compiler": {
+    "name": "snnlang",
+    "version": "0.2.0"
+  },
+  "files": [
+    {
+      "digest": "sha256:363512db93d157b0a1221034e49f06c426d60b24a851ea6377dedf037ec0dd37",
+      "path": "graph.json"
+    },
+    {
+      "digest": "sha256:43ce26ba1f8b7a18c9e23a4d27b4870b87665718d79b7b87fc6d43284dd6fba7",
+      "path": "training.json"
+    }
+  ],
+  "graph_digest": "sha256:363512db93d157b0a1221034e49f06c426d60b24a851ea6377dedf037ec0dd37",
+  "required_capabilities": {
+    "elements": [
+      {
+        "element": "classifier",
+        "features": [
+          "operation:linear"
+        ]
+      },
+      {
+        "element": "counts",
+        "features": [
+          "operation:reduce_sum"
+        ]
+      },
+      {
+        "element": "hidden",
+        "features": [
+          "neuron:coba_lif"
+        ]
+      },
+      {
+        "element": "pixels_to_hidden",
+        "features": [
+          "synapse:ampa",
+          "connection:feedforward",
+          "delay:none"
+        ]
+      }
+    ],
+    "schema": "snnlang.capabilities/v1"
+  },
+  "schema": "snnlang.bundle/v1",
+  "target": null
+}

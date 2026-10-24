@@ -3,12 +3,12 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 const example = new URL('../../examples/hodgkin-huxley/', import.meta.url);
 const publicDir = new URL('../public/hodgkin-huxley/', import.meta.url);
 const read = (name: string) => readFileSync(new URL(name, example), 'utf8');
-const metrics = JSON.parse(read('comparison.json'));
+const metrics = JSON.parse(read('results/comparison.json'));
 const number = (value: number) => value.toPrecision(4);
 const replacements: Record<string, string> = {
-  SCRIPT: read('hodgkin_huxley.py').trimEnd(),
-  CALLBACKS: read('hh_neuron.py').trimEnd(),
-  COMPARISON: read('scipy_comparison.py').trimEnd(),
+  SCRIPT: read('example.py').trimEnd(),
+  CALLBACKS: read('example.py').slice(read('example.py').indexOf('CAPACITANCE_NF ='), read('example.py').indexOf('DT_MS =')).trimEnd(),
+  COMPARISON: read('example.py').slice(read('example.py').indexOf('def _rates'), read('example.py').lastIndexOf('if __name__')).trimEnd(),
   SPIKE_COUNT: String(metrics.snnlab_spike_times_ms.length),
   SCIPY_SPIKE_COUNT: String(metrics.scipy_spike_times_ms.length),
   VOLTAGE_MAX: number(metrics.voltage_max_abs_error_mv),
@@ -26,8 +26,8 @@ writeFileSync(new URL('../content/docs/hodgkin-huxley.mdx', import.meta.url),
   }));
 mkdirSync(publicDir, { recursive: true });
 for (const name of [
-  'hh_neuron.py', 'hodgkin_huxley.py', 'scipy_comparison.py',
+  'example.py',
   'network.png', 'hodgkin-huxley.png', 'scipy-comparison.png', 'comparison.json',
 ]) {
-  copyFileSync(new URL(name, example), new URL(name, publicDir));
+  copyFileSync(new URL(name.endsWith('.py') ? name : `results/${name}`, example), new URL(name, publicDir));
 }

@@ -63,7 +63,7 @@ Create the excitatory layer and connect the input to it:
 
 ```python
 cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
-# Connect all 4 input channels to all 16 E cells using 64 weights.
+
 net.connect(
     inputs,
     cells.excitatory,
@@ -90,9 +90,8 @@ See [`Network.connect`](/api/lang#connect) for all connection arguments and avai
 ## 4. Choose outputs and expose diagnostics
 
 ```python
-# The official network output: spikes.
 net.output("spikes", cells.spikes)
-# Expose input spikes and membrane voltage for diagnostics.
+
 net.expose(inputs, name="input_spikes")
 net.expose(cells.voltage, name="e_voltage")
 ```
@@ -148,7 +147,6 @@ input_spikes = data.diagnostics["input_spikes"]
 spikes = data.outputs["spikes"]
 voltages = data.diagnostics["e_voltage"]
 time_ms = data.time_ms
-assert time_ms is not None
 ```
 
 `spikes` comes from the official network output; `input_spikes` and `voltages` come from the exposed diagnostics. `result.numpy(batch=0)` converts them to independent NumPy arrays and selects the first batch item using each signal's declared axes. `data.time_ms` supplies the time axis in milliseconds using the actual simulation timestep. The original result retains its tensors. See the [NumPy result reference](/api/sim#numpy) for details.
@@ -157,17 +155,16 @@ The plotting step uses `snnlab.viz.FigureGrid` and Matplotlib to save one figure
 
 ## 8. Full example
 
-Save the [complete script](/quickstart/quickstart.py) as `examples/quickstart/quickstart.py` in your project. In a repository checkout, it is already there.
+Save the [complete script](/quickstart/example.py) as `examples/quickstart/example.py` in your project. In a repository checkout, it is already there.
 
 ```sh
-uv run python examples/quickstart/quickstart.py
+uv run python examples/quickstart/example.py
 ```
 
-It writes `network.png` and `quickstart.png` beside the script, regardless of your working directory. Rerunning replaces those files. Rendering the network diagram requires Graphviz’s `dot` executable on your PATH; on macOS, install it with `brew install graphviz`. No dataset download is needed.
+It writes `network.png` and `quickstart.png` in `results/`, regardless of your working directory. Each run replaces that directory. Rendering the network diagram requires Graphviz’s `dot` executable on your PATH; on macOS, install it with `brew install graphviz`. No dataset download is needed.
 
 ```python
-"""Simulate a single excitatory layer and save one figure beside this script."""
-
+import shutil
 from pathlib import Path
 
 import matplotlib
@@ -182,17 +179,26 @@ from snnlab.sim import (
     simulate,
 )
 
-OUTPUT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = Path(__file__).resolve().parent / "results"
 DT_MS = 0.1
 DURATION_MS = 300
 INPUT_RATE_HZ = 80
 SEED = 17
 
 
+def prepare_results():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
+
+
 def main():
-    # 1. Create the network.
+    prepare_results()
+
     net = lang.Network("quickstart", dt=DT_MS * lang.ms)
-    # 2. Define the input and its stimulus binding.
+
     inputs = net.input(
         "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
     )
@@ -202,9 +208,9 @@ def main():
         rates_hz=(INPUT_RATE_HZ,),
         seed=SEED,
     )
-    # 3. Define the excitatory layer and its input projection.
+
     cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
-    # Connect all 4 input channels to all 16 E cells using 64 weights.
+
     net.connect(
         inputs,
         cells.excitatory,
@@ -213,13 +219,12 @@ def main():
         weight=lang.Uniform(0.1, 0.5),
         constraint=lang.NonNegative(),
     )
-    # 4. Choose outputs and exposed diagnostics.
-    # The official network output: spikes.
+
     net.output("spikes", cells.spikes)
-    # Expose input spikes and membrane voltage for diagnostics.
+
     net.expose(inputs, name="input_spikes")
     net.expose(cells.voltage, name="e_voltage")
-    # 5. Compile the network into a bundle.
+
     bundle = lang.compile(net, target="tools/snnsim")
     diagram = lang.diagram(bundle, view="expanded")
     viz.render_diagram(
@@ -230,22 +235,19 @@ def main():
         canvas_size=(1920, 900),
     )
 
-    # 6. Simulate with explicit execution settings.
     result = simulate(
         graph=bundle.graph,
         input_bindings=(poisson_input,),
         seed=SEED,
         device="cpu",
     )
-    # 7. Retrieve named results and select the first (only) batch item.
+
     data = result.numpy(batch=0)
     input_spikes = data.diagnostics["input_spikes"]
     spikes = data.outputs["spikes"]
     voltages = data.diagnostics["e_voltage"]
     time_ms = data.time_ms
-    assert time_ms is not None
 
-    # Plot the results with snnlab.viz and Matplotlib.
     grid = viz.FigureGrid(
         rows=3, columns=1, bounds=(0.12, 0.09, 0.85, 0.85), row_gap=0.07
     )
@@ -279,11 +281,6 @@ def main():
     path = OUTPUT_DIR / "quickstart.png"
     figure.savefig(path, bbox_inches="tight")
     plt.close(figure)
-    print(f"Saved {path}")
-
-    counts = spikes.sum(axis=0)
-    print(f"Total spikes: {int(counts.sum())}")
-    print(f"Spikes per cell: {counts.astype(int).tolist()}")
 
 
 if __name__ == "__main__":

@@ -11,11 +11,14 @@ import math
 import os
 import platform
 import random
+import shutil
 import statistics
 import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import snntorch as snn
 import torch
@@ -36,6 +39,26 @@ from snnlab.sim import (
     save_training_checkpoint,
     train,
 )
+
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True
+    import benchmark
+
+    benchmark.cli()
+    raise SystemExit
+
+
+def reset_results(output):
+    """Replace a run directory so stale reports/checkpoints cannot survive a rerun."""
+    output = Path(output).absolute()
+    source = Path(__file__).resolve()
+    if output.is_symlink() or output.resolve() in source.parents:
+        raise ValueError("output must be a dedicated results directory")
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    return output
+
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -1040,14 +1063,18 @@ def combined_results(training, *, run_id="local", cloud=None, profiling=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
+    mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--verify", action="store_true")
     mode.add_argument("--smoke", action="store_true")
-    parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--output", type=Path, default=Path(__file__).parent / "results"
+    )
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--cache", type=Path, default=ROOT / "artifacts/mnist")
     args = parser.parse_args()
     config = (
         Config()
-        if args.verify
+        if not args.smoke
         else Config(
             train_size=32, test_size=16, hidden=16, steps=8, batch_size=16, epochs=2
         )
@@ -1055,17 +1082,443 @@ def main():
     if args.verify:
         print(json.dumps(verify_pair(config, initial_weights(config)), indent=2))
     else:
-        if args.output is None:
-            parser.error("--smoke requires --output (use a temporary directory)")
-        packet = synthetic_packet(config)
+        packet = (
+            synthetic_packet(config)
+            if args.smoke
+            else prepare(config, args.cache, args.cache / "prepared.pt")
+        )
+        if not args.smoke:
+            packet = torch.load(
+                args.cache / "prepared.pt", map_location="cpu", weights_only=True
+            )
+        reset_results(args.output)
         training = {
-            name: run_training(name, config, packet) for name in ("snntorch", "snnlab")
+            name: run_training(name, config, packet, device=args.device)
+            for name in ("snntorch", "snnlab")
         }
         write_json(args.output / "results.json", combined_results(training))
-        from plot import make_plots
-
         make_plots(args.output)
 
 
-if __name__ == "__main__":
-    main()
+def make_plots(root):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import PercentFormatter
+
+    from snnlab.viz import FigureGrid, Theme
+
+    root = Path(root)
+    report = json.loads((root / "results.json").read_text())
+    results = report["training"]
+    left, right = results["snntorch"], results["snnlab"]
+    for key in (
+        "config",
+        "provenance",
+        "source_manifest",
+        "source_identity",
+        "snnlab_execution",
+        "synthetic",
+    ):
+        if left[key] != right[key] or (
+            key in report["protocol"] and left[key] != report["protocol"][key]
+        ):
+            raise ValueError(f"comparison mismatch: {key}")
+    if not all(
+        result["complete"] and result["verification"]["passed"]
+        for result in results.values()
+    ):
+        raise ValueError("both verified training jobs must complete")
+    if len(left["epochs"]) != len(right["epochs"]):
+        raise ValueError("epoch count mismatch")
+    # Use SNNLab's shared Pinglab theme, with the canonical screen typography
+    # and export settings from experiments/helpers/theme.py. No Pinglab checkout
+    # dependency is needed on Modal.
+    with plt.rc_context():
+        theme = Theme()
+        theme.apply()
+        plt.rcParams.update(
+            {
+                "axes.titlesize": 11,
+                "axes.titleweight": "bold",
+                "axes.titlelocation": "left",
+                "axes.titlepad": 10,
+                "axes.labelsize": 10,
+                "xtick.labelsize": 9,
+                "ytick.labelsize": 9,
+                "xtick.major.width": 1,
+                "ytick.major.width": 1,
+                "xtick.major.size": 4,
+                "ytick.major.size": 4,
+                "legend.fontsize": 9,
+                "legend.edgecolor": theme.ink,
+                "legend.facecolor": theme.background,
+                "lines.linewidth": 2,
+                "savefig.dpi": 240,
+                "savefig.bbox": "tight",
+                "pdf.fonttype": 42,
+                "svg.fonttype": "none",
+            }
+        )
+        grid = FigureGrid(
+            rows=1,
+            columns=2,
+            column_gap=0.13,
+            bounds=(0.09, 0.19, 0.88, 0.61),
+            theme=theme,
+        )
+        grid.place("loss", row=0, column=0)
+        grid.place("accuracy", row=0, column=1)
+        figure = grid.figure(figsize=(8, 3.7))
+        axes = {name: grid.add_axes(figure, name) for name in ("loss", "accuracy")}
+        handles = []
+        for name, label, color, style in (
+            ("snntorch", "snnTorch", theme.ink, "-"),
+            ("snnlab", "SNNLab", theme.accent, "--"),
+        ):
+            rows = results[name]["epochs"]
+            epochs = [row["epoch"] for row in rows]
+            (line,) = axes["loss"].plot(
+                epochs,
+                [row["train_loss"] for row in rows],
+                color=color,
+                linestyle=style,
+                label=label,
+            )
+            handles.append(line)
+            axes["accuracy"].plot(
+                epochs,
+                [row["test_accuracy"] for row in rows],
+                color=color,
+                linestyle=style,
+            )
+        for label, (name, axis) in zip(("A", "B"), axes.items()):
+            axis.set(
+                xlabel="Epoch",
+                title="Training loss" if name == "loss" else "Test accuracy",
+            )
+            axis.set_xlim(1, len(left["epochs"]))
+            count = len(left["epochs"])
+            axis.set_xticks(sorted({1, count, *range(5, count + 1, 5)}))
+            axis.grid(False)
+            axis.text(
+                -0.12,
+                1.04,
+                label,
+                transform=axis.transAxes,
+                fontsize=13,
+                fontweight="bold",
+                ha="right",
+                va="bottom",
+            )
+        axes["loss"].set(ylabel="Cross-entropy", ylim=(0, None))
+        axes["accuracy"].set(ylabel="Accuracy", ylim=(0, 1))
+        axes["accuracy"].yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+        figure.text(
+            0.03,
+            0.97,
+            "Synthetic smoke test — not MNIST"
+            if left["synthetic"]
+            else "MNIST / 10% training subset",
+            fontsize=11,
+            fontweight="bold",
+            va="top",
+        )
+        figure.legend(
+            handles=handles,
+            loc="upper right",
+            bbox_to_anchor=(0.98, 0.995),
+            ncol=2,
+            frameon=False,
+        )
+        config = left["config"]
+        figure.text(
+            0.09,
+            0.035,
+            f"{config['train_size']:,} train / {config['test_size']:,} test  |  seed {config['seed']}  |  loss summed over {config['steps']} steps",
+            fontsize=8,
+            color=theme.muted,
+        )
+        for suffix in ("png", "pdf"):
+            figure.savefig(root / f"training-curves.{suffix}")
+        plt.close(figure)
+    report["presentation"] = {
+        "style": "Pinglab house style",
+        "panels": ["train_loss", "test_accuracy"],
+        "smoothing": "none",
+        "renderer_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    }
+    (root / "results.json").write_text(json.dumps(report, indent=2) + "\n")
+    return root / "training-curves.png"
+
+
+def modal_launcher():
+    import hashlib
+    import json
+    import subprocess
+    from pathlib import Path
+
+    import modal
+
+    ROOT = (
+        Path(__file__).resolve().parents[2] if modal.is_local() else Path("/workspace")
+    )
+    HERE = ROOT / "benchmarks/snntorch-comparison"
+    VOLUME = "snnlab-snntorch-mnist-comparison"
+    app = modal.App("snnlab-snntorch-mnist-comparison")
+    volume = modal.Volume.from_name(VOLUME, create_if_missing=True)
+
+    def snapshot():
+        paths = sorted((ROOT / "src").rglob("*.py")) + sorted(HERE.glob("*.py"))
+        return {
+            str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in paths
+        }
+
+    def source_hash():
+        return hashlib.sha256(
+            json.dumps(snapshot(), sort_keys=True).encode()
+        ).hexdigest()
+
+    image = None
+    if modal.is_local():
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip()
+        image = (
+            modal.Image.debian_slim(python_version="3.12")
+            .pip_install(
+                "torch==2.10.0",
+                "torchvision==0.25.0",
+                "snntorch==1.0.0",
+                "numpy>=2.2.6",
+                "scipy>=1.15.3",
+                "matplotlib>=3.10.8",
+                "scikit-learn>=1.7.2",
+                "h5py>=3.16.0",
+            )
+            .env(
+                {
+                    "PYTHONPATH": "/workspace/src:/workspace/benchmarks/snntorch-comparison",
+                    "OMP_NUM_THREADS": "4",
+                    "MPLBACKEND": "Agg",
+                    "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+                    "SNNLAB_BENCHMARK_COMMIT": commit,
+                }
+            )
+            .add_local_dir(ROOT / "src", "/workspace/src", ignore=["**/__pycache__/**"])
+            .add_local_dir(
+                HERE,
+                "/workspace/benchmarks/snntorch-comparison",
+                ignore=["results/**", "**/__pycache__/**"],
+            )
+        )
+
+    @app.function(
+        serialized=True,
+        image=image,
+        volumes={"/results": volume},
+        gpu="L4",
+        cpu=4,
+        memory=16384,
+        timeout=21600,
+        max_containers=2,
+    )
+    def train_worker(backend: str, run_id: str):
+        import benchmark as b
+        import torch
+
+        volume.reload()
+        root = Path("/results") / run_id
+        packet = torch.load(root / "prepared.pt", map_location="cpu", weights_only=True)
+        result = b.run_training(
+            backend,
+            b.Config(**packet["config"]),
+            packet,
+            root / f"{backend}.pt",
+            "cuda:0",
+            on_epoch=volume.commit,
+        )
+        return json.dumps(result)
+
+    @app.function(
+        serialized=True,
+        image=image,
+        volumes={"/results": volume},
+        cpu=4,
+        memory=8192,
+        timeout=28800,
+    )
+    def train_pair(run_id: str, expected_source: str):
+        import benchmark as b
+
+        if source_hash() != expected_source:
+            raise RuntimeError("uploaded source mismatch")
+        root = Path("/results") / run_id
+        if (root / "results.json").exists():
+            raise RuntimeError("this source snapshot has already completed training")
+        config = b.Config()
+        b.prepare(config, "/results/mnist", root / "prepared.pt")
+        volume.commit()
+        jobs = {
+            name: train_worker.spawn(name, run_id) for name in ("snntorch", "snnlab")
+        }
+        training = {name: json.loads(job.get()) for name, job in jobs.items()}
+        cloud = {
+            "volume": VOLUME,
+            "prepared": f"{run_id}/prepared.pt",
+            "checkpoints": {name: f"{run_id}/{name}.pt" for name in jobs},
+            "native_training_checkpoint": f"{run_id}/snnlab.native",
+        }
+        report = b.combined_results(training, run_id=run_id, cloud=cloud)
+        b.write_json(root / "results.json", report)
+        volume.commit()
+        return json.dumps(report)
+
+    @app.function(
+        serialized=True,
+        image=image,
+        volumes={"/results": volume},
+        gpu="L4",
+        cpu=4,
+        memory=16384,
+        timeout=1200,
+    )
+    def profile_passes(run_id: str, expected_source: str):
+        import benchmark as b
+        import torch
+
+        volume.reload()
+        if source_hash() != expected_source:
+            raise RuntimeError("uploaded source mismatch")
+        root = Path("/results") / run_id
+        report = json.loads((root / "results.json").read_text())
+        if report["protocol"]["source_identity"] != b.source_identity():
+            raise RuntimeError("library commit/version differs from training")
+        for path, checksum in report["protocol"]["source_manifest"].items():
+            if path.startswith("src/") and snapshot().get(path) != checksum:
+                raise RuntimeError(f"library source differs from training: {path}")
+        config = b.Config(**report["protocol"]["config"])
+        packet = torch.load(
+            Path("/results") / report["cloud"]["prepared"],
+            map_location="cpu",
+            weights_only=True,
+        )
+        b.configure("cuda")
+        indices = b.epoch_order(config.train_size, config.seed, 0)[: config.batch_size]
+        images, labels = (
+            packet["train_images"][indices].cuda(),
+            packet["train_labels"][indices].cuda(),
+        )
+        profiling = {
+            "source_identity": b.source_identity(),
+            "source_manifest": snapshot(),
+            "batch_size": len(indices),
+            "steps_per_pass": config.steps,
+            "warmups_per_condition": 5,
+            "repetitions_per_condition": 50,
+            "environment": {
+                "torch": str(torch.__version__),
+                "gpu": torch.cuda.get_device_name(),
+            },
+            "scope": "CUDA-synchronized wall latency; forward includes fresh state; backward excludes forward/loss preparation; no Adam or transfers; randomized interleaving on one L4",
+            "states": {},
+        }
+        for state in ("initial", "snntorch_trained", "snnlab_trained"):
+            if state == "initial":
+                weights = packet["weights"]
+                origin = "shared initial weights"
+            else:
+                backend = state.removesuffix("_trained")
+                path = Path("/results") / report["cloud"]["checkpoints"][backend]
+                checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+                if checkpoint["epoch"] != config.epochs:
+                    raise RuntimeError("incomplete training checkpoint")
+                weights = checkpoint["parameters"]
+                origin = {
+                    "backend": backend,
+                    "checkpoint_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                }
+            models = {
+                "snntorch": b.TorchNetwork(config, weights).cuda(),
+                "snnlab": b.LabNetwork(config, weights).cuda(),
+            }
+            for model in models.values():
+                for key, parameter in model.canonical_parameters().items():
+                    torch.testing.assert_close(
+                        parameter.detach().cpu(), weights[key], atol=0, rtol=0
+                    )
+            profiling["states"][state] = {
+                "weight_source": origin,
+                "agreement": b.compare_outputs(models, images, labels),
+                "timings": b.measure_passes(models, images, labels),
+            }
+            print(f"Completed {state}", flush=True)
+        profiling["complete"] = True
+        report["profiling"] = profiling
+        b.write_json(root / "results.json", report)
+        volume.commit()
+        return json.dumps(report)
+
+    def collect(run_id):
+        result = json.loads(b"".join(volume.read_file(f"/{run_id}/results.json")))
+        root = HERE / "results"
+        reset_results(root)
+        write_json(root / "results.json", result)
+        make_plots(root)
+        print(f"Saved {root}; run_id={run_id}")
+
+    def cli():
+        parser = argparse.ArgumentParser(
+            description="Modal MNIST training, profiling and collection"
+        )
+        parser.add_argument(
+            "--mode", choices=("train", "profile", "collect"), default="train"
+        )
+        parser.add_argument("--run-id", default="mnist-30fabde19a1a7aa1")
+        args = parser.parse_args()
+        if args.mode == "collect":
+            return collect(args.run_id)
+        with modal.enable_output(), app.run(detach=True):
+            if args.mode == "train":
+                import uuid
+
+                run_id = "mnist-" + uuid.uuid4().hex[:12]
+                call = train_pair.spawn(run_id, source_hash())
+            else:
+                run_id = args.run_id
+                call = profile_passes.spawn(run_id, source_hash())
+            reset_results(HERE / "results")
+            write_json(
+                HERE / "results/cloud.json",
+                {
+                    "run_id": run_id,
+                    "call_id": call.object_id,
+                    "status": "submitted",
+                    "volume": VOLUME,
+                },
+            )
+            print(f"Submitted {run_id}; call={call.object_id}")
+            print(
+                f"Collect: python benchmarks/snntorch-comparison/benchmark.py --modal --mode collect --run-id {run_id}"
+            )
+
+    return SimpleNamespace(**locals())
+
+
+def cli():
+    if "--modal" in sys.argv:
+        sys.argv.remove("--modal")
+        modal_launcher().cli()
+    elif "--plot" in sys.argv:
+        parser = argparse.ArgumentParser(
+            description="Render existing benchmark results"
+        )
+        parser.add_argument("--plot", action="store_true")
+        parser.add_argument(
+            "--output", type=Path, default=Path(__file__).parent / "results"
+        )
+        make_plots(parser.parse_args().output)
+    else:
+        main()

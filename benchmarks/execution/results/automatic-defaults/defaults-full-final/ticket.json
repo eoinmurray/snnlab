@@ -1,9 +1,0 @@
-{
-  "run_id": "defaults-full-final",
-  "volume": "snnlab-automatic-defaults",
-  "jobs": {
-    "digits": "fc-01M5C0GNG6A089C44PCSYRN1Q5",
-    "mnist": "fc-01M5C0GNP0GYZ9R881401M969H",
-    "shd": "fc-01M5C0GNVXXHAMM8HHVRBS2GTB"
-  }
-}

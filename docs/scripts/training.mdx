@@ -11,7 +11,7 @@ The network passes these inputs through 16 excitatory neurons into two readout c
 
 Both the input-to-E weights (`w_in`) and E-to-readout weights (`w_out`) learn. Surrogate gradients carry the loss backward through the E neurons’ spikes. The curves below show loss and accuracy after each epoch.
 
-This extends [Quickstart](/quickstart) with labelled data, minibatches, validation and saved weights. No dataset download is needed. All files live in `examples/training/`; the saved model can later be reused from the [Inference example](/inference).
+This extends [Quickstart](/quickstart) with labelled data, minibatches, validation and saved weights. No dataset download is needed. Generated files live in `examples/training/results/`; the saved model can later be reused from the [Inference example](/inference).
 
 Training uses the automatic [Performance defaults](/api/sim#performance).
 Import `Performance` from `snnlab.sim`.
@@ -200,13 +200,13 @@ The plotting code makes one two-row figure with a shared epoch axis: cross-entro
 
 ## 9. Full example
 
-Save the [complete script](/training/training.py) as `examples/training/training.py`. In a repository checkout it is already there.
+Save the [complete script](/training/example.py) as `examples/training/example.py`. In a repository checkout it is already there.
 
 ```sh
-uv run python examples/training/training.py
+uv run python examples/training/example.py
 ```
 
-It saves these files beside the script, regardless of the working directory:
+It saves these files in `results/`, regardless of the working directory:
 
 1. `network.bundle/`: compiled graph and training recipe.
 2. `trained.checkpoint/`: final learned weights, optimizer state and resume coordinates.
@@ -216,7 +216,7 @@ It saves these files beside the script, regardless of the working directory:
 
 Rendering the network diagram requires Graphviz’s `dot` executable on your PATH; on macOS, install it with `brew install graphviz`.
 
-Rerunning starts training from scratch and replaces those generated outputs. It does not automatically resume an earlier run. The [Inference example](/inference) loads `examples/training/network.bundle` and `examples/training/trained.checkpoint`, rather than creating new weights or retraining.
+Rerunning starts training from scratch and replaces those generated outputs. It does not automatically resume an earlier run. The [Inference example](/inference) loads `examples/training/results/network.bundle` and `examples/training/results/trained.checkpoint`, rather than creating new weights or retraining.
 
 ```python
 {{SCRIPT}}
@@ -238,14 +238,13 @@ This separate native example uses synthetic 700-channel, 20-class rate inputs wi
 
 ![Native training readout network](/native-training/network.png)
 
-Download [progress.py](/native-training/progress.py) and [progress_objectives.py](/native-training/progress_objectives.py) into the same directory. The second file makes the optional custom objective importable for saved bundles. Graphviz is needed for the diagram.
+Download [example.py](/native-training/example.py). Each run replaces `results/`. Graphviz is needed for the diagram.
 
 ```sh
-python progress.py --output /tmp/native-training
-python progress.py --output /tmp/native-weighted --equal-class-loss
+python example.py
 ```
 
-The script prints natural class counts and a report after each completed epoch: online train accuracy, held-out validation accuracy, global update/example counts and measured seconds. It saves a partial checkpoint after the first update, resumes the same schedule, then writes final and validation-selected checkpoints plus `results.json`. Online training has no epoch-zero measurement and no extra training evaluation. The optional equal-class objective uses only training counts; unweighted classification CE is retained separately. Synthetic accuracy does not establish performance on real SHD.
+The script generates synthetic inputs with 700 channels and 20 imbalanced classes, saves a partial checkpoint after the first update, resumes the same schedule, and writes final and validation-selected checkpoints plus `results.json`. The report contains online training metrics, held-out validation measurements, timing and schedule metadata. Synthetic accuracy does not establish performance on real SHD.
 
 For a larger SHD-shaped scheduling demonstration, add `--samples 8156 --batch-size 256 --steps 1000 --device cuda`. This needs an available CUDA device and substantial runtime; sample counts and rates here remain synthetic. The [Execution Options reference](/api/sim#metrics) specifies aggregation, RNG, conflict, timing and resume rules.
 
@@ -254,7 +253,3 @@ For a larger SHD-shaped scheduling demonstration, add `--samples 8156 --batch-si
 ```
 
 The importable optional loss is:
-
-```python
-{{PROGRESS_OBJECTIVES}}
-```

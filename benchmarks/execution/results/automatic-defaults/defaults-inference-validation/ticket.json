@@ -1,7 +1,0 @@
-{
-  "run_id": "defaults-inference-validation",
-  "volume": "snnlab-automatic-defaults",
-  "jobs": {
-    "validate": "fc-01M5C18YA0RY0EST0W75YC49D5"
-  }
-}

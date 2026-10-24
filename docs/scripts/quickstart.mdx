@@ -118,13 +118,13 @@ The plotting step uses `snnlab.viz.FigureGrid` and Matplotlib to save one figure
 
 ## 8. Full example
 
-Save the [complete script](/quickstart/quickstart.py) as `examples/quickstart/quickstart.py` in your project. In a repository checkout, it is already there.
+Save the [complete script](/quickstart/example.py) as `examples/quickstart/example.py` in your project. In a repository checkout, it is already there.
 
 ```sh
-uv run python examples/quickstart/quickstart.py
+uv run python examples/quickstart/example.py
 ```
 
-It writes `network.png` and `quickstart.png` beside the script, regardless of your working directory. Rerunning replaces those files. Rendering the network diagram requires Graphviz’s `dot` executable on your PATH; on macOS, install it with `brew install graphviz`. No dataset download is needed.
+It writes `network.png` and `quickstart.png` in `results/`, regardless of your working directory. Each run replaces that directory. Rendering the network diagram requires Graphviz’s `dot` executable on your PATH; on macOS, install it with `brew install graphviz`. No dataset download is needed.
 
 ```python
 {{SCRIPT}}

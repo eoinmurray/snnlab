@@ -10,16 +10,17 @@ artifacts/
 !/src/snnlab/sim/artifacts/
 temp/
 .scratch
-/examples/training/network.bundle/
-/examples/training/trained.checkpoint/
-/examples/training/metrics.json
+/examples/training/results/network.bundle/
+/examples/training/results/trained.checkpoint/
+/examples/training/results/metrics.json
 
-/examples/inference/predictions.json
+/examples/inference/results/predictions.json
 
-/examples/pytorch/trained.pt
-/examples/pytorch/metrics.json
+/examples/pytorch/results/trained.pt
+/examples/pytorch/results/metrics.json
 
-examples/customisation/network.bundle/
-/examples/customisation/metrics.json
+examples/customisation/results/network.bundle/
+/examples/customisation/results/metrics.json
 
-/examples/native-training/artifacts/
+/examples/native-training/results/*
+!/examples/native-training/results/network.png

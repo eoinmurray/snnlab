@@ -11,6 +11,7 @@ from pathlib import Path
 import torch
 
 from snnlab import lang
+from snnlab.sim.diagnostics.tracing import current_trace
 from snnlab.sim.graph.executor import GraphExecutor
 from snnlab.sim.graph.plan import GraphPlan, _signal_axes, plan_graph
 from snnlab.sim.requests.handlers import resolve_device
@@ -21,6 +22,7 @@ from snnlab.sim.runtime.state import (
     runtime_state_compatibility,
     runtime_state_signature,
 )
+from snnlab.sim.runtime.stream_blocks import PreparedBlocks
 
 
 def _synchronize(device):
@@ -58,6 +60,8 @@ class StreamSession:
     ):
         self._executor = model
         self._state = None
+        self._has_state = False
+        self._blocks = None
         self._closed = False
         self._busy = False
         self._advance_probe = None
@@ -106,13 +110,42 @@ class StreamSession:
         }
         started = time.perf_counter()
         state = None
+        initial_context = None
         with torch.inference_mode():
-            for _ in range(warmup_windows):
+            for index in range(warmup_windows):
                 result = self._execute(state)
+                if index == 0:
+                    initial_context = model._stream_block_context
                 state = result.runtime_state
+            self._result_metrics = {
+                key: copy.deepcopy(result.metrics[key])
+                for key in (
+                    "execution_path",
+                    "precision",
+                    "compiler_fallback",
+                    "compiler_wrapper",
+                )
+            }
+            self._output_axes = dict(result._output_axes)
+            if initial_context is not None:
+                self._blocks = PreparedBlocks(
+                    model,
+                    initial_context,
+                    steps=window_steps,
+                    dtype=self._dtype,
+                    device=self._device,
+                )
+                for _ in range(warmup_windows):
+                    _, next_state = self._blocks.execute(self._buffers, None)
+                    self._blocks.state = next_state
+                    self._blocks.completed_steps += window_steps
+                self._blocks.reset()
+        # The captured context is needed only for explicit restores thereafter.
+        model._stream_block_context = None
         _synchronize(self._device)
         self._info = {
             "window_steps": window_steps,
+            "persistent_state": self._blocks is not None,
             "batch_size": batch_size,
             "device": str(self._device),
             "dtype": str(self._dtype),
@@ -121,11 +154,13 @@ class StreamSession:
             "execution_path": copy.deepcopy(result.metrics["execution_path"]),
             "compiler_wrapper": copy.deepcopy(result.metrics["compiler_wrapper"]),
             "performance": asdict(policy),
-            "cuda_graphs": "off: stateful continuation uses the graph executor",
+            "cuda_graphs": "off: stateful continuation does not use CUDA replay",
         }
 
     @property
     def completed_steps(self):
+        if self._blocks is not None:
+            return self._blocks.completed_steps
         return self._state.completed_steps if self._state is not None else 0
 
     @property
@@ -142,6 +177,7 @@ class StreamSession:
             )
 
     def _execute(self, state):
+        self._executor._stream_block_context = None
         return self._executor(
             self._buffers,
             runtime_state=state,
@@ -187,19 +223,33 @@ class StreamSession:
                 self._buffers[name].copy_(value)
             if probe is not None:
                 probe.mark("Executor entry / validation")
-            result = self._execute(self._state)
+            # Tracing needs the general executor's full instrumentation. Switch
+            # this session back using one explicit snapshot of current state.
+            trace = current_trace()
+            if self._blocks is not None and trace is not None and trace.active:
+                self._state = self._blocks.snapshot() if self._has_state else None
+                self._blocks = None
+                self._info["persistent_state"] = False
+            start_step = self.completed_steps
+            if self._blocks is None:
+                result = self._execute(self._state)
+                raw_outputs = result.outputs
+                result_metrics = result.metrics
+                output_axes = result._output_axes
+            else:
+                raw_outputs, next_state = self._blocks.execute(self._buffers, probe)
+                result_metrics = self._result_metrics
+                output_axes = self._output_axes
             if probe is not None:
                 probe.mark("Output copies")
             # Ordinary detached tensors can be edited or consumed by a separately
             # trained readout outside inference_mode without aliasing stream state.
             with torch.inference_mode(False), torch.no_grad():
-                outputs = {
-                    name: value.clone() for name, value in result.outputs.items()
-                }
+                outputs = {name: value.clone() for name, value in raw_outputs.items()}
             if probe is not None:
                 probe.mark("Session result / commit")
             metrics = {
-                key: copy.deepcopy(result.metrics[key])
+                key: copy.deepcopy(result_metrics[key])
                 for key in (
                     "execution_path",
                     "precision",
@@ -208,18 +258,23 @@ class StreamSession:
                 )
             }
             metrics["streaming"] = {
-                "completed_steps": result.runtime_state.completed_steps,
+                "completed_steps": start_step + self._window_steps,
                 "window_steps": self._window_steps,
             }
             owned = ExecutionResult(
                 executor="graph",
                 outputs=outputs,
                 metrics=metrics,
-                _output_axes=result._output_axes,
-                _timebase=result._timebase,
+                _output_axes=dict(output_axes),
+                _timebase=(self._executor.plan.dt_ms, start_step, self._window_steps),
                 _batch_size=self._batch_size,
             )
-            self._state = result.runtime_state
+            if self._blocks is None:
+                self._state = result.runtime_state
+            else:
+                self._blocks.state = next_state
+                self._blocks.completed_steps += self._window_steps
+            self._has_state = True
             return owned
         finally:
             self._busy = False
@@ -234,7 +289,10 @@ class StreamSession:
         """
         self._check_open()
         if state is None:
+            self._has_state = False
             self._state = None
+            if self._blocks is not None:
+                self._blocks.reset()
             return
         if not isinstance(state, GraphRuntimeState):
             raise TypeError("state must be GraphRuntimeState or None")
@@ -250,22 +308,33 @@ class StreamSession:
         try:
             candidate = _copy_state(state, self._device)
             self._execute(candidate)
-            self._state = candidate
+            if self._blocks is not None:
+                context = self._executor._stream_block_context
+                if context is None:
+                    self._blocks = None
+                    self._info["persistent_state"] = False
+                else:
+                    self._blocks.reset(context)
+            self._state = candidate if self._blocks is None else None
+            self._has_state = True
         finally:
+            self._executor._stream_block_context = None
             self._busy = False
 
     def export_state(self) -> GraphRuntimeState:
         """Copy dynamic state, independently of this session and its graph metadata."""
         self._check_open()
-        if self._state is None:
+        if not self._has_state:
             raise ValueError("stream has no state; advance at least one window first")
-        return _copy_state(self._state, self._device)
+        state = self._blocks.snapshot() if self._blocks is not None else self._state
+        return _copy_state(state, self._device)
 
     def close(self):
         """Release model, buffers and state; calling close again is harmless."""
         if self._busy:
             raise RuntimeError("cannot close an active stream session")
         self._state = None
+        self._blocks = None
         self._buffers.clear()
         self._executor = None
         self._closed = True
