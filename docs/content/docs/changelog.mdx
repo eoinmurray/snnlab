@@ -9,6 +9,17 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-10-25
+
+### Changed
+
+1. Accelerate adaptive mean-field delay integration by sharing past-state interpolation across connections with the same delay, evaluating single-step dense interpolants directly and carrying accepted step-size estimates between explicit Runge–Kutta segments. Fixed transmission delays, discontinuity boundaries and solver tolerances are preserved; adaptive step sequences can change.
+2. Add a reproducible Git-baseline benchmark with per-state trajectory comparisons. The recorded four-population, 600 ms DOP853 workload improves from 31.96 s to 4.75 s median integration time (6.73 times faster), reducing the delay penalty from 14.18 times to 2.27 times the corresponding ODE runtime. These are local host measurements, not general speed guarantees.
+
+### Added
+
+1. Analytic shared-delay and oscillatory-feedback regression coverage across RK23, RK45, DOP853, LSODA, Radau and BDF. All 77 mean-field tests pass; the benchmark's largest sampled-state difference from the original delayed solver is approximately 2e-14 Hz.
+
 ## [0.28.0] - 2026-10-25
 
 ### Added

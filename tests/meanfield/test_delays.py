@@ -90,6 +90,68 @@ def test_dde_feedback_polynomial_reference_and_convergence():
     assert errors[1] < errors[0] / 100
 
 
+@pytest.mark.parametrize("method", ["RK23", "RK45", "DOP853", "LSODA", "Radau", "BDF"])
+def test_shared_delays_preserve_source_order_and_solver_interpolation(method):
+    ctx = closures.BuildContext({}, {}, {}, {}, {}, "dynamic", "explicit")
+    x = ctx.state("x", unit="Hz")
+    y = ctx.state("y", unit="Hz")
+    g = ctx.state("g", unit="uS")
+    ctx.derivative(x, x)
+    ctx.derivative(y, -2 * y)
+    # Interleave two delays and two sources in the numerical argument order.
+    first = ctx.delay(x, 0.2, name="first")
+    second = ctx.delay(x, 0.7, name="second")
+    third = ctx.delay(y, 0.2, name="third")
+    ctx.derivative(g, first + 2 * second + 3 * third)
+    model = ctx.build()
+    result = mf.integrate(
+        model,
+        duration=3,
+        initial={"x": 1, "y": 1, "g": 0},
+        history=mf.History(
+            lambda t: {"x": np.exp(t), "y": np.exp(-2 * t), "g": 0},
+            start=-0.7,
+            description="Exponential source histories; g(t)=0 before zero",
+        ),
+        method=method,
+        max_step=0.08,
+        sample_interval=0.13,
+        rtol=1e-10,
+        atol=1e-12,
+    )
+    t = result.time_ms
+    expected = (np.exp(-0.2) + 2 * np.exp(-0.7)) * np.expm1(t)
+    expected += 1.5 * np.exp(0.4) * (-np.expm1(-2 * t))
+    np.testing.assert_allclose(result.state["g"], expected, rtol=1e-8, atol=1e-9)
+
+
+@pytest.mark.parametrize("method", ["RK23", "RK45", "DOP853", "LSODA", "Radau", "BDF"])
+def test_delayed_oscillatory_feedback_preserves_phase(method):
+    # x(t)=cos(2*pi*t) solves x'=-2*pi*x(t-1/4), including its prehistory.
+    ctx = closures.BuildContext({}, {}, {}, {}, {}, "dynamic", "explicit")
+    x = ctx.state("x", unit="Hz")
+    ctx.derivative(x, -2 * np.pi * ctx.delay(x, 0.25, name="past_x"))
+    model = ctx.build()
+    result = mf.integrate(
+        model,
+        duration=4,
+        initial={"x": 1},
+        history=mf.History(
+            lambda t: {"x": np.cos(2 * np.pi * t)},
+            start=-0.25,
+            description="x(t)=cos(2*pi*t) Hz",
+        ),
+        method=method,
+        max_step=1,
+        sample_interval=0.031,
+        rtol=1e-10,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        result.state["x"], np.cos(2 * np.pi * result.time_ms), rtol=0, atol=2e-8
+    )
+
+
 def test_nonconstant_history_and_its_units():
     model = forcing_model((1,))
     history = mf.History(

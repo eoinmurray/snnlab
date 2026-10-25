@@ -20,7 +20,7 @@ from snnlab.meanfield import closures
 HERE = Path(__file__).resolve().parent
 
 
-def build_model():
+def build_model(*, delays="explicit"):
     net = lang.Network("delayed_coupled_ei", dt=0.05 * lang.ms)
     populations = {
         name: net.population(
@@ -77,7 +77,7 @@ def build_model():
             provenance="Illustrative explicit mean incoming conductances; no spiking fit",
         ),
         applied_current={"E_A": 0.6, "I_A": 0.55, "E_B": 0.62, "I_B": 0.55},
-        delays="explicit",
+        delays=delays,
         modulation="translate",
     )
     return model, bundle

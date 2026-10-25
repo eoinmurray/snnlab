@@ -336,6 +336,16 @@ interval, not a certified global DDE error. `atol` may be one native-unit value
 per state. `max_step` limits internal steps and therefore interpolation spacing;
 `sample_interval` only selects observations and may exceed a delay. Establish
 convergence by tightening tolerances and reducing `max_step`.
+
+Connections with the same transmission delay share one past-state interpolation
+per derivative evaluation. Single-step segments evaluate their dense interpolant
+directly. RK23, RK45 and DOP853 also seed each new segment from the previous
+segment's accepted steps, with growth capped at a factor of two and `max_step`;
+normal adaptive error control remains active. These optimisations preserve fixed
+delays and discontinuity boundaries. Very short delays still require many
+segments, and the solver retains dense history over the integration horizon.
+See `benchmarks/meanfield-delays` for a reproducible comparison with a Git baseline.
+
 See [SciPy solve_ivp](https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html)
 for solver-specific interpolation and tolerance semantics, and
 [Shampine and Thompson (2001)](https://doi.org/10.1016/S0168-9274(00)00010-8)

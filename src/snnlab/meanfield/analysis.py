@@ -238,6 +238,8 @@ def integrate(
         return value
 
     def parameter_values(time):
+        if not controls:
+            return baseline_values
         values = list(baseline_values)
         for name in controls:
             values[indices[name]] = controlled_value(name, time)
@@ -248,23 +250,35 @@ def integrate(
         symbol: i for i, symbol in enumerate(model.parameters.values())
     }
     parameter_names = tuple(model.parameters)
+    state_delays = {}
+    parameter_delays = []
+    for position, item in enumerate(model.delayed.values()):
+        if item.source in state_indices:
+            state_delays.setdefault(item.delay_ms, []).append(
+                (position, state_indices[item.source])
+            )
+        else:
+            index = parameter_indices[item.source]
+            parameter_delays.append(
+                (position, item.delay_ms, index, parameter_names[index])
+            )
+    numerical_rhs = model.numerical_rhs
+    delayed_count = len(model.delayed)
 
     def rhs(time, state, past=None):
-        delayed = []
-        for item in model.delayed.values():
-            source_time = time - item.delay_ms
-            if item.source in state_indices:
-                value = past(source_time)[state_indices[item.source]]
-            else:
-                index = parameter_indices[item.source]
-                name = parameter_names[index]
-                value = (
-                    controlled_value(name, source_time)
-                    if name in controls
-                    else baseline_values[index]
-                )
-            delayed.append(value)
-        return model.numerical_rhs(*state, *parameter_values(time), *delayed)
+        delayed = [None] * delayed_count
+        # One interpolated state vector serves every source with this delay.
+        for delay, sources in state_delays.items():
+            previous = past(time - delay)
+            for position, index in sources:
+                delayed[position] = previous[index]
+        for position, delay, index, name in parameter_delays:
+            delayed[position] = (
+                controlled_value(name, time - delay)
+                if name in controls
+                else baseline_values[index]
+            )
+        return numerical_rhs(*state, *parameter_values(time), *delayed)
 
     times = np.arange(0, duration, interval)
     times = np.append(times, duration)

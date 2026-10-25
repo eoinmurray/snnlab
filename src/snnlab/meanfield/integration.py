@@ -66,6 +66,7 @@ def solve_segments(rhs, initial, *, duration, times, delays, points, history, op
     ends, solutions = [], []
     minimum = min(delays, default=np.inf)
     state = initial
+    next_step = None
 
     def past(time):
         if time <= 0:
@@ -84,23 +85,38 @@ def solve_segments(rhs, initial, *, duration, times, delays, points, history, op
                 raise ValueError(
                     "delay is too small for the requested integration horizon"
                 )
+            interior_left = np.nextafter(left, right)
+            interior_right = np.nextafter(right, left)
 
             def wrapped(time, vector):
                 # Use each segment's interior limit at both endpoints: the
                 # following segment evaluates the new control value. State is
                 # continuous, so this affects only the derivative at a switch.
-                evaluation_time = min(
-                    max(time, np.nextafter(left, right)), np.nextafter(right, left)
-                )
+                evaluation_time = min(max(time, interior_left), interior_right)
                 return rhs(evaluation_time, vector, past)
 
+            segment_options = options
+            if next_step is not None:
+                segment_options = {
+                    **options,
+                    "first_step": min(next_step, right - left),
+                }
             result = solve_ivp(
-                wrapped, (left, right), state, dense_output=True, **options
+                wrapped, (left, right), state, dense_output=True, **segment_options
             )
             if not result.success or not np.isfinite(result.y).all():
                 raise RuntimeError(f"integration failed: {result.message}")
             ends.append(right)
-            solutions.append(result.sol)
+            # A one-step segment needs no OdeSolution search or dispatch.
+            solutions.append(
+                result.sol.interpolants[0]
+                if len(result.sol.interpolants) == 1
+                else result.sol
+            )
+            if options["method"] in ("RK23", "RK45", "DOP853"):
+                # Grow from an accepted step instead of reselecting from zero.
+                # The solver still applies its usual local error control.
+                next_step = min(options["max_step"], 2 * max(np.diff(result.t)))
             state = result.y[:, -1]
             left = right
     output = np.column_stack([initial if time == 0 else past(time) for time in times])

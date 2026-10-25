@@ -1,0 +1,214 @@
+{
+  "timestamp_utc": "2026-10-25T16:20:31.236499+00:00",
+  "baseline_commit": "a4165349877a22325f18bf80570e163b6daea60d",
+  "working_tree_commit": "a4165349877a22325f18bf80570e163b6daea60d",
+  "working_tree_changed_files": "M examples/meanfield-delays/example.py\n M src/snnlab/meanfield/README.md\n M src/snnlab/meanfield/analysis.py\n M src/snnlab/meanfield/integration.py\n M tests/meanfield/test_delays.py\n?? benchmarks/meanfield-delays/",
+  "environment": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "python": "3.12.12",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1"
+  },
+  "settings": {
+    "duration": 600,
+    "initial": {
+      "E_A.rate": 5,
+      "E_B.rate": 7,
+      "I_A.rate": 10,
+      "I_B.rate": 10,
+      "E_A_to_E_A.conductance": 0.0,
+      "E_A_to_E_B.conductance": 0.0,
+      "E_A_to_I_A.conductance": 0.0,
+      "E_B_to_E_A.conductance": 0.0,
+      "E_B_to_E_B.conductance": 0.0,
+      "E_B_to_I_B.conductance": 0.0,
+      "I_A_to_E_A.conductance": 0.0,
+      "I_A_to_I_A.conductance": 0.0,
+      "I_B_to_E_B.conductance": 0.0,
+      "I_B_to_I_B.conductance": 0.0
+    },
+    "sample_interval": 0.5,
+    "method": "DOP853",
+    "max_step": 0.1,
+    "rtol": 1e-08,
+    "atol": 1e-10
+  },
+  "delays_ms": {
+    "E_A_to_E_A": 0.1,
+    "E_A_to_E_B": 2.0,
+    "E_A_to_I_A": 0.1,
+    "E_B_to_E_A": 2.0,
+    "E_B_to_E_B": 0.1,
+    "E_B_to_I_B": 0.1,
+    "I_A_to_E_A": 0.1,
+    "I_A_to_I_A": 0.1,
+    "I_B_to_E_B": 0.1,
+    "I_B_to_I_B": 0.1
+  },
+  "state_count": 14,
+  "repeats": 3,
+  "seconds": {
+    "baseline_delayed": [
+      31.96259229199495,
+      33.09201899997424,
+      27.985083292005584
+    ],
+    "optimised_delayed": [
+      4.766477333032526,
+      4.750880084000528,
+      2.493596374988556
+    ],
+    "baseline_ode": [
+      2.363767166971229,
+      2.2537760420236737,
+      1.2294352090684697
+    ],
+    "optimised_ode": [
+      2.0955214999848977,
+      2.191613250062801,
+      1.2049800410168245
+    ]
+  },
+  "median_seconds": {
+    "baseline_delayed": 31.96259229199495,
+    "optimised_delayed": 4.750880084000528,
+    "baseline_ode": 2.2537760420236737,
+    "optimised_ode": 2.0955214999848977
+  },
+  "ratios": {
+    "baseline_delay_penalty": 14.181796103971193,
+    "optimised_delay_penalty": 2.267158835657266,
+    "delayed_speedup": 6.7277202806349345,
+    "delayed_time_reduction_fraction": 0.8513612400208731
+  },
+  "segments": {
+    "baseline_delayed": 6000,
+    "optimised_delayed": 6000,
+    "baseline_ode": 2,
+    "optimised_ode": 2
+  },
+  "trajectory_comparison": {
+    "rtol": 1e-09,
+    "atol": 1e-10,
+    "per_state": {
+      "delayed": {
+        "E_A.rate": {
+          "unit": "Hz",
+          "max_absolute_difference": 1.687538997430238e-14
+        },
+        "E_B.rate": {
+          "unit": "Hz",
+          "max_absolute_difference": 1.509903313490213e-14
+        },
+        "I_A.rate": {
+          "unit": "Hz",
+          "max_absolute_difference": 1.9539925233402755e-14
+        },
+        "I_B.rate": {
+          "unit": "Hz",
+          "max_absolute_difference": 1.1102230246251565e-14
+        },
+        "E_A_to_E_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 1.4094628242311558e-18
+        },
+        "E_A_to_E_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 3.5236570605778894e-19
+        },
+        "E_A_to_I_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 1.4094628242311558e-18
+        },
+        "E_B_to_E_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 3.5236570605778894e-19
+        },
+        "E_B_to_E_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 1.1926223897340549e-18
+        },
+        "E_B_to_I_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 1.1926223897340549e-18
+        },
+        "I_A_to_E_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 8.239936510889834e-18
+        },
+        "I_A_to_I_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 8.239936510889834e-18
+        },
+        "I_B_to_E_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 5.204170427930421e-18
+        },
+        "I_B_to_I_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 5.204170427930421e-18
+        }
+      },
+      "ode": {
+        "E_A.rate": {
+          "unit": "Hz",
+          "max_absolute_difference": 0.0
+        },
+        "E_B.rate": {
+          "unit": "Hz",
+          "max_absolute_difference": 0.0
+        },
+        "I_A.rate": {
+          "unit": "Hz",
+          "max_absolute_difference": 0.0
+        },
+        "I_B.rate": {
+          "unit": "Hz",
+          "max_absolute_difference": 0.0
+        },
+        "E_A_to_E_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "E_A_to_E_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "E_A_to_I_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "E_B_to_E_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "E_B_to_E_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "E_B_to_I_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "I_A_to_E_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "I_A_to_I_A.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "I_B_to_E_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        },
+        "I_B_to_I_B.conductance": {
+          "unit": "uS",
+          "max_absolute_difference": 0.0
+        }
+      }
+    }
+  },
+  "scope": "Local host integration only. Omitted delays change the equations. No general speed guarantee."
+}
