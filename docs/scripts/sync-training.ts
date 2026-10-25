@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 const example = new URL('../../examples/training/', import.meta.url);
 const publicDir = new URL('../public/training/', import.meta.url);
 const script = readFileSync(new URL('example.py', example), 'utf8');
-const template = readFileSync(new URL('training.mdx', import.meta.url), 'utf8');
+const template = readFileSync(new URL('example.mdx', example), 'utf8');
 
 function section(start: string, end: string, indent = true) {
   const startIndex = script.indexOf(start);
@@ -16,12 +16,12 @@ const replacements: Record<string, string> = {
   SCRIPT: script.trimEnd(),
   PROGRESS_SCRIPT: readFileSync(new URL("../../examples/native-training/example.py", import.meta.url), "utf8").trimEnd(),
   DATASET: section('def make_dataset', '\ndef main', false),
-  SETUP: section('net = lang.Network("spike_pattern_classifier", dt=DT_MS * lang.ms)', 'inputs = net.input('),
-  INPUTS: section('inputs = net.input(', 'cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))'),
-  NETWORK: section('cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))', 'net.output("class_scores", scores)'),
-  OUTPUTS: section('net.output("class_scores", scores)', 'objective = lang.CrossEntropy(prediction=scores, target="class")'),
-  RECIPE: section('objective = lang.CrossEntropy(prediction=scores, target="class")', 'bundle = lang.compile(net, training=recipe, target="tools/snnsim")'),
-  BUNDLE: section('bundle = lang.compile(net, training=recipe, target="tools/snnsim")', 'validation = ValidationSpec('),
+  SETUP: section('net = lang.Network(', 'inputs = net.input('),
+  INPUTS: section('inputs = net.input(', 'cells = net.population('),
+  NETWORK: section('cells = net.population(', 'net.output('),
+  OUTPUTS: section('net.output(', 'objective = lang.CrossEntropy('),
+  RECIPE: section('objective = lang.CrossEntropy(', 'bundle = lang.compile('),
+  BUNDLE: section('bundle = lang.compile(', 'validation = ValidationSpec('),
   TRAIN: section('validation = ValidationSpec(', 'metrics_path = OUTPUT_DIR / "metrics.json"'),
   METRICS: section('metrics_path = OUTPUT_DIR / "metrics.json"', 'grid = viz.FigureGrid('),
 };

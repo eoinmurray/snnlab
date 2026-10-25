@@ -18,7 +18,7 @@ const replacements: Record<string, string> = {
   N_MAX: number(metrics.gate_max_abs_error.n),
   SPIKE_TIME_MAX: number(metrics.max_spike_time_error_ms),
 };
-const template = readFileSync(new URL('hodgkin-huxley.mdx', import.meta.url), 'utf8');
+const template = readFileSync(new URL('example.mdx', example), 'utf8');
 writeFileSync(new URL('../content/docs/hodgkin-huxley.mdx', import.meta.url),
   template.replace(/\{\{(\w+)\}\}/g, (_, name) => {
     if (!(name in replacements)) throw new Error(`Unknown HH placeholder: ${name}`);

@@ -1,18 +1,38 @@
-# Manual SNNLang diagram review
+# SNNLang diagram gallery
 
 This gallery exercises `lang.diagram(...)` and `viz.render_diagram(...)` for
-human inspection. It is intentionally outside pytest collection: run it when
-changing diagram projection, layout, styling, or labels.
+human inspection. Run it to explore rendering or review changes to diagram projection, layout,
+styling, or labels. It renders nine cases without simulating or training them.
 
 From the repository root, with Graphviz `dot` and `neato` installed and available on `PATH`:
 
 ```sh
-uv run python tests/visual/lang/render.py
+uv run python examples/diagrams/example.py
 ```
 
-Open `artifacts/visual/lang/index.html`. Each case has explicit circuit and training views. Groups always
+Open `examples/diagrams/results/index.html`. Each case has explicit circuit and training views. Groups always
 show their contents; there are no collapsed or selectively expanded views. Each view includes SVG and PNG downloads and its rendering options.
 Click an SVG to inspect it at full size.
+
+The `all_box_types`, `two_layer_classifier` and `exp131_coupled` cases also
+include a `circuit_weights` view with compact custom names and a notation legend.
+Scripts use smaller text in explicit table cells so SVG previews and raster
+exports agree without depending on SVG baseline-shift support. Use `lang.diagram(bundle, weight_labels=True)`
+to label every weighted projection with a bold italic W and a source-to-target
+subscript. To label selected projections with custom symbols, pass a mapping
+from projection IDs to `viz.WeightLabel` objects instead:
+
+```python
+visual = lang.diagram(bundle, weight_labels={
+    "E_to_I": viz.WeightLabel(symbol="J", subscript="E→I", superscript="rec"),
+})
+```
+
+The symbol identifies the matrix; its subscript identifies the pathway and its
+optional superscript can identify a category such as recurrence. Text is literal,
+not LaTeX or HTML. Synapse labels remain above matrix names, and weight labels
+are disabled by default. Default names use source→target order, independent of
+the matrix's storage orientation. A mapping labels only the specified projections.
 
 The first case, `all_box_types`, shows every supported node kind in its training
 view: input, spiking/analogue population, operation, output, training group,
@@ -40,12 +60,12 @@ Coupled circuits are arranged horizontally. Reciprocal E/I pairs
 share a column with I below E, including networks without authored groups.
 Existing rendering assertions remain in `tests/lang/test_snnlang.py`.
 
-1. Add future cases as factories in `cases.py` and include them in `cases()`.
-2. Generated files go to the Git-ignored `artifacts/visual/lang/` directory.
-   Rerunning overwrites matching files and removes the retired `selected_groups`
-   renders; it leaves other unrelated files alone.
+1. Add future cases as factories in `example.py` and include them in `cases()`.
+2. Generated files go to `examples/diagrams/results/`. As with the other
+   examples, each run replaces the output directory.
 3. Override the destination or PNG scale with
-   `--out-dir /tmp/snnlang-review --scale 1`. SVG output is independent of scale.
+   `--out-dir /tmp/snnlang-review --scale 1`. The specified directory is replaced
+   on each run. SVG output is independent of scale.
 4. If baseline comparisons are introduced later, store approved references in a
    separate `fixtures/` directory. Never regenerate approved references implicitly.
 

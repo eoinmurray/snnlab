@@ -1,0 +1,31 @@
+---
+title: Welcome to snnlab
+description: Author, simulate, train and analyse spiking neural networks in Python.
+---
+
+snnlab brings network authoring, simulation, training and visualisation into one Python library. Define populations and synapses, compile a validated network, then run simulations or train with surrogate gradients. Simulation and training use PyTorch, with support for external PyTorch layers, optimizers and training loops.
+
+## Get started
+
+1. [Install snnlab](/installation) from PyPI.
+2. Follow the [Quickstart](/quickstart) to define and simulate a small network, then plot its activity.
+3. Explore [Defining Networks](/snnlang) for feedforward and recurrent circuits and their diagrams.
+
+## Explore the examples
+
+The examples pair runnable Python scripts with explanations and generated results.
+
+1. [Training](/training) and [Inference](/inference) cover fitting a network and running its saved model.
+2. [PyTorch Integration](/pytorch-integration) shows how to use your own training loop.
+3. [Current-based LIF](/current-lif), [Custom Neurons and Synapses](/custom-neurons-and-synapses) and [Hodgkin–Huxley](/hodgkin-huxley) cover built-in dynamics and custom neuron models.
+4. [Animate a Simulation](/animated-neuron) lets you replay recorded activity.
+
+## API reference
+
+1. [snnlab.lang](/api/lang): define and compile networks.
+2. [snnlab.sim](/api/sim): simulate, train and manage runtime state.
+3. [snnlab.extensions](/api/extensions): implement custom neurons, synapses and initializers.
+4. [snnlab.analysis](/api/analysis): measure population activity and network dynamics.
+5. [snnlab.viz](/api/viz): draw networks and plot results.
+
+Find the source and report issues on [GitHub](https://github.com/eoinmurray/snnlab). See the [Changelog](/changelog) for recent changes.

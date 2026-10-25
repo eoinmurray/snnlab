@@ -57,6 +57,15 @@ class DiagramNode:
 
 
 @dataclass(frozen=True)
+class WeightLabel:
+    """A matrix symbol with literal subscript and superscript text, not LaTeX."""
+
+    symbol: str = "W"
+    subscript: str = ""
+    superscript: str = ""
+
+
+@dataclass(frozen=True)
 class DiagramEdge:
     """A directed semantic relationship between two diagram nodes."""
 
@@ -70,6 +79,7 @@ class DiagramEdge:
     constraint: bool = True
     pen_width: float = 1.1
     frozen: bool = False
+    weight_label: WeightLabel | None = None
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,202 @@
+---
+title: Mean-Field Modelling
+description: Build a symbolic E/I population model and explore its equilibria, stability and oscillations.
+---
+
+import EquationBox from '../../src/components/EquationBox.astro';
+
+An excitatory population and an inhibitory population receive constant external
+activity and connect through all four recurrent pathways. This example builds a
+qualitative population model of that circuit, then decreases external drive to
+inhibition to explore the resulting change in dynamics.
+
+See the [snnlab.meanfield API Reference](/api/meanfield) for function contracts,
+closure extensions and the JSON export schema.
+
+## 1. Build the mean-field model
+
+Start with an existing compiled network, `bundle`, and the example settings,
+`cfg`. See [Defining Networks](/snnlang) for network authoring. Here the circuit
+has E/I populations, all four recurrent pathways and one external input, `X`.
+
+```python
+from snnlab import lang, meanfield as mf
+from snnlab.meanfield import closures
+```
+
+```python
+model = mf.reduce(
+    bundle,
+    closure=closures.RateConductance(
+        gain=closures.NoisyLIF(sigma=cfg["voltage_noise_mv"] * lang.mV),
+        tau_rate=cfg["rate_relaxation_ms"],
+        driving_force="resting",
+    ),
+    weights=mf.MeanIncomingWeights(
+        cfg["mean_incoming_weights_us"],
+        provenance="Explicit mean incoming conductance couplings",
+    ),
+    inputs={"X": mf.StationaryRate(cfg["external_rate_hz"] * lang.Hz)},
+    external_filters="quasistatic",
+)
+```
+
+## 2. Generated model equations
+
+The example calls `model.write(out_dir / "model.json")` to save the model
+structure, numerical parameters, assumptions and individually named equations.
+This page selects those equations from the JSON document by their stable IDs.
+
+### States
+
+<EquationBox label="State vector: six dynamical variables">
+
+$$
+x=\left(r_{E},r_{I},g_{e}^{E},g_{e}^{I},g_{i}^{E},g_{i}^{I}\right)^{\mathsf T}
+$$
+
+</EquationBox>
+
+The six dynamical states are $r_E,r_I$ (population firing rates in Hz) and
+$g_e^E,g_e^I,g_i^E,g_i^I$ (the four recurrent conductances in µS). The subscript
+$e$ or $i$ indicates excitatory or inhibitory input; the superscript identifies
+the target population. A dot denotes a derivative with respect to time $t$ in ms.
+
+### Rates
+
+<EquationBox label="Population rates: two dynamical equations">
+
+$$
+\begin{aligned}
+\tau_{r,E}\,\dot{r_{E}} &= - r_{E} + \Phi_{E}{\left(I_{E} \right)} \\
+\tau_{r,I}\,\dot{r_{I}} &= - r_{I} + \Phi_{I}{\left(I_{I} \right)}
+\end{aligned}
+$$
+
+</EquationBox>
+
+$\tau_{r,Q}$ is the population rate relaxation time in ms. The function
+$\Phi_Q(I_Q)$ maps effective current $I_Q$ in nA to a stationary noisy-LIF rate
+in Hz, for population $Q\in\{E,I\}$.
+
+### Recurrent conductances
+
+<EquationBox label="Recurrent conductances: four dynamical equations">
+
+$$
+\begin{aligned}
+\dot{g_{e}^{E}} &= \frac{r_{E} C_{E\to E} a_{E\to E}}{1000} - \frac{g_{e}^{E}}{\tau_{E\to E}} \\
+\dot{g_{e}^{I}} &= \frac{r_{E} C_{E\to I} a_{E\to I}}{1000} - \frac{g_{e}^{I}}{\tau_{E\to I}} \\
+\dot{g_{i}^{E}} &= \frac{r_{I} C_{I\to E} a_{I\to E}}{1000} - \frac{g_{i}^{E}}{\tau_{I\to E}} \\
+\dot{g_{i}^{I}} &= \frac{r_{I} C_{I\to I} a_{I\to I}}{1000} - \frac{g_{i}^{I}}{\tau_{I\to I}}
+\end{aligned}
+$$
+
+</EquationBox>
+
+For a pathway $P\to Q$, $C_{P\to Q}$ is the mean incoming coupling defined
+below, $a_{P\to Q}$ is a dimensionless gain, and $\tau_{P\to Q}$ is its
+synaptic decay time in ms. The factor 1,000 converts Hz to spikes per ms.
+
+### External input, effective currents and state count
+
+<EquationBox label="Stationary external input, effective currents and six-state count">
+
+**External input**
+
+$$
+\begin{aligned}
+g_{\mathrm{ext}}^{E} &= \frac{r_{X} C_{X\to E} a_{X\to E} \tau_{X\to E}}{1000} \\
+g_{\mathrm{ext}}^{I} &= \frac{r_{X} C_{X\to I} a_{X\to I} \tau_{X\to I}}{1000}
+\end{aligned}
+$$
+
+**Effective currents**
+
+$$
+\begin{aligned}
+I_{E} &= I_{\mathrm{ext},E} + \Delta V_{\mathrm{exc},E} \left(g_{e}^{E} + g_{\mathrm{ext}}^{E}\right) - \Delta V_{\mathrm{inh},E} g_{i}^{E} \\
+I_{I} &= I_{\mathrm{ext},I} + \Delta V_{\mathrm{exc},I} \left(g_{e}^{I} + g_{\mathrm{ext}}^{I}\right) - \Delta V_{\mathrm{inh},I} g_{i}^{I}
+\end{aligned}
+$$
+
+**State count**
+
+Two population rates and four recurrent conductances give six dynamical
+variables. E→E and I→I each have their own conductance state and differential
+equation. External conductances enter as quasistatic means.
+
+</EquationBox>
+
+$I_{\mathrm{ext},Q}$ is applied current in nA, $r_X$ is the external source
+rate in Hz, and $g_{\mathrm{ext}}^Q$ is its quasistatic mean conductance in µS.
+The scheduled control changes $a_{X\to I}$; the other gains remain one.
+
+### Fixed driving forces
+
+<EquationBox label="Fixed excitatory and inhibitory driving forces">
+
+$$
+\begin{aligned}
+\Delta V_{\mathrm{exc},E} &= 70.0 \\
+\Delta V_{\mathrm{inh},E} &= 10.0 \\
+\Delta V_{\mathrm{exc},I} &= 70.0 \\
+\Delta V_{\mathrm{inh},I} &= 10.0
+\end{aligned}
+$$
+
+</EquationBox>
+
+$\Delta V_{\mathrm{exc},Q},\Delta V_{\mathrm{inh},Q}$ are fixed excitatory and
+inhibitory driving forces in mV. Their products with conductance give current
+in nA.
+
+### Coupling shorthand
+
+The coupling shorthand is also imported from the model's saved symbol glossary.
+For example:
+
+<EquationBox label="Mean incoming coupling and weight normalisation">
+
+$$
+C_{E\to I} = \frac{1}{N_{I}}\sum_{j,k}\mathbf{W}_{jk}^{E\to I}
+$$
+
+</EquationBox>
+
+Here $C_{E\to I}$ is the mean total incoming E→I conductance jump in µS,
+$N_I$ is the number of inhibitory target neurons, and
+$\mathbf W_{jk}^{E\to I}$ is the effective conductance jump in µS from source
+neuron $j$ to target neuron $k$. Absent connections contribute zero.
+The JSON records the target count, normalisation, index meanings and units;
+it does not leave the meaning of $C$ implicit.
+
+The compact current symbols are exported from the same symbolic model;
+expanding their definitions recovers the computational equations.
+
+The same symbolic model is available for inspection and further algebra:
+
+```python
+print(mf.summary(model))
+equations = mf.equations(model)  # named SymPy equations
+jacobian = mf.jacobian(model)  # symbolic Jacobian
+tex = mf.latex(model)
+```
+
+### Export and select an equation
+
+```python
+import json
+
+path = model.write("model.json")
+saved = json.loads(path.read_text())
+rate_equation = saved["equations"]["E.rate"]["latex"]
+current_equation = saved["equations"]["E.effective_current"]["latex"]
+assumptions = saved["assumptions"]
+coupling_definition = saved["symbols"]["E_to_I.coupling"]["definition_latex"]
+```
+
+Each equation has its own LaTeX, left and right sides, kind and symbol
+dependencies. `model_definition` retains the computational expressions,
+auxiliary definitions and gain specifications.
+[Download the model document](/meanfield/model.json).

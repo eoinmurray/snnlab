@@ -7,7 +7,7 @@ uv add snnlab
 ```
 
 ```python
-from snnlab import analysis, lang, sim, viz
+from snnlab import analysis, lang, meanfield, sim, viz
 ```
 
 1. `snnlab.lang` authors and validates deterministic graph bundles.
@@ -15,6 +15,7 @@ from snnlab import analysis, lang, sim, viz
 3. `snnlab.viz` renders recordings, diagrams, figures and animations.
 4. `snnlab.analysis` measures population activity, rhythmicity and conductance trajectories from recorded NumPy data.
 5. `snnlab.extensions` registers versioned Python definitions for custom dynamics, weights, operations, training and encoders. Saved bundles retain import references and automatically load available implementations in fresh processes, without embedding Python code.
+6. `snnlab.meanfield` generates symbolic qualitative population models, with manipulation and analysis in its main namespace and approximation definitions in `meanfield.closures`. See the [module guide](src/snnlab/meanfield/README.md) and [mean-field example](examples/meanfield/README.md).
 
 The graph simulator supports LIF, ALIF and AdEx populations with current or conductance synapses, plus leaky-integrator readouts, recurrent/feedback connections and integer-timestep delays. `lang.ALIF()` and `lang.ADEX()` select current models; `lang.COBA_ALIF()` and `lang.COBA_ADEX()` select conductance models. See `examples/neurons/example.py` for a LIF/ALIF/AdEx comparison and the [neuron and synapse reference](docs/content/docs/api/extensions.mdx) and [weight reference](docs/content/docs/api/lang.mdx). Register importable Python callbacks when authoring custom models; bundle loaders automatically resolve their saved references in each execution process. See `examples/current-lif/example.py` for a built-in current-based simulation and `examples/customisation/example.py` with its callbacks in the same file for a custom adaptive current neuron and weight distribution.
 
@@ -27,6 +28,8 @@ flag-built networks and config replay have been removed; see the
 [CLI reference](docs/content/docs/api/sim.mdx) for current inputs and controls.
 
 Each directory under `examples/` has one `example.py`. Run it with `uv run python examples/<name>/example.py`; generated files go into its `results/` directory, which is replaced on every run. Inference and PyTorch reuse the saved model in `examples/training/results/`.
+
+The [diagram gallery](examples/diagrams/README.md) renders nine network cases in circuit and training views, with SVG and PNG downloads. Run `uv run python examples/diagrams/example.py`, then open `examples/diagrams/results/index.html`. Graphviz’s `dot` and `neato` executables must be on `PATH`.
 
 Native training also supports online minibatch metrics, validation-only epoch evaluation, stratified schedules with configurable tails, and immutable epoch progress callbacks. See `examples/native-training/example.py` for partial checkpoint resume and final/selected checkpoints, and the [execution policies](docs/content/docs/api/sim#inputs-and-execution-settings.mdx) for measurement and RNG contracts.
 

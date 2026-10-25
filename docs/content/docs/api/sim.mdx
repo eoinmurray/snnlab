@@ -146,10 +146,28 @@ Execution functions return results without automatically writing plots or artifa
 ```python
 from snnlab.sim import load_dataset, encode_images_poisson, poisson_spikes
 
-def load_dataset(name, max_samples=None, split=False,
-                 evaluation_split="validation", evaluation_only=False): ...
-def encode_images_poisson(images, T_steps, dt, max_rate_hz, generator=None): ...
-def poisson_spikes(rate_hz, shape, dt, generator, device=None): ...
+
+def load_dataset(
+    name,
+    max_samples=None,
+    split=False,
+    evaluation_split="validation",
+    evaluation_only=False,
+): ...
+def encode_images_poisson(
+    images,
+    T_steps,
+    dt,
+    max_rate_hz,
+    generator=None,
+): ...
+def poisson_spikes(
+    rate_hz,
+    shape,
+    dt,
+    generator,
+    device=None,
+): ...
 ```
 
 These functions expose source arrays for matched replay and measurements independently of execution bindings. `dt` is in ms; rates are in Hz. Both spike generators return binary `torch.float32` occupancy, using Bernoulli probability `rate_hz * dt / 1000`, with at most one spike per bin. Their historical names do not mean Poisson-distributed counts or preserved multiplets. Seeded draw ordering is unchanged on CPU; reproducibility requires the same device, generator state, shape and call sequence. Cross-device RNG algorithms need not agree.
@@ -181,21 +199,35 @@ from dataclasses import replace
 from pathlib import Path
 from snnlab.sim import Performance, train, simulate
 
-performance = Performance(precision="highest", compile_block_steps=4)
+performance = Performance(
+    precision="highest",
+    compile_block_steps=4,
+)
 trained = train(
-    graph=bundle.graph, training=bundle.training,
-    input_bindings=train_inputs, targets=targets,
-    epochs=20, device="cuda:0", performance=performance,
+    graph=bundle.graph,
+    training=bundle.training,
+    input_bindings=train_inputs,
+    targets=targets,
+    epochs=20,
+    device="cuda:0",
+    performance=performance,
     save_final_checkpoint=Path("trained.checkpoint"),
 )
 prediction = simulate(
-    graph=bundle.graph, input_bindings=test_inputs,
-    device="cuda:0", performance=performance,
+    graph=bundle.graph,
+    input_bindings=test_inputs,
+    device="cuda:0",
+    performance=performance,
     checkpoint=Path("trained.checkpoint"),
 )
 simulation = simulate(
-    graph=bundle.graph, input_bindings=test_inputs,
-    device="cuda:0", performance=replace(performance, cuda_graphs="off"),
+    graph=bundle.graph,
+    input_bindings=test_inputs,
+    device="cuda:0",
+    performance=replace(
+        performance,
+        cuda_graphs="off",
+    ),
     checkpoint=Path("trained.checkpoint"),
 )
 ```
@@ -222,7 +254,10 @@ Direct `GraphExecutor` construction and CLI flags retain their existing controls
 For short runs, startup can outweigh faster steady execution:
 
 ```python
-eager = Performance(compile_mode=None, cuda_graphs="off")
+eager = Performance(
+    compile_mode=None,
+    cuda_graphs="off",
+)
 ```
 
 This retains the other automatic settings, including CUDA precision and fused
@@ -259,12 +294,21 @@ defaults above. Move them into `Performance`:
 
 ```python
 # Before
-result = simulate(graph=graph, input_bindings=inputs, compile_mode=None, precision="highest")
+result = simulate(
+    graph=graph,
+    input_bindings=inputs,
+    compile_mode=None,
+    precision="highest",
+)
 
 # Now
 result = simulate(
-    graph=graph, input_bindings=inputs,
-    performance=Performance(compile_mode=None, precision="highest"),
+    graph=graph,
+    input_bindings=inputs,
+    performance=Performance(
+        compile_mode=None,
+        precision="highest",
+    ),
 )
 ```
 
@@ -479,9 +523,16 @@ result = train(
     training_timing=True,
 )
 timing = result.metrics["training_timing"]
-print(timing["total_s"], timing["training_s"])
+print(
+    timing["total_s"],
+    timing["training_s"],
+)
 for row in timing["epochs"]:
-    print(row["epoch"], row["training_s"], row["validation_s"])
+    print(
+        row["epoch"],
+        row["training_s"],
+        row["validation_s"],
+    )
 ```
 
 The mapping has `mode`, `scope`, `training_scope`, `total_s`, the phase fields
@@ -595,7 +646,10 @@ observations = EpochObservations(
     output_activity=("output_neurons",),
     gradient_norms=("w_out",),
     probes={
-        "reference": ObservationProbe(input_bindings=reference_inputs, seed=17),
+        "reference": ObservationProbe(
+            input_bindings=reference_inputs,
+            seed=17,
+        ),
         "validation_draw_1": ObservationProbe(
             input_bindings=draw_inputs,
             seed=23,
@@ -759,9 +813,18 @@ Accepted values are `"auto"`, `"cpu"`, `"cuda"`, `"cuda:N"` and `"mps"` (normali
 Declared outputs from `net.output` are always returned in `result.outputs`. Signals declared with `net.expose` are returned by default in `result.diagnostics`, keyed by their exposed names. Set `diagnostics=False` to return no diagnostic tensors. This applies to simulation, inference and training; `build` does not execute the network.
 
 ```python
-net.output("spikes", cells.spikes)
-net.expose(cells.voltage, name="e_voltage")
-bundle = lang.compile(net, target="tools/snnsim")
+net.output(
+    "spikes",
+    cells.spikes,
+)
+net.expose(
+    cells.voltage,
+    name="e_voltage",
+)
+bundle = lang.compile(
+    net,
+    target="tools/snnsim",
+)
 
 result = simulate(
     graph=bundle.graph,
@@ -1003,7 +1066,10 @@ class RecordingBlock:
 
 
 class NPZRecordingSink:
-    def __init__(self, directory: str | Path): ...
+    def __init__(
+        self,
+        directory: str | Path,
+    ): ...
 ```
 
 `RecordingBlock.values` contains an independent CPU tensor delivered to a sink. Absolute start/end steps describe the block; `batch_offset` identifies the source sample offset for dataset batching. `cells`, `unit` and `measurement_window` retain interpretation metadata. A recording window and the graph reduction measurement window are independently configurable.
@@ -1020,8 +1086,15 @@ exports retained arrays through the same format, with optional sample selection.
 ```python
 from snnlab.sim import MeasurementWindow
 
-window = MeasurementWindow(start_step=0, end_step=600)
-first = model(first_inputs, diagnostics=False, measurement=window)
+window = MeasurementWindow(
+    start_step=0,
+    end_step=600,
+)
+first = model(
+    first_inputs,
+    diagnostics=False,
+    measurement=window,
+)
 continued = model(
     remaining_inputs,
     diagnostics=False,
@@ -1047,13 +1120,25 @@ from snnlab.sim import RecordingSpec, SignalRecording, NPZRecordingSink
 sink = NPZRecordingSink("recording-blocks")  # requires an empty directory
 recording = RecordingSpec(
     signals=(
-        SignalRecording("E.spikes", kind="spike_events"),
-        SignalRecording("out.voltage", cells=(0, 1), kind="dense"),
+        SignalRecording(
+            "E.spikes",
+            kind="spike_events",
+        ),
+        SignalRecording(
+            "out.voltage",
+            cells=(0, 1),
+            kind="dense",
+        ),
     ),
     sink=sink,
     sink_id=sink.identity,
 )
-result = model(inputs, diagnostics=False, recording=recording, retain_outputs=False)
+result = model(
+    inputs,
+    diagnostics=False,
+    recording=recording,
+    retain_outputs=False,
+)
 ```
 
 `SignalRecording(signal, cells=None, kind="dense")` supports native signals and timewise linear chains. Cell selections must be nonempty, unique and in range. Dense recordings retain `(recorded_time, batch, selected_cells)` values in selection order. `kind="spike_events"` accepts population spikes and produces an `int64` `(events, 3)` tensor: absolute timestep, batch index and original cell index. Coordinates remain absolute during continuation; dataset batch indices identify positions in the full selected presentation sequence. Event rows follow execution/batch-block order rather than promising a global sort.
@@ -1097,9 +1182,14 @@ history.validate(
     expected_examples={"test": 360},
     expected_encoding_draws={"test": (17,)},
 )
-curve = history.curve(metric="accuracy", split="validation", objective=0)
+curve = history.curve(
+    metric="accuracy",
+    split="validation",
+    objective=0,
+)
 curves = history.curves(
-    metrics=("loss", "accuracy"), splits=("train", "validation")
+    metrics=("loss", "accuracy"),
+    splits=("train", "validation"),
 )
 ```
 
@@ -1175,20 +1265,41 @@ Windows and strided recordings use per-signal coordinates. `sample.time_ms` rema
 dataset = sim.DatasetSnapshot.from_partitions(
     dataset_id="digits",
     partitions={
-        "train": sim.DatasetPartition(x_train, y_train, train_ids),
-        "validation": sim.DatasetPartition(x_validation, y_validation, validation_ids),
-        "test": sim.DatasetPartition(x_test, y_test, test_ids),
+        "train": sim.DatasetPartition(
+            x_train,
+            y_train,
+            train_ids,
+        ),
+        "validation": sim.DatasetPartition(
+            x_validation,
+            y_validation,
+            validation_ids,
+        ),
+        "test": sim.DatasetPartition(
+            x_test,
+            y_test,
+            test_ids,
+        ),
     },
     disjoint=("train", "validation", "test"),
-    preprocessing={"operation": "divide", "divisor": 16},
+    preprocessing={
+        "operation": "divide",
+        "divisor": 16,
+    },
 )
 dataset.write("dataset.npz")
 saved = sim.DatasetSnapshot.read("dataset.npz")
 binding = saved.binding(
-    "train", input_id="pixels", target_id="class", encoder=encoder,
+    "train",
+    input_id="pixels",
+    target_id="class",
+    encoder=encoder,
 )
 diagnostic = saved.binding(
-    "test", sample_ids=(original_id,), input_id="pixels", encoder=encoder,
+    "test",
+    sample_ids=(original_id,),
+    input_id="pixels",
+    encoder=encoder,
 )
 ```
 
@@ -1202,9 +1313,16 @@ Call `.read()` after writing to obtain a saved snapshot suitable for bindings. `
 
 ```python
 partitions = sim.stratified_split(
-    features=x, labels=y, sample_ids=ids,
-    fractions={"train": .7, "validation": .15, "test": .15},
-    seed=17, policy="stratified-v1",
+    features=x,
+    labels=y,
+    sample_ids=ids,
+    fractions={
+        "train": 0.7,
+        "validation": 0.15,
+        "test": 0.15,
+    },
+    seed=17,
+    policy="stratified-v1",
 )
 ```
 
@@ -1214,11 +1332,17 @@ Splitting is a separate explicit operation. `stratified-v1` permutes each sorted
 
 ```python
 logger = sim.EpochLogger(
-    metrics=("loss", "accuracy"), splits=("train", "validation"),
-    labels={"validation": "val"}, precision=4, timing=True,
+    metrics=("loss", "accuracy"),
+    splits=("train", "validation"),
+    labels={"validation": "val"},
+    precision=4,
+    timing=True,
     stream=sys.stdout,
 )
-text = sim.format_epoch(report, precision=4)
+text = sim.format_epoch(
+    report,
+    precision=4,
+)
 # Pass logger as on_epoch_end=logger in the explicit train call.
 ```
 
@@ -1290,7 +1414,8 @@ leave it disabled for uninstrumented performance measurements.
 
 ```python
 def save_training_checkpoint(
-    path: str | Path, checkpoint: TrainingCheckpoint
+    path: str | Path,
+    checkpoint: TrainingCheckpoint,
 ) -> Path: ...
 ```
 
@@ -1300,7 +1425,9 @@ Writes a directory containing `manifest.json` and `tensors.npz`, publishing indi
 
 ```python
 def load_training_checkpoint(
-    path: str | Path, *, device: str | torch.device = "cpu"
+    path: str | Path,
+    *,
+    device: str | torch.device = "cpu",
 ) -> TrainingCheckpoint: ...
 ```
 
@@ -1310,8 +1437,14 @@ Reads supported schema versions 1–5, authenticates tensor payloads and metadat
 from snnlab.sim import load_training_checkpoint, save_training_checkpoint
 
 # trained is the result of train(...).
-save_training_checkpoint("final.checkpoint", trained.training_checkpoint)
-checkpoint = load_training_checkpoint("final.checkpoint", device="cpu")
+save_training_checkpoint(
+    "final.checkpoint",
+    trained.training_checkpoint,
+)
+checkpoint = load_training_checkpoint(
+    "final.checkpoint",
+    device="cpu",
+)
 ```
 
 To resume built-in training, set `checkpoint` to the directory path. To run inference, the same directory supplies authenticated weights; optimizer/iterator state is not restored. A standalone PyTorch state dictionary is supported for inference but is not a built-in training-resume checkpoint.
@@ -1366,33 +1499,56 @@ The following complete example uses 0.1 ms numerical steps and 1 ms windows:
 import torch
 from snnlab import lang, sim
 
-network = lang.Network("streaming-example", dt=0.1 * lang.ms)
+network = lang.Network(
+    "streaming-example",
+    dt=0.1 * lang.ms,
+)
 events = network.input(
-    "events", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+    "events",
+    shape=("time", "batch", 2),
+    signal_type="spikes",
+    unit="spike",
 )
 cells = network.population(
-    "cells", size=8, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms)
+    "cells",
+    size=8,
+    neuron=lang.COBA_LIF(tau_mem=20 * lang.ms),
 )
 network.connect(
-    events, cells.excitatory, name="drive",
-    synapse=lang.AMPA(tau=5 * lang.ms), weight=lang.Constant(0.1),
+    events,
+    cells.excitatory,
+    name="drive",
+    synapse=lang.AMPA(tau=5 * lang.ms),
+    weight=lang.Constant(0.1),
 )
-network.output("spikes", cells.spikes)
+network.output(
+    "spikes",
+    cells.spikes,
+)
 
 # Example input source: 100 Hz Poisson counts in 0.1 ms bins.
 incoming_windows = (
-    torch.poisson(torch.full((10, 1, 2), 0.01)) for _ in range(3)
+    torch.poisson(
+        torch.full(
+            (10, 1, 2),
+            0.01,
+        )
+    )
+    for _ in range(3)
 )
 with sim.prepare_stream(
-    network, window_steps=10, batch_size=1, device="cpu"
+    network,
+    window_steps=10,
+    batch_size=1,
+    device="cpu",
 ) as stream:
     for window in incoming_windows:
         result = stream.advance({"events": window})
         spikes = result.outputs["spikes"]  # (10, 1, 8), independent per call
     snapshot = stream.export_state()
     print(stream.completed_steps)  # 30 steps = 3 ms of model time
-    stream.reset()                 # Restart with initial dynamic state.
-    stream.reset(snapshot)         # Resume the saved 3 ms state.
+    stream.reset()  # Restart with initial dynamic state.
+    stream.reset(snapshot)  # Resume the saved 3 ms state.
 ```
 
 This loop runs as fast as execution permits; it does not sleep for 1 ms between
@@ -1489,7 +1645,10 @@ Runtime state does not contain learned weights. Preserve the model parameters se
 ### save_runtime_state
 
 ```python
-def save_runtime_state(path: str | Path, state: GraphRuntimeState) -> Path: ...
+def save_runtime_state(
+    path: str | Path,
+    state: GraphRuntimeState,
+) -> Path: ...
 ```
 
 Writes `manifest.json` and compressed `tensors.npz` to a directory, publishing each file by replacement, and returns the directory `Path`. This is portable JSON/NumPy storage, not pickle. Use a dedicated destination; the pair is not a transactional directory replacement for concurrent readers. Save does not capture model weights. Bfloat16 rows use lossless uint16 bit storage tagged `tensor_storage="snnlab.bfloat16-bits/v1"`; loading restores the original dtype and bits. Other dtypes keep their existing representation.
@@ -1498,7 +1657,9 @@ Writes `manifest.json` and compressed `tensors.npz` to a directory, publishing e
 
 ```python
 def load_runtime_state(
-    path: str | Path, *, device: str | torch.device = "cpu"
+    path: str | Path,
+    *,
+    device: str | torch.device = "cpu",
 ) -> GraphRuntimeState: ...
 ```
 
@@ -1509,10 +1670,23 @@ Authenticates the stored tensor digest, names, shapes and dtypes, loads tensors 
 ```python
 from snnlab.sim import save_runtime_state, load_runtime_state
 
-first = model(first_inputs, diagnostics=False)
-save_runtime_state("trajectory.state", first.runtime_state)
-state = load_runtime_state("trajectory.state", device="cpu")
-second = model(next_inputs, diagnostics=False, runtime_state=state)
+first = model(
+    first_inputs,
+    diagnostics=False,
+)
+save_runtime_state(
+    "trajectory.state",
+    first.runtime_state,
+)
+state = load_runtime_state(
+    "trajectory.state",
+    device="cpu",
+)
+second = model(
+    next_inputs,
+    diagnostics=False,
+    runtime_state=state,
+)
 ```
 
 Here `model` is an existing CPU GraphExecutor and the two input mappings are consecutive chunks. Supply the same full [measurement](/api/sim#recording-and-measurement) and [decision](/api/sim#advanced-resets-and-decisions) policies on every call when used. A fresh call without state starts fresh dynamics. An execution timestep override cannot convert saved state. `retain_runtime_state=False` suppresses the returned continuation snapshot.
@@ -1549,9 +1723,20 @@ class AddPoissonSpikes:
 `interventions` is an ordered sequence of typed objects, defaulting to `()`. It is supported by graph `simulate` and directly by `GraphExecutor.forward`. Graph training rejects interventions. Import the types from `snnlab.sim`:
 
 ```python
-DropSpikes(population_id="E", probability=0.25, seed=None)
-AddPoissonSpikes(population_id="E", rate_hz=5.0, seed=None)
-ReplaySpikes(population_id="I", replay=payload)
+DropSpikes(
+    population_id="E",
+    probability=0.25,
+    seed=None,
+)
+AddPoissonSpikes(
+    population_id="E",
+    rate_hz=5.0,
+    seed=None,
+)
+ReplaySpikes(
+    population_id="I",
+    replay=payload,
+)
 ```
 
 `population_id` must be an exact spiking population ID. COBA LIF, current-based LIF, spiking leaky integrators and registered spiking neurons use the same intervention point. A repeated intervention kind on the same population is rejected. Drop probability must be finite in `[0, 1]`; add rate must be finite and non-negative with `rate_hz * dt_ms / 1000 <= 1`. Stochastic `seed=None` uses the execution seed (or module construction seed for direct `forward`); supplied seeds must be non-negative integers. Random streams use the intervention's ordered index, target and absolute timestep.
@@ -1583,7 +1768,12 @@ payload = DenseSpikeReplay.from_tensor(
 result = simulate(
     graph=bundle.graph,
     input_bindings=input_bindings,
-    interventions=(ReplaySpikes("I", payload),),
+    interventions=(
+        ReplaySpikes(
+            "I",
+            payload,
+        ),
+    ),
 )
 ```
 
@@ -1617,7 +1807,13 @@ On continuation, the execution starts at `runtime_state.completed_steps`. Supply
 ### Replay constructors
 
 ```python
-def from_tensor(cls, value, *, start_step=0, dt_ms): ...
+def from_tensor(
+    cls,
+    value,
+    *,
+    start_step=0,
+    dt_ms,
+): ...
 
 
 def from_events(
@@ -1673,13 +1869,25 @@ class DecisionSegments:
 ```python
 from pathlib import Path
 
-from snnlab.sim import Boundary, BoundarySchedule, DecisionSegments, ResetVoltage, simulate
+from snnlab.sim import (
+    Boundary,
+    BoundarySchedule,
+    DecisionSegments,
+    ResetVoltage,
+    simulate,
+)
 
 boundaries = BoundarySchedule(steps=(0, 200, 400))
 result = simulate(
     bundle=Path("network.bundle"),
     input_bindings=input_bindings,
-    resets=(ResetVoltage("out", boundaries, value_mv=0.0),),
+    resets=(
+        ResetVoltage(
+            "out",
+            boundaries,
+            value_mv=0.0,
+        ),
+    ),
     decisions=DecisionSegments(
         boundaries=boundaries,
         end_step=600,
@@ -1718,6 +1926,7 @@ For cache reuse, compute the resolved policy with `segment_identity(resets, deci
 
 ```python
 from snnlab.sim import GraphExecutor, plan_graph
+
 
 GraphExecutor(
     plan,
@@ -1829,7 +2038,10 @@ model.enforce_constraints()
 Built-in refractory counters are resolved once by `plan_graph` from each neuron's `refractory` ms quantity and graph timestep. Exact-grid validation fails before execution; zero disables the hold. New LIF, ALIF and AdEx neurons share following-step scheduling. `model.plan.refractory[population_id]` and `result.metrics["refractory"][population_id]` expose requested/realised duration, derived counter, actual held duration and the scheduling contract. See [Refractory durations](/api/extensions#neuron-models).
 
 ```python
-first = model(first_inputs, diagnostics=False)
+first = model(
+    first_inputs,
+    diagnostics=False,
+)
 second = model(
     second_inputs,
     diagnostics=False,

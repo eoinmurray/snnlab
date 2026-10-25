@@ -1,0 +1,29 @@
+---
+interface Props {
+  label?: string;
+}
+const { label = 'Model equations' } = Astro.props;
+---
+
+<div class="equation-box" role="region" aria-label={label}>
+  <slot />
+</div>
+
+<style>
+  .equation-box {
+    box-sizing: border-box;
+    min-width: 0;
+    margin: 1.5rem 0;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--color-fd-border);
+    background: var(--color-fd-card, var(--color-fd-background));
+    overflow-x: auto;
+  }
+  .equation-box :global(.katex-display:first-child) { margin-top: .5rem; }
+  .equation-box :global(.katex-display:last-child) { margin-bottom: .5rem; }
+  .equation-box > :global(:first-child) { margin-top: 0; }
+  .equation-box > :global(:last-child) { margin-bottom: 0; }
+  @media (max-width: 600px) {
+    .equation-box { padding: .75rem; }
+  }
+</style>

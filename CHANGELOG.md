@@ -6,6 +6,20 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-25
+
+### Added
+
+1. `snnlab.meanfield` for qualitative SymPy population models: rate-conductance/noisy-LIF closures, a custom-closure builder API, symbolic equations and Jacobians, parameter substitution, matched-decay state reduction, equilibrium continuation and numerical integration. These approximations explore qualitative dynamics rather than predict spiking-network rates or trajectories quantitatively.
+2. `meanfield.find_stability_crossings` refines leading-eigenvalue sign changes along equilibrium branches and returns named records with equilibria, eigenvalues, oscillatory frequencies and stability in scan order.
+3. `Model.write` exports an inspectable JSON model summary with individually selectable LaTeX equations, assumptions, provenance and a symbol glossary retaining coupling normalizations and shorthand definitions. Added a six-state E/I modelling example and a full mean-field API Reference page.
+4. Optional mathematical weight labels on network diagrams through `lang.diagram(weight_labels=...)` and `viz.WeightLabel`, including projection-specific symbols, subscripts and superscripts in SVG, PNG and PDF output. Added runnable diagram examples and rendering regressions.
+
+### Changed
+
+1. Example documentation templates now live beside their executable sources as `examples/<name>/example.mdx`; publishing scripts regenerate site pages and downloadable scripts from those sources. Updated Python example formatting and section extraction anchors.
+2. The Welcome page uses the shared documentation route and layout. Documentation content changes and navigation metadata reload during development, and the API Reference now includes `snnlab.meanfield` as its sixth module page.
+3. Moved the diagram visual examples from the test-only visual harness into `examples/diagrams`, retaining automated diagram regression coverage.
 
 ## [0.26.0] - 2026-10-24
 

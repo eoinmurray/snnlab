@@ -1,0 +1,960 @@
+{
+  "provenance": {
+    "spiking_run": "exp148-r091-compute",
+    "mean_field_run": "exp148-r100-compute",
+    "sources": {
+      "exp148-r091-compute/export/simulation--network.bundle/graph.json": "12ec9bb8fdbf6a6ea47e240eda33b39f64818b6d5787f422549b11c023ad24d2",
+      "exp148-r100-compute/export/mean-field.json": "71ed6228e5b1ae593d62ca797face7a23ddc8b595fcb8f52a63eb61556a71931",
+      "exp148-r100-compute/export/mean-field.npz": "12b7d7d8bd8f9323ce68246d27a3aeb4f5bb168325ac0652c601969853fcdf96"
+    },
+    "description": "Frozen exp148 native graph, mean incoming sampled weights and selected independent four-state results. No simulation or fitting performed during capture."
+  },
+  "graph": {
+    "assets": [],
+    "constants": [],
+    "groups": [],
+    "inputs": [
+      {
+        "id": "X",
+        "shape": [
+          "time",
+          "batch",
+          4000
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      }
+    ],
+    "name": "exp148",
+    "observables": [],
+    "operations": [],
+    "outputs": [
+      {
+        "id": "E_spikes",
+        "signal": "E.spikes"
+      },
+      {
+        "id": "I_spikes",
+        "signal": "I.spikes"
+      }
+    ],
+    "parameters": [
+      {
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null,
+        "id": "E_to_E.weight",
+        "initialization_scaling": "direct",
+        "initializer": {
+          "initial_zero_fraction": 0.8,
+          "kind": "lower_clamped_normal",
+          "mean": 9.6e-05,
+          "std": 4.8e-05,
+          "zeroing": "bernoulli"
+        },
+        "shape": [
+          4000,
+          4000
+        ],
+        "unit": "uS"
+      },
+      {
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null,
+        "id": "E_to_I.weight",
+        "initialization_scaling": "direct",
+        "initializer": {
+          "initial_zero_fraction": 0.8,
+          "kind": "lower_clamped_normal",
+          "mean": 0.000192,
+          "std": 9.6e-05,
+          "zeroing": "bernoulli"
+        },
+        "shape": [
+          1000,
+          4000
+        ],
+        "unit": "uS"
+      },
+      {
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null,
+        "id": "I_to_E.weight",
+        "initialization_scaling": "direct",
+        "initializer": {
+          "initial_zero_fraction": 0.8,
+          "kind": "lower_clamped_normal",
+          "mean": 0.0016,
+          "std": 0.0008,
+          "zeroing": "bernoulli"
+        },
+        "shape": [
+          4000,
+          1000
+        ],
+        "unit": "uS"
+      },
+      {
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null,
+        "id": "I_to_I.weight",
+        "initialization_scaling": "direct",
+        "initializer": {
+          "initial_zero_fraction": 0.8,
+          "kind": "lower_clamped_normal",
+          "mean": 0.0016,
+          "std": 0.0008,
+          "zeroing": "bernoulli"
+        },
+        "shape": [
+          1000,
+          1000
+        ],
+        "unit": "uS"
+      },
+      {
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null,
+        "id": "X_to_E.weight",
+        "initialization_scaling": "direct",
+        "initializer": {
+          "initial_zero_fraction": 0.95,
+          "kind": "lower_clamped_normal",
+          "mean": 0.00021600000000000002,
+          "std": 0.00010800000000000001,
+          "zeroing": "bernoulli"
+        },
+        "shape": [
+          4000,
+          4000
+        ],
+        "unit": "uS"
+      },
+      {
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null,
+        "id": "X_to_I.weight",
+        "initialization_scaling": "direct",
+        "initializer": {
+          "initial_zero_fraction": 0.95,
+          "kind": "lower_clamped_normal",
+          "mean": 0.00021600000000000002,
+          "std": 0.00010800000000000001,
+          "zeroing": "bernoulli"
+        },
+        "shape": [
+          1000,
+          4000
+        ],
+        "unit": "uS"
+      }
+    ],
+    "populations": [
+      {
+        "group": null,
+        "id": "E",
+        "neuron": {
+          "capacitance_nf": 0.25,
+          "excitatory_reversal_mv": 0.0,
+          "inhibitory_reversal_mv": -80.0,
+          "initial_voltage_mv": -70.0,
+          "kind": "coba_lif",
+          "leak_us": 0.0167,
+          "refractory": {
+            "unit": "ms",
+            "value": 2.0
+          },
+          "reset_mv": -60.0,
+          "resting_mv": -70.0,
+          "tau_mem": {
+            "unit": "ms",
+            "value": 14.970059880239521
+          },
+          "threshold_mv": -50.0
+        },
+        "size": 4000,
+        "spiking": true
+      },
+      {
+        "group": null,
+        "id": "I",
+        "neuron": {
+          "capacitance_nf": 0.25,
+          "excitatory_reversal_mv": 0.0,
+          "inhibitory_reversal_mv": -80.0,
+          "initial_voltage_mv": -70.0,
+          "kind": "coba_lif",
+          "leak_us": 0.0167,
+          "refractory": {
+            "unit": "ms",
+            "value": 1.0
+          },
+          "reset_mv": -60.0,
+          "resting_mv": -70.0,
+          "tau_mem": {
+            "unit": "ms",
+            "value": 14.970059880239521
+          },
+          "threshold_mv": -50.0
+        },
+        "size": 1000,
+        "spiking": true
+      }
+    ],
+    "projections": [
+      {
+        "allow_autapses": false,
+        "connection": "recurrent",
+        "delay": {
+          "unit": "ms",
+          "value": 1.0
+        },
+        "group": null,
+        "id": "E_to_E",
+        "parameters": [
+          "E_to_E.weight"
+        ],
+        "polarity": "excitatory",
+        "source": "E.spikes",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "unit": "ms",
+            "value": 5.0
+          }
+        },
+        "target": "E.excitatory"
+      },
+      {
+        "allow_autapses": false,
+        "connection": "recurrent",
+        "delay": {
+          "unit": "ms",
+          "value": 1.0
+        },
+        "group": null,
+        "id": "E_to_I",
+        "parameters": [
+          "E_to_I.weight"
+        ],
+        "polarity": "excitatory",
+        "source": "E.spikes",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "unit": "ms",
+            "value": 5.0
+          }
+        },
+        "target": "I.excitatory"
+      },
+      {
+        "allow_autapses": false,
+        "connection": "recurrent",
+        "delay": {
+          "unit": "ms",
+          "value": 0.5
+        },
+        "group": null,
+        "id": "I_to_E",
+        "parameters": [
+          "I_to_E.weight"
+        ],
+        "polarity": "inhibitory",
+        "source": "I.spikes",
+        "synapse": {
+          "kind": "gaba",
+          "tau": {
+            "unit": "ms",
+            "value": 5.0
+          }
+        },
+        "target": "E.inhibitory"
+      },
+      {
+        "allow_autapses": false,
+        "connection": "recurrent",
+        "delay": {
+          "unit": "ms",
+          "value": 0.5
+        },
+        "group": null,
+        "id": "I_to_I",
+        "parameters": [
+          "I_to_I.weight"
+        ],
+        "polarity": "inhibitory",
+        "source": "I.spikes",
+        "synapse": {
+          "kind": "gaba",
+          "tau": {
+            "unit": "ms",
+            "value": 5.0
+          }
+        },
+        "target": "I.inhibitory"
+      },
+      {
+        "allow_autapses": false,
+        "connection": "feedforward",
+        "delay": {
+          "unit": "ms",
+          "value": 1.0
+        },
+        "group": null,
+        "id": "X_to_E",
+        "parameters": [
+          "X_to_E.weight"
+        ],
+        "polarity": "excitatory",
+        "source": "X.value",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "unit": "ms",
+            "value": 5.0
+          }
+        },
+        "target": "E.excitatory"
+      },
+      {
+        "allow_autapses": false,
+        "connection": "feedforward",
+        "delay": {
+          "unit": "ms",
+          "value": 1.0
+        },
+        "group": null,
+        "id": "X_to_I",
+        "modulation": {
+          "after": 0.0,
+          "before": 1.0,
+          "end_ms": 1550.0,
+          "kind": "ramp_gain",
+          "start_ms": 800.0
+        },
+        "parameters": [
+          "X_to_I.weight"
+        ],
+        "polarity": "excitatory",
+        "source": "X.value",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "unit": "ms",
+            "value": 5.0
+          }
+        },
+        "target": "I.excitatory"
+      }
+    ],
+    "refractory_timing": "following_steps",
+    "schema": "snnlang.graph/v1",
+    "timebase": {
+      "dt": {
+        "unit": "ms",
+        "value": 0.05
+      }
+    },
+    "voltage_sampling": "explicit"
+  },
+  "configuration": {
+    "alpha_points": 201,
+    "closure_origin": "exp117 fixed-resting-driving-force noisy-LIF closure; no fitted parameters",
+    "conductance_per_hz": [
+      0.0038547379926689605,
+      0.008035027123985492
+    ],
+    "eigenvalue_tolerance_per_ms": 1e-08,
+    "equilibrium_tolerance_hz": 1e-07,
+    "gain_quadrature_nodes": 48,
+    "initial_e_perturbation_hz": 0.001,
+    "model": "four-state-mean-field/v2",
+    "omitted_effects": [
+      "shared-input covariance",
+      "weight heterogeneity",
+      "shunting",
+      "axonal delays"
+    ],
+    "rate_relaxation_ms": [
+      20.0,
+      5.0
+    ],
+    "sample_interval_ms": 0.5,
+    "solver": {
+      "atol": [
+        1e-10,
+        1e-10,
+        3.854737992668961e-13,
+        8.035027123985492e-13
+      ],
+      "max_step_ms": 0.5,
+      "method": "LSODA",
+      "rtol": 1e-08
+    },
+    "spiking_configuration": {
+      "analysis": {
+        "peak_prominence_fraction": 0.2,
+        "peak_separation_ms": 10.0,
+        "population_bin_ms": 0.5
+      },
+      "baseline_ms": 750.0,
+      "burn_in_ms": 50.0,
+      "capacitance_nf": 0.25,
+      "connection_probability": 0.2,
+      "control": {
+        "baseline_gain": 1.0,
+        "final_gain": 0.0,
+        "parameter": "X_to_I.weight",
+        "ramp_end_ms": 1550.0,
+        "ramp_start_ms": 800.0,
+        "update_ms": 0.05
+      },
+      "device": "cpu",
+      "dt_ms": 0.05,
+      "duration_ms": 2300.0,
+      "excitatory_delay_ms": 1.0,
+      "excitatory_reversal_mv": 0.0,
+      "external_rate_hz": 2.5,
+      "external_seed_offset": 10000,
+      "hold_ms": 750.0,
+      "inhibitory_delay_ms": 0.5,
+      "inhibitory_reversal_mv": -80.0,
+      "initializer_parent_means_us": {
+        "E_to_E": 9.6e-05,
+        "E_to_I": 0.000192,
+        "I_to_E": 0.0016,
+        "I_to_I": 0.0016,
+        "X_to_E": 0.00021600000000000002,
+        "X_to_I": 0.00021600000000000002
+      },
+      "input_connection_probability": 0.05,
+      "jump_means_us": {
+        "E_to_E": 0.00047999999999999996,
+        "E_to_I": 0.0009599999999999999,
+        "I_to_E": 0.008,
+        "I_to_I": 0.008,
+        "X_to_E": 0.00432,
+        "X_to_I": 0.00432
+      },
+      "leak_us": 0.0167,
+      "n_e": 4000,
+      "n_external": 4000,
+      "n_i": 1000,
+      "performance": {
+        "compile_block_steps": "auto",
+        "compile_mode": null,
+        "cuda_graphs": "off",
+        "dataset_prefetch": 1,
+        "fused_optimizer": "auto",
+        "precision": "highest",
+        "projection_mode": "fast"
+      },
+      "protocol": "ai-to-ping",
+      "ramp_ms": 750.0,
+      "record_state": true,
+      "recording_block_steps": 1000,
+      "reference_area_time_ms": 1.0,
+      "reference_coefficients_ns": {
+        "E_to_E": 2.4,
+        "E_to_I": 4.8,
+        "I_to_E": 40.0,
+        "I_to_I": 40.0,
+        "X_to_E": 5.4,
+        "X_to_I": 5.4
+      },
+      "refractory_e_ms": 2.0,
+      "refractory_i_ms": 1.0,
+      "reset_mv": -60.0,
+      "resting_mv": -70.0,
+      "seed": 42,
+      "tau_synapse_ms": 5.0,
+      "threshold_mv": -50.0,
+      "torch_threads": 1,
+      "weight_relative_sd": 0.5
+    },
+    "state_variables": [
+      "r_E_hz",
+      "r_I_hz",
+      "g_e_I_us",
+      "g_i_E_us"
+    ],
+    "summed_weights_us": {
+      "E_to_E": 0.38571382833127793,
+      "E_to_I": 0.7709475985337921,
+      "I_to_E": 1.6070054247970984,
+      "I_to_I": 1.6072907404674917,
+      "X_to_E": 0.8676710825662012,
+      "X_to_I": 0.86695020872046
+    },
+    "voltage_noise_mv": 4.0
+  },
+  "reference": {
+    "continuation": [
+      {
+        "alpha": 1.0,
+        "eigenvalues_imag": [
+          0.19137037010981905,
+          -0.19137037010981905,
+          0.7916077798074571,
+          -0.7916077798074571
+        ],
+        "eigenvalues_real": [
+          -0.11478143344586766,
+          -0.11478143344586766,
+          -0.21021856655413243,
+          -0.21021856655413243
+        ],
+        "max_real_per_ms": -0.11478143344586766,
+        "state": [
+          0.4965297364153397,
+          7.984732252445984,
+          0.0019139920394501146,
+          0.06415754022616525
+        ]
+      },
+      {
+        "alpha": 0.75,
+        "eigenvalues_imag": [
+          0.3788546624382843,
+          -0.3788546624382843,
+          0.7333999159951292,
+          -0.7333999159951292
+        ],
+        "eigenvalues_real": [
+          -0.07694711268776228,
+          -0.07694711268776228,
+          -0.2480528873122377,
+          -0.2480528873122377
+        ],
+        "max_real_per_ms": -0.07694711268776228,
+        "state": [
+          1.7797000807653205,
+          9.834127378681211,
+          0.0068602775168820984,
+          0.07901748022843189
+        ]
+      },
+      {
+        "alpha": 0.5,
+        "eigenvalues_imag": [
+          0.4937508283780186,
+          -0.4937508283780186,
+          0.6994183063175391,
+          -0.6994183063175391
+        ],
+        "eigenvalues_real": [
+          -0.005267372288887042,
+          -0.005267372288887042,
+          -0.31973262771111277,
+          -0.31973262771111277
+        ],
+        "max_real_per_ms": -0.005267372288887042,
+        "state": [
+          3.148085157729526,
+          11.9650948277677,
+          0.012135043461657261,
+          0.09613986148217199
+        ]
+      },
+      {
+        "alpha": 0.25,
+        "eigenvalues_imag": [
+          0.5484875630529988,
+          -0.5484875630529988,
+          0.7031172369103881,
+          -0.7031172369103881
+        ],
+        "eigenvalues_real": [
+          0.05744783167797819,
+          0.05744783167797819,
+          -0.38244783167797863,
+          -0.38244783167797863
+        ],
+        "max_real_per_ms": 0.05744783167797819,
+        "state": [
+          4.540264823425404,
+          14.179969066460473,
+          0.017501531311636336,
+          0.11393643606628513
+        ]
+      },
+      {
+        "alpha": 0.0,
+        "eigenvalues_imag": [
+          0.5807465532102212,
+          -0.5807465532102212,
+          0.7150529296402646,
+          -0.7150529296402646
+        ],
+        "eigenvalues_real": [
+          0.10081727410669068,
+          0.10081727410669068,
+          -0.425817274106691,
+          -0.425817274106691
+        ],
+        "max_real_per_ms": 0.10081727410669068,
+        "state": [
+          5.943005362004413,
+          16.434413525848406,
+          0.02290872855955376,
+          0.132050958446986
+        ]
+      }
+    ],
+    "crossings": [
+      {
+        "alpha": 0.4821257398150126,
+        "destabilizes_as_alpha_decreases": true,
+        "frequency_hz": 79.43007694736478,
+        "oscillatory": true
+      }
+    ],
+    "trajectory": {
+      "time_ms": [
+        0.0,
+        50.0,
+        100.0,
+        150.0,
+        200.0,
+        250.0,
+        300.0,
+        350.0,
+        400.0,
+        450.0,
+        500.0,
+        550.0,
+        600.0,
+        650.0,
+        700.0,
+        750.0,
+        800.0,
+        850.0,
+        900.0,
+        950.0,
+        1000.0,
+        1050.0,
+        1100.0,
+        1150.0,
+        1200.0,
+        1250.0,
+        1300.0,
+        1350.0,
+        1400.0,
+        1450.0,
+        1500.0,
+        1550.0,
+        1600.0,
+        1650.0,
+        1700.0,
+        1750.0,
+        1800.0,
+        1850.0,
+        1900.0,
+        1950.0,
+        2000.0,
+        2050.0,
+        2100.0,
+        2150.0,
+        2200.0,
+        2250.0,
+        2300.0
+      ],
+      "state": [
+        [
+          0.4975297364153397,
+          7.984732252445984,
+          0.0019139920394501146,
+          0.06415754022616525
+        ],
+        [
+          0.49652592502607346,
+          7.984719139090232,
+          0.001913990158349423,
+          0.06415753141281294
+        ],
+        [
+          0.49652974915426523,
+          7.984732296658954,
+          0.0019139920522297576,
+          0.06415754030325219
+        ],
+        [
+          0.49652973638283315,
+          7.984732252334561,
+          0.0019139920394452515,
+          0.06415754022617505
+        ],
+        [
+          0.4965297364154016,
+          7.984732252446186,
+          0.0019139920394499988,
+          0.06415754022616431
+        ],
+        [
+          0.4965297364153391,
+          7.984732252445984,
+          0.0019139920394501133,
+          0.06415754022616525
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.49652973641533876,
+          7.984732252445977,
+          0.0019139920394501118,
+          0.06415754022616524
+        ],
+        [
+          0.4965297364153389,
+          7.984732252129867,
+          0.0019139920394501118,
+          0.0641575402261635
+        ],
+        [
+          0.830840282074325,
+          8.387153953582123,
+          0.003071985651104872,
+          0.06700371802879278
+        ],
+        [
+          1.177923751654494,
+          8.89534245171124,
+          0.004405309966622448,
+          0.07105576168329665
+        ],
+        [
+          1.533066441496261,
+          9.430202571159251,
+          0.005771747989634736,
+          0.07533575972979369
+        ],
+        [
+          1.8933769479477045,
+          9.982375632149662,
+          0.007158956498964221,
+          0.07976057416955248
+        ],
+        [
+          2.2572576445818067,
+          10.546704870884302,
+          0.008560423152456583,
+          0.08428641164617501
+        ],
+        [
+          2.623730155342857,
+          11.120008130150845,
+          0.009972193732649463,
+          0.08888648645660381
+        ],
+        [
+          2.992155587982825,
+          11.700188907822291,
+          0.011391701547564668,
+          0.09354325937295549
+        ],
+        [
+          3.3620959881856103,
+          12.285795645610317,
+          0.012817195127657657,
+          0.09824464297352606
+        ],
+        [
+          3.733239565918316,
+          12.875783663307029,
+          0.01424743200738745,
+          0.10298196968993402
+        ],
+        [
+          4.105357499255012,
+          13.469377384732168,
+          0.015681502964408435,
+          0.10774882349132711
+        ],
+        [
+          4.478277559554538,
+          14.06598610117147,
+          0.017118725491351815,
+          0.11254033035959052
+        ],
+        [
+          4.851866334334192,
+          14.665141658698465,
+          0.018558572493754543,
+          0.11735267568467653
+        ],
+        [
+          5.2260918843591195,
+          15.266981343333246,
+          0.020000822847385136,
+          0.1221843105230091
+        ],
+        [
+          5.5988664617998785,
+          15.838558315472598,
+          0.02142886295169104,
+          0.1268875407884499
+        ],
+        [
+          6.299866186256556,
+          18.268435122841197,
+          0.024751644637795212,
+          0.14835317830573347
+        ],
+        [
+          5.649592051259929,
+          16.545340028013612,
+          0.025614367885279876,
+          0.1537159728230102
+        ],
+        [
+          6.240248137437601,
+          17.497788510149903,
+          0.026696278075661894,
+          0.15772011731967367
+        ],
+        [
+          6.932347697995821,
+          18.33517085511591,
+          0.027514482092885716,
+          0.16686731439023997
+        ],
+        [
+          7.689894100217303,
+          24.67385288684004,
+          0.027214876281222943,
+          0.1659554083026144
+        ],
+        [
+          8.470854238512036,
+          26.561427452357787,
+          0.02521332499375041,
+          0.1405940971317372
+        ],
+        [
+          7.028599396237085,
+          17.008014762763878,
+          0.022209741628498526,
+          0.12077634717196083
+        ],
+        [
+          5.1185001167049355,
+          12.420596111296382,
+          0.021713058192671327,
+          0.1241368271989941
+        ],
+        [
+          4.928702758690911,
+          12.971326645991313,
+          0.023143417885428542,
+          0.13658194474188048
+        ],
+        [
+          5.429555446433457,
+          15.581419516048124,
+          0.024845105389613643,
+          0.14870107507014146
+        ],
+        [
+          6.023054010062672,
+          17.66067730064136,
+          0.02632507197165865,
+          0.15585199173228606
+        ],
+        [
+          6.682512967448097,
+          17.480910922194777,
+          0.027328546948289466,
+          0.16360535791929473
+        ],
+        [
+          7.414417662277367,
+          22.049211711263315,
+          0.027473066523698682,
+          0.16889062807637562
+        ],
+        [
+          8.225729934205294,
+          27.738827153558347,
+          0.02616507549093447,
+          0.15135227778438895
+        ],
+        [
+          7.849095853012333,
+          20.4287817115138,
+          0.02309959043528862,
+          0.1247890727795803
+        ],
+        [
+          5.599671354544776,
+          13.159203739357086,
+          0.021561775874616204,
+          0.12117416853595293
+        ]
+      ]
+    }
+  }
+}

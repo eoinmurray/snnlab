@@ -36,21 +36,47 @@ def prepare_results():
     OUTPUT_DIR.mkdir(parents=True)
 
 
-def make_dataset(samples, seed):
+def make_dataset(
+    samples,
+    seed,
+):
     rng = np.random.default_rng(seed)
     labels = np.arange(samples) % 2
     rng.shuffle(labels)
     patterns = np.array([[100, 100, 10, 10], [10, 10, 100, 100]])
-    rates = patterns[labels] * rng.uniform(0.85, 1.15, size=(samples, 4))
+    rates = patterns[labels] * rng.uniform(
+        0.85,
+        1.15,
+        size=(samples, 4),
+    )
     steps = round(DURATION_MS / DT_MS)
     spikes = rng.random((steps, samples, 4)) < rates * DT_MS / 1000
-    inputs = torch.tensor(spikes, dtype=torch.float32).transpose(0, 1).contiguous()
-    targets = torch.tensor(labels, dtype=torch.long)
-    return TensorDataset(inputs, targets)
+    inputs = (
+        torch.tensor(
+            spikes,
+            dtype=torch.float32,
+        )
+        .transpose(
+            0,
+            1,
+        )
+        .contiguous()
+    )
+    targets = torch.tensor(
+        labels,
+        dtype=torch.long,
+    )
+    return TensorDataset(
+        inputs,
+        targets,
+    )
 
 
 class Classifier(nn.Module):
-    def __init__(self, bundle):
+    def __init__(
+        self,
+        bundle,
+    ):
         super().__init__()
         recipe = bundle.training
         if recipe is None:
@@ -62,19 +88,42 @@ class Classifier(nn.Module):
             surrogate_slope=float(recipe["surrogate"]["slope"]),
         )
         self.head = nn.Sequential(
-            nn.Linear(2, 8),
+            nn.Linear(
+                2,
+                8,
+            ),
             nn.ReLU(),
-            nn.Linear(8, 2),
+            nn.Linear(
+                8,
+                2,
+            ),
         )
 
-    def forward(self, spikes):
-        result = self.snn({"inputs": spikes.transpose(0, 1)}, diagnostics=False)
+    def forward(
+        self,
+        spikes,
+    ):
+        result = self.snn(
+            {
+                "inputs": spikes.transpose(
+                    0,
+                    1,
+                )
+            },
+            diagnostics=False,
+        )
         features = result.outputs["class_scores"]
         return self.head(features)
 
 
-def make_diagram(bundle, model):
-    spiking = lang.diagram(bundle, view="expanded")
+def make_diagram(
+    bundle,
+    model,
+):
+    spiking = lang.diagram(
+        bundle,
+        view="expanded",
+    )
     nodes = list(spiking.nodes)
     edges = list(spiking.edges)
     previous = next(node.id for node in nodes if node.kind == "output")
@@ -83,7 +132,10 @@ def make_diagram(bundle, model):
         identifier = f"head_{index}"
         detail = (
             f"{layer.in_features} → {layer.out_features}"
-            if isinstance(layer, nn.Linear)
+            if isinstance(
+                layer,
+                nn.Linear,
+            )
             else "activation"
         )
         nodes.append(
@@ -114,7 +166,13 @@ def make_diagram(bundle, model):
             accent_role="output_line",
         )
     )
-    edges.append(viz.DiagramEdge(source=previous, target="logits", role="output"))
+    edges.append(
+        viz.DiagramEdge(
+            source=previous,
+            target="logits",
+            role="output",
+        )
+    )
     return viz.Diagram(
         name="SNN + PyTorch classifier",
         nodes=tuple(nodes),
@@ -127,13 +185,19 @@ def make_diagram(bundle, model):
                 members=tuple(node.id for node in spiking.nodes),
             ),
             viz.DiagramGroup(
-                id="head", label="Ordinary PyTorch head", members=tuple(head_ids)
+                id="head",
+                label="Ordinary PyTorch head",
+                members=tuple(head_ids),
             ),
         ),
     )
 
 
-def evaluate(model, loader, criterion):
+def evaluate(
+    model,
+    loader,
+    criterion,
+):
     model.eval()
     total_loss = 0.0
     correct = 0
@@ -142,7 +206,15 @@ def evaluate(model, loader, criterion):
         for spikes, labels in loader:
             spikes, labels = spikes.to(DEVICE), labels.to(DEVICE)
             scores = model(spikes)
-            total_loss += float(criterion(scores, labels)) * labels.numel()
+            total_loss += (
+                float(
+                    criterion(
+                        scores,
+                        labels,
+                    )
+                )
+                * labels.numel()
+            )
             correct += int((scores.argmax(dim=1) == labels).sum())
             samples += labels.numel()
     return total_loss / samples, correct / samples
@@ -163,7 +235,10 @@ def main():
 
     model = Classifier(bundle).to(DEVICE)
     viz.render_diagram(
-        make_diagram(bundle, model),
+        make_diagram(
+            bundle,
+            model,
+        ),
         OUTPUT_DIR / "network.png",
         scale=2,
         height_to_width_ratio=None,
@@ -172,18 +247,36 @@ def main():
         name: value.detach().clone() for name, value in model.named_parameters()
     }
 
-    training_data = make_dataset(TRAIN_SAMPLES, seed=SEED + 1)
-    validation_data = make_dataset(VALIDATION_SAMPLES, seed=SEED + 2)
-    test_data = make_dataset(TEST_SAMPLES, seed=SEED + 3)
+    training_data = make_dataset(
+        TRAIN_SAMPLES,
+        seed=SEED + 1,
+    )
+    validation_data = make_dataset(
+        VALIDATION_SAMPLES,
+        seed=SEED + 2,
+    )
+    test_data = make_dataset(
+        TEST_SAMPLES,
+        seed=SEED + 3,
+    )
     train_loader = DataLoader(
         training_data,
         batch_size=BATCH_SIZE,
         shuffle=True,
         generator=torch.Generator().manual_seed(SEED),
     )
-    train_evaluation_loader = DataLoader(training_data, batch_size=BATCH_SIZE)
-    validation_loader = DataLoader(validation_data, batch_size=BATCH_SIZE)
-    test_loader = DataLoader(test_data, batch_size=BATCH_SIZE)
+    train_evaluation_loader = DataLoader(
+        training_data,
+        batch_size=BATCH_SIZE,
+    )
+    validation_loader = DataLoader(
+        validation_data,
+        batch_size=BATCH_SIZE,
+    )
+    test_loader = DataLoader(
+        test_data,
+        batch_size=BATCH_SIZE,
+    )
 
     parameter_map = model.snn.parameter_map()
     groups = [
@@ -195,8 +288,16 @@ def main():
         if not group["frozen"]
     ]
 
-    groups.append({"params": list(model.head.parameters()), "lr": HEAD_LEARNING_RATE})
-    optimizer = torch.optim.AdamW(groups, **recipe["optimizer"]["config"])
+    groups.append(
+        {
+            "params": list(model.head.parameters()),
+            "lr": HEAD_LEARNING_RATE,
+        }
+    )
+    optimizer = torch.optim.AdamW(
+        groups,
+        **recipe["optimizer"]["config"],
+    )
     criterion = nn.CrossEntropyLoss()
     gradient_clip = float(recipe["gradient_clip"])
     non_negative = [
@@ -213,17 +314,29 @@ def main():
                 spikes, labels = spikes.to(DEVICE), labels.to(DEVICE)
                 optimizer.zero_grad(set_to_none=True)
                 scores = model(spikes)
-                loss = criterion(scores, labels)
+                loss = criterion(
+                    scores,
+                    labels,
+                )
                 loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), gradient_clip)
+                nn.utils.clip_grad_norm_(
+                    model.parameters(),
+                    gradient_clip,
+                )
                 optimizer.step()
                 with torch.no_grad():
                     for parameter in non_negative:
                         parameter.clamp_(min=0)
 
-        train_loss, train_accuracy = evaluate(model, train_evaluation_loader, criterion)
+        train_loss, train_accuracy = evaluate(
+            model,
+            train_evaluation_loader,
+            criterion,
+        )
         validation_loss, validation_accuracy = evaluate(
-            model, validation_loader, criterion
+            model,
+            validation_loader,
+            criterion,
         )
         history.append(
             {
@@ -236,12 +349,23 @@ def main():
         )
 
     weights_path = OUTPUT_DIR / "trained.pt"
-    torch.save(model.state_dict(), weights_path)
+    torch.save(
+        model.state_dict(),
+        weights_path,
+    )
     reloaded = Classifier(bundle).to(DEVICE)
     reloaded.load_state_dict(
-        torch.load(weights_path, map_location=DEVICE, weights_only=True)
+        torch.load(
+            weights_path,
+            map_location=DEVICE,
+            weights_only=True,
+        )
     )
-    test_loss, test_accuracy = evaluate(reloaded, test_loader, criterion)
+    test_loss, test_accuracy = evaluate(
+        reloaded,
+        test_loader,
+        criterion,
+    )
     changed_weights = {
         name: int(torch.count_nonzero(value.detach() != initial_parameters[name]))
         for name, value in model.named_parameters()
@@ -262,13 +386,34 @@ def main():
     )
 
     grid = viz.FigureGrid(
-        rows=2, columns=1, bounds=(0.13, 0.1, 0.83, 0.82), row_gap=0.09
+        rows=2,
+        columns=1,
+        bounds=(0.13, 0.1, 0.83, 0.82),
+        row_gap=0.09,
     )
-    grid.place("loss", row=0, column=0)
-    grid.place("accuracy", row=1, column=0)
-    figure = grid.figure(figsize=(8, 6.5), dpi=150)
-    loss_axis = grid.add_axes(figure, "loss")
-    accuracy_axis = grid.add_axes(figure, "accuracy", sharex=loss_axis)
+    grid.place(
+        "loss",
+        row=0,
+        column=0,
+    )
+    grid.place(
+        "accuracy",
+        row=1,
+        column=0,
+    )
+    figure = grid.figure(
+        figsize=(8, 6.5),
+        dpi=150,
+    )
+    loss_axis = grid.add_axes(
+        figure,
+        "loss",
+    )
+    accuracy_axis = grid.add_axes(
+        figure,
+        "accuracy",
+        sharex=loss_axis,
+    )
     epochs = [row["epoch"] for row in history]
     for split, color in (("train", "#1a1a1a"), ("validation", "#a74727")):
         loss_axis.plot(
@@ -283,20 +428,49 @@ def main():
             color=color,
             label=split.capitalize(),
         )
-    loss_axis.set_title("PyTorch training loss", pad=10)
+    loss_axis.set_title(
+        "PyTorch training loss",
+        pad=10,
+    )
     loss_axis.set_ylabel("Cross-entropy")
     loss_axis.tick_params(labelbottom=False)
     loss_axis.legend(frameon=False)
-    accuracy_axis.axhline(50, color="#888888", linestyle=":", label="Chance (50%)")
-    accuracy_axis.set_title("Classification accuracy", pad=10)
+    accuracy_axis.axhline(
+        50,
+        color="#888888",
+        linestyle=":",
+        label="Chance (50%)",
+    )
+    accuracy_axis.set_title(
+        "Classification accuracy",
+        pad=10,
+    )
     accuracy_axis.set_ylabel("Accuracy (%)")
     accuracy_axis.set_xlabel("Epoch")
-    accuracy_axis.set_ylim(0, 105)
-    accuracy_axis.set_xlim(0, EPOCHS)
-    accuracy_axis.set_xticks(range(0, EPOCHS + 1, 5))
-    accuracy_axis.legend(frameon=False, loc="lower right")
+    accuracy_axis.set_ylim(
+        0,
+        105,
+    )
+    accuracy_axis.set_xlim(
+        0,
+        EPOCHS,
+    )
+    accuracy_axis.set_xticks(
+        range(
+            0,
+            EPOCHS + 1,
+            5,
+        )
+    )
+    accuracy_axis.legend(
+        frameon=False,
+        loc="lower right",
+    )
     figure_path = OUTPUT_DIR / "training.png"
-    figure.savefig(figure_path, bbox_inches="tight")
+    figure.savefig(
+        figure_path,
+        bbox_inches="tight",
+    )
     plt.close(figure)
 
 

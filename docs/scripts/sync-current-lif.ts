@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 const example = new URL('../../examples/current-lif/', import.meta.url);
 const publicDir = new URL('../public/current-lif/', import.meta.url);
 const script = readFileSync(new URL('example.py', example), 'utf8');
-const template = readFileSync(new URL('current-lif.mdx', import.meta.url), 'utf8');
+const template = readFileSync(new URL('example.mdx', example), 'utf8');
 
 function section(start: string, end: string) {
   const startIndex = script.indexOf(start);
@@ -14,11 +14,11 @@ function section(start: string, end: string) {
 }
 const replacements: Record<string, string> = {
   SCRIPT: script.trimEnd(),
-  SETUP: section('net = lang.Network("current_lif", dt=DT_MS * lang.ms)', 'inputs = net.input('),
+  SETUP: section('net = lang.Network(', 'inputs = net.input('),
   INPUTS: section('inputs = net.input(', 'cells = net.population('),
-  NETWORK: section('cells = net.population(', 'net.output("spikes", cells.spikes)'),
-  OUTPUTS: section('net.output("spikes", cells.spikes)', 'bundle = lang.compile(net, target="tools/snnsim")'),
-  BUNDLE: section('bundle = lang.compile(net, target="tools/snnsim")', 'result = simulate('),
+  NETWORK: section('cells = net.population(', 'net.output('),
+  OUTPUTS: section('net.output(', 'bundle = lang.compile('),
+  BUNDLE: section('bundle = lang.compile(', 'result = simulate('),
   EXECUTION: section('result = simulate(', 'data = result.numpy(batch=0)'),
   RETRIEVAL: section('data = result.numpy(batch=0)', 'grid = viz.FigureGrid('),
 };

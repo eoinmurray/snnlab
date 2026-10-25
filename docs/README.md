@@ -9,7 +9,7 @@ bun run dev
 
 The development server defaults to `http://localhost:3001`. Static preview also uses port 3001.
 
-The site contains Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section and Changelog. `/` is a landing page with an introduction and links to the documentation and GitHub; documentation begins at `/installation`. Page URLs omit trailing slashes: Astro exports `installation.html`, which GitHub Pages serves at `/installation`. Former `/installation/` URLs use static HTML redirects to the slash-free URL. Cloudflare redirects previous `/docs/` links to the new paths.
+The site contains Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section and Changelog. `/` is the Welcome documentation page, with the shared sidebar, search and page navigation. Its source is `content/docs/index.mdx`; Installation remains at `/installation`. Page URLs omit trailing slashes: Astro exports `installation.html`, which GitHub Pages serves at `/installation`. Former `/installation/` URLs use static HTML redirects to the slash-free URL. Cloudflare redirects previous `/docs/` links to the new paths.
 
 
 The library comparison guide lives in `content/docs/comparisons.mdx`. It explains `snnlab.lang` through a runnable circuit and compares SpikingJelly, snnTorch, Brian 2, NEST and Norse using official sources. Its graph diagram lives in `public/comparisons/network.png`; regenerate it when changing the example's topology.
@@ -37,7 +37,7 @@ The build exports plain HTML, CSS, JavaScript, search data, and KaTeX fonts into
 
 Documentation links use normal browser navigation. Each documentation page preloads
 its React island, renderer and shared JavaScript in the head so sidebar controls can
-hydrate promptly. Search stays lazy; the landing page loads no React JavaScript.
+hydrate promptly. Search stays lazy; the Welcome page uses the same React documentation layout as other pages.
 
 ## GitHub Pages
 
@@ -57,17 +57,17 @@ The existing Worker at the separate hostname `ssnlab.eoinmurray.info` is deploye
 
 `astro.config.mjs` configures remark-math and rehype-katex. Commit `bun.lock`; `.astro/`, `out/`, and `node_modules/` are generated and ignored.
 
-The first Examples page, Defining Networks (`/snnlang`), covers SNNLang authoring and rendering in two parts: Feedforward Network and Recurrent Circuit. Its source template is `scripts/snnlang.mdx`, with runnable scripts and generated diagrams in `../examples/snnlang/`. Run both Python scripts after topology changes; `scripts/sync-snnlang.ts` publishes the page, complete code, diagrams and downloads before development, checks and builds. Each part follows intro, code, diagram order.
+The first Examples page, Defining Networks (`/snnlang`), covers SNNLang authoring and rendering in two parts: Feedforward Network and Recurrent Circuit. Its source template is `../examples/snnlang/example.mdx`, with runnable scripts and generated diagrams in `../examples/snnlang/`. Run `../examples/snnlang/example.py` after topology changes; `scripts/sync-snnlang.ts` publishes the page, complete code, diagrams and downloads before development, checks and builds. Each part follows intro, code, diagram order.
 
-Quickstart prose lives in `scripts/quickstart.mdx`; its script and generated PNGs live in `../examples/quickstart/`. Run the Python script after changing it. `scripts/sync-quickstart.ts` publishes the complete script and copies its images and download before development, checks and builds.
+Quickstart prose lives in `../examples/quickstart/example.mdx`; its script and generated PNGs live in `../examples/quickstart/`. Run the Python script after changing it. `scripts/sync-quickstart.ts` publishes the complete script and copies its images and download before development, checks and builds.
 
-Quickstart, Training and Inference are generated from their source templates in `scripts/` and Python examples in `../examples/`. Run the corresponding example script to regenerate plots, then use the Bun check/build commands to synchronize downloadable scripts and figures.
+Quickstart, Training and Inference are generated from their source templates (`example.mdx`) alongside their Python scripts (`example.py`) in `../examples/<name>/`. Run the corresponding example script to regenerate plots, then use the Bun check/build commands to synchronize downloadable scripts and figures.
 
-Inference follows Training in navigation; PyTorch Integration sits immediately before Animate a Simulation. Its source template is `scripts/inference.mdx` and its runnable script is `../examples/inference/inference.py`; `scripts/sync-inference.ts` copies the generated diagram, response figure and script into `public/inference/`. Run Training first, then Inference: the latter reads the sibling Training bundle and checkpoint without modifying them.
+Inference follows Training in navigation; PyTorch Integration sits immediately before Animate a Simulation. Its source template is `../examples/inference/example.mdx` and its runnable script is `../examples/inference/example.py`; `scripts/sync-inference.ts` copies the generated diagram, response figure and script into `public/inference/`. Run Training first, then Inference: the latter reads the sibling Training bundle and checkpoint without modifying them.
 
-PyTorch Integration is generated by `scripts/sync-pytorch.ts` from `scripts/pytorch-integration.mdx` and `../examples/pytorch/training.py`. It reuses the Training bundle with an external PyTorch loop; its trained state dictionary and metrics are generated locally and excluded from source distributions.
+PyTorch Integration is generated by `scripts/sync-pytorch.ts` from `../examples/pytorch/example.mdx` and `../examples/pytorch/example.py`. It reuses the Training bundle with an external PyTorch loop; its trained state dictionary and metrics are generated locally and excluded from source distributions.
 
-API Reference contains five module pages with no module subpages: `snnlab.lang`, `snnlab.sim`, `snnlab.extensions`, `snnlab.analysis` and `snnlab.viz`. Neurons, synapses, weights, results and analysis are documented in those references. Previous API routes redirect to the corresponding module pages.
+API Reference contains six module pages with no module subpages: `snnlab.lang`, `snnlab.sim`, `snnlab.extensions`, `snnlab.meanfield`, `snnlab.analysis` and `snnlab.viz`. Neurons, synapses, weights, results and analysis are documented in those references. Previous API routes redirect to the corresponding module pages.
 
 Input declarations live in Network; binding types and compatibility rules live in Execution Options. Both former Inputs routes redirect to that reference.
 
@@ -81,4 +81,4 @@ figures and raw/derived downloads are pinned to `shd-59e3371bb384`; regenerate w
 verifies artifact, renderer and recipe hashes and runs before development/checks/builds.
 It does not download the raw trace, run training or silently choose another run.
 
-The Hodgkin–Huxley example follows Custom Neurons and Synapses in Examples. Edit `scripts/hodgkin-huxley.mdx` and `../examples/hodgkin-huxley/{hh_neuron,hodgkin_huxley,scipy_comparison}.py`. Run both executable examples to regenerate the network diagram, response plot, SciPy error plot and `comparison.json`; `scripts/sync-hodgkin-huxley.ts` publishes the page, measured table and downloads before development, checks and builds.
+The Hodgkin–Huxley example follows Custom Neurons and Synapses in Examples. Edit `../examples/hodgkin-huxley/example.mdx` and `../examples/hodgkin-huxley/example.py`. Run the Python script to regenerate the network diagram, response plot, SciPy error plot and `comparison.json`; `scripts/sync-hodgkin-huxley.ts` publishes the page, measured table and downloads before development, checks and builds.

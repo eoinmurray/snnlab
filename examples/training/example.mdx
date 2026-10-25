@@ -31,7 +31,12 @@ import numpy as np
 import torch
 
 from snnlab import lang, viz
-from snnlab.sim import DenseArrayBinding, ValidationSpec, save_training_checkpoint, train
+from snnlab.sim import (
+    DenseArrayBinding,
+    ValidationSpec,
+    save_training_checkpoint,
+    train,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent
 DT_MS = 0.5
@@ -151,13 +156,26 @@ result = train(
     epochs=20,
     batch_size=32,
     checkpoint_selection=CheckpointSelection(
-        metric=SelectionMetric("cross_entropy", objective=0, direction="min"),
-        tie_break=(SelectionMetric("accuracy", objective=0, direction="max"),),
+        metric=SelectionMetric(
+            "cross_entropy",
+            objective=0,
+            direction="min",
+        ),
+        tie_break=(
+            SelectionMetric(
+                "accuracy",
+                objective=0,
+                direction="max",
+            ),
+        ),
     ),
 )
 selected = result.selected_checkpoint
 print(selected.selection_record)
-save_training_checkpoint(OUTPUT_DIR / "selected.checkpoint", selected)
+save_training_checkpoint(
+    OUTPUT_DIR / "selected.checkpoint",
+    selected,
+)
 ```
 
 Pass the same graph, recipe, training bindings and `ValidationSpec` as in the main training call. This optional alternative can select an earlier epoch than the final state. Initial weights are excluded; exact ties retain the earliest winner. The final checkpoint retains the winner for resume. See [Checkpoint selection](/api/sim#inputs-and-execution-settings) for policy and compatibility rules. The downloadable example below keeps its existing final-checkpoint workflow.

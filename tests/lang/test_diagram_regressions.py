@@ -1,10 +1,12 @@
 """Semantic regressions exposed by real-world diagram review cases."""
 
+import importlib.util
 import json
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from dataclasses import replace
 from pathlib import Path
@@ -13,9 +15,17 @@ import pytest
 
 from snnlab import lang, viz
 
+EXAMPLE = Path(__file__).parents[2] / "examples" / "diagrams"
+spec = importlib.util.spec_from_file_location("diagram_example", EXAMPLE / "example.py")
+diagram_cases = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = diagram_cases
+spec.loader.exec_module(diagram_cases)
+all_box_types = diagram_cases.all_box_types
+case_diagram = diagram_cases.case_diagram
+
 
 def snapshot(name):
-    path = Path(__file__).parents[1] / "visual" / "lang" / "inputs" / f"{name}.json"
+    path = EXAMPLE / "inputs" / f"{name}.json"
     payload = json.loads(path.read_text())
     return lang.Bundle(payload["graph"], payload["training"], payload["manifest"], [])
 
@@ -66,7 +76,6 @@ def test_all_views_preserve_every_group_member_and_projection(view):
 
 
 def test_all_box_types_example_is_complete_and_explicit():
-    from tests.visual.lang.cases import all_box_types, case_diagram
 
     visual = case_diagram(all_box_types(), "training")
     assert {node.kind for node in visual.nodes} == {
@@ -90,7 +99,6 @@ def test_all_box_types_example_is_complete_and_explicit():
 
 
 def test_box_information_is_concise_and_semantically_ordered():
-    from tests.visual.lang.cases import all_box_types, case_diagram
 
     visual = case_diagram(all_box_types(), "training")
     nodes = {node.id: node for node in visual.nodes}
@@ -122,7 +130,6 @@ def test_box_information_is_concise_and_semantically_ordered():
 def test_box_type_name_and_information_have_clear_visual_hierarchy(tmp_path):
     if any(shutil.which(program) is None for program in ("dot", "neato")):
         pytest.skip("Graphviz is required")
-    from tests.visual.lang.cases import all_box_types, case_diagram
 
     visual = case_diagram(all_box_types(), "training")
     path = viz.render_diagram(visual, tmp_path / "typography.svg")
@@ -175,7 +182,6 @@ def test_arrowheads_are_visible_outside_every_box(case_name, tmp_path):
     if any(shutil.which(program) is None for program in ("dot", "neato")):
         pytest.skip("Graphviz is required")
     from snnlab.viz.diagrams.routing import _bounds, _overlaps
-    from tests.visual.lang.cases import all_box_types, case_diagram
 
     if case_name == "all_box_types":
         visual = case_diagram(all_box_types(), "training")
@@ -535,3 +541,99 @@ def test_feedback_uses_separated_overhead_lanes(name, view):
         for other_id, other_x, other_low, other_high in verticals[:index]:
             if edge_id != other_id and min(high, other_high) - max(low, other_low) > 1:
                 assert abs(x - other_x) >= 17.9
+
+
+@pytest.mark.parametrize("view", ["circuit", "training", "expanded"])
+def test_weight_labels_are_opt_in_and_preserve_diagram_semantics(view):
+    bundle = all_box_types().bundle
+    original = json.dumps(bundle.graph, sort_keys=True)
+    plain = lang.diagram(bundle, view=view)
+    labelled = lang.diagram(bundle, view=view, weight_labels=True)
+    assert all(edge.weight_label is None for edge in plain.edges)
+    weighted_ids = {row["id"] for row in bundle.graph["projections"]}
+    assert {edge.id for edge in labelled.edges if edge.weight_label} == weighted_ids
+    for edge in labelled.edges:
+        if edge.weight_label:
+            assert edge.weight_label == viz.WeightLabel(
+                subscript=f"{edge.source}→{edge.target}"
+            )
+    assert (
+        replace(
+            labelled,
+            edges=tuple(replace(edge, weight_label=None) for edge in labelled.edges),
+        )
+        == plain
+    )
+    assert json.dumps(bundle.graph, sort_keys=True) == original
+
+
+def test_custom_weight_labels_select_projections_and_validate_ids():
+    bundle = all_box_types().bundle
+    label = viz.WeightLabel("J", "E→I", "rec")
+    visual = lang.diagram(bundle, weight_labels={"E_to_I": label})
+    assert {
+        edge.id: edge.weight_label for edge in visual.edges if edge.weight_label
+    } == {"E_to_I": label}
+    with pytest.raises(ValueError, match="weighted projection IDs"):
+        lang.diagram(bundle, weight_labels={"missing": label})
+    with pytest.raises(TypeError, match="WeightLabel instances"):
+        lang.diagram(bundle, weight_labels={"E_to_I": "J"})
+    bundle.graph["projections"][0]["parameters"] = []
+    identifier = bundle.graph["projections"][0]["id"]
+    visual = lang.diagram(bundle, weight_labels=True)
+    assert (
+        next(edge for edge in visual.edges if edge.id == identifier).weight_label
+        is None
+    )
+    with pytest.raises(ValueError, match="weighted projection IDs"):
+        lang.diagram(bundle, weight_labels={identifier: label})
+
+
+@pytest.mark.parametrize("suffix", ["svg", "png", "pdf"])
+def test_math_weight_labels_render_with_escaped_text(tmp_path, suffix):
+    if any(shutil.which(program) is None for program in ("dot", "neato")):
+        pytest.skip("Graphviz is required")
+    visual = lang.diagram(
+        all_box_types().bundle,
+        weight_labels={"E_to_I": viz.WeightLabel("J<&", "E→I", "rec")},
+    )
+    dot = viz.diagram_to_dot(visual)
+    assert "<B><I>J&lt;&amp;</I></B>" in dot
+    assert "<SUB>" not in dot and "<SUP>" not in dot
+    assert 'ROWSPAN="2"' in dot
+    path = viz.render_diagram(visual, tmp_path / f"weights.{suffix}")
+    if suffix == "svg":
+        root = ET.parse(path).getroot()
+        edge = next(
+            element for element in root.iter() if element.get("id") == "e_n_E_to_I"
+        )
+        text = [element for element in edge.iter() if element.tag.endswith("}text")]
+        assert {element.text for element in text} >= {"AMPA", "J<&", "E→I", "rec"}
+        symbol = next(element for element in text if element.text == "J<&")
+        assert symbol.get("font-weight") == "bold"
+        assert symbol.get("font-style") == "italic"
+        subscript = next(element for element in text if element.text == "E→I")
+        superscript = next(element for element in text if element.text == "rec")
+        assert float(subscript.get("font-size")) < float(symbol.get("font-size"))
+        assert float(superscript.get("font-size")) < float(symbol.get("font-size"))
+        assert (
+            float(superscript.get("y"))
+            < float(symbol.get("y"))
+            < float(subscript.get("y"))
+        )
+        assert float(subscript.get("x")) == pytest.approx(float(superscript.get("x")))
+        assert float(subscript.get("x")) > float(symbol.get("x"))
+        assert all("baseline-shift" not in element.attrib for element in text)
+    else:
+        assert path.read_bytes().startswith(b"\x89PNG" if suffix == "png" else b"%PDF")
+
+
+def test_long_default_weight_names_fit_grouped_classifier(tmp_path):
+    if any(shutil.which(program) is None for program in ("dot", "neato")):
+        pytest.skip("Graphviz is required")
+    visual = lang.diagram(
+        diagram_cases.representative_classifier().bundle, weight_labels=True
+    )
+    path = viz.render_diagram(visual, tmp_path / "classifier.svg")
+    text = "".join(ET.parse(path).getroot().itertext())
+    assert "layer_2_I→layer_2_E" in text

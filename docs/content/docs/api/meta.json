@@ -4,6 +4,7 @@
     "lang",
     "sim",
     "extensions",
+    "meanfield",
     "analysis",
     "viz"
   ],

@@ -106,7 +106,11 @@ Current-based projections expose `.current`; conductance-based projections expos
 Import these constructors from `snnlab.lang`. The signatures below are the authoring contracts; `**values` permits specification metadata and does not promise backend support for every key. Time parameters use `Quantity` values such as `20 * lang.ms`. The model tables above define supported runtime settings.
 
 ```python
-def COBA_LIF(*, refractory=None, **values: Any) -> Spec: ...
+def COBA_LIF(
+    *,
+    refractory=None,
+    **values: Any,
+) -> Spec: ...
 
 
 def CUBA_LIF(
@@ -135,7 +139,10 @@ def CUBA_ALIF(
 
 
 def COBA_ALIF(
-    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+    *,
+    excitatory_reversal_mv=0.0,
+    inhibitory_reversal_mv=-80.0,
+    **values: Any,
 ) -> Spec: ...
 
 
@@ -155,7 +162,10 @@ def CUBA_ADEX(
 
 
 def COBA_ADEX(
-    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+    *,
+    excitatory_reversal_mv=0.0,
+    inhibitory_reversal_mv=-80.0,
+    **values: Any,
 ) -> Spec: ...
 
 
@@ -177,10 +187,16 @@ def ExponentialCurrent(*, tau=5 * ms) -> Spec: ...
 def Modulatory(**values: Any) -> Spec: ...
 
 
-def CustomNeuron(definition: str, **config: Any) -> Spec: ...
+def CustomNeuron(
+    definition: str,
+    **config: Any,
+) -> Spec: ...
 
 
-def CustomSynapse(definition: str, **config: Any) -> Spec: ...
+def CustomSynapse(
+    definition: str,
+    **config: Any,
+) -> Spec: ...
 ```
 
 All return a `Spec` containing model kind and serialized settings. Custom constructors require a registered definition and JSON-compatible configuration. Compilation performs model validation; `Modulatory` remains unsupported by the graph executor.
@@ -295,7 +311,10 @@ class NeuronContext:
 `NeuronContext.spike(value)` emits hard threshold spikes with the configured backward surrogate. Custom neurons choose their integration, reset and refractory behaviour; receiving a refractory state tensor does not implement those dynamics automatically. Extra hidden state can have other fixed shapes and dtypes, but must remain finite and on the execution device. All state is detached and saved at continuation boundaries.
 
 ```python
-neuron = lang.CustomNeuron("my_lab.adaptive/v1", tau_ms=20.0)
+neuron = lang.CustomNeuron(
+    "my_lab.adaptive/v1",
+    tau_ms=20.0,
+)
 ```
 
 The existing `step(context)` interface compiles directly when the body follows the [efficient callback guidance](#writing-efficient-pytorch-callbacks). Preserve auxiliary state with `{**context.state, "voltage": next_voltage, ...}`. See [Customisation](/custom-neurons-and-synapses) for a complete adaptive neuron definition and its response plots.
@@ -329,7 +348,10 @@ class SynapseContext:
 `output_unit` is `"nA"` or `"uS"`; it must match the target neuron. Additional `state_units` expose diagnostic ports through `projection.state(name)`. The standard `value`, `current` and `conductance` names are reserved. Arbitrary auxiliary tensor state survives continuation; built-in delay routing and graph topology remain in effect.
 
 ```python
-synapse = lang.CustomSynapse("my_lab.synapse/v1", tau_ms=5.0)
+synapse = lang.CustomSynapse(
+    "my_lab.synapse/v1",
+    tau_ms=5.0,
+)
 ```
 
 A vectorized step for an exponential custom synapse can be written as:
@@ -337,11 +359,15 @@ A vectorized step for an exponential custom synapse can be written as:
 ```python
 import math
 
+
 def exponential_step(context):
     decay = math.exp(-context.dt_ms / context.config["tau_ms"])
     previous = context.state["value"]
     drive = context.drive.to(previous.dtype)
-    return {**context.state, "value": previous * decay + drive}
+    return {
+        **context.state,
+        "value": previous * decay + drive,
+    }
 ```
 
 Register this importable function with `register_synapse`; omitting `initialize` supplies the zero-valued `value` state. There is no per-cell loop or host read, and the fixed scalar decay can specialize during compilation. The drive cast preserves state dtype under autocast. The weighted drive is already supplied: do not multiply weights or loop over source edges again. The [runnable customisation example](/custom-neurons-and-synapses) includes a state initializer, configuration validation and capture-safe registration.
@@ -354,30 +380,59 @@ A custom synapse can declare `input_unit="mV"` and receive `pre.voltage` or a de
 import torch
 from snnlab import extensions, lang
 
+
 def graded_init(context):
-    gate = torch.full(context.shape, -60.0,
-                      device=context.device, dtype=context.dtype)
-    return {"gate": gate, "value": torch.zeros_like(gate)}
+    gate = torch.full(
+        context.shape,
+        -60.0,
+        device=context.device,
+        dtype=context.dtype,
+    )
+    return {
+        "gate": gate,
+        "value": torch.zeros_like(gate),
+    }
+
 
 def graded_step(context):
     gate = context.state["gate"]
     gate = gate + context.dt_ms / 2.0 * (context.drive - gate)
     conductance = 0.04 * torch.sigmoid(0.3 * (gate + 50.0))
-    return {"gate": gate, "value": conductance}
+    return {
+        "gate": gate,
+        "value": conductance,
+    }
+
 
 extensions.register_synapse(
-    "my_lab.graded/v1", graded_step, initialize=graded_init,
-    input_unit="mV", output_unit="uS", state_units={"gate": "mV"},
+    "my_lab.graded/v1",
+    graded_step,
+    initialize=graded_init,
+    input_unit="mV",
+    output_unit="uS",
+    state_units={"gate": "mV"},
 )
 edge = net.connect(
-    pre.voltage, post.inhibitory, name="graded_inhibition",
+    pre.voltage,
+    post.inhibitory,
+    name="graded_inhibition",
     synapse=lang.CustomSynapse("my_lab.graded/v1"),
-    weight=lang.Constant(1.0), initialization_scaling="direct",
+    weight=lang.Constant(1.0),
+    initialization_scaling="direct",
     connection="recurrent",
 )
-net.output("gate", edge.state("gate"))
-net.output("conductance", edge.conductance)
-net.output("voltage", post.voltage)
+net.output(
+    "gate",
+    edge.state("gate"),
+)
+net.output(
+    "conductance",
+    edge.conductance,
+)
+net.output(
+    "voltage",
+    post.voltage,
+)
 ```
 
 The constants above use milliseconds, millivolts and microsiemens. The gate filters voltage with a 2 ms time constant, and maximum output conductance is 0.04 uS. The postsynaptic conductance-based neuron converts this output into current using its reversal potential and its own beginning-of-step voltage. A custom target neuron chooses its own reversal potential.
@@ -394,12 +449,22 @@ The [reciprocal graded-synapse example](https://github.com/eoinmurray/snnlab/tre
 
 ```python
 def register_initializer(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
 ): ...
 ```
 ```python
 def register_constraint(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
 ): ...
 ```
 
@@ -408,15 +473,26 @@ Initializer callback: `function(shape, config, *, device, dtype) -> Tensor`. Ret
 Constraint callback: `function(parameter, config) -> Tensor`. Return the constrained tensor with unchanged shape/device/dtype. Constraints apply after initialization and the selected scaling policy, and after built-in training optimizer steps. An external PyTorch loop should call `module.enforce_constraints()` after its optimizer step. A masking constraint can enforce persistent zero connections; execution still uses dense matrices. Initializers run eagerly at construction, while constraints compile for repeated post-update use. Vectorize both across the full weight tensor, allocate directly with the requested device/dtype, and avoid scalar loops over connections. See [efficient custom weights](/api/lang#weights) for examples.
 
 ```python
-initializer = lang.CustomInitializer("my_lab.distribution/v1", scale=1.0)
-constraint = lang.CustomConstraint("my_lab.mask/v1", mask=[[1, 0], [0, 1]])
+initializer = lang.CustomInitializer(
+    "my_lab.distribution/v1",
+    scale=1.0,
+)
+constraint = lang.CustomConstraint(
+    "my_lab.mask/v1",
+    mask=[[1, 0], [0, 1]],
+)
 ```
 
 ### Operations and readouts
 
 ```python
 def register_operation(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
 ): ...
 ```
 ```python
@@ -452,7 +528,12 @@ def register_objective(
 ```
 ```python
 def register_regularizer(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
 ): ...
 ```
 
@@ -464,7 +545,12 @@ Regularizer callback: `function(signals, duration_s, config) -> scalar Tensor`. 
 
 ```python
 def register_optimizer(
-    name, factory, *, validate=None, package=None, package_version=None
+    name,
+    factory,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
 ): ...
 ```
 
@@ -476,7 +562,12 @@ Checkpointing supports per-parameter tensor state and JSON scalar state, includi
 
 ```python
 def register_surrogate(
-    name, derivative, *, validate=None, package=None, package_version=None
+    name,
+    derivative,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
 ): ...
 ```
 
@@ -488,7 +579,12 @@ For direct PyTorch construction, pass the serialized custom specification as `Gr
 
 ```python
 def register_encoder(
-    name, function, *, validate=None, package=None, package_version=None
+    name,
+    function,
+    *,
+    validate=None,
+    package=None,
+    package_version=None,
 ): ...
 ```
 
@@ -565,14 +661,24 @@ def CustomObjective(
 
 
 def CustomRegularizer(
-    definition: str, *, signals: Sequence[Signal | str], strength: float, **config: Any
+    definition: str,
+    *,
+    signals: Sequence[Signal | str],
+    strength: float,
+    **config: Any,
 ) -> Regularizer: ...
 
 
-def CustomOptimizer(definition: str, **config: Any) -> Optimizer: ...
+def CustomOptimizer(
+    definition: str,
+    **config: Any,
+) -> Optimizer: ...
 
 
-def CustomSurrogate(definition: str, **config: Any) -> Spec: ...
+def CustomSurrogate(
+    definition: str,
+    **config: Any,
+) -> Spec: ...
 ```
 
 `weight` and `strength` scale scalar callback results. A custom classification objective enables integer target/argmax metric semantics through its registration; other objectives support real-valued targets. Explicit regularizer signals are retained for loss computation even when diagnostics are disabled. See [callback contracts](/api/extensions#objectives-and-regularizers).

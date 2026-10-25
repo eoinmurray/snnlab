@@ -20,8 +20,16 @@ MAX_STEP_MS = 0.025
 
 def _vtrap(x):
     small = x.abs() < 1e-4
-    safe = torch.where(small, torch.ones_like(x), x)
-    return torch.where(small, 1 + x / 2 + x.square() / 12, safe / -torch.expm1(-safe))
+    safe = torch.where(
+        small,
+        torch.ones_like(x),
+        x,
+    )
+    return torch.where(
+        small,
+        1 + x / 2 + x.square() / 12,
+        safe / -torch.expm1(-safe),
+    )
 
 
 def rates(voltage):
@@ -34,15 +42,24 @@ def rates(voltage):
 
 def initial_state(context):
     voltage = torch.full(
-        context.shape, -65.0, device=context.device, dtype=context.dtype
+        context.shape,
+        -65.0,
+        device=context.device,
+        dtype=context.dtype,
     )
     state = {"voltage": voltage}
-    for gate, (alpha, beta) in zip(("m", "h", "n"), rates(voltage)):
+    for gate, (alpha, beta) in zip(
+        ("m", "h", "n"),
+        rates(voltage),
+    ):
         state[gate] = alpha / (alpha + beta)
     return state
 
 
-def _derivative(values, current):
+def _derivative(
+    values,
+    current,
+):
     voltage, m, h, n = values
     ionic = (
         G_NA_US * m**3 * h * (voltage - E_NA_MV)
@@ -51,7 +68,10 @@ def _derivative(values, current):
     )
     gates = tuple(
         alpha * (1 - gate) - beta * gate
-        for gate, (alpha, beta) in zip((m, h, n), rates(voltage))
+        for gate, (alpha, beta) in zip(
+            (m, h, n),
+            rates(voltage),
+        )
     )
     return ((current - ionic) / CAPACITANCE_NF, *gates)
 
@@ -60,21 +80,71 @@ def step(context):
     keys = ("voltage", "m", "h", "n")
     values = tuple(context.state[key] for key in keys)
     current = (context.excitatory - context.inhibitory).to(values[0].dtype)
-    substeps = max(1, math.ceil(context.dt_ms / MAX_STEP_MS))
+    substeps = max(
+        1,
+        math.ceil(context.dt_ms / MAX_STEP_MS),
+    )
     dt = context.dt_ms / substeps
-    crossed = torch.zeros_like(values[0], dtype=torch.bool)
+    crossed = torch.zeros_like(
+        values[0],
+        dtype=torch.bool,
+    )
     for _ in range(substeps):
-        k1 = _derivative(values, current)
-        k2 = _derivative(tuple(y + dt / 2 * k for y, k in zip(values, k1)), current)
-        k3 = _derivative(tuple(y + dt / 2 * k for y, k in zip(values, k2)), current)
-        k4 = _derivative(tuple(y + dt * k for y, k in zip(values, k3)), current)
+        k1 = _derivative(
+            values,
+            current,
+        )
+        k2 = _derivative(
+            tuple(
+                y + dt / 2 * k
+                for y, k in zip(
+                    values,
+                    k1,
+                )
+            ),
+            current,
+        )
+        k3 = _derivative(
+            tuple(
+                y + dt / 2 * k
+                for y, k in zip(
+                    values,
+                    k2,
+                )
+            ),
+            current,
+        )
+        k4 = _derivative(
+            tuple(
+                y + dt * k
+                for y, k in zip(
+                    values,
+                    k3,
+                )
+            ),
+            current,
+        )
         updated = tuple(
             y + dt / 6 * (a + 2 * b + 2 * c + d)
-            for y, a, b, c, d in zip(values, k1, k2, k3, k4)
+            for y, a, b, c, d in zip(
+                values,
+                k1,
+                k2,
+                k3,
+                k4,
+            )
         )
         crossed = crossed | ((values[0] < 0) & (updated[0] >= 0))
         values = updated
-    return {**context.state, **dict(zip(keys, values))}, crossed.to(values[0].dtype)
+    return {
+        **context.state,
+        **dict(
+            zip(
+                keys,
+                values,
+            )
+        ),
+    }, crossed.to(values[0].dtype)
 
 
 def current_step(context):
@@ -104,7 +174,11 @@ def build_example(dt_ms=DT_MS):
         step,
         initialize=initial_state,
         input_unit="nA",
-        state_units={"m": "1", "h": "1", "n": "1"},
+        state_units={
+            "m": "1",
+            "h": "1",
+            "n": "1",
+        },
         capture_safe=True,
     )
     extensions.register_synapse(
@@ -113,12 +187,20 @@ def build_example(dt_ms=DT_MS):
         output_unit="nA",
         capture_safe=True,
     )
-    net = lang.Network("hodgkin_huxley", dt=dt_ms * lang.ms)
+    net = lang.Network(
+        "hodgkin_huxley",
+        dt=dt_ms * lang.ms,
+    )
     pulse = net.input(
-        "pulse", shape=("time", "batch", 1), signal_type="continuous", unit="1"
+        "pulse",
+        shape=("time", "batch", 1),
+        signal_type="continuous",
+        unit="1",
     )
     cells = net.population(
-        "axon", size=1, neuron=lang.CustomNeuron("example.hodgkin_huxley/v1")
+        "axon",
+        size=1,
+        neuron=lang.CustomNeuron("example.hodgkin_huxley/v1"),
     )
     injection = net.connect(
         pulse,
@@ -128,13 +210,32 @@ def build_example(dt_ms=DT_MS):
         weight=lang.Constant(CURRENT_NA),
         initialization_scaling="direct",
     )
-    net.output("voltage", cells.voltage)
-    net.output("spikes", cells.spikes)
-    net.output("current", injection.current)
+    net.output(
+        "voltage",
+        cells.voltage,
+    )
+    net.output(
+        "spikes",
+        cells.spikes,
+    )
+    net.output(
+        "current",
+        injection.current,
+    )
     for gate in ("m", "h", "n"):
-        net.output(gate, cells.state(gate))
-    bundle = lang.compile(net, target="tools/snnsim")
-    stimulus = torch.zeros(round(DURATION_MS / dt_ms), 1, 1)
+        net.output(
+            gate,
+            cells.state(gate),
+        )
+    bundle = lang.compile(
+        net,
+        target="tools/snnsim",
+    )
+    stimulus = torch.zeros(
+        round(DURATION_MS / dt_ms),
+        1,
+        1,
+    )
     stimulus[round(PULSE_START_MS / dt_ms) : round(PULSE_STOP_MS / dt_ms)] = 1
     return bundle, stimulus
 
@@ -143,7 +244,10 @@ def run_example(*, render_diagram=False):
     bundle, stimulus = build_example()
     if render_diagram:
         viz.render_diagram(
-            lang.diagram(bundle, view="expanded"),
+            lang.diagram(
+                bundle,
+                view="expanded",
+            ),
             OUTPUT_PATH.with_name("network.png"),
             scale=2,
             height_to_width_ratio=None,
@@ -151,7 +255,12 @@ def run_example(*, render_diagram=False):
     result = simulate(
         graph=bundle.graph,
         device="cpu",
-        input_bindings=(DenseArrayBinding("pulse", stimulus),),
+        input_bindings=(
+            DenseArrayBinding(
+                "pulse",
+                stimulus,
+            ),
+        ),
         performance=Performance(compile_mode=None),
         extension_validation="strict",
     ).numpy(batch=0)
@@ -163,12 +272,26 @@ def main():
     result = run_example(render_diagram=True)
     outputs = {name: value.ravel() for name, value in result.outputs.items()}
     time = (np.arange(len(outputs["voltage"])) + 1) * DT_MS
-    fig, axes = plt.subplots(3, 1, figsize=(9, 7), sharex=True, constrained_layout=True)
-    axes[0].plot(time, outputs["voltage"], color="#4c78a8", linewidth=1.2)
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(9, 7),
+        sharex=True,
+        constrained_layout=True,
+    )
+    axes[0].plot(
+        time,
+        outputs["voltage"],
+        color="#4c78a8",
+        linewidth=1.2,
+    )
     spike_times = time[outputs["spikes"] > 0]
     axes[0].plot(
         spike_times,
-        np.full_like(spike_times, 45),
+        np.full_like(
+            spike_times,
+            45,
+        ),
         "v",
         color="#b33b33",
         label="Upward 0 mV crossing",
@@ -178,19 +301,39 @@ def main():
         title="Hodgkin–Huxley: continuous action potentials, no reset",
     )
     axes[0].legend(loc="upper right")
-    for gate, color in zip(("m", "h", "n"), ("#e08b26", "#4c78a8", "#54a24b")):
-        axes[1].plot(time, outputs[gate], label=gate, color=color)
-    axes[1].set(ylabel="Gate probability", ylim=(0, 1))
+    for gate, color in zip(
+        ("m", "h", "n"),
+        ("#e08b26", "#4c78a8", "#54a24b"),
+    ):
+        axes[1].plot(
+            time,
+            outputs[gate],
+            label=gate,
+            color=color,
+        )
+    axes[1].set(
+        ylabel="Gate probability",
+        ylim=(0, 1),
+    )
     axes[1].legend(ncol=3)
 
     edges = np.arange(len(time) + 1) * DT_MS
-    axes[2].stairs(outputs["current"], edges, color="#555555")
+    axes[2].stairs(
+        outputs["current"],
+        edges,
+        color="#555555",
+    )
     axes[2].set(
-        ylabel="Injected current (nA)", xlabel="Time (ms)", xlim=(0, DURATION_MS)
+        ylabel="Injected current (nA)",
+        xlabel="Time (ms)",
+        xlim=(0, DURATION_MS),
     )
     for ax in axes:
         ax.spines[["top", "right"]].set_visible(False)
-    fig.savefig(OUTPUT_PATH, dpi=160)
+    fig.savefig(
+        OUTPUT_PATH,
+        dpi=160,
+    )
     plt.close(fig)
     plot_comparison(result)
 
@@ -213,13 +356,22 @@ def _rates(v):
     return alpha, beta
 
 
-def solve_reference(times, *, pulse_start_ms=10.0, pulse_stop_ms=70.0, current_na=0.1):
+def solve_reference(
+    times,
+    *,
+    pulse_start_ms=10.0,
+    pulse_stop_ms=70.0,
+    current_na=0.1,
+):
     alpha, beta = _rates(-65)
     initial = np.r_[-65, alpha / (alpha + beta)]
     reference = np.empty((4, len(times)))
     event_times = []
 
-    def crossing(t, y):
+    def crossing(
+        t,
+        y,
+    ):
         return y[0]
 
     crossing.direction = 1
@@ -229,7 +381,10 @@ def solve_reference(times, *, pulse_start_ms=10.0, pulse_stop_ms=70.0, current_n
         (pulse_stop_ms, float(times[-1]), 0),
     ):
 
-        def derivative(t, y):
+        def derivative(
+            t,
+            y,
+        ):
             v, m, h, n = y
             ionic = (
                 120 * m**3 * h * (v - 50) + 36 * n**4 * (v + 77) + 0.3 * (v + 54.387)
@@ -256,7 +411,10 @@ def solve_reference(times, *, pulse_start_ms=10.0, pulse_stop_ms=70.0, current_n
     return reference, np.asarray(event_times)
 
 
-def compare(result, dt_ms=DT_MS):
+def compare(
+    result,
+    dt_ms=DT_MS,
+):
     outputs = {name: value.ravel() for name, value in result.outputs.items()}
     times = (np.arange(len(outputs["voltage"])) + 1) * dt_ms
     reference, reference_spikes = solve_reference(
@@ -283,7 +441,10 @@ def compare(result, dt_ms=DT_MS):
         "voltage_rmse_mv": float(np.sqrt(np.mean(error[0] ** 2))),
         "gate_max_abs_error": {
             gate: float(np.abs(error[i]).max())
-            for i, gate in enumerate(("m", "h", "n"), 1)
+            for i, gate in enumerate(
+                ("m", "h", "n"),
+                1,
+            )
         },
         "snnlab_spike_times_ms": spike_times.tolist(),
         "scipy_spike_times_ms": reference_spikes.tolist(),
@@ -296,8 +457,19 @@ def compare(result, dt_ms=DT_MS):
 
 def plot_comparison(result):
     times, actual, reference, metrics = compare(result)
-    fig, axes = plt.subplots(3, 1, figsize=(9, 7), sharex=True, constrained_layout=True)
-    axes[0].plot(times, actual[0], label="snnlab RK4, float32", color="#4c78a8")
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(9, 7),
+        sharex=True,
+        constrained_layout=True,
+    )
+    axes[0].plot(
+        times,
+        actual[0],
+        label="snnlab RK4, float32",
+        color="#4c78a8",
+    )
     axes[0].plot(
         times,
         reference[0],
@@ -311,17 +483,42 @@ def plot_comparison(result):
         title="HH extension compared with an independent SciPy solution",
     )
     axes[0].legend(loc="upper right")
-    axes[1].plot(times, actual[0] - reference[0], color="#b33b33", linewidth=1)
+    axes[1].plot(
+        times,
+        actual[0] - reference[0],
+        color="#b33b33",
+        linewidth=1,
+    )
     axes[1].set(ylabel="Voltage error (mV)")
-    for index, gate in enumerate(("m", "h", "n"), 1):
-        axes[2].plot(times, actual[index] - reference[index], label=gate)
-    axes[2].set(ylabel="Gate error", xlabel="Time (ms)", xlim=(0, times[-1]))
+    for index, gate in enumerate(
+        ("m", "h", "n"),
+        1,
+    ):
+        axes[2].plot(
+            times,
+            actual[index] - reference[index],
+            label=gate,
+        )
+    axes[2].set(
+        ylabel="Gate error",
+        xlabel="Time (ms)",
+        xlim=(0, times[-1]),
+    )
     axes[2].legend(ncol=3)
     for ax in axes:
         ax.spines[["top", "right"]].set_visible(False)
-    fig.savefig(OUTPUT_DIR / "scipy-comparison.png", dpi=160)
+    fig.savefig(
+        OUTPUT_DIR / "scipy-comparison.png",
+        dpi=160,
+    )
     plt.close(fig)
-    report = json.dumps(metrics, indent=2) + "\n"
+    report = (
+        json.dumps(
+            metrics,
+            indent=2,
+        )
+        + "\n"
+    )
     (OUTPUT_DIR / "comparison.json").write_text(report)
 
 

@@ -2,16 +2,16 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { createDevSource } from '../src/lib/dev-source';
 
-test('the API reference exposes exactly five module pages without subpages', () => {
+test('the API reference exposes exactly six module pages without subpages', () => {
   const contents: Record<string, string> = {};
   for (const file of new Bun.Glob('**/*.{md,mdx,json}').scanSync('content/docs')) {
     contents[`/content/docs/${file}`] = readFileSync(`content/docs/${file}`, 'utf8');
   }
   expect(Array.from(new Bun.Glob('**/*.mdx').scanSync('content/docs/api')).sort()).toEqual([
-    'analysis.mdx', 'extensions.mdx', 'lang.mdx', 'sim.mdx', 'viz.mdx',
+    'analysis.mdx', 'extensions.mdx', 'lang.mdx', 'meanfield.mdx', 'sim.mdx', 'viz.mdx',
   ]);
   const source = createDevSource(contents, {}, '/');
-  for (const name of ['lang', 'sim', 'extensions', 'analysis', 'viz']) {
+  for (const name of ['lang', 'sim', 'extensions', 'meanfield', 'analysis', 'viz']) {
     expect(source.getPage(['api', name])?.data.title).toBe(`snnlab.${name}`);
     expect(JSON.stringify(source.getPageTree())).toContain(`"url":"/api/${name}"`);
   }

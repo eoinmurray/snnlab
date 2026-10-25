@@ -1,0 +1,575 @@
+---
+title: snnlab.meanfield
+description: Public reference for qualitative mean-field construction, manipulation, symbolic export, numerical analysis and closure extensions.
+---
+
+```python
+from snnlab import meanfield as mf
+from snnlab.meanfield import closures
+```
+
+`snnlab.meanfield` constructs symbolic population models from network definitions.
+Model manipulation, symbolic inspection and numerical analysis live in the main
+namespace; approximation families and their extension API live in `closures`.
+These models describe qualitative dynamics. Their rates, frequencies and
+trajectories are not quantitative predictions of the spiking network.
+See [Mean-Field Modelling](/meanfield) for a worked E/I example.
+
+## Conventions
+
+Bare numbers use ms for time, Hz for rates, µS (`uS`) for conductance, mV for
+voltage and nA for current. Supported quantity arguments must have the declared
+unit. Custom symbolic expressions do not receive automatic dimensional analysis.
+
+State arguments accept a finite vector in `model.states` insertion order or a
+mapping naming every retained state exactly once. Parameter overrides are
+mappings of parameter IDs to values; omitted parameters keep their defaults.
+Unknown names, incompatible quantities and violated parameter bounds or reduction
+constraints raise errors. State bounds constrain equilibrium searches; numerical
+integration does not project trajectories onto those bounds.
+
+## Model construction
+
+### reduce
+
+```python
+mf.reduce(
+    network,
+    *,
+    closure,
+    weights,
+    inputs=None,
+    applied_current=None,
+    external_filters="dynamic",
+    delays="reject",
+) -> mf.Model
+```
+
+Construct a model from a `lang.Network` or compiled `lang.Bundle`. Does not sample
+weights or simulate spikes.
+
+| Argument | Contract |
+| --- | --- |
+| `closure` | Object implementing `closures.Closure.build(ctx)` |
+| `weights` | `MeanIncomingWeights` or `RealisedWeights`, with explicit provenance |
+| `inputs` | External input IDs mapped to `StationaryRate`; required for each connected external spike source |
+| `applied_current` | Population IDs mapped to constant applied currents in nA |
+| `external_filters` | `"dynamic"` retains input filters; `"quasistatic"` substitutes instantaneous stationary means, including during gain changes, omitting filtering lag |
+| `delays` | `"reject"` rejects nonzero delays; `"omit"` explicitly chooses an ODE approximation without transmission delays |
+
+The built-in closure rejects unsupported graph components and graph modulation
+schedules. Represent time-varying parameter changes with `integrate(controls=...)`.
+
+### StationaryRate
+
+```python
+mf.StationaryRate(rate)
+```
+
+Finite nonnegative external mean activity in Hz, accepting a bare number or
+`lang.Hz` quantity. This declaration does not imply Poisson statistics.
+
+### MeanIncomingWeights
+
+```python
+mf.MeanIncomingWeights(
+    values,
+    provenance,
+)
+```
+
+`values` maps enabled projection IDs to total effective incoming weight divided
+by target population size, in µS. Include zero edges and any excluded autapses
+in that normalization. Values must be finite and nonnegative; projection coverage
+must be exact. `provenance` is a nonempty description of the weights' origin.
+Supply effective values after simulator preprocessing, including scaling and
+constraints; the reducer does not infer initializer expectations.
+
+### RealisedWeights
+
+```python
+mf.RealisedWeights(
+    values,
+    provenance,
+    layout="source_target",
+)
+```
+
+`values` maps weight parameter IDs to effective dense matrices after simulator
+preprocessing. Native `"source_target"` layout is `(sources, targets)`;
+`"target_source"` accepts its transpose. Validates shapes, finite nonnegative
+entries and excluded autapses, then derives incoming summaries. Does not sample
+initializers, apply weight scaling or expand compact spatial kernels.
+`provenance` must be nonempty.
+
+## Model and manipulation
+
+### Model
+
+Normally returned by `reduce` or a custom closure's `ctx.build()`. `Model` is a
+frozen dataclass with read-only mapping wrappers; nested objects are not deeply
+immutable.
+
+| Attribute | Meaning |
+| --- | --- |
+| `states`, `rhs` | Ordered state ID → SymPy symbol mapping and corresponding computational derivative expressions |
+| `parameters`, `defaults` | Ordered parameter ID → symbol mapping and numerical defaults |
+| `units` | Declared native units by state/parameter ID |
+| `bounds`, `parameter_bounds` | Lower/upper bounds by ID |
+| `functions`, `function_definitions` | Numerical function implementations and inspectable specifications |
+| `assumptions`, `provenance` | Approximation statements and source metadata |
+| `filters` | Conductance filter topology used by state reduction |
+| `reconstructions`, `constraints` | Removed-state expressions and parameter equality constraints |
+| `notation`, `definitions`, `display_rhs` | LaTeX labels, auxiliary definitions and compact presentation equations |
+| `symbol_metadata` | Symbol meanings and shorthand definitions |
+
+`model.vector(state)` validates and orders a state vector. `model.values(overrides=None)`
+returns validated numerical parameters in parameter order. Advanced callers can
+use the cached `model.numerical_rhs` and `model.numerical_jacobian` callables:
+pass all scalar states followed by all scalar parameters in their respective
+mapping orders. Prefer `evaluate` and `linearise` for ordinary analysis.
+
+### substitute
+
+```python
+mf.substitute(
+    model,
+    parameters,
+) -> mf.Model
+```
+
+Return a new model with changed numerical defaults. Symbolic parameter identities
+are retained; this is not SymPy expression substitution.
+
+### reduce_states
+
+```python
+mf.reduce_states(
+    model,
+    *,
+    method="matched_decay",
+    retain=None,
+) -> mf.Model
+```
+
+The implemented method merges outgoing recurrent conductance filters sharing a
+source and decay time on a proportional-state manifold. `retain` optionally
+selects retained conductance state IDs. Requires equal decay constants and a
+positive retained basis coupling. Removed initial conductances must satisfy
+`model.reconstructions`; arbitrary initial conductances need the unreduced model.
+
+The returned model records reconstructions and parameter equality constraints.
+Numerical parameter changes recheck those constraints. Integration controls
+cannot change reconstruction ratios or constrained decay times. This reduction
+is optional: a rate-conductance model can retain all recurrent conductance states.
+
+## Symbolic inspection and export
+
+### equations
+
+```python
+mf.equations(model) -> dict
+```
+
+Return state IDs mapped to computational SymPy derivative equations, with time
+in ms. These expressions retain the full computational right-hand side, rather
+than compact display aliases.
+
+### jacobian
+
+```python
+mf.jacobian(model)
+```
+
+Return the symbolic SymPy Jacobian matrix in state order, with symbolic parameters.
+
+### latex
+
+```python
+mf.latex(
+    model,
+    *,
+    expanded=False,
+) -> str
+```
+
+Return an aligned LaTeX block using mathematical population labels, compact
+aliases and their exact auxiliary definitions. `expanded=True` uses computational
+expressions with auxiliary expressions inlined. Presentation does not change
+the numerical dynamics. Use `Model.write` to select equations individually.
+
+### summary
+
+```python
+mf.summary(model) -> str
+```
+
+Return a readable state/unit list, assumptions, required initial-state
+reconstructions and provenance.
+
+### Model.write
+
+```python
+model.write(path)  # returns pathlib.Path
+```
+
+Write a strict JSON model summary with schema `snnlab.meanfield.model/v1`.
+Creates parent directories and atomically replaces an existing file after
+serialization succeeds. The document describes the model; there is no executable
+load/round-trip API, and Python callback implementations remain runtime code.
+
+| JSON field | Contents |
+| --- | --- |
+| `schema`, `time_unit` | Schema identifier and `"ms"` |
+| `state_order`, `parameter_order` | Numerical ordering of named symbols |
+| `states`, `parameters` | Symbols, notation, units, bounds and numerical parameter values; unbounded endpoints are `null` |
+| `model_definition` | Computational/display expressions in `sympy-str` format, auxiliary definitions, reconstructions, constraints, filters and function specifications |
+| `equation_order`, `equations` | Ordered equation IDs and individually selectable differential/definition equations, each with `latex`, `lhs_latex`, `rhs_latex` and direct symbol dependencies |
+| `symbols` | Glossary of states, parameters, functions and derived quantities, including shorthand meanings and `definition_latex` |
+| `latex`, `summary` | Combined mathematical presentation and readable summary |
+| `assumptions`, `provenance` | Approximation choices and source metadata |
+
+Coupling shorthand entries explicitly retain the effective-weight normalization,
+source/target counts, component symbols, index meanings, units, zero-edge handling
+and autapse policy. The same metadata appears in `parameters`. Built-in noisy-LIF
+function specifications include membrane, noise and quadrature settings.
+
+```python
+import json
+
+saved = json.loads(model.write("results/model.json").read_text())
+rate_equation = saved["equations"]["E.rate"]["latex"]
+current_definition = saved["equations"]["E.effective_current"]["latex"]
+coupling_definition = saved["symbols"]["E_to_I.coupling"]["definition_latex"]
+```
+
+These IDs apply to a model with population `E` and projection `E_to_I`; actual
+IDs follow the supplied network and closure.
+
+## Numerical analysis
+
+### evaluate
+
+```python
+mf.evaluate(
+    model,
+    state,
+    *,
+    parameters=None,
+)
+```
+
+Return a NumPy derivative vector in state order, in native state units per ms.
+Raises if a computed derivative is nonfinite.
+
+### find_equilibrium
+
+```python
+mf.find_equilibrium(
+    model,
+    *,
+    guess,
+    parameters=None,
+    tolerance=1e-9,
+) -> mf.Equilibrium
+```
+
+Find one equilibrium using bounded least squares and the generated analytic
+Jacobian. `guess` supplies every retained state. Returns the state, resolved
+parameters and maximum absolute scaled derivative residual. Conductance
+residuals are divided by `0.01` µS; other states use one native state unit.
+`tolerance` applies to this scaled derivative residual, not a firing-rate error.
+Raises on failure. Does not enumerate every equilibrium.
+
+### linearise
+
+```python
+mf.linearise(
+    model,
+    *,
+    at,
+    parameters=None,
+) -> mf.Linearisation
+```
+
+Evaluate the Jacobian and eigenvalues at an `Equilibrium` or state argument.
+An equilibrium's stored parameters are reused unless explicitly overridden.
+Eigenvalues use inverse ms. Negative `max_real` indicates local asymptotic
+stability of this ODE; zero is inconclusive.
+
+### integrate
+
+```python
+mf.integrate(
+    model,
+    *,
+    duration,
+    initial,
+    parameters=None,
+    controls=None,
+    sample_interval=0.5,
+    method="LSODA",
+    rtol=1e-8,
+    atol=1e-10,
+    max_step=0.5,
+) -> mf.Trajectory
+```
+
+Integrate from time zero, returning samples through `duration`, including its
+endpoint. Duration, sampling interval and maximum solver step use ms. `initial`
+is a complete state argument. `controls` maps parameter IDs to callables taking
+time in ms and returning that parameter's value; they override the corresponding
+base parameter values during integration. `method`, `rtol` and `atol` configure
+SciPy's ODE solver. Raises on solver failure or nonfinite results.
+
+### PiecewiseLinear
+
+```python
+mf.PiecewiseLinear(
+    times,
+    values,
+)
+```
+
+Callable scalar control. Requires at least two finite, strictly increasing times
+in ms and an equal number of finite scalar values. Interpolates linearly and
+holds endpoint values outside the supplied time range.
+
+### continuation
+
+```python
+mf.continuation(
+    model,
+    parameter,
+    values,
+    *,
+    guess,
+) -> tuple
+```
+
+Step through numerical values of a parameter ID, seeding each equilibrium solve
+with the previous equilibrium. Returns `(value, Equilibrium, Linearisation)`
+triples in supplied order. This is simple parameter stepping, not pseudo-arclength
+continuation: it may jump branches or fail near folds.
+
+### find_stability_crossings
+
+```python
+mf.find_stability_crossings(
+    model,
+    parameter,
+    branch,
+    *,
+    tolerance=1e-10,
+    eigenvalue_tolerance=1e-8,
+) -> tuple
+```
+
+Refine sign changes of the largest eigenvalue real part using Brent's method,
+recomputing equilibria and Jacobians at trial values. `branch` is a sequence of
+continuation triples with strictly ascending or descending parameter values;
+only the requested parameter may vary. Other parameter values are preserved.
+Returns `StabilityCrossing` objects in scan order.
+
+`tolerance` is the absolute root-location tolerance in the varied parameter's
+units. `eigenvalue_tolerance` is the imaginary-part threshold in rad/ms for
+classifying the leading mode as oscillatory. Exact interior grid zeros are
+reported once when surrounding signs differ; tangencies are skipped. An exact
+endpoint zero has unknown stability on its missing side. Adjacent exact zeros
+are rejected as ambiguous. Refinement failures identify the parameter and bracket.
+
+This finds sampled stability-crossing candidates, not a proof of a Hopf
+bifurcation or its criticality. Coarse sampling may miss additional crossings.
+
+```python
+branch = mf.continuation(
+    model,
+    "X_to_I.gain",
+    [1, 0.75, 0.5, 0.25, 0],
+    guess=guess,
+)
+crossings = mf.find_stability_crossings(
+    model,
+    "X_to_I.gain",
+    branch,
+)
+```
+
+### Result types
+
+| Type | Public attributes |
+| --- | --- |
+| `Equilibrium` | `state`: named scalar states; `parameters`: values used; `residual`: maximum scaled derivative residual. State/parameter mappings are read-only |
+| `Linearisation` | `jacobian`: numerical matrix; `eigenvalues`: complex eigenvalues; `max_real`: largest real part |
+| `Trajectory` | `time_ms`: time array; `state`: mapping of state IDs to corresponding sample arrays |
+| `StabilityCrossing` | `parameter`, `value`, `equilibrium`, `linearisation`, `bracket`, `stable_before`, `stable_after`, `oscillatory`, `eigenvalues`, `frequency_hz` |
+
+For a crossing, before/after refer to **scan order**, including descending scans.
+An unknown endpoint side is `None`. `frequency_hz` is the absolute imaginary part
+of the leading eigenvalue converted from rad/ms to Hz; a nonoscillatory crossing
+returns zero. It describes a local linear mode, not a simulated limit-cycle frequency.
+
+## Built-in closures
+
+### closures.RateConductance
+
+```python
+closures.RateConductance(
+    gain,
+    tau_rate,
+    driving_force="resting",
+)
+```
+
+Supports spiking `COBA_LIF` populations with exponential `AMPA`/`GABA` pathways.
+Uses homogeneous population rates, stationary gain functions and fixed resting
+voltage driving forces. Synaptic decay and membrane parameters come from the
+network. `tau_rate` is positive, in ms, either a scalar or a mapping covering every
+population. Only `driving_force="resting"` is implemented. Shared-source covariance
+is omitted. `build(ctx)` implements the common closure protocol.
+
+### closures.NoisyLIF
+
+```python
+closures.NoisyLIF(
+    sigma,
+    quadrature_nodes=48,
+)
+```
+
+Stationary noisy-LIF gain with a prescribed positive voltage-noise scale `sigma`
+in mV. `quadrature_nodes` is an integer of at least eight. Reads leak, membrane
+time, reset, threshold and refractory settings from the population. Requires
+positive leak, membrane time and refractory duration, and reset below threshold.
+Uses the Siegert integral with stable `erfcx` Gauss–Legendre quadrature and an
+analytic first derivative. A normalized upper threshold above 26 returns zero
+rate and slope.
+
+`gain.bind(ctx, population)` returns a symbolic scalar callable and maximum rate
+in Hz. A custom gain object used with `RateConductance` implements this same
+method, registering its numerical function and derivative through `ctx.function`.
+
+## Closure extensions
+
+### closures.Closure
+
+```python
+class CustomClosure:
+    def build(self, ctx: closures.BuildContext) -> mf.Model:
+        ...
+```
+
+A structural protocol: no registration or subclass is required. `reduce` supplies
+a fresh `BuildContext` with resolved graph, weights and inputs. A custom closure
+is responsible for handling or rejecting graph components and for dimensional
+correctness of its equations.
+
+### closures.BuildContext
+
+| Attribute | Contract |
+| --- | --- |
+| `graph`, `populations`, `projections` | Resolved graph; population tuple; enabled projection tuple |
+| `weights`, `inputs`, `applied_current` | Resolved projection weight summaries, stationary input declarations and applied currents |
+| `provenance`, `external_filters`, `delays` | Source metadata and explicit approximation policies |
+| `states`, `parameters`, `defaults`, `units`, `bounds`, `parameter_bounds` | Mutable construction mappings populated by the methods below |
+| `derivatives`, `functions`, `filters` | Computational equations, bound numerical functions and filter topology |
+| `assumptions` | Append readable approximation statements here |
+| `notation`, `definitions`, `display_derivatives` | Symbol → LaTeX labels, auxiliary expressions and optional compact state right-hand sides |
+| `function_definitions`, `symbol_metadata` | Inspectable function specifications and symbol meanings |
+
+```python
+ctx.state(
+    name,
+    *,
+    unit,
+    bounds=(-float("inf"), float("inf")),
+)
+ctx.parameter(
+    name,
+    default,
+    *,
+    unit,
+    bounds=(-float("inf"), float("inf")),
+)
+```
+
+Declare and return real SymPy symbols. State/parameter names must be unique.
+Parameter defaults accept the declared quantity unit.
+
+```python
+ctx.derivative(
+    state,
+    expression,
+)
+ctx.function(
+    name,
+    function,
+    *,
+    derivative,
+    definition=None,
+)
+```
+
+Assign exactly one derivative per declared state. `function` returns a symbolic
+scalar callable bound to a numerical implementation and its analytic first
+derivative. Optional `definition` is an inspectable JSON specification retained
+on export. Higher derivatives of opaque functions need additional symbolic definitions.
+
+```python
+ctx.display_definition(
+    name,
+    expression,
+    *,
+    latex,
+    description=None,
+    unit=None,
+)
+ctx.describe(
+    symbol,
+    *,
+    description,
+    **metadata,
+)
+ctx.build() -> mf.Model
+```
+
+`display_definition` returns a named symbol for an exact auxiliary expression;
+it does not change computational dynamics. `describe` attaches meaning and
+optional metadata such as `definition_latex` and component symbols to a declared
+state, parameter or definition. `build` requires every declared state to have a
+derivative and produces the model.
+
+A minimal closure for a network with populations but no projections:
+
+```python
+class LinearRate:
+    def build(self, ctx: closures.BuildContext) -> mf.Model:
+        for population in ctx.populations:
+            name = population["id"]
+            rate = ctx.state(
+                f"{name}.rate",
+                unit="Hz",
+                bounds=(0, float("inf")),
+            )
+            target = ctx.parameter(
+                f"{name}.target",
+                10,
+                unit="Hz",
+            )
+            tau = ctx.parameter(
+                f"{name}.tau",
+                5,
+                unit="ms",
+                bounds=(1e-12, float("inf")),
+            )
+            ctx.derivative(
+                rate,
+                (target - rate) / tau,
+            )
+        ctx.assumptions.append("Independent linear rate relaxation; no coupling")
+        return ctx.build()
+```
+
+Pass `closure=LinearRate()` and an empty `MeanIncomingWeights` with nonempty
+provenance to `reduce`. A coupled closure must additionally traverse and account
+for the supplied projections and inputs.

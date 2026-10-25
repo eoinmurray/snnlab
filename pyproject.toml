@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Eoin Murray" }]
-dependencies = ["numpy>=2.2.6", "scipy>=1.15.3", "torch>=2.10.0", "torchvision>=0.25.0", "matplotlib>=3.10.8", "scikit-learn>=1.7.2", "h5py>=3.16.0"]
+dependencies = ["numpy>=2.2.6", "scipy>=1.15.3", "sympy>=1.14.0", "torch>=2.10.0", "torchvision>=0.25.0", "matplotlib>=3.10.8", "scikit-learn>=1.7.2", "h5py>=3.16.0"]
 
 [project.urls]
 Repository = "https://github.com/eoinmurray/snnlab"
@@ -25,7 +25,7 @@ packages = ["src/snnlab"]
 path = "src/snnlab/__init__.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["/examples/snnlang", "/benchmarks", "/examples/native-training", "/examples/current-lif", "/examples/animated-neuron", "/examples/neurons", "/examples/hodgkin-huxley", "/examples/graded-synapses", "/examples/quickstart", "/examples/training", "/examples/inference", "/examples/pytorch", "/examples/customisation", "/src", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE", "/pyproject.toml", "/uv.lock"]
+include = ["/examples/meanfield", "/examples/diagrams", "/examples/snnlang", "/benchmarks", "/examples/native-training", "/examples/current-lif", "/examples/animated-neuron", "/examples/neurons", "/examples/hodgkin-huxley", "/examples/graded-synapses", "/examples/quickstart", "/examples/training", "/examples/inference", "/examples/pytorch", "/examples/customisation", "/src", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE", "/pyproject.toml", "/uv.lock"]
 exclude = ["/examples/native-training/results/*.npz", "/examples/native-training/results/*.checkpoint", "/examples/native-training/results/network.bundle", "/examples/native-training/results/results.json", "/examples/customisation/results/network.bundle", "/examples/pytorch/results/trained.pt", "/examples/pytorch/results/metrics.json", "/examples/inference/results/predictions.json", "/examples/training/results/network.bundle", "/examples/training/results/trained.checkpoint", "/examples/training/results/metrics.json", "/docs/node_modules", "/docs/.next", "/docs/.source", "/docs/.astro", "/docs/out", "/docs/.wrangler", "/docs/.env*", "/docs/next-env.d.ts", "**/__pycache__", "**/*.pyc", "**/*.tsbuildinfo", "**/.DS_Store"]
 
 [dependency-groups]

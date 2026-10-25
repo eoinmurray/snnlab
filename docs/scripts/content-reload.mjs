@@ -11,20 +11,21 @@ const examples = new Map([
   ['pytorch', 'pytorch'], ['inference', 'inference'],
   ['current-lif', 'current-lif'], ['customisation', 'customisation'],
   ['hodgkin-huxley', 'hodgkin-huxley'],
+  ['meanfield', 'meanfield'],
 ]);
 
 export function syncScriptFor(file) {
   const absolute = path.resolve(file);
   if (absolute === path.join(repoDir, 'CHANGELOG.md')) return 'sync-changelog.ts';
   const relative = path.relative(docsDir, absolute).split(path.sep).join('/');
-  const template = /^scripts\/(quickstart|training|pytorch-integration|inference|current-lif|customisation|snnlang|hodgkin-huxley)\.mdx$/.exec(relative);
-  if (template) return `sync-${template[1] === 'pytorch-integration' ? 'pytorch' : template[1]}.ts`;
   const generator = /^scripts\/(sync-[\w-]+\.ts)$/.exec(relative);
   if (generator && ['sync-changelog.ts', ...[...examples.values()].map(name => `sync-${name}.ts`)].includes(generator[1])) {
     return generator[1];
   }
   const example = path.relative(path.join(repoDir, 'examples'), absolute).split(path.sep).join('/');
-  const asset = /^([^/]+)\/(?:results\/)?[^/]+\.(py|png|json)$/.exec(example);
+  const template = /^([^/]+)\/example\.mdx$/.exec(example);
+  if (template && examples.has(template[1])) return `sync-${examples.get(template[1])}.ts`;
+  const asset = /^([^/]+)\/(?:results\/)?[^/]+\.(py|png|json|tex)$/.exec(example);
   if (asset && examples.has(asset[1])) return `sync-${examples.get(asset[1])}.ts`;
 }
 

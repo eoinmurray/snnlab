@@ -1,13 +1,13 @@
 """Author, simulate and visualise spiking neural networks.
 
-Subpackages are imported on demand: from snnlab import lang, sim, viz, analysis, extensions.
+Subpackages are imported on demand: lang, sim, viz, analysis, meanfield, extensions.
 """
 
 from importlib import import_module
 
-__version__ = "0.26.0"
+__version__ = "0.27.0"
 
-_SUBPACKAGES = ("lang", "sim", "viz", "analysis", "extensions")
+_SUBPACKAGES = ("lang", "sim", "viz", "analysis", "meanfield", "extensions")
 __all__ = [*_SUBPACKAGES, "__version__"]
 
 

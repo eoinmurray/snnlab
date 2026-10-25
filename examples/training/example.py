@@ -40,7 +40,10 @@ def prepare_results():
     OUTPUT_DIR.mkdir(parents=True)
 
 
-def make_dataset(samples, seed):
+def make_dataset(
+    samples,
+    seed,
+):
     rng = np.random.default_rng(seed)
     labels = np.arange(samples) % 2
     rng.shuffle(labels)
@@ -50,37 +53,68 @@ def make_dataset(samples, seed):
             [LOW_RATE_HZ, LOW_RATE_HZ, HIGH_RATE_HZ, HIGH_RATE_HZ],
         ]
     )
-    rates = patterns[labels] * rng.uniform(0.85, 1.15, size=(samples, 4))
+    rates = patterns[labels] * rng.uniform(
+        0.85,
+        1.15,
+        size=(samples, 4),
+    )
     probability = rates * DT_MS / 1000
     steps = round(DURATION_MS / DT_MS)
     spikes = rng.random((steps, samples, 4)) < probability
-    return torch.tensor(spikes, dtype=torch.float32), torch.tensor(
-        labels, dtype=torch.long
+    return torch.tensor(
+        spikes,
+        dtype=torch.float32,
+    ), torch.tensor(
+        labels,
+        dtype=torch.long,
     )
 
 
 def main():
     prepare_results()
 
-    net = lang.Network("spike_pattern_classifier", dt=DT_MS * lang.ms)
+    net = lang.Network(
+        "spike_pattern_classifier",
+        dt=DT_MS * lang.ms,
+    )
 
     inputs = net.input(
-        "inputs", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
+        "inputs",
+        shape=("time", "batch", 4),
+        signal_type="spikes",
+        unit="spike",
     )
-    train_spikes, train_labels = make_dataset(TRAIN_SAMPLES, seed=SEED + 1)
+    train_spikes, train_labels = make_dataset(
+        TRAIN_SAMPLES,
+        seed=SEED + 1,
+    )
     validation_spikes, validation_labels = make_dataset(
-        VALIDATION_SAMPLES, seed=SEED + 2
+        VALIDATION_SAMPLES,
+        seed=SEED + 2,
     )
-    train_input = DenseArrayBinding(input_id="inputs", value=train_spikes)
-    validation_input = DenseArrayBinding(input_id="inputs", value=validation_spikes)
+    train_input = DenseArrayBinding(
+        input_id="inputs",
+        value=train_spikes,
+    )
+    validation_input = DenseArrayBinding(
+        input_id="inputs",
+        value=validation_spikes,
+    )
 
-    cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
+    cells = net.population(
+        "E",
+        size=16,
+        neuron=lang.COBA_LIF(tau_mem=20 * lang.ms),
+    )
     input_projection = net.connect(
         inputs,
         cells.excitatory,
         name="input_to_E",
         synapse=lang.AMPA(tau=2 * lang.ms),
-        weight=lang.Uniform(0.0, 0.8),
+        weight=lang.Uniform(
+            0.0,
+            0.8,
+        ),
         constraint=lang.NonNegative(),
     )
     w_in = input_projection.weight
@@ -88,12 +122,21 @@ def main():
     readout = net.population(
         "readout",
         size=2,
-        neuron=lang.LeakyIntegrator(tau=20 * lang.ms, initial_voltage=0.0),
+        neuron=lang.LeakyIntegrator(
+            tau=20 * lang.ms,
+            initial_voltage=0.0,
+        ),
         spiking=False,
     )
 
     w_out = net.parameter(
-        "w_out", shape=(2, 16), unit="uS", initializer=lang.Normal(0.0, 0.1)
+        "w_out",
+        shape=(2, 16),
+        unit="uS",
+        initializer=lang.Normal(
+            0.0,
+            0.1,
+        ),
     )
     net.connect(
         cells.spikes,
@@ -103,20 +146,42 @@ def main():
         weight=w_out,
     )
     scores = lang.reduce(
-        readout.voltage, operation="mean", over="time", name="mean_readout_voltage"
+        readout.voltage,
+        operation="mean",
+        over="time",
+        name="mean_readout_voltage",
     )
 
-    net.output("class_scores", scores)
-    net.expose(inputs, name="input_spikes")
-    net.expose(cells.spikes, name="e_spikes")
-    net.expose(readout.voltage, name="readout_voltage")
+    net.output(
+        "class_scores",
+        scores,
+    )
+    net.expose(
+        inputs,
+        name="input_spikes",
+    )
+    net.expose(
+        cells.spikes,
+        name="e_spikes",
+    )
+    net.expose(
+        readout.voltage,
+        name="readout_voltage",
+    )
 
-    objective = lang.CrossEntropy(prediction=scores, target="class")
+    objective = lang.CrossEntropy(
+        prediction=scores,
+        target="class",
+    )
     readout_parameters = lang.ParameterGroup(
-        (w_out,), name="readout", lr=READOUT_LEARNING_RATE
+        (w_out,),
+        name="readout",
+        lr=READOUT_LEARNING_RATE,
     )
     input_parameters = lang.ParameterGroup(
-        (w_in,), name="input_to_E", lr=INPUT_LEARNING_RATE
+        (w_in,),
+        name="input_to_E",
+        lr=INPUT_LEARNING_RATE,
     )
     recipe = lang.TrainSpec(
         objectives=(objective,),
@@ -127,8 +192,15 @@ def main():
         presentation_duration=DURATION_MS * lang.ms,
     )
 
-    bundle = lang.compile(net, training=recipe, target="tools/snnsim")
-    diagram = lang.diagram(bundle, view="expanded")
+    bundle = lang.compile(
+        net,
+        training=recipe,
+        target="tools/snnsim",
+    )
+    diagram = lang.diagram(
+        bundle,
+        view="expanded",
+    )
     viz.render_diagram(
         diagram,
         OUTPUT_DIR / "network.png",
@@ -148,7 +220,10 @@ def main():
         input_bindings=(train_input,),
         targets={"class": train_labels},
         validation=validation,
-        metrics=TrainingMetrics(train="evaluate", initial=("train", "validation")),
+        metrics=TrainingMetrics(
+            train="evaluate",
+            initial=("train", "validation"),
+        ),
         seed=SEED,
         device="cpu",
         diagnostics=False,
@@ -156,20 +231,50 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=True,
     )
-    save_training_checkpoint(checkpoint_path, result.training_checkpoint)
+    save_training_checkpoint(
+        checkpoint_path,
+        result.training_checkpoint,
+    )
     history = result.metrics["epochs"]
 
     metrics_path = OUTPUT_DIR / "metrics.json"
-    metrics_path.write_text(json.dumps(history, indent=2) + "\n")
+    metrics_path.write_text(
+        json.dumps(
+            history,
+            indent=2,
+        )
+        + "\n"
+    )
 
     grid = viz.FigureGrid(
-        rows=2, columns=1, bounds=(0.13, 0.1, 0.83, 0.82), row_gap=0.09
+        rows=2,
+        columns=1,
+        bounds=(0.13, 0.1, 0.83, 0.82),
+        row_gap=0.09,
     )
-    grid.place("loss", row=0, column=0)
-    grid.place("accuracy", row=1, column=0)
-    figure = grid.figure(figsize=(8, 6.5), dpi=150)
-    loss_axis = grid.add_axes(figure, "loss")
-    accuracy_axis = grid.add_axes(figure, "accuracy", sharex=loss_axis)
+    grid.place(
+        "loss",
+        row=0,
+        column=0,
+    )
+    grid.place(
+        "accuracy",
+        row=1,
+        column=0,
+    )
+    figure = grid.figure(
+        figsize=(8, 6.5),
+        dpi=150,
+    )
+    loss_axis = grid.add_axes(
+        figure,
+        "loss",
+    )
+    accuracy_axis = grid.add_axes(
+        figure,
+        "accuracy",
+        sharex=loss_axis,
+    )
     epochs = [row["epoch"] for row in history]
     for split, color in (("train", "#1a1a1a"), ("validation", "#a74727")):
         loss_axis.plot(
@@ -184,20 +289,49 @@ def main():
             label=split.capitalize(),
             color=color,
         )
-    loss_axis.set_title("Classification loss", pad=10)
+    loss_axis.set_title(
+        "Classification loss",
+        pad=10,
+    )
     loss_axis.set_ylabel("Cross-entropy")
     loss_axis.tick_params(labelbottom=False)
     loss_axis.legend(frameon=False)
-    accuracy_axis.axhline(50, color="#888888", linestyle=":", label="Chance (50%)")
-    accuracy_axis.set_title("Classification accuracy", pad=10)
+    accuracy_axis.axhline(
+        50,
+        color="#888888",
+        linestyle=":",
+        label="Chance (50%)",
+    )
+    accuracy_axis.set_title(
+        "Classification accuracy",
+        pad=10,
+    )
     accuracy_axis.set_ylabel("Accuracy (%)")
     accuracy_axis.set_xlabel("Epoch")
-    accuracy_axis.set_ylim(0, 105)
-    accuracy_axis.set_xlim(0, EPOCHS)
-    accuracy_axis.set_xticks(range(0, EPOCHS + 1, 5))
-    accuracy_axis.legend(frameon=False, loc="lower right")
+    accuracy_axis.set_ylim(
+        0,
+        105,
+    )
+    accuracy_axis.set_xlim(
+        0,
+        EPOCHS,
+    )
+    accuracy_axis.set_xticks(
+        range(
+            0,
+            EPOCHS + 1,
+            5,
+        )
+    )
+    accuracy_axis.legend(
+        frameon=False,
+        loc="lower right",
+    )
     figure_path = OUTPUT_DIR / "training.png"
-    figure.savefig(figure_path, bbox_inches="tight")
+    figure.savefig(
+        figure_path,
+        bbox_inches="tight",
+    )
     plt.close(figure)
 
 

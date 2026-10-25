@@ -29,14 +29,23 @@ def prepare_results():
 
 
 def record_neuron():
-    net = lang.Network("animated_neuron", dt=DT_MS * lang.ms)
+    net = lang.Network(
+        "animated_neuron",
+        dt=DT_MS * lang.ms,
+    )
     inputs = net.input(
-        "pulses", shape=("time", "batch", 1), signal_type="spikes", unit="spike"
+        "pulses",
+        shape=("time", "batch", 1),
+        signal_type="spikes",
+        unit="spike",
     )
     cell = net.population(
         "neuron",
         size=1,
-        neuron=lang.CUBA_LIF(tau_mem=TAU_MS * lang.ms, capacitance_nf=CAPACITANCE_NF),
+        neuron=lang.CUBA_LIF(
+            tau_mem=TAU_MS * lang.ms,
+            capacitance_nf=CAPACITANCE_NF,
+        ),
     )
 
     projection = net.connect(
@@ -47,20 +56,42 @@ def record_neuron():
         weight=lang.Constant(CURRENT_NA),
         initialization_scaling="direct",
     )
-    net.output("spikes", cell.spikes)
-    net.expose(cell.voltage, name="voltage")
-    net.expose(projection.current, name="current")
+    net.output(
+        "spikes",
+        cell.spikes,
+    )
+    net.expose(
+        cell.voltage,
+        name="voltage",
+    )
+    net.expose(
+        projection.current,
+        name="current",
+    )
     bundle = lang.compile(net)
 
-    departures = np.arange(8.0, DURATION_MS - 6, 12.0)
+    departures = np.arange(
+        8.0,
+        DURATION_MS - 6,
+        12.0,
+    )
     arrivals = departures + 6
-    pulses = torch.zeros(round(DURATION_MS / DT_MS), 1, 1)
+    pulses = torch.zeros(
+        round(DURATION_MS / DT_MS),
+        1,
+        1,
+    )
     pulses[np.rint(arrivals / DT_MS).astype(int), 0, 0] = 1
     result = simulate(
         graph=bundle.graph,
         device="cpu",
         seed=17,
-        input_bindings=(DenseArrayBinding("pulses", pulses),),
+        input_bindings=(
+            DenseArrayBinding(
+                "pulses",
+                pulses,
+            ),
+        ),
     ).numpy(batch=0)
 
     time_ms = np.arange(pulses.shape[0] + 1) * DT_MS
@@ -90,6 +121,15 @@ if __name__ == "__main__":
     output = OUTPUT_DIR
     bundle, recording, _ = record_neuron()
     (output / "recording.json").write_text(
-        json.dumps(recording, separators=(",", ":"), allow_nan=False) + "\n"
+        json.dumps(
+            recording,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
     )
-    viz.render_diagram(lang.diagram(bundle), output / "network.png", scale=2)
+    viz.render_diagram(
+        lang.diagram(bundle),
+        output / "network.png",
+        scale=2,
+    )

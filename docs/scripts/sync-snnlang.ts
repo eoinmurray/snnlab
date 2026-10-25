@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 const example = new URL('../../examples/snnlang/', import.meta.url);
 const publicDir = new URL('../public/snnlang/', import.meta.url);
 mkdirSync(publicDir, { recursive: true });
-let page = readFileSync(new URL('snnlang.mdx', import.meta.url), 'utf8');
+let page = readFileSync(new URL('example.mdx', example), 'utf8');
 
 for (const name of ['feedforward', 'recurrent']) {
   const script = readFileSync(new URL('example.py', example), 'utf8');

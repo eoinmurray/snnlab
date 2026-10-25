@@ -13,7 +13,11 @@ This page documents the intended authoring interface. Returned signals and param
 ### Constructor
 
 ```python
-lang.Network(name: str, *, dt: Quantity = 0.1 * lang.ms)
+lang.Network(
+    name: str,
+    *,
+    dt: Quantity = 0.1 * lang.ms,
+)
 ```
 
 | Argument | Meaning |
@@ -43,7 +47,14 @@ Named elements share a network namespace: inputs, populations, explicitly named 
 ### input
 
 ```python
-net.input(name, *, shape, signal_type, unit="1", spatial_shape=None)
+net.input(
+    name,
+    *,
+    shape,
+    signal_type,
+    unit="1",
+    spatial_shape=None,
+)
 ```
 
 Declares an external signal and returns a `Signal` with ID `"<name>.value"` that can be connected to populations or used by operations. It does not generate or load input data.
@@ -58,7 +69,10 @@ Declares an external signal and returns a `Signal` with ID `"<name>.value"` that
 
 ```python
 inputs = net.input(
-    "inputs", shape=("time", "batch", 16), signal_type="spikes", unit="spike"
+    "inputs",
+    shape=("time", "batch", 16),
+    signal_type="spikes",
+    unit="spike",
 )
 ```
 
@@ -69,7 +83,14 @@ See [Execution input bindings](/api/sim#input_bindings) for supplying dense tens
 ### population
 
 ```python
-net.population(name, *, size=None, neuron, spiking=True, spatial_shape=None)
+net.population(
+    name,
+    *,
+    size=None,
+    neuron,
+    spiking=True,
+    spatial_shape=None,
+)
 ```
 
 | Argument | Type / default | Meaning |
@@ -85,7 +106,11 @@ Returns a `Population`. `cells.voltage` is a `Signal` with `(time, batch, size)`
 The `cells.excitatory`, `cells.inhibitory` and `cells.modulatory` properties return target port strings for `connect`. Population metadata includes `id`, `size`, `neuron`, `spiking` and `group`.
 
 ```python
-cells = net.population("E", size=16, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms))
+cells = net.population(
+    "E",
+    size=16,
+    neuron=lang.COBA_LIF(tau_mem=20 * lang.ms),
+)
 ```
 
 #### Neuron models
@@ -154,7 +179,15 @@ Same-population convolution currently requires explicit `allow_autapses=True`; s
 ### parameter
 
 ```python
-net.parameter(name, *, shape, initializer, unit="1", constraint=None, initialization_scaling=None)
+net.parameter(
+    name,
+    *,
+    shape,
+    initializer,
+    unit="1",
+    constraint=None,
+    initialization_scaling=None,
+)
 ```
 
 Declares a parameter and returns a `ParameterRef`. `shape` explicitly defines its axes, `initializer` specifies initial values, and `constraint` optionally constrains the parameter. See [weights](#weights) and [constraints](#constraints) for available constructors.
@@ -164,7 +197,12 @@ Dense projection parameters require unit `"uS"` for conductance synapses or `"nA
 ### constant
 
 ```python
-net.constant(name, value, *, unit="1")
+net.constant(
+    name,
+    value,
+    *,
+    unit="1",
+)
 ```
 
 Adds named constant data and its unit to `net.constants`, converting quantity/specification values to their serialized representation. Returns the name string. This is a metadata declaration; it does not create a connectable `Signal` or an execution input.
@@ -173,8 +211,15 @@ Adds named constant data and its unit to `net.constants`, converting quantity/sp
 
 ```python
 net.operation(
-    kind, sources, *, name, shape, unit,
-    signal_type="continuous", parameters=(), **config
+    kind,
+    sources,
+    *,
+    name,
+    shape,
+    unit,
+    signal_type="continuous",
+    parameters=(),
+    **config,
 )
 ```
 
@@ -185,13 +230,19 @@ This is the lower-level operation declaration API. Prefer the public helpers suc
 ### output
 
 ```python
-net.output(name, signal)
+net.output(
+    name,
+    signal,
+)
 ```
 
 Names an official network result and returns the supplied signal-like object. Multiple outputs are allowed; each output name must be unique. The signal must resolve in the compiled graph.
 
 ```python
-net.output("spikes", cells.spikes)
+net.output(
+    "spikes",
+    cells.spikes,
+)
 ```
 
 The result appears in `result.outputs["spikes"]`. Declared outputs always return, independently of the diagnostic setting. Outputs retain their computation graph for training and can supply training objective predictions.
@@ -199,15 +250,27 @@ The result appears in `result.outputs["spikes"]`. Declared outputs always return
 ### expose
 
 ```python
-net.expose(*signals, name=None)
+net.expose(
+    *signals,
+    name=None,
+)
 ```
 
 Declares diagnostic signals and returns `None`. Inputs, population spikes/voltages, operation signals and projection conductance can be exposed.
 
 ```python
-net.expose(inputs, name="input_spikes")
-net.expose(cells.voltage, name="e_voltage")
-net.expose(projection.conductance, name="input_conductance")
+net.expose(
+    inputs,
+    name="input_spikes",
+)
+net.expose(
+    cells.voltage,
+    name="e_voltage",
+)
+net.expose(
+    projection.conductance,
+    name="input_conductance",
+)
 ```
 
 With one signal and an explicit name, that name becomes the diagnostic key. With multiple signals and a name, keys are `"<name>_0"`, `"<name>_1"`, and so on. Without a name, each key is `"<signal-owner>_<signal-port>"`, for example `"E_voltage"`. These names must be unique in the network.
@@ -217,7 +280,12 @@ Exposed signals return by default as detached tensors in `result.diagnostics`. S
 ### asset
 
 ```python
-net.asset(name, *, media_type, description="")
+net.asset(
+    name,
+    *,
+    media_type,
+    description="",
+)
 ```
 
 Declares an asset's name, media type and optional description, and returns its name string. It records metadata; it does not read, download or embed an asset file.
@@ -225,7 +293,10 @@ Declares an asset's name, media type and optional description, and returns its n
 ### group
 
 ```python
-with net.group(name, parent=None) as component:
+with net.group(
+    name,
+    parent=None,
+) as component:
     # Declare elements belonging to this group.
     ...
 ```
@@ -240,7 +311,10 @@ Network methods return `Signal` objects for inputs and operation outputs, and po
 
 ```python
 class Signal:
-    network: "Network" = field(compare=False, repr=False)
+    network: "Network" = field(
+        compare=False,
+        repr=False,
+    )
     id: str
     shape: Shape
     unit: str
@@ -289,7 +363,10 @@ scores = lang.MeanVoltage(
     source=cells.spikes,
     classes=10,
     name="scores",
-    weight=lang.LowerClampedNormal(0.05, 0.04),
+    weight=lang.LowerClampedNormal(
+        0.05,
+        0.04,
+    ),
     initialization_scaling="direct",
 )
 ```
@@ -309,7 +386,10 @@ weights = net.parameter(
     "input_weights",
     shape=(16, 4),
     unit="uS",
-    initializer=lang.Uniform(0.1, 0.5),
+    initializer=lang.Uniform(
+        0.1,
+        0.5,
+    ),
     constraint=lang.NonNegative(),
 )
 projection = net.connect(
@@ -339,7 +419,10 @@ For custom distributions and restrictions, see [efficient custom initializers an
 #### Normal
 
 ```python
-def Normal(mean: float, std: float) -> Spec: ...
+def Normal(
+    mean: float,
+    std: float,
+) -> Spec: ...
 ```
 
 #### LowerClampedNormal
@@ -357,13 +440,19 @@ def LowerClampedNormal(
 #### SignedNormal
 
 ```python
-def SignedNormal(mean: float, std: float) -> Spec: ...
+def SignedNormal(
+    mean: float,
+    std: float,
+) -> Spec: ...
 ```
 
 #### Uniform
 
 ```python
-def Uniform(low: float, high: float) -> Spec: ...
+def Uniform(
+    low: float,
+    high: float,
+) -> Spec: ...
 ```
 
 #### Zeros
@@ -401,14 +490,23 @@ class Quantity:
 
 
 class ParameterRef:
-    network: "Network" = field(compare=False, repr=False)
+    network: "Network" = field(
+        compare=False,
+        repr=False,
+    )
     id: str
 
 
-def CustomInitializer(definition: str, **config: Any) -> Spec: ...
+def CustomInitializer(
+    definition: str,
+    **config: Any,
+) -> Spec: ...
 
 
-def CustomConstraint(definition: str, **config: Any) -> Spec: ...
+def CustomConstraint(
+    definition: str,
+    **config: Any,
+) -> Spec: ...
 ```
 
 `Quantity` is a frozen value/unit record. `Quantity.json()` returns `{"value": value, "unit": unit}`. Multiplication by exported unit helpers constructs one; it does not convert between nS and uS. `ParameterRef` identifies an existing authoring parameter and retains its network association. Prefer `Network.parameter` or `projection.weight` over constructing references manually.
@@ -424,8 +522,13 @@ def CustomConstraint(definition: str, **config: Any) -> Spec: ...
 
 ```python
 def pool2d(
-    source: Signal, *, kernel_size, name: str,
-    stride=None, padding=0, mode="avg",
+    source: Signal,
+    *,
+    kernel_size,
+    name: str,
+    stride=None,
+    padding=0,
+    mode="avg",
 ) -> Signal: ...
 ```
 
@@ -441,7 +544,11 @@ Both modes support gradients, output/recording history and streaming time reduct
 
 ```python
 def linear(
-    source: Signal, *, size: int, name: str, trainable: bool = True
+    source: Signal,
+    *,
+    size: int,
+    name: str,
+    trainable: bool = True,
 ) -> Signal: ...
 ```
 
@@ -462,7 +569,13 @@ def reduce(
 #### divide
 
 ```python
-def divide(source: Signal, denominator: Signal, *, name: str, unit: str) -> Signal: ...
+def divide(
+    source: Signal,
+    denominator: Signal,
+    *,
+    name: str,
+    unit: str,
+) -> Signal: ...
 ```
 
 | Helper | Behaviour |
@@ -519,7 +632,10 @@ def MeanVoltage(
     classes: int,
     name: str,
     tau=2 * ms,
-    weight: Spec = Normal(1.0, 0.1),
+    weight: Spec = Normal(
+        1.0,
+        0.1,
+    ),
     initialization_scaling: str | None = None,
 ) -> Readout: ...
 ```
@@ -527,13 +643,23 @@ def MeanVoltage(
 #### FinalVoltage
 
 ```python
-def FinalVoltage(*, source: Signal, classes: int, name: str) -> Readout: ...
+def FinalVoltage(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+) -> Readout: ...
 ```
 
 #### SpikeCount
 
 ```python
-def SpikeCount(*, source: Signal, classes: int, name: str) -> Readout: ...
+def SpikeCount(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+) -> Readout: ...
 ```
 
 #### SpikeRate
@@ -553,7 +679,12 @@ def SpikeRate(
 #### CumulativePotential
 
 ```python
-def CumulativePotential(*, source: Signal, classes: int, name: str) -> Readout: ...
+def CumulativePotential(
+    *,
+    source: Signal,
+    classes: int,
+    name: str,
+) -> Readout: ...
 ```
 
 | Helper | Expanded graph |
@@ -584,17 +715,30 @@ All arguments except `ConstantGain.value` are keyword-only. Time and frequency a
 
 ```python
 projection = net.connect(
-    inputs, cells.excitatory, name="oscillating_input",
+    inputs,
+    cells.excitatory,
+    name="oscillating_input",
     synapse=lang.ExponentialCurrent(tau=5 * lang.ms),
     weight=lang.Constant(1.0),
-    modulation=lang.SineGain(frequency=40 * lang.Hz, depth=0.5),
+    modulation=lang.SineGain(
+        frequency=40 * lang.Hz,
+        depth=0.5,
+    ),
 )
 
 # Alternative schedules for modulation=:
-step = lang.StepGain(at=100 * lang.ms, before=1, after=0)
-ramp = lang.RampGain(start=50 * lang.ms, end=150 * lang.ms)
+step = lang.StepGain(
+    at=100 * lang.ms,
+    before=1,
+    after=0,
+)
+ramp = lang.RampGain(
+    start=50 * lang.ms,
+    end=150 * lang.ms,
+)
 blocks = lang.PiecewiseGain(
-    times=[100 * lang.ms, 200 * lang.ms], values=[1, 0, 2],
+    times=[100 * lang.ms, 200 * lang.ms],
+    values=[1, 0, 2],
 )
 ```
 
@@ -621,7 +765,11 @@ where $b$ is `offset`, $a$ is `depth`, $f$ is `frequency` in Hz, $t$ is time in 
 ### CustomGain
 
 ```python
-lang.CustomGain(function, *, config=None)
+lang.CustomGain(
+    function,
+    *,
+    config=None,
+)
 ```
 
 `function` is an importable callable or a `"module:function"` reference. Put the implementation in an importable module, for example `timing_functions.py`:
@@ -629,7 +777,11 @@ lang.CustomGain(function, *, config=None)
 ```python
 import math
 
-def gated_sine(t_ms, config):
+
+def gated_sine(
+    t_ms,
+    config,
+):
     if t_ms < config["start_ms"]:
         return 0.0
     elapsed_s = (t_ms - config["start_ms"]) / 1000
@@ -643,7 +795,11 @@ Then attach it:
 ```python
 gain = lang.CustomGain(
     "timing_functions:gated_sine",
-    config={"start_ms": 100, "frequency_hz": 40, "depth": 0.5},
+    config={
+        "start_ms": 100,
+        "frequency_hz": 40,
+        "depth": 0.5,
+    },
 )
 # Pass gain as modulation= when connecting the projection.
 ```
@@ -696,7 +852,10 @@ class TrainSpec:
 
 ```python
 def CrossEntropy(
-    *, prediction: SignalLike | str, target: str, weight: float = 1.0
+    *,
+    prediction: SignalLike | str,
+    target: str,
+    weight: float = 1.0,
 ) -> Objective: ...
 ```
 
@@ -782,7 +941,10 @@ This is a configuration of the existing fast-sigmoid derivative. Choose the thre
 
 ```python
 def SpikeBudgetPenalty(
-    *, signals: Sequence[Signal | str], ceiling_hz: float, strength: float
+    *,
+    signals: Sequence[Signal | str],
+    ceiling_hz: float,
+    strength: float,
 ) -> Regularizer: ...
 ```
 
@@ -790,7 +952,10 @@ def SpikeBudgetPenalty(
 
 ```python
 def UpperRatePenalty(
-    *, signal: Signal, threshold: float, strength: float
+    *,
+    signal: Signal,
+    threshold: float,
+    strength: float,
 ) -> Regularizer: ...
 ```
 
@@ -862,7 +1027,11 @@ class Bundle:
 `graph` and `training` are serialized data mappings; optional recipes are `None` when absent. `manifest` describes integrity and capabilities. `diagnostics` contains compiler reports. `asset_sources` tracks physical files for writing.
 
 ```python
-bundle = lang.compile(net, training=recipe, target="tools/snnsim")
+bundle = lang.compile(
+    net,
+    training=recipe,
+    target="tools/snnsim",
+)
 path = bundle.write("network.bundle")
 loaded = lang.load_bundle(path)
 ```
@@ -874,7 +1043,12 @@ Saving a custom callback that cannot be resolved through an importable module ra
 #### Bundle.visualise
 
 ```python
-bundle.visualise(path, *, view="circuit", scale=1)
+bundle.visualise(
+    path,
+    *,
+    view="circuit",
+    scale=1,
+)
 ```
 
 Renders one selected view to the given path and returns its `Path`. The suffix selects the output format. All groups show their contents. This combines `lang.diagram` with `viz.render_diagram` without changing the bundle.
@@ -895,11 +1069,23 @@ A bundle stores architecture, initializers and recipes. A training checkpoint st
 
 ```python
 def diagram(
-    bundle: Bundle, *, view: str = "circuit"
+    bundle: Bundle,
+    *,
+    view: str = "circuit",
+    weight_labels: bool | Mapping[str, viz.WeightLabel] = False,
 ) -> Diagram: ...
 ```
 
 `lang.diagram` returns a renderer-neutral `viz.Diagram`. `view` accepts `"circuit"`, `"training"` or `"expanded"`. Every view shows all populations, operations and projections explicitly; groups are labelled boundaries, never collapsed boxes. The training view additionally shows parameter groups and objectives. `"expanded"` remains an alias for the explicit circuit view. The former `expand_groups` argument has been removed. Unsupported views raise `ValueError`. All static views reject graphs with more than 120 projections plus operations. See [diagram rendering](/api/viz#advanced-custom-diagrams).
+
+Set `weight_labels=True` to add a bold italic W with a source→target subscript
+under each weighted projection's synapse label. This is display notation and does
+not specify the matrix's storage orientation. Alternatively, supply a mapping
+from projection IDs to `viz.WeightLabel(symbol="J", subscript="E→I", superscript="rec")`
+to label only selected projections. Unknown or unweighted projection IDs raise
+`ValueError`. All fields are literal text, not LaTeX or HTML. Labels are disabled
+by default. The runnable `examples/diagrams/example.py` gallery includes both
+default and custom matrix labels alongside unlabelled views.
 
 ## Physical time
 

@@ -3,23 +3,41 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import replace
 
 from snnlab import extensions as E
 from snnlab.lang.compilation.bundles import Bundle
-from snnlab.viz import Diagram, DiagramEdge, DiagramGroup, DiagramNode
+from snnlab.viz import Diagram, DiagramEdge, DiagramGroup, DiagramNode, WeightLabel
 
 
 def diagram(
     bundle: Bundle,
     *,
     view: str = "circuit",
+    weight_labels: bool | Mapping[str, WeightLabel] = False,
 ) -> Diagram:
     """Project a bundle into a diagram without choosing a rendering backend."""
 
     if view not in {"circuit", "training", "expanded"}:
         raise ValueError("view must be circuit, training, or expanded")
     graph = bundle.graph
+    if not isinstance(weight_labels, (bool, Mapping)):
+        raise TypeError(
+            "weight_labels must be a bool or a mapping of projection IDs to WeightLabel"
+        )
+    weighted = {
+        projection["id"]
+        for projection in graph["projections"]
+        if any(parameter.endswith(".weight") for parameter in projection["parameters"])
+    }
+    if isinstance(weight_labels, Mapping):
+        if unknown := weight_labels.keys() - weighted:
+            raise ValueError(
+                f"weight labels require weighted projection IDs: {sorted(unknown)}"
+            )
+        if any(not isinstance(label, WeightLabel) for label in weight_labels.values()):
+            raise TypeError("weight label overrides must be WeightLabel instances")
     if len(graph["projections"]) + len(graph["operations"]) > 120:
         raise ValueError(
             "graph is too dense for a legible explicit static view; filter it"
@@ -240,6 +258,13 @@ def diagram(
                         projection["synapse"]["kind"],
                         projection["synapse"]["kind"].replace("_", " "),
                     )
+                ),
+                weight_label=(
+                    WeightLabel(subscript=f"{source}→{target}")
+                    if weight_labels is True and projection["id"] in weighted
+                    else weight_labels.get(projection["id"])
+                    if isinstance(weight_labels, Mapping)
+                    else None
                 ),
                 connection=connection,
                 id=projection["id"],

@@ -23,12 +23,22 @@ Figures use Matplotlib; diagrams require Graphviz when rendering through `dot`.
 
 ```python
 raster_artists = viz.plot_raster(
-    axis, recording, signal="E.spikes", batch=0,
-    offset=100, color="tab:blue", label="E",
+    axis,
+    recording,
+    signal="E.spikes",
+    batch=0,
+    offset=100,
+    color="tab:blue",
+    label="E",
 )
 curve_artists = viz.plot_learning_curves(
-    {"loss": loss_axis, "accuracy": accuracy_axis}, history,
-    metrics=("loss", "accuracy"), splits=("train", "validation"),
+    {
+        "loss": loss_axis,
+        "accuracy": accuracy_axis,
+    },
+    history,
+    metrics=("loss", "accuracy"),
+    splits=("train", "validation"),
     include_test=True,
 )
 ```
@@ -78,7 +88,10 @@ class FigureGrid:
     rows: int | Sequence[float]
     columns: int | Sequence[float]
     bounds: FigureRect | tuple[float, float, float, float] = FigureRect(
-        0.06, 0.06, 0.88, 0.88
+        0.06,
+        0.06,
+        0.88,
+        0.88,
     )
     row_gap: float | Sequence[float] = 0.03
     column_gap: float | Sequence[float] = 0.03
@@ -101,14 +114,40 @@ Rows run from top to bottom and columns from left to right. Integers create equa
 | `draw_region` | `draw_region(figure, name, *, role="ink", fill=None, linewidth=1.4, dashed=False, zorder=-10)` → rectangle artist. |
 
 ```python
-layout = viz.FigureGrid(rows=3, columns=1)
-layout.place("inputs", row=0, column=0)
-layout.place("spikes", row=1, column=0)
-layout.place("voltage", row=2, column=0)
+layout = viz.FigureGrid(
+    rows=3,
+    columns=1,
+)
+layout.place(
+    "inputs",
+    row=0,
+    column=0,
+)
+layout.place(
+    "spikes",
+    row=1,
+    column=0,
+)
+layout.place(
+    "voltage",
+    row=2,
+    column=0,
+)
 figure = layout.figure(figsize=(10, 8))
-input_axis = layout.add_axes(figure, "inputs")
-spike_axis = layout.add_axes(figure, "spikes", sharex=input_axis)
-voltage_axis = layout.add_axes(figure, "voltage", sharex=input_axis)
+input_axis = layout.add_axes(
+    figure,
+    "inputs",
+)
+spike_axis = layout.add_axes(
+    figure,
+    "spikes",
+    sharex=input_axis,
+)
+voltage_axis = layout.add_axes(
+    figure,
+    "voltage",
+    sharex=input_axis,
+)
 ```
 
 #### FigureRect and FigureRegion
@@ -158,7 +197,10 @@ A `Panel` implements `draw(ax, recording)` and `update(frame)`. It is a protocol
 
 ```python
 def exponential_trace(
-    events: np.ndarray, *, dt_ms: float, tau_ms: float
+    events: np.ndarray,
+    *,
+    dt_ms: float,
+    tau_ms: float,
 ) -> np.ndarray: ...
 ```
 
@@ -166,7 +208,10 @@ def exponential_trace(
 
 ```python
 def projection_activity(
-    weights: np.ndarray, source_trace: np.ndarray, *, scale: np.ndarray | float = 1.0
+    weights: np.ndarray,
+    source_trace: np.ndarray,
+    *,
+    scale: np.ndarray | float = 1.0,
 ) -> np.ndarray: ...
 ```
 
@@ -174,7 +219,8 @@ def projection_activity(
 
 ```python
 def representative_frame(
-    *signals: np.ndarray, candidates: np.ndarray | None = None
+    *signals: np.ndarray,
+    candidates: np.ndarray | None = None,
 ) -> int: ...
 ```
 ```python
@@ -240,27 +286,49 @@ Methods are shown on their owning classes; `self` and `cls` are supplied automat
 
 ```python
 class Recording:
-    def require(self, *names: str) -> tuple[np.ndarray, ...]: ...
+    def require(
+        self,
+        *names: str,
+    ) -> tuple[np.ndarray, ...]: ...
 ```
 
 ```python
 class FigureRect:
     def inset(
-        self, padding: float | tuple[float, float, float, float]
+        self,
+        padding: float | tuple[float, float, float, float],
     ) -> "FigureRect": ...
 ```
 
 ```python
 class FigureGrid:
     def place(
-        self, name: str, *, row: int, column: int, rowspan: int = 1, colspan: int = 1
+        self,
+        name: str,
+        *,
+        row: int,
+        column: int,
+        rowspan: int = 1,
+        colspan: int = 1,
     ) -> FigureRegion: ...
     def reserve(
-        self, name: str, *, row: int, column: int, rowspan: int = 1, colspan: int = 1
+        self,
+        name: str,
+        *,
+        row: int,
+        column: int,
+        rowspan: int = 1,
+        colspan: int = 1,
     ) -> FigureRegion: ...
-    def region(self, name: str) -> FigureRegion: ...
+    def region(
+        self,
+        name: str,
+    ) -> FigureRegion: ...
     def rect(
-        self, name: str, *, padding: float | tuple[float, float, float, float] = 0.0
+        self,
+        name: str,
+        *,
+        padding: float | tuple[float, float, float, float] = 0.0,
     ) -> FigureRect: ...
     def subgrid(
         self,
@@ -272,7 +340,12 @@ class FigureGrid:
         row_gap: float | Sequence[float] = 0.02,
         column_gap: float | Sequence[float] = 0.02,
     ) -> "FigureGrid": ...
-    def figure(self, *, figsize: tuple[float, float], dpi: int = 120) -> Any: ...
+    def figure(
+        self,
+        *,
+        figsize: tuple[float, float],
+        dpi: int = 120,
+    ) -> Any: ...
     def add_axes(
         self,
         figure: Any,
@@ -282,7 +355,12 @@ class FigureGrid:
         frame: bool = True,
         **kwargs: Any,
     ) -> Any: ...
-    def style_axis(self, axis: Any, *, frame: bool = True) -> None: ...
+    def style_axis(
+        self,
+        axis: Any,
+        *,
+        frame: bool = True,
+    ) -> None: ...
     def draw_region(
         self,
         figure: Any,
@@ -298,33 +376,65 @@ class FigureGrid:
 
 ```python
 class Panel:
-    def draw(self, ax: Any, recording: Recording) -> Any: ...
-    def update(self, frame: int) -> object: ...
+    def draw(
+        self,
+        ax: Any,
+        recording: Recording,
+    ) -> Any: ...
+    def update(
+        self,
+        frame: int,
+    ) -> object: ...
 ```
 
 ```python
 class Scene:
     def add(
-        self, panel: Panel, *, axis: Any = None, region: str | None = None
+        self,
+        panel: Panel,
+        *,
+        axis: Any = None,
+        region: str | None = None,
     ) -> Any: ...
-    def on_frame(self, callback: Callable[[int, "Scene"], object]) -> None: ...
-    def update(self, frame: int) -> tuple[object, ...]: ...
+    def on_frame(
+        self,
+        callback: Callable[[int, "Scene"], object],
+    ) -> None: ...
+    def update(
+        self,
+        frame: int,
+    ) -> tuple[object, ...]: ...
 ```
 
 ```python
 class FrameTimeline:
     @classmethod
-    def sample(cls, steps: int, *, frames: int, dt_ms: float) -> "FrameTimeline": ...
+    def sample(
+        cls,
+        steps: int,
+        *,
+        frames: int,
+        dt_ms: float,
+    ) -> "FrameTimeline": ...
     @classmethod
     def compose(
-        cls, segments: list[tuple[int, int, int]], *, dt_ms: float
+        cls,
+        segments: list[tuple[int, int, int]],
+        *,
+        dt_ms: float,
     ) -> "FrameTimeline": ...
-    def time_ms(self, frame: int) -> float: ...
+    def time_ms(
+        self,
+        frame: int,
+    ) -> float: ...
 ```
 
 ```python
 class Theme:
-    def colour(self, role: str) -> str: ...
+    def colour(
+        self,
+        role: str,
+    ) -> str: ...
     def apply(self) -> None: ...
 ```
 
@@ -378,7 +488,23 @@ class DiagramEdge:
     constraint: bool = True
     pen_width: float = 1.1
     frozen: bool = False
+    weight_label: WeightLabel | None = None
 ```
+
+#### WeightLabel
+
+```python
+class WeightLabel:
+    symbol: str = "W"
+    subscript: str = ""
+    superscript: str = ""
+```
+
+A weight matrix name rendered beneath the edge's ordinary label. The symbol is
+bold italic; subscripts and superscripts use mathematical placement. Fields are
+literal text and are escaped by the renderer. SVG, PNG and PDF use the same
+Graphviz layout without requiring a TeX installation. `lang.diagram` can generate
+these labels automatically or accept a mapping for selected projections.
 
 #### DiagramGroup
 

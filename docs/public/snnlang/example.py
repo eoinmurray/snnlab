@@ -15,15 +15,25 @@ def prepare_results():
 
 
 def feedforward():
-    net = lang.Network("feedforward", dt=0.1 * lang.ms)
+    net = lang.Network(
+        "feedforward",
+        dt=0.1 * lang.ms,
+    )
     inputs = net.input(
-        "inputs", shape=("time", "batch", 16), signal_type="spikes", unit="spike"
+        "inputs",
+        shape=("time", "batch", 16),
+        signal_type="spikes",
+        unit="spike",
     )
     hidden = net.population(
-        "hidden", size=32, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms)
+        "hidden",
+        size=32,
+        neuron=lang.COBA_LIF(tau_mem=20 * lang.ms),
     )
     output = net.population(
-        "output", size=8, neuron=lang.COBA_LIF(tau_mem=20 * lang.ms)
+        "output",
+        size=8,
+        neuron=lang.COBA_LIF(tau_mem=20 * lang.ms),
     )
 
     net.connect(
@@ -31,7 +41,10 @@ def feedforward():
         hidden.excitatory,
         name="input_to_hidden",
         synapse=lang.AMPA(tau=2 * lang.ms),
-        weight=lang.Uniform(0.1, 0.5),
+        weight=lang.Uniform(
+            0.1,
+            0.5,
+        ),
         constraint=lang.NonNegative(),
     )
     net.connect(
@@ -39,23 +52,38 @@ def feedforward():
         output.excitatory,
         name="hidden_to_output",
         synapse=lang.AMPA(tau=2 * lang.ms),
-        weight=lang.Uniform(0.1, 0.5),
+        weight=lang.Uniform(
+            0.1,
+            0.5,
+        ),
         constraint=lang.NonNegative(),
     )
-    net.output("spikes", output.spikes)
+    net.output(
+        "spikes",
+        output.spikes,
+    )
 
     bundle = lang.compile(net)
     viz.render_diagram(
-        lang.diagram(bundle, view="expanded"),
+        lang.diagram(
+            bundle,
+            view="expanded",
+        ),
         OUTPUT_DIR / "feedforward.png",
         scale=2,
     )
 
 
 def recurrent():
-    net = lang.Network("two_layer", dt=0.1 * lang.ms)
+    net = lang.Network(
+        "two_layer",
+        dt=0.1 * lang.ms,
+    )
     inputs = net.input(
-        "inputs", shape=("time", "batch", 32), signal_type="spikes", unit="spike"
+        "inputs",
+        shape=("time", "batch", 32),
+        signal_type="spikes",
+        unit="spike",
     )
 
     layers = []
@@ -76,7 +104,10 @@ def recurrent():
                 i.excitatory,
                 name=f"{name}_E_to_I",
                 synapse=lang.AMPA(tau=2 * lang.ms),
-                weight=lang.Uniform(0.1, 0.5),
+                weight=lang.Uniform(
+                    0.1,
+                    0.5,
+                ),
                 constraint=lang.NonNegative(),
                 connection="recurrent",
                 delay=0.1 * lang.ms,
@@ -86,7 +117,10 @@ def recurrent():
                 e.inhibitory,
                 name=f"{name}_I_to_E",
                 synapse=lang.GABA(tau=9 * lang.ms),
-                weight=lang.Uniform(0.5, 1.0),
+                weight=lang.Uniform(
+                    0.5,
+                    1.0,
+                ),
                 constraint=lang.NonNegative(),
                 connection="feedback",
                 delay=0.1 * lang.ms,
@@ -98,7 +132,10 @@ def recurrent():
         layers[0].excitatory,
         name="input_to_layer_1",
         synapse=lang.AMPA(tau=2 * lang.ms),
-        weight=lang.Uniform(0.1, 0.5),
+        weight=lang.Uniform(
+            0.1,
+            0.5,
+        ),
         constraint=lang.NonNegative(),
     )
     net.connect(
@@ -106,14 +143,23 @@ def recurrent():
         layers[1].excitatory,
         name="layer_1_to_layer_2",
         synapse=lang.AMPA(tau=2 * lang.ms),
-        weight=lang.Uniform(0.1, 0.5),
+        weight=lang.Uniform(
+            0.1,
+            0.5,
+        ),
         constraint=lang.NonNegative(),
     )
-    net.output("spikes", layers[1].spikes)
+    net.output(
+        "spikes",
+        layers[1].spikes,
+    )
 
     bundle = lang.compile(net)
     viz.render_diagram(
-        lang.diagram(bundle, view="expanded"),
+        lang.diagram(
+            bundle,
+            view="expanded",
+        ),
         OUTPUT_DIR / "recurrent.png",
         scale=2,
     )

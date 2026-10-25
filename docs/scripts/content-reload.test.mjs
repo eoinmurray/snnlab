@@ -7,7 +7,13 @@ const file = relative => fileURLToPath(new URL(relative, import.meta.url));
 
 test('maps authoring sources to generators without watching generated output as a source', () => {
   expect(syncScriptFor(file('../../CHANGELOG.md'))).toBe('sync-changelog.ts');
-  expect(syncScriptFor(file('./pytorch-integration.mdx'))).toBe('sync-pytorch.ts');
+  expect(syncScriptFor(file('../../examples/pytorch/example.mdx'))).toBe('sync-pytorch.ts');
+  expect(syncScriptFor(file('../../examples/meanfield/example.mdx'))).toBe('sync-meanfield.ts');
+  expect(syncScriptFor(file('../../examples/animated-neuron/example.mdx'))).toBe('sync-animated-neuron.ts');
+  expect(syncScriptFor(file('./quickstart.mdx'))).toBeUndefined();
+  expect(syncScriptFor(file('../../examples/meanfield/example.py'))).toBe('sync-meanfield.ts');
+  expect(syncScriptFor(file('../../examples/meanfield/results/network.png'))).toBe('sync-meanfield.ts');
+  expect(syncScriptFor(file('../../examples/meanfield/results/equations.tex'))).toBe('sync-meanfield.ts');
   expect(syncScriptFor(file('../../examples/quickstart/example.py'))).toBe('sync-quickstart.ts');
   expect(syncScriptFor(file('../../examples/training/results/network.png'))).toBe('sync-training.ts');
   expect(syncScriptFor(file('../../examples/native-training/example.py'))).toBe('sync-training.ts');
