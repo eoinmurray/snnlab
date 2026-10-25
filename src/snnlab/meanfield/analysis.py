@@ -1,6 +1,6 @@
 """Numerical operations compiled from the model's symbolic equations."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
 import numpy as np
@@ -56,6 +56,29 @@ class StabilityCrossing:
 class Trajectory:
     time_ms: np.ndarray
     state: object
+    metadata: object = field(default_factory=dict)
+
+    def write(self, path):
+        """Export trajectory and reproducible solver/history/control metadata."""
+        import json
+        from pathlib import Path
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": "snnlab.meanfield.trajectory/v1",
+                    "time_ms": self.time_ms.tolist(),
+                    "state": {n: v.tolist() for n, v in self.state.items()},
+                    "integration": dict(self.metadata),
+                },
+                indent=2,
+                allow_nan=False,
+            )
+            + "\n"
+        )
+        return path
 
 
 @dataclass(frozen=True)
@@ -83,8 +106,16 @@ class PiecewiseLinear:
     def __call__(self, time):
         return float(np.interp(time, self.times, self.values))
 
+    @property
+    def breakpoints(self):
+        return self.times
+
 
 def evaluate(model, state, *, parameters=None):
+    if model.delayed:
+        raise ValueError(
+            "delayed derivatives require a history; use integrate, or find_equilibrium for constant histories"
+        )
     vector = model.vector(state)
     result = np.asarray(
         model.numerical_rhs(*vector, *model.values(parameters)), dtype=float
@@ -95,6 +126,10 @@ def evaluate(model, state, *, parameters=None):
 
 
 def find_equilibrium(model, *, guess, parameters=None, tolerance=1e-9):
+    """Solve for a constant history with frozen parameters, ignoring schedules.
+
+    At an equilibrium x(t-d)=x(t); this establishes no DDE stability result.
+    """
     if tolerance <= 0:
         raise ValueError("tolerance must be positive")
     vector = model.vector(guess)
@@ -107,10 +142,13 @@ def find_equilibrium(model, *, guess, parameters=None, tolerance=1e-9):
     )
 
     def residual(state):
-        return np.asarray(model.numerical_rhs(*state, *values)) / scale
+        return np.asarray(model.numerical_stationary_rhs(*state, *values)) / scale
 
     def jac(state):
-        return np.asarray(model.numerical_jacobian(*state, *values)) / scale[:, None]
+        return (
+            np.asarray(model.numerical_stationary_jacobian(*state, *values))
+            / scale[:, None]
+        )
 
     solution = least_squares(
         residual,
@@ -136,6 +174,7 @@ def find_equilibrium(model, *, guess, parameters=None, tolerance=1e-9):
 
 
 def linearise(model, *, at, parameters=None):
+    model.require_ode_analysis()
     if isinstance(at, Equilibrium):
         if parameters is None:
             parameters = at.parameters
@@ -159,7 +198,13 @@ def integrate(
     rtol=1e-8,
     atol=1e-10,
     max_step=0.5,
+    history=None,
+    breakpoints=(),
 ):
+    from .controls import control_spec
+    from .history import validate_history
+    from .integration import solve_segments
+
     duration = magnitude(duration, "ms")
     interval = magnitude(sample_interval, "ms")
     step = magnitude(max_step, "ms")
@@ -167,7 +212,7 @@ def integrate(
         raise ValueError("duration, sample interval and maximum step must be positive")
     vector = model.vector(initial)
     baseline = dict(zip(model.parameters, model.values(parameters)))
-    controls = dict(controls or {})
+    controls = {**model.controls, **dict(controls or {})}
     if set(controls) - set(model.parameters):
         raise ValueError("controls reference an unknown parameter")
     # A moving proportionality factor would need an additional derivative term.
@@ -185,35 +230,111 @@ def integrate(
     indices = {name: i for i, name in enumerate(model.parameters)}
     baseline_values = tuple(baseline.values())
 
-    def rhs(time, state):
+    def controlled_value(name, time):
+        value = magnitude(controls[name](time), model.units[name])
+        lower, upper = model.parameter_bounds.get(name, (-np.inf, np.inf))
+        if not lower <= value <= upper:
+            raise ValueError(f"invalid controlled parameter: {name}")
+        return value
+
+    def parameter_values(time):
         values = list(baseline_values)
-        for name, control in controls.items():
-            value = magnitude(control(time), model.units[name])
-            lower, upper = model.parameter_bounds.get(name, (-np.inf, np.inf))
-            if not lower <= value <= upper:
-                raise ValueError(f"invalid controlled parameter: {name}")
-            values[indices[name]] = value
-        return model.numerical_rhs(*state, *values)
+        for name in controls:
+            values[indices[name]] = controlled_value(name, time)
+        return values
+
+    state_indices = {symbol: i for i, symbol in enumerate(model.states.values())}
+    parameter_indices = {
+        symbol: i for i, symbol in enumerate(model.parameters.values())
+    }
+    parameter_names = tuple(model.parameters)
+
+    def rhs(time, state, past=None):
+        delayed = []
+        for item in model.delayed.values():
+            source_time = time - item.delay_ms
+            if item.source in state_indices:
+                value = past(source_time)[state_indices[item.source]]
+            else:
+                index = parameter_indices[item.source]
+                name = parameter_names[index]
+                value = (
+                    controlled_value(name, source_time)
+                    if name in controls
+                    else baseline_values[index]
+                )
+            delayed.append(value)
+        return model.numerical_rhs(*state, *parameter_values(time), *delayed)
 
     times = np.arange(0, duration, interval)
     times = np.append(times, duration)
-    result = solve_ivp(
-        rhs,
-        (0, duration),
-        vector,
-        t_eval=times,
-        method=method,
-        rtol=rtol,
-        atol=atol,
-        max_step=step,
+    options = dict(method=method, rtol=rtol, atol=atol, max_step=step)
+    points = [magnitude(t, "ms") for t in breakpoints]
+    for control in controls.values():
+        points.extend(magnitude(t, "ms") for t in getattr(control, "breakpoints", ()))
+    history_at = None
+    history_spec = None
+    if model.delayed:
+        history_at = validate_history(model, history, vector)
+        history_spec = history.specification(model)
+        points.extend(history.breakpoints)
+    elif history is not None:
+        raise ValueError("history is only used by models with explicit nonzero delays")
+    segments = 1
+    if model.delayed or any(0 < point <= duration for point in points):
+        output, segments = solve_segments(
+            rhs,
+            vector,
+            duration=duration,
+            times=times,
+            delays=sorted({item.delay_ms for item in model.delayed.values()}),
+            points=points,
+            history=history_at,
+            options=options,
+        )
+    else:
+        result = solve_ivp(
+            rhs,
+            (0, duration),
+            vector,
+            t_eval=times,
+            **options,
+        )
+        if not result.success or not np.isfinite(result.y).all():
+            raise RuntimeError(f"integration failed: {result.message}")
+        output = result.y
+    metadata = {
+        "solver": "method_of_steps" if model.delayed else "solve_ivp",
+        "method": method,
+        "rtol": rtol,
+        "atol": np.asarray(atol).tolist(),
+        "max_step_ms": step,
+        "sample_interval_ms": interval,
+        "duration_ms": duration,
+        "interpolation": "solve_ivp method-specific dense output"
+        if segments > 1 or model.delayed
+        else "solve_ivp t_eval",
+        "segments": segments,
+        "breakpoints_ms": sorted(set(points)),
+        "history": history_spec,
+        "delays_ms": dict(model.projection_delays),
+        "delay_mode": model.delay_mode,
+        "delay_approximation": "omitted" if model.delay_mode == "omit" else "none",
+        "modulation_timing": "target_delivery",
+        "controls": {n: control_spec(c) for n, c in controls.items()},
+        "parameters": baseline,
+        "initial": dict(zip(model.states, vector)),
+    }
+    return Trajectory(
+        times,
+        MappingProxyType(dict(zip(model.states, output))),
+        MappingProxyType(metadata),
     )
-    if not result.success or not np.isfinite(result.y).all():
-        raise RuntimeError(f"integration failed: {result.message}")
-    return Trajectory(result.t, MappingProxyType(dict(zip(model.states, result.y))))
 
 
 def continuation(model, parameter, values, *, guess):
     """Follow one equilibrium branch; this does not enumerate all equilibria."""
+    model.require_ode_analysis()
     rows = []
     for value in values:
         equilibrium = find_equilibrium(
@@ -242,6 +363,7 @@ def find_stability_crossings(
     and adjacent exact zeros are rejected as ambiguous. This does not certify
     a Hopf bifurcation or reliably track branches through folds.
     """
+    model.require_ode_analysis()
     if parameter not in model.parameters:
         raise ValueError(f"unknown parameter: {parameter}")
     tolerance = magnitude(tolerance, model.units[parameter])

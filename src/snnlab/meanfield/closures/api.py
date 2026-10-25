@@ -7,7 +7,7 @@ from typing import Protocol
 
 import sympy as sp
 
-from snnlab.meanfield.model import Model, magnitude
+from snnlab.meanfield.model import Delayed, Model, magnitude
 
 
 class Closure(Protocol):
@@ -46,6 +46,25 @@ class BuildContext:
     display_derivatives: dict = field(default_factory=dict)
     function_definitions: dict = field(default_factory=dict)
     symbol_metadata: dict = field(default_factory=dict)
+    delayed: dict = field(default_factory=dict)
+    projection_delays: dict = field(default_factory=dict)
+    controls: dict = field(default_factory=dict)
+
+    def delay(self, source, delay, *, name):
+        """Reference a named state or parameter at t-delay (ms)."""
+        delay = magnitude(delay, "ms")
+        if delay < 0:
+            raise ValueError("delays must be nonnegative")
+        if delay == 0:
+            return source
+        if source not in {*self.states.values(), *self.parameters.values()}:
+            raise ValueError("delayed source must be declared")
+        symbol = self._symbol(name, self.units[str(source)])
+        self.delayed[symbol] = Delayed(source, delay)
+        self.notation[symbol] = (
+            self.notation.get(source, sp.latex(source)) + rf"(t-{delay:g})"
+        )
+        return symbol
 
     @property
     def populations(self):
@@ -159,4 +178,8 @@ class BuildContext:
             ),
             function_definitions=self.function_definitions,
             symbol_metadata=self.symbol_metadata,
+            delayed=self.delayed,
+            projection_delays=self.projection_delays,
+            controls=self.controls,
+            delay_mode=self.delays,
         )

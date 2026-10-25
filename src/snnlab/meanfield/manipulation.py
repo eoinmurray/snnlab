@@ -17,6 +17,10 @@ def reduce_states(model, *, method="matched_decay", retain=None):
     """
     if method != "matched_decay":
         raise ValueError("only matched_decay is supported")
+    if model.delayed:
+        raise ValueError(
+            "matched-decay reduction of delayed histories is unsupported; retain distinct pathway filters"
+        )
     if model.reconstructions:
         raise ValueError("model has already undergone matched-decay reduction")
     groups = {}

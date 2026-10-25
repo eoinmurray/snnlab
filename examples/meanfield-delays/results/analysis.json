@@ -1,0 +1,8 @@
+{
+  "internal_delay_ms": 0.1,
+  "cross_delay_ms": 2,
+  "coupling_onset_ms": 500,
+  "modulation_timing": "target_delivery",
+  "max_rate_change_after_onset_hz": 0.4889540355712061,
+  "scientific_scope": "Illustrative stationary gain/noise closure; no quantitative exp133 reproduction or gamma claim"
+}

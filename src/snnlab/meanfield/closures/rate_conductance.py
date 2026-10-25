@@ -93,6 +93,13 @@ class RateConductance:
             )
         for projection in ctx.projections:
             name = projection["id"]
+            delay_spec = projection.get("delay") or {"value": 0, "unit": "ms"}
+            if delay_spec.get("unit") != "ms":
+                raise ValueError(f"{name}: delay must be in ms")
+            delay = magnitude(delay_spec["value"], "ms")
+            if delay < 0:
+                raise ValueError(f"{name}: delays must be nonnegative")
+            ctx.projection_delays[name] = delay
             source, port = projection["source"].rsplit(".", 1)
             target = projection["target"].rsplit(".", 1)[0]
             synapse = projection["synapse"]
@@ -182,6 +189,15 @@ class RateConductance:
                 },
             )
             recurrent = source in populations
+            if (
+                ctx.delays == "explicit"
+                and delay
+                and not recurrent
+                and ctx.external_filters == "quasistatic"
+            ):
+                raise ValueError(
+                    "explicit external delays require dynamic external filters"
+                )
             receptor = "e" if expected == "excitatory" else "i"
             conductance_label = rf"g_{{{receptor}}}^{{{target}}}"
             matching = [
@@ -207,6 +223,8 @@ class RateConductance:
                     f"{name}.conductance", unit="uS", bounds=(0, float("inf"))
                 )
                 rate = rates[source] if recurrent else source_rates[source]
+                if ctx.delays == "explicit":
+                    rate = ctx.delay(rate, delay, name=f"{name}.delayed_rate")
                 ctx.derivative(
                     conductance, -conductance / tau + coupling * gain * rate / 1000
                 )
@@ -263,6 +281,7 @@ class RateConductance:
                 "Input covariance and within-population weight heterogeneity omitted",
                 f"External filters: {ctx.external_filters}; delays: {ctx.delays}",
                 "Rates in Hz; time in ms; conductance in uS; current in nA",
+                "Projection gain acts at target delivery, multiplying delayed source activity; continuous dynamical state is retained across switches",
             ]
         )
         return ctx.build()

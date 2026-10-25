@@ -1,0 +1,2854 @@
+{
+  "schema": "snnlab.meanfield.model/v1",
+  "time_unit": "ms",
+  "delays": {
+    "mode": "explicit",
+    "projections_ms": {
+      "E_A_to_E_A": 0.1,
+      "E_A_to_E_B": 2.0,
+      "E_A_to_I_A": 0.1,
+      "E_B_to_E_A": 2.0,
+      "E_B_to_E_B": 0.1,
+      "E_B_to_I_B": 0.1,
+      "I_A_to_E_A": 0.1,
+      "I_A_to_I_A": 0.1,
+      "I_B_to_E_B": 0.1,
+      "I_B_to_I_B": 0.1
+    },
+    "dependencies": {
+      "E_A_to_E_A.delayed_rate": {
+        "source": "E_A.rate",
+        "delay_ms": 0.1
+      },
+      "E_A_to_E_B.delayed_rate": {
+        "source": "E_A.rate",
+        "delay_ms": 2.0
+      },
+      "E_A_to_I_A.delayed_rate": {
+        "source": "E_A.rate",
+        "delay_ms": 0.1
+      },
+      "E_B_to_E_A.delayed_rate": {
+        "source": "E_B.rate",
+        "delay_ms": 2.0
+      },
+      "E_B_to_E_B.delayed_rate": {
+        "source": "E_B.rate",
+        "delay_ms": 0.1
+      },
+      "E_B_to_I_B.delayed_rate": {
+        "source": "E_B.rate",
+        "delay_ms": 0.1
+      },
+      "I_A_to_E_A.delayed_rate": {
+        "source": "I_A.rate",
+        "delay_ms": 0.1
+      },
+      "I_A_to_I_A.delayed_rate": {
+        "source": "I_A.rate",
+        "delay_ms": 0.1
+      },
+      "I_B_to_E_B.delayed_rate": {
+        "source": "I_B.rate",
+        "delay_ms": 0.1
+      },
+      "I_B_to_I_B.delayed_rate": {
+        "source": "I_B.rate",
+        "delay_ms": 0.1
+      }
+    },
+    "required_history_interval_ms": [
+      -2.0,
+      0
+    ],
+    "history_contract": "History or ConstantHistory; every named state in its declared unit; continuous piecewise smooth history agrees with initial at zero; actual history and solver settings are exported by Trajectory.write",
+    "modulation_timing": "target_delivery"
+  },
+  "controls": {
+    "E_A_to_E_B.gain": {
+      "kind": "PiecewiseConstant",
+      "times_ms": [
+        500.0
+      ],
+      "values": [
+        0.0,
+        1.0
+      ]
+    },
+    "E_B_to_E_A.gain": {
+      "kind": "PiecewiseConstant",
+      "times_ms": [
+        500.0
+      ],
+      "values": [
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "state_order": [
+    "E_A.rate",
+    "E_B.rate",
+    "I_A.rate",
+    "I_B.rate",
+    "E_A_to_E_A.conductance",
+    "E_A_to_E_B.conductance",
+    "E_A_to_I_A.conductance",
+    "E_B_to_E_A.conductance",
+    "E_B_to_E_B.conductance",
+    "E_B_to_I_B.conductance",
+    "I_A_to_E_A.conductance",
+    "I_A_to_I_A.conductance",
+    "I_B_to_E_B.conductance",
+    "I_B_to_I_B.conductance"
+  ],
+  "parameter_order": [
+    "E_A.tau_rate",
+    "E_A.applied_current",
+    "E_B.tau_rate",
+    "E_B.applied_current",
+    "I_A.tau_rate",
+    "I_A.applied_current",
+    "I_B.tau_rate",
+    "I_B.applied_current",
+    "E_A_to_E_A.tau",
+    "E_A_to_E_A.coupling",
+    "E_A_to_E_A.gain",
+    "E_A_to_E_B.tau",
+    "E_A_to_E_B.coupling",
+    "E_A_to_E_B.gain",
+    "E_A_to_I_A.tau",
+    "E_A_to_I_A.coupling",
+    "E_A_to_I_A.gain",
+    "E_B_to_E_A.tau",
+    "E_B_to_E_A.coupling",
+    "E_B_to_E_A.gain",
+    "E_B_to_E_B.tau",
+    "E_B_to_E_B.coupling",
+    "E_B_to_E_B.gain",
+    "E_B_to_I_B.tau",
+    "E_B_to_I_B.coupling",
+    "E_B_to_I_B.gain",
+    "I_A_to_E_A.tau",
+    "I_A_to_E_A.coupling",
+    "I_A_to_E_A.gain",
+    "I_A_to_I_A.tau",
+    "I_A_to_I_A.coupling",
+    "I_A_to_I_A.gain",
+    "I_B_to_E_B.tau",
+    "I_B_to_E_B.coupling",
+    "I_B_to_E_B.gain",
+    "I_B_to_I_B.tau",
+    "I_B_to_I_B.coupling",
+    "I_B_to_I_B.gain"
+  ],
+  "states": {
+    "E_A.rate": {
+      "description": "Mean firing rate of population E_A",
+      "symbol": "E_A.rate",
+      "latex": "r_{E_A}",
+      "unit": "Hz",
+      "bounds": [
+        0.0,
+        500.0
+      ]
+    },
+    "E_B.rate": {
+      "description": "Mean firing rate of population E_B",
+      "symbol": "E_B.rate",
+      "latex": "r_{E_B}",
+      "unit": "Hz",
+      "bounds": [
+        0.0,
+        500.0
+      ]
+    },
+    "I_A.rate": {
+      "description": "Mean firing rate of population I_A",
+      "symbol": "I_A.rate",
+      "latex": "r_{I_A}",
+      "unit": "Hz",
+      "bounds": [
+        0.0,
+        500.0
+      ]
+    },
+    "I_B.rate": {
+      "description": "Mean firing rate of population I_B",
+      "symbol": "I_B.rate",
+      "latex": "r_{I_B}",
+      "unit": "Hz",
+      "bounds": [
+        0.0,
+        500.0
+      ]
+    },
+    "E_A_to_E_A.conductance": {
+      "description": "Mean synaptic conductance from E_A into E_A",
+      "symbol": "E_A_to_E_A.conductance",
+      "latex": "g_{e,E_A}^{E_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_A_to_E_B.conductance": {
+      "description": "Mean synaptic conductance from E_A into E_B",
+      "symbol": "E_A_to_E_B.conductance",
+      "latex": "g_{e,E_A}^{E_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_A_to_I_A.conductance": {
+      "description": "Mean synaptic conductance from E_A into I_A",
+      "symbol": "E_A_to_I_A.conductance",
+      "latex": "g_{e}^{I_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_E_A.conductance": {
+      "description": "Mean synaptic conductance from E_B into E_A",
+      "symbol": "E_B_to_E_A.conductance",
+      "latex": "g_{e,E_B}^{E_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_E_B.conductance": {
+      "description": "Mean synaptic conductance from E_B into E_B",
+      "symbol": "E_B_to_E_B.conductance",
+      "latex": "g_{e,E_B}^{E_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_I_B.conductance": {
+      "description": "Mean synaptic conductance from E_B into I_B",
+      "symbol": "E_B_to_I_B.conductance",
+      "latex": "g_{e}^{I_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_A_to_E_A.conductance": {
+      "description": "Mean synaptic conductance from I_A into E_A",
+      "symbol": "I_A_to_E_A.conductance",
+      "latex": "g_{i}^{E_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_A_to_I_A.conductance": {
+      "description": "Mean synaptic conductance from I_A into I_A",
+      "symbol": "I_A_to_I_A.conductance",
+      "latex": "g_{i}^{I_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_B_to_E_B.conductance": {
+      "description": "Mean synaptic conductance from I_B into E_B",
+      "symbol": "I_B_to_E_B.conductance",
+      "latex": "g_{i}^{E_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_B_to_I_B.conductance": {
+      "description": "Mean synaptic conductance from I_B into I_B",
+      "symbol": "I_B_to_I_B.conductance",
+      "latex": "g_{i}^{I_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ]
+    }
+  },
+  "parameters": {
+    "E_A.tau_rate": {
+      "description": "Rate relaxation time of population E_A",
+      "symbol": "E_A.tau_rate",
+      "latex": "\\tau_{r,E_A}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "E_A.applied_current": {
+      "description": "Applied external current to population E_A",
+      "symbol": "E_A.applied_current",
+      "latex": "I_{\\mathrm{ext},E_A}",
+      "unit": "nA",
+      "value": 0.6,
+      "bounds": [
+        null,
+        null
+      ]
+    },
+    "E_B.tau_rate": {
+      "description": "Rate relaxation time of population E_B",
+      "symbol": "E_B.tau_rate",
+      "latex": "\\tau_{r,E_B}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "E_B.applied_current": {
+      "description": "Applied external current to population E_B",
+      "symbol": "E_B.applied_current",
+      "latex": "I_{\\mathrm{ext},E_B}",
+      "unit": "nA",
+      "value": 0.62,
+      "bounds": [
+        null,
+        null
+      ]
+    },
+    "I_A.tau_rate": {
+      "description": "Rate relaxation time of population I_A",
+      "symbol": "I_A.tau_rate",
+      "latex": "\\tau_{r,I_A}",
+      "unit": "ms",
+      "value": 2.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "I_A.applied_current": {
+      "description": "Applied external current to population I_A",
+      "symbol": "I_A.applied_current",
+      "latex": "I_{\\mathrm{ext},I_A}",
+      "unit": "nA",
+      "value": 0.55,
+      "bounds": [
+        null,
+        null
+      ]
+    },
+    "I_B.tau_rate": {
+      "description": "Rate relaxation time of population I_B",
+      "symbol": "I_B.tau_rate",
+      "latex": "\\tau_{r,I_B}",
+      "unit": "ms",
+      "value": 2.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "I_B.applied_current": {
+      "description": "Applied external current to population I_B",
+      "symbol": "I_B.applied_current",
+      "latex": "I_{\\mathrm{ext},I_B}",
+      "unit": "nA",
+      "value": 0.55,
+      "bounds": [
+        null,
+        null
+      ]
+    },
+    "E_A_to_E_A.tau": {
+      "description": "Synaptic conductance decay time for E_A → E_A",
+      "symbol": "E_A_to_E_A.tau",
+      "latex": "\\tau_{E_A\\to E_A}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "E_A_to_E_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_A\\to E_A} = \\frac{1}{N_{E_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_A\\to E_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_A_to_E_A",
+        "source": "E_A",
+        "target": "E_A",
+        "source_count": 100,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_A": {
+          "latex": "N_{E_A}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_A\\to E_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "E_A_to_E_A.coupling",
+      "latex": "C_{E_A\\to E_A}",
+      "unit": "uS",
+      "value": 0.03,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_A_to_E_A.gain": {
+      "description": "Dimensionless weight multiplier for E_A → E_A",
+      "symbol": "E_A_to_E_A.gain",
+      "latex": "a_{E_A\\to E_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_A_to_E_B.tau": {
+      "description": "Synaptic conductance decay time for E_A → E_B",
+      "symbol": "E_A_to_E_B.tau",
+      "latex": "\\tau_{E_A\\to E_B}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "E_A_to_E_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_A\\to E_B} = \\frac{1}{N_{E_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_A\\to E_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_A_to_E_B",
+        "source": "E_A",
+        "target": "E_B",
+        "source_count": 100,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_B": {
+          "latex": "N_{E_B}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_A\\to E_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "E_A_to_E_B.coupling",
+      "latex": "C_{E_A\\to E_B}",
+      "unit": "uS",
+      "value": 0.01,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_A_to_E_B.gain": {
+      "description": "Dimensionless weight multiplier for E_A → E_B",
+      "symbol": "E_A_to_E_B.gain",
+      "latex": "a_{E_A\\to E_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_A_to_I_A.tau": {
+      "description": "Synaptic conductance decay time for E_A → I_A",
+      "symbol": "E_A_to_I_A.tau",
+      "latex": "\\tau_{E_A\\to I_A}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "E_A_to_I_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_A\\to I_A} = \\frac{1}{N_{I_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_A\\to I_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_A_to_I_A",
+        "source": "E_A",
+        "target": "I_A",
+        "source_count": 100,
+        "target_count": 25,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_I_A": {
+          "latex": "N_{I_A}",
+          "description": "Number of target neurons",
+          "value": 25,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_A\\to I_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 25
+            }
+          }
+        }
+      },
+      "symbol": "E_A_to_I_A.coupling",
+      "latex": "C_{E_A\\to I_A}",
+      "unit": "uS",
+      "value": 0.03,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_A_to_I_A.gain": {
+      "description": "Dimensionless weight multiplier for E_A → I_A",
+      "symbol": "E_A_to_I_A.gain",
+      "latex": "a_{E_A\\to I_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_E_A.tau": {
+      "description": "Synaptic conductance decay time for E_B → E_A",
+      "symbol": "E_B_to_E_A.tau",
+      "latex": "\\tau_{E_B\\to E_A}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "E_B_to_E_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_B\\to E_A} = \\frac{1}{N_{E_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_B\\to E_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_B_to_E_A",
+        "source": "E_B",
+        "target": "E_A",
+        "source_count": 100,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_A": {
+          "latex": "N_{E_A}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_B\\to E_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "E_B_to_E_A.coupling",
+      "latex": "C_{E_B\\to E_A}",
+      "unit": "uS",
+      "value": 0.01,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_E_A.gain": {
+      "description": "Dimensionless weight multiplier for E_B → E_A",
+      "symbol": "E_B_to_E_A.gain",
+      "latex": "a_{E_B\\to E_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_E_B.tau": {
+      "description": "Synaptic conductance decay time for E_B → E_B",
+      "symbol": "E_B_to_E_B.tau",
+      "latex": "\\tau_{E_B\\to E_B}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "E_B_to_E_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_B\\to E_B} = \\frac{1}{N_{E_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_B\\to E_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_B_to_E_B",
+        "source": "E_B",
+        "target": "E_B",
+        "source_count": 100,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_B": {
+          "latex": "N_{E_B}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_B\\to E_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "E_B_to_E_B.coupling",
+      "latex": "C_{E_B\\to E_B}",
+      "unit": "uS",
+      "value": 0.03,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_E_B.gain": {
+      "description": "Dimensionless weight multiplier for E_B → E_B",
+      "symbol": "E_B_to_E_B.gain",
+      "latex": "a_{E_B\\to E_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_I_B.tau": {
+      "description": "Synaptic conductance decay time for E_B → I_B",
+      "symbol": "E_B_to_I_B.tau",
+      "latex": "\\tau_{E_B\\to I_B}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "E_B_to_I_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_B\\to I_B} = \\frac{1}{N_{I_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_B\\to I_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_B_to_I_B",
+        "source": "E_B",
+        "target": "I_B",
+        "source_count": 100,
+        "target_count": 25,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_I_B": {
+          "latex": "N_{I_B}",
+          "description": "Number of target neurons",
+          "value": 25,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_B\\to I_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 25
+            }
+          }
+        }
+      },
+      "symbol": "E_B_to_I_B.coupling",
+      "latex": "C_{E_B\\to I_B}",
+      "unit": "uS",
+      "value": 0.03,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "E_B_to_I_B.gain": {
+      "description": "Dimensionless weight multiplier for E_B → I_B",
+      "symbol": "E_B_to_I_B.gain",
+      "latex": "a_{E_B\\to I_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_A_to_E_A.tau": {
+      "description": "Synaptic conductance decay time for I_A → E_A",
+      "symbol": "I_A_to_E_A.tau",
+      "latex": "\\tau_{I_A\\to E_A}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "I_A_to_E_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{I_A\\to E_A} = \\frac{1}{N_{E_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{I_A\\to E_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "I_A_to_E_A",
+        "source": "I_A",
+        "target": "E_A",
+        "source_count": 25,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_A": {
+          "latex": "N_{E_A}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{I_A\\to E_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 25
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "I_A_to_E_A.coupling",
+      "latex": "C_{I_A\\to E_A}",
+      "unit": "uS",
+      "value": 0.15,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_A_to_E_A.gain": {
+      "description": "Dimensionless weight multiplier for I_A → E_A",
+      "symbol": "I_A_to_E_A.gain",
+      "latex": "a_{I_A\\to E_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_A_to_I_A.tau": {
+      "description": "Synaptic conductance decay time for I_A → I_A",
+      "symbol": "I_A_to_I_A.tau",
+      "latex": "\\tau_{I_A\\to I_A}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "I_A_to_I_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{I_A\\to I_A} = \\frac{1}{N_{I_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{I_A\\to I_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "I_A_to_I_A",
+        "source": "I_A",
+        "target": "I_A",
+        "source_count": 25,
+        "target_count": 25,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_I_A": {
+          "latex": "N_{I_A}",
+          "description": "Number of target neurons",
+          "value": 25,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{I_A\\to I_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 25
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 25
+            }
+          }
+        }
+      },
+      "symbol": "I_A_to_I_A.coupling",
+      "latex": "C_{I_A\\to I_A}",
+      "unit": "uS",
+      "value": 0.15,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_A_to_I_A.gain": {
+      "description": "Dimensionless weight multiplier for I_A → I_A",
+      "symbol": "I_A_to_I_A.gain",
+      "latex": "a_{I_A\\to I_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_B_to_E_B.tau": {
+      "description": "Synaptic conductance decay time for I_B → E_B",
+      "symbol": "I_B_to_E_B.tau",
+      "latex": "\\tau_{I_B\\to E_B}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "I_B_to_E_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{I_B\\to E_B} = \\frac{1}{N_{E_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{I_B\\to E_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "I_B_to_E_B",
+        "source": "I_B",
+        "target": "E_B",
+        "source_count": 25,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_B": {
+          "latex": "N_{E_B}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{I_B\\to E_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 25
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "I_B_to_E_B.coupling",
+      "latex": "C_{I_B\\to E_B}",
+      "unit": "uS",
+      "value": 0.15,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_B_to_E_B.gain": {
+      "description": "Dimensionless weight multiplier for I_B → E_B",
+      "symbol": "I_B_to_E_B.gain",
+      "latex": "a_{I_B\\to E_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_B_to_I_B.tau": {
+      "description": "Synaptic conductance decay time for I_B → I_B",
+      "symbol": "I_B_to_I_B.tau",
+      "latex": "\\tau_{I_B\\to I_B}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ]
+    },
+    "I_B_to_I_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{I_B\\to I_B} = \\frac{1}{N_{I_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{I_B\\to I_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "I_B_to_I_B",
+        "source": "I_B",
+        "target": "I_B",
+        "source_count": 25,
+        "target_count": 25,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_I_B": {
+          "latex": "N_{I_B}",
+          "description": "Number of target neurons",
+          "value": 25,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{I_B\\to I_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 25
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 25
+            }
+          }
+        }
+      },
+      "symbol": "I_B_to_I_B.coupling",
+      "latex": "C_{I_B\\to I_B}",
+      "unit": "uS",
+      "value": 0.15,
+      "bounds": [
+        0.0,
+        null
+      ]
+    },
+    "I_B_to_I_B.gain": {
+      "description": "Dimensionless weight multiplier for I_B → I_B",
+      "symbol": "I_B_to_I_B.gain",
+      "latex": "a_{I_B\\to I_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ]
+    }
+  },
+  "symbols": {
+    "E_A.rate": {
+      "description": "Mean firing rate of population E_A",
+      "symbol": "E_A.rate",
+      "latex": "r_{E_A}",
+      "unit": "Hz",
+      "bounds": [
+        0.0,
+        500.0
+      ],
+      "kind": "state"
+    },
+    "E_B.rate": {
+      "description": "Mean firing rate of population E_B",
+      "symbol": "E_B.rate",
+      "latex": "r_{E_B}",
+      "unit": "Hz",
+      "bounds": [
+        0.0,
+        500.0
+      ],
+      "kind": "state"
+    },
+    "I_A.rate": {
+      "description": "Mean firing rate of population I_A",
+      "symbol": "I_A.rate",
+      "latex": "r_{I_A}",
+      "unit": "Hz",
+      "bounds": [
+        0.0,
+        500.0
+      ],
+      "kind": "state"
+    },
+    "I_B.rate": {
+      "description": "Mean firing rate of population I_B",
+      "symbol": "I_B.rate",
+      "latex": "r_{I_B}",
+      "unit": "Hz",
+      "bounds": [
+        0.0,
+        500.0
+      ],
+      "kind": "state"
+    },
+    "E_A_to_E_A.conductance": {
+      "description": "Mean synaptic conductance from E_A into E_A",
+      "symbol": "E_A_to_E_A.conductance",
+      "latex": "g_{e,E_A}^{E_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "E_A_to_E_B.conductance": {
+      "description": "Mean synaptic conductance from E_A into E_B",
+      "symbol": "E_A_to_E_B.conductance",
+      "latex": "g_{e,E_A}^{E_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "E_A_to_I_A.conductance": {
+      "description": "Mean synaptic conductance from E_A into I_A",
+      "symbol": "E_A_to_I_A.conductance",
+      "latex": "g_{e}^{I_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "E_B_to_E_A.conductance": {
+      "description": "Mean synaptic conductance from E_B into E_A",
+      "symbol": "E_B_to_E_A.conductance",
+      "latex": "g_{e,E_B}^{E_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "E_B_to_E_B.conductance": {
+      "description": "Mean synaptic conductance from E_B into E_B",
+      "symbol": "E_B_to_E_B.conductance",
+      "latex": "g_{e,E_B}^{E_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "E_B_to_I_B.conductance": {
+      "description": "Mean synaptic conductance from E_B into I_B",
+      "symbol": "E_B_to_I_B.conductance",
+      "latex": "g_{e}^{I_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "I_A_to_E_A.conductance": {
+      "description": "Mean synaptic conductance from I_A into E_A",
+      "symbol": "I_A_to_E_A.conductance",
+      "latex": "g_{i}^{E_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "I_A_to_I_A.conductance": {
+      "description": "Mean synaptic conductance from I_A into I_A",
+      "symbol": "I_A_to_I_A.conductance",
+      "latex": "g_{i}^{I_A}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "I_B_to_E_B.conductance": {
+      "description": "Mean synaptic conductance from I_B into E_B",
+      "symbol": "I_B_to_E_B.conductance",
+      "latex": "g_{i}^{E_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "I_B_to_I_B.conductance": {
+      "description": "Mean synaptic conductance from I_B into I_B",
+      "symbol": "I_B_to_I_B.conductance",
+      "latex": "g_{i}^{I_B}",
+      "unit": "uS",
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "state"
+    },
+    "E_A.tau_rate": {
+      "description": "Rate relaxation time of population E_A",
+      "symbol": "E_A.tau_rate",
+      "latex": "\\tau_{r,E_A}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A.applied_current": {
+      "description": "Applied external current to population E_A",
+      "symbol": "E_A.applied_current",
+      "latex": "I_{\\mathrm{ext},E_A}",
+      "unit": "nA",
+      "value": 0.6,
+      "bounds": [
+        null,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B.tau_rate": {
+      "description": "Rate relaxation time of population E_B",
+      "symbol": "E_B.tau_rate",
+      "latex": "\\tau_{r,E_B}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B.applied_current": {
+      "description": "Applied external current to population E_B",
+      "symbol": "E_B.applied_current",
+      "latex": "I_{\\mathrm{ext},E_B}",
+      "unit": "nA",
+      "value": 0.62,
+      "bounds": [
+        null,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_A.tau_rate": {
+      "description": "Rate relaxation time of population I_A",
+      "symbol": "I_A.tau_rate",
+      "latex": "\\tau_{r,I_A}",
+      "unit": "ms",
+      "value": 2.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_A.applied_current": {
+      "description": "Applied external current to population I_A",
+      "symbol": "I_A.applied_current",
+      "latex": "I_{\\mathrm{ext},I_A}",
+      "unit": "nA",
+      "value": 0.55,
+      "bounds": [
+        null,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_B.tau_rate": {
+      "description": "Rate relaxation time of population I_B",
+      "symbol": "I_B.tau_rate",
+      "latex": "\\tau_{r,I_B}",
+      "unit": "ms",
+      "value": 2.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_B.applied_current": {
+      "description": "Applied external current to population I_B",
+      "symbol": "I_B.applied_current",
+      "latex": "I_{\\mathrm{ext},I_B}",
+      "unit": "nA",
+      "value": 0.55,
+      "bounds": [
+        null,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_E_A.tau": {
+      "description": "Synaptic conductance decay time for E_A → E_A",
+      "symbol": "E_A_to_E_A.tau",
+      "latex": "\\tau_{E_A\\to E_A}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_E_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_A\\to E_A} = \\frac{1}{N_{E_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_A\\to E_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_A_to_E_A",
+        "source": "E_A",
+        "target": "E_A",
+        "source_count": 100,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_A": {
+          "latex": "N_{E_A}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_A\\to E_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "E_A_to_E_A.coupling",
+      "latex": "C_{E_A\\to E_A}",
+      "unit": "uS",
+      "value": 0.03,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_E_A.gain": {
+      "description": "Dimensionless weight multiplier for E_A → E_A",
+      "symbol": "E_A_to_E_A.gain",
+      "latex": "a_{E_A\\to E_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_E_B.tau": {
+      "description": "Synaptic conductance decay time for E_A → E_B",
+      "symbol": "E_A_to_E_B.tau",
+      "latex": "\\tau_{E_A\\to E_B}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_E_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_A\\to E_B} = \\frac{1}{N_{E_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_A\\to E_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_A_to_E_B",
+        "source": "E_A",
+        "target": "E_B",
+        "source_count": 100,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_B": {
+          "latex": "N_{E_B}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_A\\to E_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "E_A_to_E_B.coupling",
+      "latex": "C_{E_A\\to E_B}",
+      "unit": "uS",
+      "value": 0.01,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_E_B.gain": {
+      "description": "Dimensionless weight multiplier for E_A → E_B",
+      "symbol": "E_A_to_E_B.gain",
+      "latex": "a_{E_A\\to E_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_I_A.tau": {
+      "description": "Synaptic conductance decay time for E_A → I_A",
+      "symbol": "E_A_to_I_A.tau",
+      "latex": "\\tau_{E_A\\to I_A}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_I_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_A\\to I_A} = \\frac{1}{N_{I_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_A\\to I_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_A_to_I_A",
+        "source": "E_A",
+        "target": "I_A",
+        "source_count": 100,
+        "target_count": 25,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_I_A": {
+          "latex": "N_{I_A}",
+          "description": "Number of target neurons",
+          "value": 25,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_A\\to I_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 25
+            }
+          }
+        }
+      },
+      "symbol": "E_A_to_I_A.coupling",
+      "latex": "C_{E_A\\to I_A}",
+      "unit": "uS",
+      "value": 0.03,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A_to_I_A.gain": {
+      "description": "Dimensionless weight multiplier for E_A → I_A",
+      "symbol": "E_A_to_I_A.gain",
+      "latex": "a_{E_A\\to I_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_E_A.tau": {
+      "description": "Synaptic conductance decay time for E_B → E_A",
+      "symbol": "E_B_to_E_A.tau",
+      "latex": "\\tau_{E_B\\to E_A}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_E_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_B\\to E_A} = \\frac{1}{N_{E_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_B\\to E_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_B_to_E_A",
+        "source": "E_B",
+        "target": "E_A",
+        "source_count": 100,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_A": {
+          "latex": "N_{E_A}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_B\\to E_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "E_B_to_E_A.coupling",
+      "latex": "C_{E_B\\to E_A}",
+      "unit": "uS",
+      "value": 0.01,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_E_A.gain": {
+      "description": "Dimensionless weight multiplier for E_B → E_A",
+      "symbol": "E_B_to_E_A.gain",
+      "latex": "a_{E_B\\to E_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_E_B.tau": {
+      "description": "Synaptic conductance decay time for E_B → E_B",
+      "symbol": "E_B_to_E_B.tau",
+      "latex": "\\tau_{E_B\\to E_B}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_E_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_B\\to E_B} = \\frac{1}{N_{E_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_B\\to E_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_B_to_E_B",
+        "source": "E_B",
+        "target": "E_B",
+        "source_count": 100,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_B": {
+          "latex": "N_{E_B}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_B\\to E_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "E_B_to_E_B.coupling",
+      "latex": "C_{E_B\\to E_B}",
+      "unit": "uS",
+      "value": 0.03,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_E_B.gain": {
+      "description": "Dimensionless weight multiplier for E_B → E_B",
+      "symbol": "E_B_to_E_B.gain",
+      "latex": "a_{E_B\\to E_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_I_B.tau": {
+      "description": "Synaptic conductance decay time for E_B → I_B",
+      "symbol": "E_B_to_I_B.tau",
+      "latex": "\\tau_{E_B\\to I_B}",
+      "unit": "ms",
+      "value": 3.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_I_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{E_B\\to I_B} = \\frac{1}{N_{I_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{E_B\\to I_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "E_B_to_I_B",
+        "source": "E_B",
+        "target": "I_B",
+        "source_count": 100,
+        "target_count": 25,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_I_B": {
+          "latex": "N_{I_B}",
+          "description": "Number of target neurons",
+          "value": 25,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{E_B\\to I_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 100
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 25
+            }
+          }
+        }
+      },
+      "symbol": "E_B_to_I_B.coupling",
+      "latex": "C_{E_B\\to I_B}",
+      "unit": "uS",
+      "value": 0.03,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_B_to_I_B.gain": {
+      "description": "Dimensionless weight multiplier for E_B → I_B",
+      "symbol": "E_B_to_I_B.gain",
+      "latex": "a_{E_B\\to I_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_A_to_E_A.tau": {
+      "description": "Synaptic conductance decay time for I_A → E_A",
+      "symbol": "I_A_to_E_A.tau",
+      "latex": "\\tau_{I_A\\to E_A}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_A_to_E_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{I_A\\to E_A} = \\frac{1}{N_{E_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{I_A\\to E_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "I_A_to_E_A",
+        "source": "I_A",
+        "target": "E_A",
+        "source_count": 25,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_A": {
+          "latex": "N_{E_A}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{I_A\\to E_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 25
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "I_A_to_E_A.coupling",
+      "latex": "C_{I_A\\to E_A}",
+      "unit": "uS",
+      "value": 0.15,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_A_to_E_A.gain": {
+      "description": "Dimensionless weight multiplier for I_A → E_A",
+      "symbol": "I_A_to_E_A.gain",
+      "latex": "a_{I_A\\to E_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_A_to_I_A.tau": {
+      "description": "Synaptic conductance decay time for I_A → I_A",
+      "symbol": "I_A_to_I_A.tau",
+      "latex": "\\tau_{I_A\\to I_A}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_A_to_I_A.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{I_A\\to I_A} = \\frac{1}{N_{I_A}}\\sum_{j,k}\\mathbf{W}_{jk}^{I_A\\to I_A}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "I_A_to_I_A",
+        "source": "I_A",
+        "target": "I_A",
+        "source_count": 25,
+        "target_count": 25,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_I_A": {
+          "latex": "N_{I_A}",
+          "description": "Number of target neurons",
+          "value": 25,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{I_A\\to I_A}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 25
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 25
+            }
+          }
+        }
+      },
+      "symbol": "I_A_to_I_A.coupling",
+      "latex": "C_{I_A\\to I_A}",
+      "unit": "uS",
+      "value": 0.15,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_A_to_I_A.gain": {
+      "description": "Dimensionless weight multiplier for I_A → I_A",
+      "symbol": "I_A_to_I_A.gain",
+      "latex": "a_{I_A\\to I_A}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_B_to_E_B.tau": {
+      "description": "Synaptic conductance decay time for I_B → E_B",
+      "symbol": "I_B_to_E_B.tau",
+      "latex": "\\tau_{I_B\\to E_B}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_B_to_E_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{I_B\\to E_B} = \\frac{1}{N_{E_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{I_B\\to E_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "I_B_to_E_B",
+        "source": "I_B",
+        "target": "E_B",
+        "source_count": 25,
+        "target_count": 100,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_E_B": {
+          "latex": "N_{E_B}",
+          "description": "Number of target neurons",
+          "value": 100,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{I_B\\to E_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 25
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 100
+            }
+          }
+        }
+      },
+      "symbol": "I_B_to_E_B.coupling",
+      "latex": "C_{I_B\\to E_B}",
+      "unit": "uS",
+      "value": 0.15,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_B_to_E_B.gain": {
+      "description": "Dimensionless weight multiplier for I_B → E_B",
+      "symbol": "I_B_to_E_B.gain",
+      "latex": "a_{I_B\\to E_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_B_to_I_B.tau": {
+      "description": "Synaptic conductance decay time for I_B → I_B",
+      "symbol": "I_B_to_I_B.tau",
+      "latex": "\\tau_{I_B\\to I_B}",
+      "unit": "ms",
+      "value": 5.0,
+      "bounds": [
+        1e-300,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_B_to_I_B.coupling": {
+      "description": "Total effective incoming conductance jump summed over sources and averaged over target neurons, including zero edges",
+      "definition_latex": "C_{I_B\\to I_B} = \\frac{1}{N_{I_B}}\\sum_{j,k}\\mathbf{W}_{jk}^{I_B\\to I_B}",
+      "aggregation": {
+        "operation": "sum_effective_weights_divided_by_target_count",
+        "projection": "I_B_to_I_B",
+        "source": "I_B",
+        "target": "I_B",
+        "source_count": 25,
+        "target_count": 25,
+        "includes_zero_edges": true,
+        "allow_autapses": false
+      },
+      "components": {
+        "N_I_B": {
+          "latex": "N_{I_B}",
+          "description": "Number of target neurons",
+          "value": 25,
+          "unit": "1"
+        },
+        "W": {
+          "latex": "\\mathbf{W}_{jk}^{I_B\\to I_B}",
+          "description": "Effective conductance jump per source spike; absent connections have zero weight",
+          "unit": "uS",
+          "indices": {
+            "j": {
+              "description": "Source neuron or input channel",
+              "size": 25
+            },
+            "k": {
+              "description": "Target neuron",
+              "size": 25
+            }
+          }
+        }
+      },
+      "symbol": "I_B_to_I_B.coupling",
+      "latex": "C_{I_B\\to I_B}",
+      "unit": "uS",
+      "value": 0.15,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "I_B_to_I_B.gain": {
+      "description": "Dimensionless weight multiplier for I_B → I_B",
+      "symbol": "I_B_to_I_B.gain",
+      "latex": "a_{I_B\\to I_B}",
+      "unit": "1",
+      "value": 1.0,
+      "bounds": [
+        0.0,
+        null
+      ],
+      "kind": "parameter"
+    },
+    "E_A.driving_force_exc": {
+      "description": "Excitatory reversal potential minus resting voltage of E_A",
+      "unit": "mV",
+      "kind": "derived",
+      "symbol": "E_A.driving_force_exc",
+      "latex": "\\Delta V_{\\mathrm{exc},E_A}",
+      "definition_latex": "\\Delta V_{\\mathrm{exc},E_A} = 65",
+      "expression": "65",
+      "dependencies": []
+    },
+    "E_A.driving_force_inh": {
+      "description": "Resting voltage of E_A minus inhibitory reversal potential",
+      "unit": "mV",
+      "kind": "derived",
+      "symbol": "E_A.driving_force_inh",
+      "latex": "\\Delta V_{\\mathrm{inh},E_A}",
+      "definition_latex": "\\Delta V_{\\mathrm{inh},E_A} = 15",
+      "expression": "15",
+      "dependencies": []
+    },
+    "E_B.driving_force_exc": {
+      "description": "Excitatory reversal potential minus resting voltage of E_B",
+      "unit": "mV",
+      "kind": "derived",
+      "symbol": "E_B.driving_force_exc",
+      "latex": "\\Delta V_{\\mathrm{exc},E_B}",
+      "definition_latex": "\\Delta V_{\\mathrm{exc},E_B} = 65",
+      "expression": "65",
+      "dependencies": []
+    },
+    "E_B.driving_force_inh": {
+      "description": "Resting voltage of E_B minus inhibitory reversal potential",
+      "unit": "mV",
+      "kind": "derived",
+      "symbol": "E_B.driving_force_inh",
+      "latex": "\\Delta V_{\\mathrm{inh},E_B}",
+      "definition_latex": "\\Delta V_{\\mathrm{inh},E_B} = 15",
+      "expression": "15",
+      "dependencies": []
+    },
+    "I_A.driving_force_exc": {
+      "description": "Excitatory reversal potential minus resting voltage of I_A",
+      "unit": "mV",
+      "kind": "derived",
+      "symbol": "I_A.driving_force_exc",
+      "latex": "\\Delta V_{\\mathrm{exc},I_A}",
+      "definition_latex": "\\Delta V_{\\mathrm{exc},I_A} = 65",
+      "expression": "65",
+      "dependencies": []
+    },
+    "I_A.driving_force_inh": {
+      "description": "Resting voltage of I_A minus inhibitory reversal potential",
+      "unit": "mV",
+      "kind": "derived",
+      "symbol": "I_A.driving_force_inh",
+      "latex": "\\Delta V_{\\mathrm{inh},I_A}",
+      "definition_latex": "\\Delta V_{\\mathrm{inh},I_A} = 15",
+      "expression": "15",
+      "dependencies": []
+    },
+    "I_B.driving_force_exc": {
+      "description": "Excitatory reversal potential minus resting voltage of I_B",
+      "unit": "mV",
+      "kind": "derived",
+      "symbol": "I_B.driving_force_exc",
+      "latex": "\\Delta V_{\\mathrm{exc},I_B}",
+      "definition_latex": "\\Delta V_{\\mathrm{exc},I_B} = 65",
+      "expression": "65",
+      "dependencies": []
+    },
+    "I_B.driving_force_inh": {
+      "description": "Resting voltage of I_B minus inhibitory reversal potential",
+      "unit": "mV",
+      "kind": "derived",
+      "symbol": "I_B.driving_force_inh",
+      "latex": "\\Delta V_{\\mathrm{inh},I_B}",
+      "definition_latex": "\\Delta V_{\\mathrm{inh},I_B} = 15",
+      "expression": "15",
+      "dependencies": []
+    },
+    "E_A.effective_current": {
+      "description": "Effective input current to population E_A with fixed resting driving forces",
+      "unit": "nA",
+      "kind": "derived",
+      "symbol": "E_A.effective_current",
+      "latex": "I_{E_A}",
+      "definition_latex": "I_{E_A} = I_{\\mathrm{ext},E_A} + \\Delta V_{\\mathrm{exc},E_A} \\left(g_{e,E_A}^{E_A} + g_{e,E_B}^{E_A}\\right) - \\Delta V_{\\mathrm{inh},E_A} g_{i}^{E_A}",
+      "expression": "E_A.applied_current + E_A.driving_force_exc*(E_A_to_E_A.conductance + E_B_to_E_A.conductance) - E_A.driving_force_inh*I_A_to_E_A.conductance",
+      "dependencies": [
+        "E_A.applied_current",
+        "E_A.driving_force_exc",
+        "E_A.driving_force_inh",
+        "E_A_to_E_A.conductance",
+        "E_B_to_E_A.conductance",
+        "I_A_to_E_A.conductance"
+      ]
+    },
+    "E_B.effective_current": {
+      "description": "Effective input current to population E_B with fixed resting driving forces",
+      "unit": "nA",
+      "kind": "derived",
+      "symbol": "E_B.effective_current",
+      "latex": "I_{E_B}",
+      "definition_latex": "I_{E_B} = I_{\\mathrm{ext},E_B} + \\Delta V_{\\mathrm{exc},E_B} \\left(g_{e,E_A}^{E_B} + g_{e,E_B}^{E_B}\\right) - \\Delta V_{\\mathrm{inh},E_B} g_{i}^{E_B}",
+      "expression": "E_B.applied_current + E_B.driving_force_exc*(E_A_to_E_B.conductance + E_B_to_E_B.conductance) - E_B.driving_force_inh*I_B_to_E_B.conductance",
+      "dependencies": [
+        "E_A_to_E_B.conductance",
+        "E_B.applied_current",
+        "E_B.driving_force_exc",
+        "E_B.driving_force_inh",
+        "E_B_to_E_B.conductance",
+        "I_B_to_E_B.conductance"
+      ]
+    },
+    "I_A.effective_current": {
+      "description": "Effective input current to population I_A with fixed resting driving forces",
+      "unit": "nA",
+      "kind": "derived",
+      "symbol": "I_A.effective_current",
+      "latex": "I_{I_A}",
+      "definition_latex": "I_{I_A} = g_{e}^{I_A} \\Delta V_{\\mathrm{exc},I_A} + I_{\\mathrm{ext},I_A} - \\Delta V_{\\mathrm{inh},I_A} g_{i}^{I_A}",
+      "expression": "E_A_to_I_A.conductance*I_A.driving_force_exc + I_A.applied_current - I_A.driving_force_inh*I_A_to_I_A.conductance",
+      "dependencies": [
+        "E_A_to_I_A.conductance",
+        "I_A.applied_current",
+        "I_A.driving_force_exc",
+        "I_A.driving_force_inh",
+        "I_A_to_I_A.conductance"
+      ]
+    },
+    "I_B.effective_current": {
+      "description": "Effective input current to population I_B with fixed resting driving forces",
+      "unit": "nA",
+      "kind": "derived",
+      "symbol": "I_B.effective_current",
+      "latex": "I_{I_B}",
+      "definition_latex": "I_{I_B} = g_{e}^{I_B} \\Delta V_{\\mathrm{exc},I_B} + I_{\\mathrm{ext},I_B} - \\Delta V_{\\mathrm{inh},I_B} g_{i}^{I_B}",
+      "expression": "E_B_to_I_B.conductance*I_B.driving_force_exc + I_B.applied_current - I_B.driving_force_inh*I_B_to_I_B.conductance",
+      "dependencies": [
+        "E_B_to_I_B.conductance",
+        "I_B.applied_current",
+        "I_B.driving_force_exc",
+        "I_B.driving_force_inh",
+        "I_B_to_I_B.conductance"
+      ]
+    },
+    "Phi_E_A": {
+      "kind": "function",
+      "symbol": "Phi_E_A",
+      "latex": "\\Phi_{E A}",
+      "specification": {
+        "kind": "noisy_lif",
+        "sigma_mv": 4.0,
+        "tau_mem_ms": 15.0,
+        "leak_us": 0.06666666666666667,
+        "resting_mv": -65.0,
+        "reset_mv": -65.0,
+        "threshold_mv": -50.0,
+        "refractory_ms": 2.0,
+        "quadrature_nodes": 48,
+        "zero_rate_upper_bound": 26,
+        "input_unit": "nA",
+        "output_unit": "Hz"
+      }
+    },
+    "Phi_E_A_slope": {
+      "kind": "function",
+      "symbol": "Phi_E_A_slope",
+      "latex": "\\Phi_{E A slope}",
+      "specification": {
+        "kind": "derivative",
+        "of": "Phi_E_A",
+        "argument": 1
+      }
+    },
+    "Phi_E_B": {
+      "kind": "function",
+      "symbol": "Phi_E_B",
+      "latex": "\\Phi_{E B}",
+      "specification": {
+        "kind": "noisy_lif",
+        "sigma_mv": 4.0,
+        "tau_mem_ms": 15.0,
+        "leak_us": 0.06666666666666667,
+        "resting_mv": -65.0,
+        "reset_mv": -65.0,
+        "threshold_mv": -50.0,
+        "refractory_ms": 2.0,
+        "quadrature_nodes": 48,
+        "zero_rate_upper_bound": 26,
+        "input_unit": "nA",
+        "output_unit": "Hz"
+      }
+    },
+    "Phi_E_B_slope": {
+      "kind": "function",
+      "symbol": "Phi_E_B_slope",
+      "latex": "\\Phi_{E B slope}",
+      "specification": {
+        "kind": "derivative",
+        "of": "Phi_E_B",
+        "argument": 1
+      }
+    },
+    "Phi_I_A": {
+      "kind": "function",
+      "symbol": "Phi_I_A",
+      "latex": "\\Phi_{I A}",
+      "specification": {
+        "kind": "noisy_lif",
+        "sigma_mv": 4.0,
+        "tau_mem_ms": 15.0,
+        "leak_us": 0.06666666666666667,
+        "resting_mv": -65.0,
+        "reset_mv": -65.0,
+        "threshold_mv": -50.0,
+        "refractory_ms": 2.0,
+        "quadrature_nodes": 48,
+        "zero_rate_upper_bound": 26,
+        "input_unit": "nA",
+        "output_unit": "Hz"
+      }
+    },
+    "Phi_I_A_slope": {
+      "kind": "function",
+      "symbol": "Phi_I_A_slope",
+      "latex": "\\Phi_{I A slope}",
+      "specification": {
+        "kind": "derivative",
+        "of": "Phi_I_A",
+        "argument": 1
+      }
+    },
+    "Phi_I_B": {
+      "kind": "function",
+      "symbol": "Phi_I_B",
+      "latex": "\\Phi_{I B}",
+      "specification": {
+        "kind": "noisy_lif",
+        "sigma_mv": 4.0,
+        "tau_mem_ms": 15.0,
+        "leak_us": 0.06666666666666667,
+        "resting_mv": -65.0,
+        "reset_mv": -65.0,
+        "threshold_mv": -50.0,
+        "refractory_ms": 2.0,
+        "quadrature_nodes": 48,
+        "zero_rate_upper_bound": 26,
+        "input_unit": "nA",
+        "output_unit": "Hz"
+      }
+    },
+    "Phi_I_B_slope": {
+      "kind": "function",
+      "symbol": "Phi_I_B_slope",
+      "latex": "\\Phi_{I B slope}",
+      "specification": {
+        "kind": "derivative",
+        "of": "Phi_I_B",
+        "argument": 1
+      }
+    },
+    "E_A_to_E_A.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "E_A.rate",
+      "delay_ms": 0.1,
+      "unit": "Hz",
+      "latex": "r_{E_A}(t-0.1)"
+    },
+    "E_A_to_E_B.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "E_A.rate",
+      "delay_ms": 2.0,
+      "unit": "Hz",
+      "latex": "r_{E_A}(t-2)"
+    },
+    "E_A_to_I_A.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "E_A.rate",
+      "delay_ms": 0.1,
+      "unit": "Hz",
+      "latex": "r_{E_A}(t-0.1)"
+    },
+    "E_B_to_E_A.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "E_B.rate",
+      "delay_ms": 2.0,
+      "unit": "Hz",
+      "latex": "r_{E_B}(t-2)"
+    },
+    "E_B_to_E_B.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "E_B.rate",
+      "delay_ms": 0.1,
+      "unit": "Hz",
+      "latex": "r_{E_B}(t-0.1)"
+    },
+    "E_B_to_I_B.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "E_B.rate",
+      "delay_ms": 0.1,
+      "unit": "Hz",
+      "latex": "r_{E_B}(t-0.1)"
+    },
+    "I_A_to_E_A.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "I_A.rate",
+      "delay_ms": 0.1,
+      "unit": "Hz",
+      "latex": "r_{I_A}(t-0.1)"
+    },
+    "I_A_to_I_A.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "I_A.rate",
+      "delay_ms": 0.1,
+      "unit": "Hz",
+      "latex": "r_{I_A}(t-0.1)"
+    },
+    "I_B_to_E_B.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "I_B.rate",
+      "delay_ms": 0.1,
+      "unit": "Hz",
+      "latex": "r_{I_B}(t-0.1)"
+    },
+    "I_B_to_I_B.delayed_rate": {
+      "kind": "delayed_dependency",
+      "source": "I_B.rate",
+      "delay_ms": 0.1,
+      "unit": "Hz",
+      "latex": "r_{I_B}(t-0.1)"
+    }
+  },
+  "model_definition": {
+    "expression_format": "sympy-str",
+    "rhs": {
+      "E_A.rate": "(-E_A.rate + Phi_E_A(E_A.applied_current + 65*E_A_to_E_A.conductance + 65*E_B_to_E_A.conductance - 15*I_A_to_E_A.conductance))/E_A.tau_rate",
+      "E_B.rate": "(-E_B.rate + Phi_E_B(65*E_A_to_E_B.conductance + E_B.applied_current + 65*E_B_to_E_B.conductance - 15*I_B_to_E_B.conductance))/E_B.tau_rate",
+      "I_A.rate": "(-I_A.rate + Phi_I_A(65*E_A_to_I_A.conductance + I_A.applied_current - 15*I_A_to_I_A.conductance))/I_A.tau_rate",
+      "I_B.rate": "(-I_B.rate + Phi_I_B(65*E_B_to_I_B.conductance + I_B.applied_current - 15*I_B_to_I_B.conductance))/I_B.tau_rate",
+      "E_A_to_E_A.conductance": "-E_A_to_E_A.conductance/E_A_to_E_A.tau + E_A_to_E_A.coupling*E_A_to_E_A.delayed_rate*E_A_to_E_A.gain/1000",
+      "E_A_to_E_B.conductance": "-E_A_to_E_B.conductance/E_A_to_E_B.tau + E_A_to_E_B.coupling*E_A_to_E_B.delayed_rate*E_A_to_E_B.gain/1000",
+      "E_A_to_I_A.conductance": "-E_A_to_I_A.conductance/E_A_to_I_A.tau + E_A_to_I_A.coupling*E_A_to_I_A.delayed_rate*E_A_to_I_A.gain/1000",
+      "E_B_to_E_A.conductance": "-E_B_to_E_A.conductance/E_B_to_E_A.tau + E_B_to_E_A.coupling*E_B_to_E_A.delayed_rate*E_B_to_E_A.gain/1000",
+      "E_B_to_E_B.conductance": "-E_B_to_E_B.conductance/E_B_to_E_B.tau + E_B_to_E_B.coupling*E_B_to_E_B.delayed_rate*E_B_to_E_B.gain/1000",
+      "E_B_to_I_B.conductance": "-E_B_to_I_B.conductance/E_B_to_I_B.tau + E_B_to_I_B.coupling*E_B_to_I_B.delayed_rate*E_B_to_I_B.gain/1000",
+      "I_A_to_E_A.conductance": "-I_A_to_E_A.conductance/I_A_to_E_A.tau + I_A_to_E_A.coupling*I_A_to_E_A.delayed_rate*I_A_to_E_A.gain/1000",
+      "I_A_to_I_A.conductance": "-I_A_to_I_A.conductance/I_A_to_I_A.tau + I_A_to_I_A.coupling*I_A_to_I_A.delayed_rate*I_A_to_I_A.gain/1000",
+      "I_B_to_E_B.conductance": "-I_B_to_E_B.conductance/I_B_to_E_B.tau + I_B_to_E_B.coupling*I_B_to_E_B.delayed_rate*I_B_to_E_B.gain/1000",
+      "I_B_to_I_B.conductance": "-I_B_to_I_B.conductance/I_B_to_I_B.tau + I_B_to_I_B.coupling*I_B_to_I_B.delayed_rate*I_B_to_I_B.gain/1000"
+    },
+    "display_rhs": {
+      "E_A.rate": "(-E_A.rate + Phi_E_A(E_A.effective_current))/E_A.tau_rate",
+      "E_B.rate": "(-E_B.rate + Phi_E_B(E_B.effective_current))/E_B.tau_rate",
+      "I_A.rate": "(-I_A.rate + Phi_I_A(I_A.effective_current))/I_A.tau_rate",
+      "I_B.rate": "(-I_B.rate + Phi_I_B(I_B.effective_current))/I_B.tau_rate",
+      "E_A_to_E_A.conductance": "-E_A_to_E_A.conductance/E_A_to_E_A.tau + E_A_to_E_A.coupling*E_A_to_E_A.delayed_rate*E_A_to_E_A.gain/1000",
+      "E_A_to_E_B.conductance": "-E_A_to_E_B.conductance/E_A_to_E_B.tau + E_A_to_E_B.coupling*E_A_to_E_B.delayed_rate*E_A_to_E_B.gain/1000",
+      "E_A_to_I_A.conductance": "-E_A_to_I_A.conductance/E_A_to_I_A.tau + E_A_to_I_A.coupling*E_A_to_I_A.delayed_rate*E_A_to_I_A.gain/1000",
+      "E_B_to_E_A.conductance": "-E_B_to_E_A.conductance/E_B_to_E_A.tau + E_B_to_E_A.coupling*E_B_to_E_A.delayed_rate*E_B_to_E_A.gain/1000",
+      "E_B_to_E_B.conductance": "-E_B_to_E_B.conductance/E_B_to_E_B.tau + E_B_to_E_B.coupling*E_B_to_E_B.delayed_rate*E_B_to_E_B.gain/1000",
+      "E_B_to_I_B.conductance": "-E_B_to_I_B.conductance/E_B_to_I_B.tau + E_B_to_I_B.coupling*E_B_to_I_B.delayed_rate*E_B_to_I_B.gain/1000",
+      "I_A_to_E_A.conductance": "-I_A_to_E_A.conductance/I_A_to_E_A.tau + I_A_to_E_A.coupling*I_A_to_E_A.delayed_rate*I_A_to_E_A.gain/1000",
+      "I_A_to_I_A.conductance": "-I_A_to_I_A.conductance/I_A_to_I_A.tau + I_A_to_I_A.coupling*I_A_to_I_A.delayed_rate*I_A_to_I_A.gain/1000",
+      "I_B_to_E_B.conductance": "-I_B_to_E_B.conductance/I_B_to_E_B.tau + I_B_to_E_B.coupling*I_B_to_E_B.delayed_rate*I_B_to_E_B.gain/1000",
+      "I_B_to_I_B.conductance": "-I_B_to_I_B.conductance/I_B_to_I_B.tau + I_B_to_I_B.coupling*I_B_to_I_B.delayed_rate*I_B_to_I_B.gain/1000"
+    },
+    "definitions": {
+      "E_A.driving_force_exc": "65",
+      "E_A.driving_force_inh": "15",
+      "E_B.driving_force_exc": "65",
+      "E_B.driving_force_inh": "15",
+      "I_A.driving_force_exc": "65",
+      "I_A.driving_force_inh": "15",
+      "I_B.driving_force_exc": "65",
+      "I_B.driving_force_inh": "15",
+      "E_A.effective_current": "E_A.applied_current + E_A.driving_force_exc*(E_A_to_E_A.conductance + E_B_to_E_A.conductance) - E_A.driving_force_inh*I_A_to_E_A.conductance",
+      "E_B.effective_current": "E_B.applied_current + E_B.driving_force_exc*(E_A_to_E_B.conductance + E_B_to_E_B.conductance) - E_B.driving_force_inh*I_B_to_E_B.conductance",
+      "I_A.effective_current": "E_A_to_I_A.conductance*I_A.driving_force_exc + I_A.applied_current - I_A.driving_force_inh*I_A_to_I_A.conductance",
+      "I_B.effective_current": "E_B_to_I_B.conductance*I_B.driving_force_exc + I_B.applied_current - I_B.driving_force_inh*I_B_to_I_B.conductance"
+    },
+    "constraints": [],
+    "reconstructions": {},
+    "filters": [
+      {
+        "state": "E_A_to_E_A.conductance",
+        "source": "E_A",
+        "tau": "E_A_to_E_A.tau",
+        "coupling": "E_A_to_E_A.coupling*E_A_to_E_A.gain"
+      },
+      {
+        "state": "E_A_to_E_B.conductance",
+        "source": "E_A",
+        "tau": "E_A_to_E_B.tau",
+        "coupling": "E_A_to_E_B.coupling*E_A_to_E_B.gain"
+      },
+      {
+        "state": "E_A_to_I_A.conductance",
+        "source": "E_A",
+        "tau": "E_A_to_I_A.tau",
+        "coupling": "E_A_to_I_A.coupling*E_A_to_I_A.gain"
+      },
+      {
+        "state": "E_B_to_E_A.conductance",
+        "source": "E_B",
+        "tau": "E_B_to_E_A.tau",
+        "coupling": "E_B_to_E_A.coupling*E_B_to_E_A.gain"
+      },
+      {
+        "state": "E_B_to_E_B.conductance",
+        "source": "E_B",
+        "tau": "E_B_to_E_B.tau",
+        "coupling": "E_B_to_E_B.coupling*E_B_to_E_B.gain"
+      },
+      {
+        "state": "E_B_to_I_B.conductance",
+        "source": "E_B",
+        "tau": "E_B_to_I_B.tau",
+        "coupling": "E_B_to_I_B.coupling*E_B_to_I_B.gain"
+      },
+      {
+        "state": "I_A_to_E_A.conductance",
+        "source": "I_A",
+        "tau": "I_A_to_E_A.tau",
+        "coupling": "I_A_to_E_A.coupling*I_A_to_E_A.gain"
+      },
+      {
+        "state": "I_A_to_I_A.conductance",
+        "source": "I_A",
+        "tau": "I_A_to_I_A.tau",
+        "coupling": "I_A_to_I_A.coupling*I_A_to_I_A.gain"
+      },
+      {
+        "state": "I_B_to_E_B.conductance",
+        "source": "I_B",
+        "tau": "I_B_to_E_B.tau",
+        "coupling": "I_B_to_E_B.coupling*I_B_to_E_B.gain"
+      },
+      {
+        "state": "I_B_to_I_B.conductance",
+        "source": "I_B",
+        "tau": "I_B_to_I_B.tau",
+        "coupling": "I_B_to_I_B.coupling*I_B_to_I_B.gain"
+      }
+    ],
+    "functions": {
+      "Phi_E_A": {
+        "kind": "noisy_lif",
+        "sigma_mv": 4.0,
+        "tau_mem_ms": 15.0,
+        "leak_us": 0.06666666666666667,
+        "resting_mv": -65.0,
+        "reset_mv": -65.0,
+        "threshold_mv": -50.0,
+        "refractory_ms": 2.0,
+        "quadrature_nodes": 48,
+        "zero_rate_upper_bound": 26,
+        "input_unit": "nA",
+        "output_unit": "Hz"
+      },
+      "Phi_E_A_slope": {
+        "kind": "derivative",
+        "of": "Phi_E_A",
+        "argument": 1
+      },
+      "Phi_E_B": {
+        "kind": "noisy_lif",
+        "sigma_mv": 4.0,
+        "tau_mem_ms": 15.0,
+        "leak_us": 0.06666666666666667,
+        "resting_mv": -65.0,
+        "reset_mv": -65.0,
+        "threshold_mv": -50.0,
+        "refractory_ms": 2.0,
+        "quadrature_nodes": 48,
+        "zero_rate_upper_bound": 26,
+        "input_unit": "nA",
+        "output_unit": "Hz"
+      },
+      "Phi_E_B_slope": {
+        "kind": "derivative",
+        "of": "Phi_E_B",
+        "argument": 1
+      },
+      "Phi_I_A": {
+        "kind": "noisy_lif",
+        "sigma_mv": 4.0,
+        "tau_mem_ms": 15.0,
+        "leak_us": 0.06666666666666667,
+        "resting_mv": -65.0,
+        "reset_mv": -65.0,
+        "threshold_mv": -50.0,
+        "refractory_ms": 2.0,
+        "quadrature_nodes": 48,
+        "zero_rate_upper_bound": 26,
+        "input_unit": "nA",
+        "output_unit": "Hz"
+      },
+      "Phi_I_A_slope": {
+        "kind": "derivative",
+        "of": "Phi_I_A",
+        "argument": 1
+      },
+      "Phi_I_B": {
+        "kind": "noisy_lif",
+        "sigma_mv": 4.0,
+        "tau_mem_ms": 15.0,
+        "leak_us": 0.06666666666666667,
+        "resting_mv": -65.0,
+        "reset_mv": -65.0,
+        "threshold_mv": -50.0,
+        "refractory_ms": 2.0,
+        "quadrature_nodes": 48,
+        "zero_rate_upper_bound": 26,
+        "input_unit": "nA",
+        "output_unit": "Hz"
+      },
+      "Phi_I_B_slope": {
+        "kind": "derivative",
+        "of": "Phi_I_B",
+        "argument": 1
+      }
+    }
+  },
+  "equation_order": [
+    "E_A.rate",
+    "E_B.rate",
+    "I_A.rate",
+    "I_B.rate",
+    "E_A_to_E_A.conductance",
+    "E_A_to_E_B.conductance",
+    "E_A_to_I_A.conductance",
+    "E_B_to_E_A.conductance",
+    "E_B_to_E_B.conductance",
+    "E_B_to_I_B.conductance",
+    "I_A_to_E_A.conductance",
+    "I_A_to_I_A.conductance",
+    "I_B_to_E_B.conductance",
+    "I_B_to_I_B.conductance",
+    "E_A.effective_current",
+    "E_B.effective_current",
+    "I_A.effective_current",
+    "I_B.effective_current",
+    "E_A.driving_force_exc",
+    "E_A.driving_force_inh",
+    "E_B.driving_force_exc",
+    "E_B.driving_force_inh",
+    "I_A.driving_force_exc",
+    "I_A.driving_force_inh",
+    "I_B.driving_force_exc",
+    "I_B.driving_force_inh"
+  ],
+  "equations": {
+    "E_A.rate": {
+      "kind": "differential",
+      "lhs_latex": "\\tau_{r,E_A}\\,\\dot{r_{E_A}}",
+      "rhs_latex": "- r_{E_A} + \\Phi_{E A}{\\left(I_{E_A} \\right)}",
+      "latex": "\\tau_{r,E_A}\\,\\dot{r_{E_A}} = - r_{E_A} + \\Phi_{E A}{\\left(I_{E_A} \\right)}",
+      "dependencies": [
+        "E_A.effective_current",
+        "E_A.rate",
+        "E_A.tau_rate"
+      ]
+    },
+    "E_B.rate": {
+      "kind": "differential",
+      "lhs_latex": "\\tau_{r,E_B}\\,\\dot{r_{E_B}}",
+      "rhs_latex": "- r_{E_B} + \\Phi_{E B}{\\left(I_{E_B} \\right)}",
+      "latex": "\\tau_{r,E_B}\\,\\dot{r_{E_B}} = - r_{E_B} + \\Phi_{E B}{\\left(I_{E_B} \\right)}",
+      "dependencies": [
+        "E_B.effective_current",
+        "E_B.rate",
+        "E_B.tau_rate"
+      ]
+    },
+    "I_A.rate": {
+      "kind": "differential",
+      "lhs_latex": "\\tau_{r,I_A}\\,\\dot{r_{I_A}}",
+      "rhs_latex": "- r_{I_A} + \\Phi_{I A}{\\left(I_{I_A} \\right)}",
+      "latex": "\\tau_{r,I_A}\\,\\dot{r_{I_A}} = - r_{I_A} + \\Phi_{I A}{\\left(I_{I_A} \\right)}",
+      "dependencies": [
+        "I_A.effective_current",
+        "I_A.rate",
+        "I_A.tau_rate"
+      ]
+    },
+    "I_B.rate": {
+      "kind": "differential",
+      "lhs_latex": "\\tau_{r,I_B}\\,\\dot{r_{I_B}}",
+      "rhs_latex": "- r_{I_B} + \\Phi_{I B}{\\left(I_{I_B} \\right)}",
+      "latex": "\\tau_{r,I_B}\\,\\dot{r_{I_B}} = - r_{I_B} + \\Phi_{I B}{\\left(I_{I_B} \\right)}",
+      "dependencies": [
+        "I_B.effective_current",
+        "I_B.rate",
+        "I_B.tau_rate"
+      ]
+    },
+    "E_A_to_E_A.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{e,E_A}^{E_A}}",
+      "rhs_latex": "- \\frac{g_{e,E_A}^{E_A}}{\\tau_{E_A\\to E_A}} + \\frac{C_{E_A\\to E_A} r_{E_A}(t-0.1) a_{E_A\\to E_A}}{1000}",
+      "latex": "\\dot{g_{e,E_A}^{E_A}} = - \\frac{g_{e,E_A}^{E_A}}{\\tau_{E_A\\to E_A}} + \\frac{C_{E_A\\to E_A} r_{E_A}(t-0.1) a_{E_A\\to E_A}}{1000}",
+      "dependencies": [
+        "E_A_to_E_A.conductance",
+        "E_A_to_E_A.coupling",
+        "E_A_to_E_A.delayed_rate",
+        "E_A_to_E_A.gain",
+        "E_A_to_E_A.tau"
+      ]
+    },
+    "E_A_to_E_B.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{e,E_A}^{E_B}}",
+      "rhs_latex": "- \\frac{g_{e,E_A}^{E_B}}{\\tau_{E_A\\to E_B}} + \\frac{C_{E_A\\to E_B} r_{E_A}(t-2) a_{E_A\\to E_B}}{1000}",
+      "latex": "\\dot{g_{e,E_A}^{E_B}} = - \\frac{g_{e,E_A}^{E_B}}{\\tau_{E_A\\to E_B}} + \\frac{C_{E_A\\to E_B} r_{E_A}(t-2) a_{E_A\\to E_B}}{1000}",
+      "dependencies": [
+        "E_A_to_E_B.conductance",
+        "E_A_to_E_B.coupling",
+        "E_A_to_E_B.delayed_rate",
+        "E_A_to_E_B.gain",
+        "E_A_to_E_B.tau"
+      ]
+    },
+    "E_A_to_I_A.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{e}^{I_A}}",
+      "rhs_latex": "- \\frac{g_{e}^{I_A}}{\\tau_{E_A\\to I_A}} + \\frac{C_{E_A\\to I_A} r_{E_A}(t-0.1) a_{E_A\\to I_A}}{1000}",
+      "latex": "\\dot{g_{e}^{I_A}} = - \\frac{g_{e}^{I_A}}{\\tau_{E_A\\to I_A}} + \\frac{C_{E_A\\to I_A} r_{E_A}(t-0.1) a_{E_A\\to I_A}}{1000}",
+      "dependencies": [
+        "E_A_to_I_A.conductance",
+        "E_A_to_I_A.coupling",
+        "E_A_to_I_A.delayed_rate",
+        "E_A_to_I_A.gain",
+        "E_A_to_I_A.tau"
+      ]
+    },
+    "E_B_to_E_A.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{e,E_B}^{E_A}}",
+      "rhs_latex": "- \\frac{g_{e,E_B}^{E_A}}{\\tau_{E_B\\to E_A}} + \\frac{C_{E_B\\to E_A} r_{E_B}(t-2) a_{E_B\\to E_A}}{1000}",
+      "latex": "\\dot{g_{e,E_B}^{E_A}} = - \\frac{g_{e,E_B}^{E_A}}{\\tau_{E_B\\to E_A}} + \\frac{C_{E_B\\to E_A} r_{E_B}(t-2) a_{E_B\\to E_A}}{1000}",
+      "dependencies": [
+        "E_B_to_E_A.conductance",
+        "E_B_to_E_A.coupling",
+        "E_B_to_E_A.delayed_rate",
+        "E_B_to_E_A.gain",
+        "E_B_to_E_A.tau"
+      ]
+    },
+    "E_B_to_E_B.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{e,E_B}^{E_B}}",
+      "rhs_latex": "- \\frac{g_{e,E_B}^{E_B}}{\\tau_{E_B\\to E_B}} + \\frac{C_{E_B\\to E_B} r_{E_B}(t-0.1) a_{E_B\\to E_B}}{1000}",
+      "latex": "\\dot{g_{e,E_B}^{E_B}} = - \\frac{g_{e,E_B}^{E_B}}{\\tau_{E_B\\to E_B}} + \\frac{C_{E_B\\to E_B} r_{E_B}(t-0.1) a_{E_B\\to E_B}}{1000}",
+      "dependencies": [
+        "E_B_to_E_B.conductance",
+        "E_B_to_E_B.coupling",
+        "E_B_to_E_B.delayed_rate",
+        "E_B_to_E_B.gain",
+        "E_B_to_E_B.tau"
+      ]
+    },
+    "E_B_to_I_B.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{e}^{I_B}}",
+      "rhs_latex": "- \\frac{g_{e}^{I_B}}{\\tau_{E_B\\to I_B}} + \\frac{C_{E_B\\to I_B} r_{E_B}(t-0.1) a_{E_B\\to I_B}}{1000}",
+      "latex": "\\dot{g_{e}^{I_B}} = - \\frac{g_{e}^{I_B}}{\\tau_{E_B\\to I_B}} + \\frac{C_{E_B\\to I_B} r_{E_B}(t-0.1) a_{E_B\\to I_B}}{1000}",
+      "dependencies": [
+        "E_B_to_I_B.conductance",
+        "E_B_to_I_B.coupling",
+        "E_B_to_I_B.delayed_rate",
+        "E_B_to_I_B.gain",
+        "E_B_to_I_B.tau"
+      ]
+    },
+    "I_A_to_E_A.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{i}^{E_A}}",
+      "rhs_latex": "- \\frac{g_{i}^{E_A}}{\\tau_{I_A\\to E_A}} + \\frac{C_{I_A\\to E_A} r_{I_A}(t-0.1) a_{I_A\\to E_A}}{1000}",
+      "latex": "\\dot{g_{i}^{E_A}} = - \\frac{g_{i}^{E_A}}{\\tau_{I_A\\to E_A}} + \\frac{C_{I_A\\to E_A} r_{I_A}(t-0.1) a_{I_A\\to E_A}}{1000}",
+      "dependencies": [
+        "I_A_to_E_A.conductance",
+        "I_A_to_E_A.coupling",
+        "I_A_to_E_A.delayed_rate",
+        "I_A_to_E_A.gain",
+        "I_A_to_E_A.tau"
+      ]
+    },
+    "I_A_to_I_A.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{i}^{I_A}}",
+      "rhs_latex": "- \\frac{g_{i}^{I_A}}{\\tau_{I_A\\to I_A}} + \\frac{C_{I_A\\to I_A} r_{I_A}(t-0.1) a_{I_A\\to I_A}}{1000}",
+      "latex": "\\dot{g_{i}^{I_A}} = - \\frac{g_{i}^{I_A}}{\\tau_{I_A\\to I_A}} + \\frac{C_{I_A\\to I_A} r_{I_A}(t-0.1) a_{I_A\\to I_A}}{1000}",
+      "dependencies": [
+        "I_A_to_I_A.conductance",
+        "I_A_to_I_A.coupling",
+        "I_A_to_I_A.delayed_rate",
+        "I_A_to_I_A.gain",
+        "I_A_to_I_A.tau"
+      ]
+    },
+    "I_B_to_E_B.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{i}^{E_B}}",
+      "rhs_latex": "- \\frac{g_{i}^{E_B}}{\\tau_{I_B\\to E_B}} + \\frac{C_{I_B\\to E_B} r_{I_B}(t-0.1) a_{I_B\\to E_B}}{1000}",
+      "latex": "\\dot{g_{i}^{E_B}} = - \\frac{g_{i}^{E_B}}{\\tau_{I_B\\to E_B}} + \\frac{C_{I_B\\to E_B} r_{I_B}(t-0.1) a_{I_B\\to E_B}}{1000}",
+      "dependencies": [
+        "I_B_to_E_B.conductance",
+        "I_B_to_E_B.coupling",
+        "I_B_to_E_B.delayed_rate",
+        "I_B_to_E_B.gain",
+        "I_B_to_E_B.tau"
+      ]
+    },
+    "I_B_to_I_B.conductance": {
+      "kind": "differential",
+      "lhs_latex": "\\dot{g_{i}^{I_B}}",
+      "rhs_latex": "- \\frac{g_{i}^{I_B}}{\\tau_{I_B\\to I_B}} + \\frac{C_{I_B\\to I_B} r_{I_B}(t-0.1) a_{I_B\\to I_B}}{1000}",
+      "latex": "\\dot{g_{i}^{I_B}} = - \\frac{g_{i}^{I_B}}{\\tau_{I_B\\to I_B}} + \\frac{C_{I_B\\to I_B} r_{I_B}(t-0.1) a_{I_B\\to I_B}}{1000}",
+      "dependencies": [
+        "I_B_to_I_B.conductance",
+        "I_B_to_I_B.coupling",
+        "I_B_to_I_B.delayed_rate",
+        "I_B_to_I_B.gain",
+        "I_B_to_I_B.tau"
+      ]
+    },
+    "E_A.effective_current": {
+      "kind": "definition",
+      "lhs_latex": "I_{E_A}",
+      "rhs_latex": "I_{\\mathrm{ext},E_A} + \\Delta V_{\\mathrm{exc},E_A} \\left(g_{e,E_A}^{E_A} + g_{e,E_B}^{E_A}\\right) - \\Delta V_{\\mathrm{inh},E_A} g_{i}^{E_A}",
+      "latex": "I_{E_A} = I_{\\mathrm{ext},E_A} + \\Delta V_{\\mathrm{exc},E_A} \\left(g_{e,E_A}^{E_A} + g_{e,E_B}^{E_A}\\right) - \\Delta V_{\\mathrm{inh},E_A} g_{i}^{E_A}",
+      "dependencies": [
+        "E_A.applied_current",
+        "E_A.driving_force_exc",
+        "E_A.driving_force_inh",
+        "E_A_to_E_A.conductance",
+        "E_B_to_E_A.conductance",
+        "I_A_to_E_A.conductance"
+      ]
+    },
+    "E_B.effective_current": {
+      "kind": "definition",
+      "lhs_latex": "I_{E_B}",
+      "rhs_latex": "I_{\\mathrm{ext},E_B} + \\Delta V_{\\mathrm{exc},E_B} \\left(g_{e,E_A}^{E_B} + g_{e,E_B}^{E_B}\\right) - \\Delta V_{\\mathrm{inh},E_B} g_{i}^{E_B}",
+      "latex": "I_{E_B} = I_{\\mathrm{ext},E_B} + \\Delta V_{\\mathrm{exc},E_B} \\left(g_{e,E_A}^{E_B} + g_{e,E_B}^{E_B}\\right) - \\Delta V_{\\mathrm{inh},E_B} g_{i}^{E_B}",
+      "dependencies": [
+        "E_A_to_E_B.conductance",
+        "E_B.applied_current",
+        "E_B.driving_force_exc",
+        "E_B.driving_force_inh",
+        "E_B_to_E_B.conductance",
+        "I_B_to_E_B.conductance"
+      ]
+    },
+    "I_A.effective_current": {
+      "kind": "definition",
+      "lhs_latex": "I_{I_A}",
+      "rhs_latex": "g_{e}^{I_A} \\Delta V_{\\mathrm{exc},I_A} + I_{\\mathrm{ext},I_A} - \\Delta V_{\\mathrm{inh},I_A} g_{i}^{I_A}",
+      "latex": "I_{I_A} = g_{e}^{I_A} \\Delta V_{\\mathrm{exc},I_A} + I_{\\mathrm{ext},I_A} - \\Delta V_{\\mathrm{inh},I_A} g_{i}^{I_A}",
+      "dependencies": [
+        "E_A_to_I_A.conductance",
+        "I_A.applied_current",
+        "I_A.driving_force_exc",
+        "I_A.driving_force_inh",
+        "I_A_to_I_A.conductance"
+      ]
+    },
+    "I_B.effective_current": {
+      "kind": "definition",
+      "lhs_latex": "I_{I_B}",
+      "rhs_latex": "g_{e}^{I_B} \\Delta V_{\\mathrm{exc},I_B} + I_{\\mathrm{ext},I_B} - \\Delta V_{\\mathrm{inh},I_B} g_{i}^{I_B}",
+      "latex": "I_{I_B} = g_{e}^{I_B} \\Delta V_{\\mathrm{exc},I_B} + I_{\\mathrm{ext},I_B} - \\Delta V_{\\mathrm{inh},I_B} g_{i}^{I_B}",
+      "dependencies": [
+        "E_B_to_I_B.conductance",
+        "I_B.applied_current",
+        "I_B.driving_force_exc",
+        "I_B.driving_force_inh",
+        "I_B_to_I_B.conductance"
+      ]
+    },
+    "E_A.driving_force_exc": {
+      "kind": "definition",
+      "lhs_latex": "\\Delta V_{\\mathrm{exc},E_A}",
+      "rhs_latex": "65",
+      "latex": "\\Delta V_{\\mathrm{exc},E_A} = 65",
+      "dependencies": []
+    },
+    "E_A.driving_force_inh": {
+      "kind": "definition",
+      "lhs_latex": "\\Delta V_{\\mathrm{inh},E_A}",
+      "rhs_latex": "15",
+      "latex": "\\Delta V_{\\mathrm{inh},E_A} = 15",
+      "dependencies": []
+    },
+    "E_B.driving_force_exc": {
+      "kind": "definition",
+      "lhs_latex": "\\Delta V_{\\mathrm{exc},E_B}",
+      "rhs_latex": "65",
+      "latex": "\\Delta V_{\\mathrm{exc},E_B} = 65",
+      "dependencies": []
+    },
+    "E_B.driving_force_inh": {
+      "kind": "definition",
+      "lhs_latex": "\\Delta V_{\\mathrm{inh},E_B}",
+      "rhs_latex": "15",
+      "latex": "\\Delta V_{\\mathrm{inh},E_B} = 15",
+      "dependencies": []
+    },
+    "I_A.driving_force_exc": {
+      "kind": "definition",
+      "lhs_latex": "\\Delta V_{\\mathrm{exc},I_A}",
+      "rhs_latex": "65",
+      "latex": "\\Delta V_{\\mathrm{exc},I_A} = 65",
+      "dependencies": []
+    },
+    "I_A.driving_force_inh": {
+      "kind": "definition",
+      "lhs_latex": "\\Delta V_{\\mathrm{inh},I_A}",
+      "rhs_latex": "15",
+      "latex": "\\Delta V_{\\mathrm{inh},I_A} = 15",
+      "dependencies": []
+    },
+    "I_B.driving_force_exc": {
+      "kind": "definition",
+      "lhs_latex": "\\Delta V_{\\mathrm{exc},I_B}",
+      "rhs_latex": "65",
+      "latex": "\\Delta V_{\\mathrm{exc},I_B} = 65",
+      "dependencies": []
+    },
+    "I_B.driving_force_inh": {
+      "kind": "definition",
+      "lhs_latex": "\\Delta V_{\\mathrm{inh},I_B}",
+      "rhs_latex": "15",
+      "latex": "\\Delta V_{\\mathrm{inh},I_B} = 15",
+      "dependencies": []
+    }
+  },
+  "latex": "\\begin{aligned}\n\\tau_{r,E_A}\\,\\dot{r_{E_A}} &= - r_{E_A} + \\Phi_{E A}{\\left(I_{E_A} \\right)} \\\\\n\\tau_{r,E_B}\\,\\dot{r_{E_B}} &= - r_{E_B} + \\Phi_{E B}{\\left(I_{E_B} \\right)} \\\\\n\\tau_{r,I_A}\\,\\dot{r_{I_A}} &= - r_{I_A} + \\Phi_{I A}{\\left(I_{I_A} \\right)} \\\\\n\\tau_{r,I_B}\\,\\dot{r_{I_B}} &= - r_{I_B} + \\Phi_{I B}{\\left(I_{I_B} \\right)} \\\\\n\\dot{g_{e,E_A}^{E_A}} &= - \\frac{g_{e,E_A}^{E_A}}{\\tau_{E_A\\to E_A}} + \\frac{C_{E_A\\to E_A} r_{E_A}(t-0.1) a_{E_A\\to E_A}}{1000} \\\\\n\\dot{g_{e,E_A}^{E_B}} &= - \\frac{g_{e,E_A}^{E_B}}{\\tau_{E_A\\to E_B}} + \\frac{C_{E_A\\to E_B} r_{E_A}(t-2) a_{E_A\\to E_B}}{1000} \\\\\n\\dot{g_{e}^{I_A}} &= - \\frac{g_{e}^{I_A}}{\\tau_{E_A\\to I_A}} + \\frac{C_{E_A\\to I_A} r_{E_A}(t-0.1) a_{E_A\\to I_A}}{1000} \\\\\n\\dot{g_{e,E_B}^{E_A}} &= - \\frac{g_{e,E_B}^{E_A}}{\\tau_{E_B\\to E_A}} + \\frac{C_{E_B\\to E_A} r_{E_B}(t-2) a_{E_B\\to E_A}}{1000} \\\\\n\\dot{g_{e,E_B}^{E_B}} &= - \\frac{g_{e,E_B}^{E_B}}{\\tau_{E_B\\to E_B}} + \\frac{C_{E_B\\to E_B} r_{E_B}(t-0.1) a_{E_B\\to E_B}}{1000} \\\\\n\\dot{g_{e}^{I_B}} &= - \\frac{g_{e}^{I_B}}{\\tau_{E_B\\to I_B}} + \\frac{C_{E_B\\to I_B} r_{E_B}(t-0.1) a_{E_B\\to I_B}}{1000} \\\\\n\\dot{g_{i}^{E_A}} &= - \\frac{g_{i}^{E_A}}{\\tau_{I_A\\to E_A}} + \\frac{C_{I_A\\to E_A} r_{I_A}(t-0.1) a_{I_A\\to E_A}}{1000} \\\\\n\\dot{g_{i}^{I_A}} &= - \\frac{g_{i}^{I_A}}{\\tau_{I_A\\to I_A}} + \\frac{C_{I_A\\to I_A} r_{I_A}(t-0.1) a_{I_A\\to I_A}}{1000} \\\\\n\\dot{g_{i}^{E_B}} &= - \\frac{g_{i}^{E_B}}{\\tau_{I_B\\to E_B}} + \\frac{C_{I_B\\to E_B} r_{I_B}(t-0.1) a_{I_B\\to E_B}}{1000} \\\\\n\\dot{g_{i}^{I_B}} &= - \\frac{g_{i}^{I_B}}{\\tau_{I_B\\to I_B}} + \\frac{C_{I_B\\to I_B} r_{I_B}(t-0.1) a_{I_B\\to I_B}}{1000} \\\\\nI_{E_A} &= I_{\\mathrm{ext},E_A} + \\Delta V_{\\mathrm{exc},E_A} \\left(g_{e,E_A}^{E_A} + g_{e,E_B}^{E_A}\\right) - \\Delta V_{\\mathrm{inh},E_A} g_{i}^{E_A} \\\\\nI_{E_B} &= I_{\\mathrm{ext},E_B} + \\Delta V_{\\mathrm{exc},E_B} \\left(g_{e,E_A}^{E_B} + g_{e,E_B}^{E_B}\\right) - \\Delta V_{\\mathrm{inh},E_B} g_{i}^{E_B} \\\\\nI_{I_A} &= g_{e}^{I_A} \\Delta V_{\\mathrm{exc},I_A} + I_{\\mathrm{ext},I_A} - \\Delta V_{\\mathrm{inh},I_A} g_{i}^{I_A} \\\\\nI_{I_B} &= g_{e}^{I_B} \\Delta V_{\\mathrm{exc},I_B} + I_{\\mathrm{ext},I_B} - \\Delta V_{\\mathrm{inh},I_B} g_{i}^{I_B} \\\\\n\\Delta V_{\\mathrm{exc},E_A} &= 65 \\\\\n\\Delta V_{\\mathrm{inh},E_A} &= 15 \\\\\n\\Delta V_{\\mathrm{exc},E_B} &= 65 \\\\\n\\Delta V_{\\mathrm{inh},E_B} &= 15 \\\\\n\\Delta V_{\\mathrm{exc},I_A} &= 65 \\\\\n\\Delta V_{\\mathrm{inh},I_A} &= 15 \\\\\n\\Delta V_{\\mathrm{exc},I_B} &= 65 \\\\\n\\Delta V_{\\mathrm{inh},I_B} &= 15\n\\end{aligned}",
+  "assumptions": [
+    "E_A: fixed voltage-noise scale 4 mV; stationary white-noise LIF gain (noise is not derived from connectivity)",
+    "E_B: fixed voltage-noise scale 4 mV; stationary white-noise LIF gain (noise is not derived from connectivity)",
+    "I_A: fixed voltage-noise scale 4 mV; stationary white-noise LIF gain (noise is not derived from connectivity)",
+    "I_B: fixed voltage-noise scale 4 mV; stationary white-noise LIF gain (noise is not derived from connectivity)",
+    "Homogeneous source rates; fixed weights summarised by mean incoming weight per target",
+    "Fixed resting driving forces; shunting and voltage/conductance covariance omitted",
+    "Input covariance and within-population weight heterogeneity omitted",
+    "External filters: dynamic; delays: explicit",
+    "Rates in Hz; time in ms; conductance in uS; current in nA",
+    "Projection gain acts at target delivery, multiplying delayed source activity; continuous dynamical state is retained across switches"
+  ],
+  "provenance": {
+    "graph_digest": "sha256:b4b420450c0339830995f9e4a8a5a97d3f689814fc13316a61e8583b7de4e6ef",
+    "weights": "Illustrative explicit mean incoming conductances; no spiking fit"
+  },
+  "summary": "14 states; 38 parameters\nStates:\n1. E_A.rate [Hz]\n2. E_B.rate [Hz]\n3. I_A.rate [Hz]\n4. I_B.rate [Hz]\n5. E_A_to_E_A.conductance [uS]\n6. E_A_to_E_B.conductance [uS]\n7. E_A_to_I_A.conductance [uS]\n8. E_B_to_E_A.conductance [uS]\n9. E_B_to_E_B.conductance [uS]\n10. E_B_to_I_B.conductance [uS]\n11. I_A_to_E_A.conductance [uS]\n12. I_A_to_I_A.conductance [uS]\n13. I_B_to_E_B.conductance [uS]\n14. I_B_to_I_B.conductance [uS]\nAssumptions:\n1. E_A: fixed voltage-noise scale 4 mV; stationary white-noise LIF gain (noise is not derived from connectivity)\n2. E_B: fixed voltage-noise scale 4 mV; stationary white-noise LIF gain (noise is not derived from connectivity)\n3. I_A: fixed voltage-noise scale 4 mV; stationary white-noise LIF gain (noise is not derived from connectivity)\n4. I_B: fixed voltage-noise scale 4 mV; stationary white-noise LIF gain (noise is not derived from connectivity)\n5. Homogeneous source rates; fixed weights summarised by mean incoming weight per target\n6. Fixed resting driving forces; shunting and voltage/conductance covariance omitted\n7. Input covariance and within-population weight heterogeneity omitted\n8. External filters: dynamic; delays: explicit\n9. Rates in Hz; time in ms; conductance in uS; current in nA\n10. Projection gain acts at target delivery, multiplying delayed source activity; continuous dynamical state is retained across switches\nProvenance: {'graph_digest': 'sha256:b4b420450c0339830995f9e4a8a5a97d3f689814fc13316a61e8583b7de4e6ef', 'weights': 'Illustrative explicit mean incoming conductances; no spiking fit'}\nGraph delays (ms): {'E_A_to_E_A': 0.1, 'E_A_to_E_B': 2.0, 'E_A_to_I_A': 0.1, 'E_B_to_E_A': 2.0, 'E_B_to_E_B': 0.1, 'E_B_to_I_B': 0.1, 'I_A_to_E_A': 0.1, 'I_A_to_I_A': 0.1, 'I_B_to_E_B': 0.1, 'I_B_to_I_B': 0.1}; mode: explicit\nExplicit delays (ms): {'E_A_to_E_A': 0.1, 'E_A_to_E_B': 2.0, 'E_A_to_I_A': 0.1, 'E_B_to_E_A': 2.0, 'E_B_to_E_B': 0.1, 'E_B_to_I_B': 0.1, 'I_A_to_E_A': 0.1, 'I_A_to_I_A': 0.1, 'I_B_to_E_B': 0.1, 'I_B_to_I_B': 0.1}; history required on [-2, 0] ms for all named states in their declared units\nNo delay approximation; delivery-time modulation; stability analysis unsupported"
+}

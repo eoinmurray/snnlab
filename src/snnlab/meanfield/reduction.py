@@ -113,6 +113,7 @@ def reduce(
     applied_current=None,
     external_filters="dynamic",
     delays="reject",
+    modulation="reject",
 ):
     """Build a qualitative model without sampling weights or simulating spikes.
 
@@ -121,18 +122,30 @@ def reduce(
     """
     bundle = compile(network) if isinstance(network, Network) else network
     graph = deepcopy(bundle.graph)
+    graph_digest = digest(graph)
     if external_filters not in ("dynamic", "quasistatic"):
         raise ValueError("external_filters must be dynamic or quasistatic")
-    if delays not in ("reject", "omit"):
-        raise ValueError("delays must be reject or omit")
+    if delays not in ("reject", "omit", "explicit"):
+        raise ValueError("delays must be reject, omit or explicit")
+    if modulation not in ("reject", "translate"):
+        raise ValueError("modulation must be reject or translate")
     if delays == "reject" and any(
         p.get("delay", {}).get("value", 0)
         for p in graph["projections"]
         if p.get("enabled", True) and p.get("delay")
     ):
         raise ValueError(
-            "transmission delays require explicit delays='omit' for this ODE model"
+            "transmission delays require delays='explicit' or explicit delays='omit' for an ODE approximation"
         )
+    translated = {}
+    if modulation == "translate":
+        from .controls import graph_control
+
+        for projection in graph["projections"]:
+            if projection.get("enabled", True) and projection.get("modulation"):
+                translated[projection["id"] + ".gain"] = graph_control(
+                    projection.pop("modulation"), graph["timebase"]["dt"]["value"]
+                )
     inputs = dict(inputs or {})
     required = {
         p["source"].rsplit(".", 1)[0]
@@ -153,8 +166,9 @@ def reduce(
             weights=weights.resolve(graph),
             inputs=inputs,
             applied_current=dict(applied_current or {}),
-            provenance={"graph_digest": digest(graph), "weights": weights.provenance},
+            provenance={"graph_digest": graph_digest, "weights": weights.provenance},
             external_filters=external_filters,
             delays=delays,
+            controls=translated,
         )
     )

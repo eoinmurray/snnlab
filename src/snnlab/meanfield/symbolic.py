@@ -6,15 +6,22 @@ import sympy as sp
 def equations(model):
     """Map state names to SymPy derivative equations (time measured in ms)."""
     time = sp.Symbol("t", real=True)
+    delayed = {
+        symbol: sp.Function(str(item.source))(time - item.delay_ms)
+        for symbol, item in model.delayed.items()
+    }
     return {
         name: sp.Eq(
-            sp.Derivative(symbol, time, evaluate=False), expression, evaluate=False
+            sp.Derivative(symbol, time, evaluate=False),
+            expression.xreplace(delayed),
+            evaluate=False,
         )
         for (name, symbol), expression in zip(model.states.items(), model.rhs)
     }
 
 
 def jacobian(model):
+    model.require_ode_analysis()
     return sp.Matrix(model.rhs).jacobian(list(model.states.values()))
 
 
@@ -105,4 +112,16 @@ def summary(model):
             for i, (name, expression) in enumerate(model.reconstructions.items(), 1)
         )
     lines.append(f"Provenance: {dict(model.provenance)}")
+    if model.projection_delays:
+        lines.append(
+            f"Graph delays (ms): {dict(model.projection_delays)}; mode: {model.delay_mode}"
+        )
+    if model.delayed:
+        maximum = max(item.delay_ms for item in model.delayed.values())
+        lines.append(
+            f"Explicit delays (ms): {dict(model.projection_delays)}; history required on [-{maximum:g}, 0] ms for all named states in their declared units"
+        )
+        lines.append(
+            "No delay approximation; delivery-time modulation; stability analysis unsupported"
+        )
     return "\n".join(lines)

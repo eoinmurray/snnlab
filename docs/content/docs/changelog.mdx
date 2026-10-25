@@ -9,6 +9,16 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-25
+
+### Added
+
+1. Explicit fixed transmission delays in mean-field integration, with named histories, adaptive method-of-steps integration, delivery-time coupling schedules and exported numerical settings. Added analytic/convergence fixtures and a runnable coupled E/I example. Delayed stability analysis and matched-decay state merging are rejected explicitly; zero-delay and delay-omission ODE modes remain available.
+
+### Fixed
+
+1. Mean-field delay discontinuities now propagate on an integer time grid, preventing floating-point boundary duplication over long runs. Regression coverage verifies 50,001 boundaries and complete 5,000 ms integration for 0.1 ms and 2 ms delays.
+
 ## [0.27.0] - 2026-10-25
 
 ### Added

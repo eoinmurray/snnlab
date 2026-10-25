@@ -17,6 +17,8 @@ from .analysis import (
     integrate,
     linearise,
 )
+from .controls import PiecewiseConstant
+from .history import ConstantHistory, History
 from .manipulation import reduce_states, substitute
 from .model import Model
 from .reduction import MeanIncomingWeights, RealisedWeights, StationaryRate, reduce
@@ -46,4 +48,7 @@ __all__ = [
     "Linearisation",
     "StabilityCrossing",
     "Trajectory",
+    "PiecewiseConstant",
+    "ConstantHistory",
+    "History",
 ]

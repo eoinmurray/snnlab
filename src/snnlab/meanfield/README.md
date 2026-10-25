@@ -57,9 +57,9 @@ tex = mf.latex(model)  # aligned equations, for embedding in a document
 5. `external_filters="dynamic"` is the default and retains input filters.
    `"quasistatic"` substitutes the stationary mean even during gain changes,
    intentionally omitting filtering lag, as exp148 does.
-6. Nonzero graph delays fail by default; `delays="omit"` explicitly makes an ODE
-   approximation. Graph modulation schedules also fail; translate them into
-   explicit numerical controls rather than silently discarding them.
+6. Nonzero graph delays fail by default; `delays="explicit"` retains transmission
+   delays and `delays="omit"` explicitly makes an ODE approximation. Select
+   `modulation="translate"` for supported graph schedules or supply explicit controls.
 7. Built-in names include `E.rate`, `E.tau_rate`, `E.applied_current`,
    `E_to_I.conductance`, `E_to_I.coupling`, `E_to_I.tau` and `E_to_I.gain`.
    State/parameter mappings and declared units are available on `model`.
@@ -255,6 +255,141 @@ symbolic callable and a maximum rate in Hz, as `NoisyLIF` does.
 
 Units are preserved as metadata and quantity boundaries are checked; arbitrary
 custom SymPy expressions do not yet receive automatic dimensional analysis.
+
+## Explicit transmission delays
+
+Choose `delays="explicit"` in `reduce` to retain fixed nonnegative graph delays
+per projection. Zero delay uses the current source rate. `delays="reject"`
+remains the default; `delays="omit"` records an explicit ODE approximation.
+Dynamic AMPA/GABA filters implement
+
+$$
+\frac{d g_p(t)}{dt}=-\frac{g_p(t)}{\tau_p}
++\frac{C_p a_p(t) r_{s(p)}(t-d_p)}{1000}.
+$$
+
+Here $p$ is a projection, $s(p)$ its source population or external input,
+$t$ is time in ms, $g_p$ is mean conductance in µS, $\tau_p$ its decay time in ms,
+$C_p$ is mean incoming effective weight in µS, $a_p$ is dimensionless gain,
+$r_{s(p)}$ is source rate in Hz and $d_p$ is transmission delay in ms. The factor
+1000 converts Hz to inverse ms. This is the existing rate-conductance closure
+with explicit delayed forcing, not a new closure or a filter-chain approximation.
+
+```python
+trajectory = mf.integrate(
+    model,
+    duration=600,
+    initial=initial,
+    history=mf.ConstantHistory(initial),
+    controls={
+        "E_A_to_E_B.gain": mf.PiecewiseConstant(
+            times=[500],
+            values=[0, 1],
+        ),
+    },
+    method="DOP853",
+    rtol=1e-9,
+    atol=1e-11,
+    max_step=0.1,
+    sample_interval=0.5,
+)
+trajectory.write("results/trajectory.json")
+```
+
+### History and units
+
+A nonzero delayed dependency requires an explicit `ConstantHistory(state)` or
+`History(function, start, description, breakpoints=())`. The callback takes time
+in ms and returns **every retained state by name**, in its declared unit; bare
+numbers use native units. The required interval is $[-d_{\max},0]$, where
+$d_{\max}$ is the largest retained delay in ms. `History.start` must cover this
+interval. Supply a continuous, piecewise smooth history and declare its interior
+corners through `breakpoints`. `description` records the mathematical specification
+in exports. For example:
+
+```python
+history = mf.History(
+    function=lambda t: {**initial, "E_A.rate": initial["E_A.rate"] + 0.001 * t},
+    start=-2,
+    description="E_A rate varies linearly at 0.001 Hz/ms; other states constant",
+)
+```
+
+History at zero must agree with `initial` to absolute tolerance `1e-12` in each
+native state unit. Names, shape, finiteness and quantity units are validated.
+The solver probes histories initially and validates every later lookup; it cannot
+prove an arbitrary callback continuous. Initial derivative agreement is not
+required: the initial derivative corner is propagated through the delays.
+External source rates remain stationary parameters unless controlled; a controlled
+external rate is evaluated at emission time `t-delay`, including negative times.
+Such callbacks must define their pre-zero values. Nonzero explicit external delays
+require `external_filters="dynamic"`; quasistatic substitution is rejected.
+
+### Solver, interpolation and switches
+
+The solver uses an adaptive **method of steps**: each interval is no longer than
+the smallest positive delay, so delayed states come from already completed
+intervals. It retains SciPy `solve_ivp` dense output, using the selected method's
+interpolant: RK23 cubic Hermite, RK45 quartic, DOP853 seventh-order, or LSODA's
+variable-order polynomial. `rtol` and `atol` control local ODE error on each
+interval, not a certified global DDE error. `atol` may be one native-unit value
+per state. `max_step` limits internal steps and therefore interpolation spacing;
+`sample_interval` only selects observations and may exceed a delay. Establish
+convergence by tightening tolerances and reducing `max_step`.
+See [SciPy solve_ivp](https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html)
+for solver-specific interpolation and tolerance semantics, and
+[Shampine and Thompson (2001)](https://doi.org/10.1016/S0168-9274(00)00010-8)
+for numerical delay-equation methods and discontinuity tracking.
+
+`PiecewiseConstant(times, values)` has one more value than switch times and is
+right-continuous. `PiecewiseLinear` exposes its knot times too. Both trigger
+split/restart with continuous dynamical state; no solver step straddles a known
+switch. For arbitrary callbacks, supply all corners/jumps explicitly through
+`integrate(breakpoints=[...])` or a control's `breakpoints` attribute. Smooth
+callbacks need no breakpoints. Initial/history/control corners are propagated
+through all delay sums. Delay values and seed times are quantized once to
+integer ticks of `1e-12` ms for restart scheduling; propagation and deduplication
+use integer addition, so equivalent paths cannot drift apart on long runs.
+The derivative still uses the authored delays. More than 100,000 distinct
+boundaries raises a complexity error rather than
+silently skipping them. Very small or incommensurate delays can be expensive.
+Retained dense history uses memory proportional to solver steps over the run.
+
+Modulation acts at **target delivery**: `gain(t) * source_rate(t-delay)`, matching
+the graph executor. Changing gain does not erase conductance already present.
+`modulation="translate"` in `reduce` explicitly translates graph constant, step,
+piecewise-constant and ramp gains into `model.controls`, which `integrate` uses
+by default. Explicit `controls` override matching entries. Step/piecewise switch
+times are rounded to the first graph timestep at or after the authored time,
+matching graph sampling. Ramps are continuous interpolations agreeing at graph
+sample times. Other graph modulation kinds fail clearly; use an explicit
+control instead. No graph schedule is silently discarded.
+
+### Analysis and exported evidence
+
+For delayed models, `find_equilibrium` solves the constant-history stationary
+balance, replacing delayed rates by their constant values. It freezes parameter
+defaults/overrides and ignores time schedules. This is mathematically valid for
+an autonomous frozen system and makes **no stability claim**. `evaluate`, which
+has no history argument, rejects delayed derivatives. `jacobian`, `linearise`,
+`continuation` and `find_stability_crossings` reject delayed stability analysis;
+characteristic roots are not implemented. `reduce_states` conservatively rejects
+all nonzero delayed models: matching decay times alone does not establish
+proportional histories. `substitute` remains available for non-delay parameters.
+
+`equations` and LaTeX expose source rates at `t-delay`. Model JSON includes each
+authored projection delay, selected delay mode, symbolic delayed dependencies,
+required history interval and default controls. `Trajectory.metadata` and
+`Trajectory.write(path)` additionally record actual history, initial values,
+parameters, controls, solver settings and interpolation. Runtime callback code
+is not serialized; record its mathematical definition and preserve its source.
+The exported `delay_approximation="none"` describes transmission only: gain,
+noise and population-homogeneity assumptions remain.
+
+The runnable `examples/meanfield-delays/example.py` compares two coupled E/I
+circuits with an uncoupled run and a 500 ms coupling onset. It retains 0.1 ms
+internal and 2 ms cross-circuit delays. It does not claim sustained gamma,
+exp133 reproduction, locking boundaries or delayed-system bifurcations.
 
 ## Scientific sources
 

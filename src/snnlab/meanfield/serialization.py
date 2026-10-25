@@ -7,6 +7,7 @@ from tempfile import NamedTemporaryFile
 
 import sympy as sp
 
+from .controls import control_spec
 from .symbolic import _latex_equations, latex, summary
 
 
@@ -77,9 +78,34 @@ def write_model(model, path):
             "latex": sp.latex(sp.Symbol(name)),
             "specification": dict(definition),
         }
+    for symbol, item in model.delayed.items():
+        symbols[str(symbol)] = {
+            "kind": "delayed_dependency",
+            "source": str(item.source),
+            "delay_ms": item.delay_ms,
+            "unit": model.units[str(item.source)],
+            "latex": sp.latex(symbol, symbol_names=dict(model.notation)),
+        }
     document = {
         "schema": "snnlab.meanfield.model/v1",
         "time_unit": "ms",
+        "delays": {
+            "mode": model.delay_mode,
+            "projections_ms": dict(model.projection_delays),
+            "dependencies": {
+                str(s): {"source": str(d.source), "delay_ms": d.delay_ms}
+                for s, d in model.delayed.items()
+            },
+            "required_history_interval_ms": [
+                -max((d.delay_ms for d in model.delayed.values()), default=0),
+                0,
+            ],
+            "history_contract": "History or ConstantHistory; every named state in its declared unit; continuous piecewise smooth history agrees with initial at zero; actual history and solver settings are exported by Trajectory.write",
+            "modulation_timing": "target_delivery",
+        },
+        "controls": {
+            name: control_spec(control) for name, control in model.controls.items()
+        },
         "state_order": list(model.states),
         "parameter_order": list(model.parameters),
         "states": states,

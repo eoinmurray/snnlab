@@ -33,6 +33,18 @@ class Filter:
 
 
 @dataclass(frozen=True)
+class Delayed:
+    source: sp.Symbol
+    delay_ms: float
+
+    def __post_init__(self):
+        delay = magnitude(self.delay_ms, "ms")
+        if delay <= 0:
+            raise ValueError("delayed dependencies require a positive delay")
+        object.__setattr__(self, "delay_ms", delay)
+
+
+@dataclass(frozen=True)
 class Model:
     """Named equations and explicit approximation metadata; use module operations."""
 
@@ -54,6 +66,10 @@ class Model:
     display_rhs: tuple[sp.Expr, ...] = ()
     function_definitions: Mapping[str, dict] = field(default_factory=dict)
     symbol_metadata: Mapping[str, dict] = field(default_factory=dict)
+    delayed: Mapping[sp.Symbol, Delayed] = field(default_factory=dict)
+    projection_delays: Mapping[str, float] = field(default_factory=dict)
+    controls: Mapping[str, Callable] = field(default_factory=dict)
+    delay_mode: str = "reject"
 
     def __post_init__(self):
         for name in (
@@ -70,6 +86,9 @@ class Model:
             "definitions",
             "function_definitions",
             "symbol_metadata",
+            "delayed",
+            "projection_delays",
+            "controls",
         ):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
         if not self.states or len(self.states) != len(self.rhs):
@@ -79,6 +98,13 @@ class Model:
         if set(self.parameters) != set(self.defaults):
             raise ValueError("each parameter requires a default")
         known = set(self.states.values()) | set(self.parameters.values())
+        if any(item.source not in known for item in self.delayed.values()):
+            raise ValueError("delayed source must be a declared state or parameter")
+        if known.intersection(self.delayed):
+            raise ValueError(
+                "delayed symbols must be distinct from states and parameters"
+            )
+        known |= set(self.delayed)
         if set(self.states) & set(self.parameters):
             raise ValueError("state and parameter names must be distinct")
         if any(expression.free_symbols - known for expression in self.rhs):
@@ -122,7 +148,7 @@ class Model:
     @cached_property
     def numerical_rhs(self):
         return sp.lambdify(
-            (*self.states.values(), *self.parameters.values()),
+            (*self.states.values(), *self.parameters.values(), *self.delayed),
             self.rhs,
             modules=[dict(self.functions), "numpy"],
             cse=True,
@@ -130,9 +156,43 @@ class Model:
 
     @cached_property
     def numerical_jacobian(self):
+        self.require_ode_analysis()
         return sp.lambdify(
             (*self.states.values(), *self.parameters.values()),
             sp.Matrix(self.rhs).jacobian(list(self.states.values())),
+            modules=[dict(self.functions), "numpy"],
+            cse=True,
+        )
+
+    def require_ode_analysis(self):
+        if self.delayed:
+            raise ValueError(
+                "delayed-system stability requires characteristic-root analysis; ODE Jacobians, continuation stability and stability crossings are unsupported"
+            )
+
+    @cached_property
+    def stationary_rhs(self):
+        return tuple(
+            expr.xreplace(
+                {symbol: item.source for symbol, item in self.delayed.items()}
+            )
+            for expr in self.rhs
+        )
+
+    @cached_property
+    def numerical_stationary_rhs(self):
+        return sp.lambdify(
+            (*self.states.values(), *self.parameters.values()),
+            self.stationary_rhs,
+            modules=[dict(self.functions), "numpy"],
+            cse=True,
+        )
+
+    @cached_property
+    def numerical_stationary_jacobian(self):
+        return sp.lambdify(
+            (*self.states.values(), *self.parameters.values()),
+            sp.Matrix(self.stationary_rhs).jacobian(list(self.states.values())),
             modules=[dict(self.functions), "numpy"],
             cse=True,
         )
