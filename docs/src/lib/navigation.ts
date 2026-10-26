@@ -4,6 +4,7 @@ const sidebarTitles: Record<string, string> = {
   'comparisons.mdx': 'Comparison with Other SNN Libraries',
   'snntorch-comparison.mdx': 'MNIST: SNNLab vs snnTorch',
   'shd-benchmark.mdx': 'SHD Benchmark',
+  'streaming-benchmark.mdx': 'Streaming Benchmark',
 };
 
 export const sidebarLabels = {

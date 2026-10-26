@@ -2,5 +2,5 @@
   "title": "Benchmarks",
   "collapsible": true,
   "defaultOpen": false,
-  "pages": ["../shd-benchmark", "../snntorch-comparison"]
+  "pages": ["../shd-benchmark", "../snntorch-comparison", "../streaming-benchmark"]
 }
