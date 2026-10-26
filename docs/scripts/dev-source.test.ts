@@ -33,9 +33,15 @@ test('new snapshots reflect page additions, metadata changes, content edits and 
   const added = createDevSource(contents, {}, '/');
   expect(JSON.stringify(added.getPageTree())).toContain('Added page');
   expect(JSON.stringify(added.getPageTree())).toContain('Simulation');
+  expect(added.getPage(['api', 'sim', 'new-page'])?.data.structuredData.contents).toEqual([
+    { heading: undefined, content: 'New content.' },
+  ]);
   contents[key] = '---\ntitle: Edited page\n---\n\nEdited content.';
   const edited = createDevSource(contents, {}, '/');
   expect(edited.getPage(['api', 'sim', 'new-page'])?.data._raw.body).toContain('Edited content.');
+  expect(edited.getPage(['api', 'sim', 'new-page'])?.data.structuredData.contents).toEqual([
+    { heading: undefined, content: 'Edited content.' },
+  ]);
   delete contents[key];
   expect(createDevSource(contents, {}, '/').getPage(['api', 'sim', 'new-page'])).toBeUndefined();
 });

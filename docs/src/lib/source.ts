@@ -30,7 +30,10 @@ export async function getSource() {
   const [pages, metadata] = await Promise.all([getCollection('docs'), getCollection('meta')]);
   for (const entry of pages) {
     files.push({ type: 'page', path: path.relative('content/docs', entry.filePath!),
-      data: { ...entry.data, _raw: entry, structuredData: structure(entry.body || '') } });
+      data: {
+        ...entry.data, _raw: entry,
+        get structuredData() { return structure(entry.body || ''); },
+      } });
   }
   for (const entry of metadata) {
     files.push({ type: 'meta', path: path.relative('content/docs', entry.filePath!), data: entry.data });

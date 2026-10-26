@@ -35,6 +35,12 @@ bun run preview
 
 The build exports plain HTML, CSS, JavaScript, search data, and KaTeX fonts into `out/`. Astro uses `output: static`; no application server is needed. Markdown downloads use explicit `/llms.mdx/docs/.../content.md` routes; runtime content-negotiation rewrites are unavailable on static hosts.
 
+Layout styles are inlined into the HTML to avoid a blocking stylesheet request on
+the first visit. KaTeX styles remain a shared external asset, loaded only on pages
+whose Markdown contains math delimiters. Search data is parsed when the search
+index is requested, rather than while constructing navigation for every page;
+development still constructs a fresh source from the current content snapshot.
+
 Documentation links use normal browser navigation. Each documentation page preloads
 its React island, renderer and shared JavaScript in the head so sidebar controls can
 hydrate promptly. Search stays lazy; the Welcome page uses the same React documentation layout as other pages.

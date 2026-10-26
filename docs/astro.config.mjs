@@ -56,7 +56,8 @@ export default defineConfig({
   site: process.env.SITE_URL || 'https://snnlab.eoinmurray.info',
   base,
   trailingSlash: 'never',
-  build: { format: 'file' },
+  // Render the first page without waiting for a separate layout stylesheet.
+  build: { format: 'file', inlineStylesheets: 'always' },
   markdown: {
     processor: unified({
       syntaxHighlight: false,

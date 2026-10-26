@@ -29,7 +29,9 @@ export function createDevSource(
       filePath: `content/docs/${relative}`, data, body: content,
     };
     files.push({ type: 'page', path: relative, data: {
-      ...data, _raw: entry, structuredData: structure(content),
+      ...data, _raw: entry,
+      // Navigation needs metadata; parse the full text only when search reads it.
+      get structuredData() { return structure(content); },
       _render: async () => {
         const module = await modules[name]();
         return { Content: module.Content, headings: module.getHeadings() };
