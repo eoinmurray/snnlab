@@ -1,0 +1,41 @@
+{
+  "seed": 17,
+  "input_seed": 18,
+  "dt_ms": 0.1,
+  "window_steps": 50,
+  "windows": 40,
+  "completed_steps": 2000,
+  "model_time_ms": 200.0,
+  "stream_info": {
+    "window_steps": 50,
+    "persistent_state": true,
+    "batch_size": 1,
+    "device": "cpu",
+    "dtype": "torch.float32",
+    "warmup_windows": 2,
+    "warmup_s": 10.949653207906522,
+    "execution_path": {
+      "schema": "snnlab.network-blocks/v1",
+      "selected": "compiled_blocks",
+      "requested_block_steps": 50,
+      "block_steps": 50,
+      "fallback_reasons": []
+    },
+    "compiler_wrapper": {
+      "requested": "native",
+      "selected": "cpp",
+      "reason": null
+    },
+    "performance": {
+      "compile_mode": "default",
+      "compile_block_steps": 50,
+      "cuda_graphs": "off",
+      "precision": "highest",
+      "fused_optimizer": "auto",
+      "dataset_prefetch": 1,
+      "projection_mode": "fast"
+    },
+    "cuda_graphs": "off: stateful continuation does not use CUDA replay",
+    "session_initialization_s": 10.94975320796948
+  }
+}

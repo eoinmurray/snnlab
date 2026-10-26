@@ -6,6 +6,7 @@
     "../snnlang",
     "../training",
     "../inference",
+    "../streaming",
     "../current-lif",
     "../custom-neurons-and-synapses",
     "../hodgkin-huxley",

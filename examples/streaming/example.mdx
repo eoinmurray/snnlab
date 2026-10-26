@@ -1,0 +1,75 @@
+---
+title: Streaming Inference
+description: Process consecutive input windows with one prepared session, retaining neuron and synapse state between calls.
+---
+
+Feed four spike channels into eight conductance-based LIF neurons in **40 consecutive 5 ms windows**. One prepared session carries membrane voltage and synaptic conductance from each window into the next. Weights stay fixed throughout inference.
+
+![Four input channels drive eight excitatory neurons. Spikes and membrane voltage are declared outputs.](/streaming/network.png)
+
+The input rate rises from 40 to 160 Hz/channel at 50 ms and returns to 40 Hz/channel at 150 ms. The whole example advances 200 ms of model time, using 0.1 ms numerical steps. It runs on CPU as fast as execution permits. Application code owns input acquisition, buffering and wall-clock pacing; this example measures no latency or deadline guarantee.
+
+## 1. Define the network and outputs
+
+```python
+{{NETWORK}}
+```
+
+The AMPA projection uses the same conductance-based dynamics as [Quickstart](/quickstart). Streaming does not expose diagnostics, so declare both `spikes` and `voltage` with `net.output` to retrieve them from every call.
+
+## 2. Supply consecutive windows
+
+```python
+{{SETTINGS}}
+```
+
+```python
+{{INPUTS}}
+```
+
+The generator supplies Poisson spike counts one window at a time. Each tensor has shape `(50, 1, 4)`: numerical steps, batch items and input channels. The Poisson mean is the rate in Hz multiplied by the timestep in seconds. A separate seeded generator makes the input reproducible.
+
+Replace this generator with your own input source while preserving the prepared shape, device and dtype. `advance` accepts a mapping of declared input names to tensors, rather than the input binding objects used by `simulate`.
+
+## 3. Prepare once and advance repeatedly
+
+```python
+{{STREAM}}
+```
+
+[`sim.prepare_stream`](/api/sim#prepared-streaming-sessions) copies the network and its initialized weights into a private inference session, then warms execution without advancing model time. Preparing outside the loop preserves dynamic state across calls. `completed_steps` reaches 2,000 after all 40 windows.
+
+Each result owns its output tensors independently. `result.numpy(batch=0)` selects the sole batch item and supplies cumulative model-time coordinates, so concatenating windows gives one continuous trace. Returned time labels identify numerical slots; they are not wall-clock timestamps.
+
+This short example retains the complete history to make the figure. A long-running application should consume each result and discard it, or keep a bounded buffer. Context exit closes the session. For explicit snapshot export and reset, see the [session methods](/api/sim#session-methods).
+
+## 4. Run the example
+
+From the repository root:
+
+```sh
+uv run python examples/streaming/example.py
+```
+
+Diagram rendering requires Graphviz's `dot` executable on your PATH. Download the [complete script](/streaming/example.py) to run it separately with snnlab installed.
+
+Each run replaces its own `results/` directory and writes:
+
+1. `network.png`: network diagram generated from the compiled bundle.
+2. `streaming.png`: input spikes, output spikes and E cell 0 voltage.
+3. `streaming.npz`: `time_ms`, `input_spikes`, `spikes` and `voltage_mv` arrays, with the batch axis removed.
+4. `summary.json`: seeds, window settings, completed model time and preparation metadata, including the selected execution path.
+
+Download the [recorded arrays](/streaming/streaming.npz) and [run summary](/streaming/summary.json). For paced scheduling and deadline measurements, use the separate `benchmarks/streaming/benchmark.py` harness.
+
+## 5. Streaming responses
+
+![Input and neuron spike rasters above E cell 0 membrane voltage over 200 ms. Dotted lines mark 5 ms window boundaries; shading marks the higher-rate input period from 50 to 150 ms.](/streaming/streaming.png)
+
+Window boundaries divide input delivery, not the neuron's trajectory. Synaptic effects and membrane dynamics continue across those boundaries; ordinary spike resets still occur when a neuron fires.
+
+## 6. Full script
+
+```python
+{{SCRIPT}}
+```

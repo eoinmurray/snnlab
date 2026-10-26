@@ -6,6 +6,10 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+### Added
+
+1. A small streaming inference example with consecutive 5 ms input windows, continuing neuron and synapse state, generated diagrams and response plots, downloadable recordings, and a colocated documentation guide.
+
 ## [0.28.2] - 2026-10-26
 
 ### Changed
