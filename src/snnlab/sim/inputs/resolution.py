@@ -5,11 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
 from numbers import Integral
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import torch
@@ -271,7 +272,7 @@ def load_event_stream_bindings(
     bindings = []
     for input_id in input_ids:
 
-        def key(field: str) -> str:
+        def key(field: str, *, input_id=input_id) -> str:
             return field if use_plain else f"{input_id}.{field}"
 
         steps_count_value = np.asarray(arrays[key("steps_count")])
@@ -301,6 +302,31 @@ def load_event_stream_bindings(
             )
         )
     return tuple(bindings)
+
+
+def _validate_dense_values(*, spec, value, input_id, masks, _validated):
+    signal_type = spec.get("signal_type")
+    if signal_type == "mask":
+        if value.dtype != torch.bool:
+            if not torch.all((value == 0) | (value == 1)):
+                raise ValueError(
+                    f"input {input_id} mask values must be boolean or zero/one"
+                )
+            value = value.bool()
+        masks.append(input_id)
+    elif not (value.is_floating_point() or value.dtype == torch.bool):
+        value = value.float()
+    if not _validated and value.is_floating_point() and not torch.isfinite(value).all():
+        raise ValueError(f"input {input_id} contains non-finite values")
+    if (
+        not _validated
+        and signal_type == "spikes"
+        and not torch.all((value == 0) | (value == 1))
+    ):
+        raise ValueError(f"input {input_id} spike values must be boolean or zero/one")
+    if signal_type != "mask":
+        value = value.float()
+    return value, signal_type
 
 
 def resolve_dense_array_bindings(
@@ -365,33 +391,14 @@ def resolve_dense_array_bindings(
             raise ValueError(
                 f"input {input_id} leading shape expected {leading_shape}, got {current_leading}"
             )
-        signal_type = spec.get("signal_type")
-        if signal_type == "mask":
-            if value.dtype != torch.bool:
-                if not torch.all((value == 0) | (value == 1)):
-                    raise ValueError(
-                        f"input {input_id} mask values must be boolean or zero/one"
-                    )
-                value = value.bool()
-            masks.append(input_id)
-        elif not (value.is_floating_point() or value.dtype == torch.bool):
-            value = value.float()
-        if (
-            not _validated
-            and value.is_floating_point()
-            and not torch.isfinite(value).all()
-        ):
-            raise ValueError(f"input {input_id} contains non-finite values")
-        if (
-            not _validated
-            and signal_type == "spikes"
-            and not torch.all((value == 0) | (value == 1))
-        ):
-            raise ValueError(
-                f"input {input_id} spike values must be boolean or zero/one"
-            )
-        if signal_type != "mask":
-            value = value.float()
+        value, signal_type = _validate_dense_values(
+            spec=spec,
+            value=value,
+            input_id=input_id,
+            masks=masks,
+            _validated=_validated,
+        )
+
         trace = current_trace()
         with trace.region("transfer") if trace is not None else nullcontext():
             value = value.to(device)
@@ -453,6 +460,56 @@ def resolve_dense_array_bindings(
     return ResolvedDenseInputs(tensors=resolved, protocol=execution_protocol)
 
 
+def _validate_event_coordinates(*, input_id, binding, declared, integer_dtypes):
+    channels_count = int(declared[2])
+    if (
+        not isinstance(binding.steps_count, Integral)
+        or isinstance(binding.steps_count, bool)
+        or not isinstance(binding.batch_size, Integral)
+        or isinstance(binding.batch_size, bool)
+    ):
+        raise ValueError(
+            f"event input {input_id} steps_count and batch_size must be integers"
+        )
+    steps_count = int(binding.steps_count)
+    batch_size = int(binding.batch_size)
+    if steps_count <= 0 or batch_size <= 0:
+        raise ValueError(
+            f"event input {input_id} steps_count and batch_size must be positive"
+        )
+    coordinates = (binding.steps, binding.batches, binding.channels)
+    if any(value.ndim != 1 for value in coordinates):
+        raise ValueError(f"event input {input_id} coordinates must be one-dimensional")
+    lengths = {int(value.numel()) for value in coordinates}
+    if len(lengths) != 1:
+        raise ValueError(f"event input {input_id} coordinate lengths must match")
+    if any(value.dtype not in integer_dtypes for value in coordinates):
+        raise ValueError(f"event input {input_id} coordinates must use integer dtypes")
+    steps = binding.steps.to(dtype=torch.int64, device="cpu")
+    batches = binding.batches.to(dtype=torch.int64, device="cpu")
+    channels = binding.channels.to(dtype=torch.int64, device="cpu")
+    bounds = (
+        ("step", steps, steps_count),
+        ("batch", batches, batch_size),
+        ("channel", channels, channels_count),
+    )
+    for label, values, upper in bounds:
+        if torch.any(values < 0) or torch.any(values >= upper):
+            raise ValueError(
+                f"event input {input_id} {label} coordinates must be in [0, {upper})"
+            )
+    flat = (steps * batch_size + batches) * channels_count + channels
+    if flat.numel() > 1:
+        differences = flat[1:] - flat[:-1]
+        if torch.any(differences < 0):
+            raise ValueError(
+                f"event input {input_id} coordinates must be ordered by step, batch, channel"
+            )
+        if torch.any(differences == 0):
+            raise ValueError(f"event input {input_id} contains duplicate coordinates")
+    return steps_count, batch_size, channels_count, steps, batches, channels, flat
+
+
 def resolve_event_stream_bindings(
     graph: Mapping[str, Any],
     *,
@@ -497,58 +554,15 @@ def resolve_event_stream_bindings(
             raise ValueError(
                 f"input {input_id} event binding requires signal_type spikes"
             )
-        channels_count = int(declared[2])
-        if (
-            not isinstance(binding.steps_count, Integral)
-            or isinstance(binding.steps_count, bool)
-            or not isinstance(binding.batch_size, Integral)
-            or isinstance(binding.batch_size, bool)
-        ):
-            raise ValueError(
-                f"event input {input_id} steps_count and batch_size must be integers"
+        steps_count, batch_size, channels_count, steps, batches, channels, flat = (
+            _validate_event_coordinates(
+                input_id=input_id,
+                binding=binding,
+                declared=declared,
+                integer_dtypes=integer_dtypes,
             )
-        steps_count = int(binding.steps_count)
-        batch_size = int(binding.batch_size)
-        if steps_count <= 0 or batch_size <= 0:
-            raise ValueError(
-                f"event input {input_id} steps_count and batch_size must be positive"
-            )
-        coordinates = (binding.steps, binding.batches, binding.channels)
-        if any(value.ndim != 1 for value in coordinates):
-            raise ValueError(
-                f"event input {input_id} coordinates must be one-dimensional"
-            )
-        lengths = {int(value.numel()) for value in coordinates}
-        if len(lengths) != 1:
-            raise ValueError(f"event input {input_id} coordinate lengths must match")
-        if any(value.dtype not in integer_dtypes for value in coordinates):
-            raise ValueError(
-                f"event input {input_id} coordinates must use integer dtypes"
-            )
-        steps = binding.steps.to(dtype=torch.int64, device="cpu")
-        batches = binding.batches.to(dtype=torch.int64, device="cpu")
-        channels = binding.channels.to(dtype=torch.int64, device="cpu")
-        bounds = (
-            ("step", steps, steps_count),
-            ("batch", batches, batch_size),
-            ("channel", channels, channels_count),
         )
-        for label, values, upper in bounds:
-            if torch.any(values < 0) or torch.any(values >= upper):
-                raise ValueError(
-                    f"event input {input_id} {label} coordinates must be in [0, {upper})"
-                )
-        flat = (steps * batch_size + batches) * channels_count + channels
-        if flat.numel() > 1:
-            differences = flat[1:] - flat[:-1]
-            if torch.any(differences < 0):
-                raise ValueError(
-                    f"event input {input_id} coordinates must be ordered by step, batch, channel"
-                )
-            if torch.any(differences == 0):
-                raise ValueError(
-                    f"event input {input_id} contains duplicate coordinates"
-                )
+
         current_leading = (steps_count, batch_size)
         if leading_shape is None:
             leading_shape = current_leading
@@ -911,34 +925,135 @@ def resolve_poisson_input_bindings(
     return ResolvedDenseInputs(tensors=tensors, protocol=execution_protocol)
 
 
-def resolve_dataset_snapshot_binding(
-    graph: Mapping[str, Any],
-    binding: DatasetSnapshotBinding,
+def _validate_dataset_encoder_options(encoder):
+    if encoder.kind == "rate_poisson" and (
+        encoder.duration_ms is None
+        or (encoder.max_rate_hz is None and encoder.rates_hz is None)
+    ):
+        raise ValueError(
+            "rate-Poisson encoder requires explicit duration_ms and max_rate_hz"
+        )
+    if encoder.kind != "rate_poisson" and encoder.rates_hz is not None:
+        raise ValueError("rates_hz is supported only by rate_poisson")
+    if encoder.kind == "prebinned_spikes" and (
+        encoder.duration_ms is not None
+        or encoder.max_rate_hz is not None
+        or encoder.seed != 0
+    ):
+        raise ValueError(
+            "prebinned encoder does not accept duration, max rate, or a stochastic seed"
+        )
+    if encoder.kind == "event_bin" and (
+        encoder.duration_ms is None
+        or encoder.max_rate_hz is not None
+        or encoder.seed != 0
+    ):
+        raise ValueError(
+            "event-bin encoder requires duration_ms and does not accept max rate or a stochastic seed"
+        )
+
+
+def _encode_poisson_features(
     *,
-    device: str | torch.device = "cpu",
-    execution_seed: int = 0,
-    protocol: Mapping[str, Any] | None = None,
-    _snapshot=None,
-    _indices=None,
-    _spike_seed=None,
-    _rate_seed=None,
-    _validated=False,
-    _event_index=None,
-) -> tuple[ResolvedDenseInputs, tuple[TargetArrayBinding, ...]]:
-    """Load, select, and encode one immutable MNIST/SHD-style NPZ snapshot."""
-    specs = {row["id"]: row for row in graph.get("inputs", [])}
-    if set(specs) != {binding.input_id}:
+    features,
+    sample_count,
+    channels,
+    _validated,
+    encoder,
+    dt_ms,
+    device,
+    selected,
+    _spike_seed,
+    _rate_seed,
+    cap,
+):
+    if features.shape != (sample_count, channels):
         raise ValueError(
-            "dataset snapshot binding requires exactly its one named graph input"
+            f"rate-Poisson dataset features expected shape {(sample_count, channels)}, got {features.shape}"
         )
-    spec = specs[binding.input_id]
-    declared = spec.get("shape", [])
-    if declared[:2] != ["time", "batch"] or len(declared) != 3:
+    if not np.issubdtype(features.dtype, np.floating):
+        raise ValueError("rate-Poisson dataset features must use a floating dtype")
+    if not _validated and (
+        not np.isfinite(features).all() or np.any(features < 0) or np.any(features > 1)
+    ):
+        raise ValueError("rate-Poisson dataset features must be finite in [0, 1]")
+    duration_ms = float(encoder.duration_ms or 0)
+    if encoder.rates_hz is not None:
+        if encoder.max_rate_hz is not None or not encoder.rates_hz:
+            raise ValueError(
+                "rate-Poisson requires either max_rate_hz or a non-empty rates_hz sequence"
+            )
+        choices = tuple(float(rate) for rate in encoder.rates_hz)
+        if any(not math.isfinite(rate) or rate < 0 for rate in choices):
+            raise ValueError("categorical rates_hz must be finite and non-negative")
+        max_rate_hz = max(choices)
+    else:
+        choices = None
+        max_rate_hz = float(encoder.max_rate_hz or 0)
+    raw_steps = duration_ms / dt_ms
+    if (
+        duration_ms <= 0
+        or not math.isclose(raw_steps, round(raw_steps), abs_tol=1e-9)
+        or not math.isfinite(max_rate_hz)
+        or max_rate_hz < 0
+        or max_rate_hz * dt_ms / 1000.0 > 1
+    ):
         raise ValueError(
-            "dataset snapshot binding requires graph input shape ['time', 'batch', channels]"
+            "rate-Poisson encoder requires timestep-aligned positive duration and a supported finite non-negative max rate"
         )
-    if spec.get("signal_type") != "spikes":
-        raise ValueError("dataset snapshot binding requires a spike graph input")
+    rates = transfer_compact(
+        torch.as_tensor(features[selected], dtype=torch.float32), device
+    )
+    generator = torch.Generator(device=device).manual_seed(
+        int(encoder.seed if _spike_seed is None else _spike_seed)
+    )
+    if choices is not None:
+        rate_generator = torch.Generator(device="cpu").manual_seed(
+            int(encoder.seed if _rate_seed is None else _rate_seed)
+        )
+        selected_rates = torch.tensor(choices, dtype=torch.float32)[
+            torch.randint(len(choices), (cap,), generator=rate_generator)
+        ]
+        probability = (
+            rates.unsqueeze(0)
+            * transfer_compact(selected_rates, device).reshape(1, cap, 1)
+            * dt_ms
+            / 1000.0
+        )
+    else:
+        selected_rates = None
+        probability = rates.unsqueeze(0) * max_rate_hz * dt_ms / 1000.0
+    spikes = (
+        torch.rand(
+            int(round(raw_steps)),
+            cap,
+            channels,
+            generator=generator,
+            dtype=torch.float32,
+            device=device,
+        )
+        < probability
+    ).float()
+    encoder_row = {
+        "kind": encoder.kind,
+        "duration_ms": duration_ms,
+        "max_rate_hz": max_rate_hz,
+        "seed": int(encoder.seed),
+        **poisson_device_policy(device),
+        "distribution": "Bernoulli discretization of feature-scaled homogeneous Poisson",
+        **(
+            {
+                "rates_hz": list(choices),
+                "selected_rates_hz": selected_rates.tolist(),
+            }
+            if choices is not None
+            else {}
+        ),
+    }
+    return spikes, encoder_row
+
+
+def _select_dataset_samples(*, binding, _snapshot, _indices, _validated):
     source_path = Path(binding.path)
     if source_path.suffix.lower() != ".npz":
         raise ValueError("dataset snapshot binding requires an NPZ file")
@@ -979,38 +1094,128 @@ def resolve_dataset_snapshot_binding(
         if binding.sample_ids_key not in arrays:
             raise ValueError("dataset snapshot is missing sample identities")
         identities = np.asarray(arrays[binding.sample_ids_key])
-        if identities.ndim != 1 or len(identities) != sample_count or identities.dtype.kind not in {"i", "u", "U"} or (not _validated and len(np.unique(identities)) != sample_count):
+        if (
+            identities.ndim != 1
+            or len(identities) != sample_count
+            or identities.dtype.kind not in {"i", "u", "U"}
+            or (not _validated and len(np.unique(identities)) != sample_count)
+        ):
             raise ValueError("dataset sample identities are invalid or duplicated")
         sample_ids = identities[selected].tolist()
+    return (
+        source_path,
+        source_digest,
+        arrays,
+        labels,
+        sample_count,
+        cap,
+        selected,
+        selected_labels,
+        sample_ids,
+    )
+
+
+def _encode_custom_dataset(
+    *,
+    encoder,
+    arrays,
+    binding,
+    labels,
+    selected,
+    dt_ms,
+    channels,
+    _spike_seed,
+    device,
+    cap,
+):
+    spec_row = {"definition": encoder.definition, "config": dict(encoder.config)}
+    definition = E.resolve("encoder", spec_row)
+    device_aware = accepts_device(definition.function)
+    trace = current_trace()
+    with trace.region("encoding") if trace is not None else nullcontext():
+        callback_arrays = arrays
+        if binding.sample_ids_key is not None:
+            callback_arrays = {
+                **arrays,
+                "features": arrays[binding.feature_key],
+                "labels": labels,
+                "sample_ids": arrays[binding.sample_ids_key],
+            }
+        spikes = definition.function(
+            callback_arrays,
+            selected,
+            dt_ms=dt_ms,
+            channels=channels,
+            config=encoder.config,
+            seed=encoder.seed if _spike_seed is None else _spike_seed,
+            **({"device": torch.device(device)} if device_aware else {}),
+        )
+    if (
+        not isinstance(spikes, torch.Tensor)
+        or spikes.ndim != 3
+        or spikes.shape[1:] != (cap, channels)
+    ):
+        raise ValueError(
+            f"{definition.name} must return (time, selected_samples, channels) spikes"
+        )
+    encoder_row = {
+        "kind": "custom",
+        "definition": encoder.definition,
+        "config": dict(encoder.config),
+        "seed": encoder.seed,
+        **(encoder_device_policy(device) if device_aware else {}),
+    }
+    return spikes, encoder_row
+
+
+def resolve_dataset_snapshot_binding(
+    graph: Mapping[str, Any],
+    binding: DatasetSnapshotBinding,
+    *,
+    device: str | torch.device = "cpu",
+    execution_seed: int = 0,
+    protocol: Mapping[str, Any] | None = None,
+    _snapshot=None,
+    _indices=None,
+    _spike_seed=None,
+    _rate_seed=None,
+    _validated=False,
+    _event_index=None,
+) -> tuple[ResolvedDenseInputs, tuple[TargetArrayBinding, ...]]:
+    """Load, select, and encode one immutable MNIST/SHD-style NPZ snapshot."""
+    specs = {row["id"]: row for row in graph.get("inputs", [])}
+    if set(specs) != {binding.input_id}:
+        raise ValueError(
+            "dataset snapshot binding requires exactly its one named graph input"
+        )
+    spec = specs[binding.input_id]
+    declared = spec.get("shape", [])
+    if declared[:2] != ["time", "batch"] or len(declared) != 3:
+        raise ValueError(
+            "dataset snapshot binding requires graph input shape ['time', 'batch', channels]"
+        )
+    if spec.get("signal_type") != "spikes":
+        raise ValueError("dataset snapshot binding requires a spike graph input")
+    (
+        source_path,
+        source_digest,
+        arrays,
+        labels,
+        sample_count,
+        cap,
+        selected,
+        selected_labels,
+        sample_ids,
+    ) = _select_dataset_samples(
+        binding=binding, _snapshot=_snapshot, _indices=_indices, _validated=_validated
+    )
+
     encoder = binding.encoder
     dt_ms = float(graph["timebase"]["dt"]["value"])
     channels = int(declared[2])
     encoder_row: dict[str, Any]
-    if encoder.kind == "rate_poisson" and (
-        encoder.duration_ms is None
-        or (encoder.max_rate_hz is None and encoder.rates_hz is None)
-    ):
-        raise ValueError(
-            "rate-Poisson encoder requires explicit duration_ms and max_rate_hz"
-        )
-    if encoder.kind != "rate_poisson" and encoder.rates_hz is not None:
-        raise ValueError("rates_hz is supported only by rate_poisson")
-    if encoder.kind == "prebinned_spikes" and (
-        encoder.duration_ms is not None
-        or encoder.max_rate_hz is not None
-        or encoder.seed != 0
-    ):
-        raise ValueError(
-            "prebinned encoder does not accept duration, max rate, or a stochastic seed"
-        )
-    if encoder.kind == "event_bin" and (
-        encoder.duration_ms is None
-        or encoder.max_rate_hz is not None
-        or encoder.seed != 0
-    ):
-        raise ValueError(
-            "event-bin encoder requires duration_ms and does not accept max rate or a stochastic seed"
-        )
+    _validate_dataset_encoder_options(encoder=encoder)
+
     if encoder.kind in {"rate_poisson", "prebinned_spikes"}:
         if binding.feature_key not in arrays:
             raise ValueError(
@@ -1018,91 +1223,20 @@ def resolve_dataset_snapshot_binding(
             )
         features = np.asarray(arrays[binding.feature_key])
     if encoder.kind == "rate_poisson":
-        if features.shape != (sample_count, channels):
-            raise ValueError(
-                f"rate-Poisson dataset features expected shape {(sample_count, channels)}, got {features.shape}"
-            )
-        if not np.issubdtype(features.dtype, np.floating):
-            raise ValueError("rate-Poisson dataset features must use a floating dtype")
-        if not _validated and (
-            not np.isfinite(features).all()
-            or np.any(features < 0)
-            or np.any(features > 1)
-        ):
-            raise ValueError("rate-Poisson dataset features must be finite in [0, 1]")
-        duration_ms = float(encoder.duration_ms or 0)
-        if encoder.rates_hz is not None:
-            if encoder.max_rate_hz is not None or not encoder.rates_hz:
-                raise ValueError(
-                    "rate-Poisson requires either max_rate_hz or a non-empty rates_hz sequence"
-                )
-            choices = tuple(float(rate) for rate in encoder.rates_hz)
-            if any(not math.isfinite(rate) or rate < 0 for rate in choices):
-                raise ValueError("categorical rates_hz must be finite and non-negative")
-            max_rate_hz = max(choices)
-        else:
-            choices = None
-            max_rate_hz = float(encoder.max_rate_hz or 0)
-        raw_steps = duration_ms / dt_ms
-        if (
-            duration_ms <= 0
-            or not math.isclose(raw_steps, round(raw_steps), abs_tol=1e-9)
-            or not math.isfinite(max_rate_hz)
-            or max_rate_hz < 0
-            or max_rate_hz * dt_ms / 1000.0 > 1
-        ):
-            raise ValueError(
-                "rate-Poisson encoder requires timestep-aligned positive duration and a supported finite non-negative max rate"
-            )
-        rates = transfer_compact(
-            torch.as_tensor(features[selected], dtype=torch.float32), device
+        spikes, encoder_row = _encode_poisson_features(
+            features=features,
+            sample_count=sample_count,
+            channels=channels,
+            _validated=_validated,
+            encoder=encoder,
+            dt_ms=dt_ms,
+            device=device,
+            selected=selected,
+            _spike_seed=_spike_seed,
+            _rate_seed=_rate_seed,
+            cap=cap,
         )
-        generator = torch.Generator(device=device).manual_seed(
-            int(encoder.seed if _spike_seed is None else _spike_seed)
-        )
-        if choices is not None:
-            rate_generator = torch.Generator(device="cpu").manual_seed(
-                int(encoder.seed if _rate_seed is None else _rate_seed)
-            )
-            selected_rates = torch.tensor(choices, dtype=torch.float32)[
-                torch.randint(len(choices), (cap,), generator=rate_generator)
-            ]
-            probability = (
-                rates.unsqueeze(0)
-                * transfer_compact(selected_rates, device).reshape(1, cap, 1)
-                * dt_ms
-                / 1000.0
-            )
-        else:
-            selected_rates = None
-            probability = rates.unsqueeze(0) * max_rate_hz * dt_ms / 1000.0
-        spikes = (
-            torch.rand(
-                int(round(raw_steps)),
-                cap,
-                channels,
-                generator=generator,
-                dtype=torch.float32,
-                device=device,
-            )
-            < probability
-        ).float()
-        encoder_row = {
-            "kind": encoder.kind,
-            "duration_ms": duration_ms,
-            "max_rate_hz": max_rate_hz,
-            "seed": int(encoder.seed),
-            **poisson_device_policy(device),
-            "distribution": "Bernoulli discretization of feature-scaled homogeneous Poisson",
-            **(
-                {
-                    "rates_hz": list(choices),
-                    "selected_rates_hz": selected_rates.tolist(),
-                }
-                if choices is not None
-                else {}
-            ),
-        }
+
     elif encoder.kind == "prebinned_spikes":
         if features.ndim != 3 or features.shape[1:] != (sample_count, channels):
             raise ValueError(
@@ -1138,39 +1272,19 @@ def resolve_dataset_snapshot_binding(
             "binary_collisions": collisions,
         }
     elif encoder.kind == "custom":
-        spec_row = {"definition": encoder.definition, "config": dict(encoder.config)}
-        definition = E.resolve("encoder", spec_row)
-        device_aware = accepts_device(definition.function)
-        trace = current_trace()
-        with trace.region("encoding") if trace is not None else nullcontext():
-            callback_arrays = arrays
-            if binding.sample_ids_key is not None:
-                callback_arrays = {**arrays, "features": arrays[binding.feature_key],
-                                   "labels": labels, "sample_ids": arrays[binding.sample_ids_key]}
-            spikes = definition.function(
-                callback_arrays,
-                selected,
-                dt_ms=dt_ms,
-                channels=channels,
-                config=encoder.config,
-                seed=encoder.seed if _spike_seed is None else _spike_seed,
-                **({"device": torch.device(device)} if device_aware else {}),
-            )
-        if (
-            not isinstance(spikes, torch.Tensor)
-            or spikes.ndim != 3
-            or spikes.shape[1:] != (cap, channels)
-        ):
-            raise ValueError(
-                f"{definition.name} must return (time, selected_samples, channels) spikes"
-            )
-        encoder_row = {
-            "kind": "custom",
-            "definition": encoder.definition,
-            "config": dict(encoder.config),
-            "seed": encoder.seed,
-            **(encoder_device_policy(device) if device_aware else {}),
-        }
+        spikes, encoder_row = _encode_custom_dataset(
+            encoder=encoder,
+            arrays=arrays,
+            binding=binding,
+            labels=labels,
+            selected=selected,
+            dt_ms=dt_ms,
+            channels=channels,
+            _spike_seed=_spike_seed,
+            device=device,
+            cap=cap,
+        )
+
     else:
         raise ValueError(f"unsupported dataset encoder {encoder.kind!r}")
     source = {

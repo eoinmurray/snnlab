@@ -6,10 +6,11 @@ import copy
 import hashlib
 import math
 import time
+from collections.abc import Mapping
 from contextlib import nullcontext
 from dataclasses import replace
 from numbers import Integral
-from typing import Any, Mapping
+from typing import Any
 
 import torch
 
@@ -86,7 +87,9 @@ def _host_metrics(values):
             host = torch.stack([value for _, value in group]).cpu().double().tolist()
         else:
             host = torch.stack([value.double() for _, value in group]).cpu().tolist()
-        result.update((name, value) for (name, _), value in zip(group, host))
+        result.update(
+            (name, value) for (name, _), value in zip(group, host, strict=True)
+        )
     return result
 
 
@@ -154,7 +157,83 @@ class _TrainingTiming:
         }
 
 
-def train(spec: ExecutionSpec) -> ExecutionResult:
+def _emit_epoch_report(
+    *,
+    emit,
+    spec,
+    epoch,
+    timing,
+    row,
+    dataset_epochs,
+    completed_updates,
+    executed_updates,
+    examples_consumed,
+):
+    if emit and spec.on_epoch_end is not None and epoch > 0:
+        timing.switch("reporting", epoch)
+        epoch_timing = None
+        if timing.enabled:
+            values = timing.epochs.get(epoch, {})
+            epoch_timing = {
+                "mode": timing.mode,
+                "total_s": sum(values.values()),
+                **{
+                    f"{phase}_s": values.get(phase, 0.0)
+                    for phase in (
+                        "training",
+                        "train_evaluation",
+                        "validation",
+                        "checkpoint",
+                        "reporting",
+                    )
+                },
+            }
+            row["timing"] = epoch_timing
+
+        def split_snapshot(split):
+            values = {
+                key.removeprefix(f"{split}_"): value
+                for key, value in row.items()
+                if key.startswith(f"{split}_")
+            }
+            return FrozenValues(values) if values else None
+
+        report = EpochReport(
+            epoch,
+            dataset_epochs,
+            completed_updates + executed_updates,
+            examples_consumed,
+            split_snapshot("train"),
+            split_snapshot("validation"),
+            FrozenValues(row["observations"]) if "observations" in row else None,
+            FrozenValues(epoch_timing) if epoch_timing is not None else None,
+        )
+        with evaluation_rng():
+            spec.on_epoch_end(report)
+
+
+def _record_online_metrics(row, online_sums, online_count):
+    packed = _host_metrics(online_sums)
+    online = {"loss": packed["loss"] / online_count}
+    for group, prefix in (
+        ("components", "component/"),
+        ("cross_entropies", "ce/"),
+        ("accuracies", "correct/"),
+    ):
+        online[group] = {
+            name.removeprefix(prefix): value / online_count
+            for name, value in packed.items()
+            if name.startswith(prefix)
+        }
+    if len(online["accuracies"]) == 1:
+        online["accuracy"] = next(iter(online["accuracies"].values()))
+    row.update({f"train_{key}": value for key, value in online.items()})
+    row["train_measurement"] = "online_pre_update"
+    row["train_examples"] = online_count
+
+
+def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
+    # This orchestration owns checkpoint, RNG and reporting state across updates.
     """Execute native training, optionally collecting bounded diagnostic traces."""
     # Validate split declarations before build/performance reporting inspects
     # their bindings; preserve the documented public TypeError on invalid input.
@@ -389,15 +468,16 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             raise ValueError(
                 "initial checkpoint selection requires initial split metrics"
             )
-    if spec.observations is not None and (
-        spec.observations.population_rates or spec.observations.output_activity
+    if (
+        spec.observations is not None
+        and (spec.observations.population_rates or spec.observations.output_activity)
+    ) and (
+        metric_policy.train != "evaluate"
+        or (validation_data is not None and metric_policy.validation != "epoch")
     ):
-        if metric_policy.train != "evaluate" or (
-            validation_data is not None and metric_policy.validation != "epoch"
-        ):
-            raise ValueError(
-                "split activity observations require enabled split evaluation; use separate probes for online training"
-            )
+        raise ValueError(
+            "split activity observations require enabled split evaluation; use separate probes for online training"
+        )
     batch_size = (
         spec.batch_size
         if spec.batch_size is not None
@@ -799,11 +879,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                 validation_data[2] if selection.split == "validation" else target_rows
             ),
             "input_tensors": evaluation_tensor_identity(
-                (
-                    validation_data[0]
-                    if selection.split == "validation"
-                    else resolved_inputs
-                )
+                validation_data[0]
+                if selection.split == "validation"
+                else resolved_inputs
             ),
             "target_tensors": evaluation_tensor_identity(
                 validation_data[1]
@@ -1223,23 +1301,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
         ):
             splits["validation"] = validation_data[:2]
         if metric_policy.train == "online" and epoch > 0:
-            packed = _host_metrics(online_sums)
-            online = {"loss": packed["loss"] / online_count}
-            for group, prefix in (
-                ("components", "component/"),
-                ("cross_entropies", "ce/"),
-                ("accuracies", "correct/"),
-            ):
-                online[group] = {
-                    name.removeprefix(prefix): value / online_count
-                    for name, value in packed.items()
-                    if name.startswith(prefix)
-                }
-            if len(online["accuracies"]) == 1:
-                online["accuracy"] = next(iter(online["accuracies"].values()))
-            row.update({f"train_{key}": value for key, value in online.items()})
-            row["train_measurement"] = "online_pre_update"
-            row["train_examples"] = online_count
+            _record_online_metrics(
+                row=row, online_sums=online_sums, online_count=online_count
+            )
+
             online_sums, online_count = {}, 0
         for split, (inputs, targets) in splits.items():
             timing.switch(
@@ -1333,47 +1398,17 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
                     },
                 )
 
-        if emit and spec.on_epoch_end is not None and epoch > 0:
-            timing.switch("reporting", epoch)
-            epoch_timing = None
-            if timing.enabled:
-                values = timing.epochs.get(epoch, {})
-                epoch_timing = {
-                    "mode": timing.mode,
-                    "total_s": sum(values.values()),
-                    **{
-                        f"{phase}_s": values.get(phase, 0.0)
-                        for phase in (
-                            "training",
-                            "train_evaluation",
-                            "validation",
-                            "checkpoint",
-                            "reporting",
-                        )
-                    },
-                }
-                row["timing"] = epoch_timing
-
-            def split_snapshot(split):
-                values = {
-                    key.removeprefix(f"{split}_"): value
-                    for key, value in row.items()
-                    if key.startswith(f"{split}_")
-                }
-                return FrozenValues(values) if values else None
-
-            report = EpochReport(
-                epoch,
-                dataset_epochs,
-                completed_updates + executed_updates,
-                examples_consumed,
-                split_snapshot("train"),
-                split_snapshot("validation"),
-                FrozenValues(row["observations"]) if "observations" in row else None,
-                FrozenValues(epoch_timing) if epoch_timing is not None else None,
-            )
-            with evaluation_rng():
-                spec.on_epoch_end(report)
+        _emit_epoch_report(
+            emit=emit,
+            spec=spec,
+            epoch=epoch,
+            timing=timing,
+            row=row,
+            dataset_epochs=dataset_epochs,
+            completed_updates=completed_updates,
+            executed_updates=executed_updates,
+            examples_consumed=examples_consumed,
+        )
 
     scheduled: list[tuple[int, int, torch.Tensor]] = []
     if dataset_mode:
@@ -1587,25 +1622,25 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             and next_data_state["batch"] == 0
         ):
             record_epoch(next_data_state["epoch"])
-        if update_selection:
-            if selected_checkpoint is None or loss_value < float(
-                selected_checkpoint.selected_loss
-            ):
-                candidate = checkpoint_at(absolute_update, loss_value, next_data_state)
-                selected_checkpoint = replace(
-                    candidate,
-                    selection_record={
-                        "policy": selection.to_dict(),
-                        "values": [loss_value],
-                        "epoch": epoch + 1 if dataset_mode else None,
-                        "update": absolute_update,
-                        "evaluation": {
-                            "phase": "pre_update_batch_loss",
-                            "weights": "post_update",
-                        },
-                        "phase": "legacy_training_batch_loss",
+        if (update_selection) and (
+            selected_checkpoint is None
+            or loss_value < float(selected_checkpoint.selected_loss)
+        ):
+            candidate = checkpoint_at(absolute_update, loss_value, next_data_state)
+            selected_checkpoint = replace(
+                candidate,
+                selection_record={
+                    "policy": selection.to_dict(),
+                    "values": [loss_value],
+                    "epoch": epoch + 1 if dataset_mode else None,
+                    "update": absolute_update,
+                    "evaluation": {
+                        "phase": "pre_update_batch_loss",
+                        "weights": "post_update",
                     },
-                )
+                    "phase": "legacy_training_batch_loss",
+                },
+            )
         final_forward = forward
         if (
             observation_spec is None
@@ -1724,7 +1759,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:
             "test": test_metrics,
             "history_coverage": {
                 "requested_epochs": dataset_epochs,
-                "complete": next_data_state == {"epoch": dataset_epochs, "batch": 0} if dataset_mode else None,
+                "complete": next_data_state == {"epoch": dataset_epochs, "batch": 0}
+                if dataset_mode
+                else None,
                 "data_state": dict(next_data_state),
             },
             "validation_protocol": (

@@ -345,7 +345,7 @@ def measure_advance_phases(cfg, session, windows):
         raise RuntimeError(f"Phase instrumentation changed execution path: {paths}")
     if session.completed_steps != (windows + 2) * cfg.steps:
         raise RuntimeError("phase capture advanced an unexpected number of steps")
-    for reference, observed in zip(expected, actual):
+    for reference, observed in zip(expected, actual, strict=True):
         for name, value in reference.items():
             torch.testing.assert_close(observed[name], value, atol=0, rtol=0)
     observed_state = session.export_state()
@@ -753,7 +753,7 @@ def plot_report(report_path, output=None):
         )
         * 1.15,
     )
-    for index, (row, group) in enumerate(zip(axes, groups)):
+    for index, (row, group) in enumerate(zip(axes, groups, strict=True)):
         hidden = group["config"]["hidden"]
         summary = group["summary"]
         n = summary["seed_count"]

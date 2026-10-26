@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 import torch
@@ -39,8 +40,7 @@ class TrainingCheckpoint:
     reporting_state: Mapping[str, Any] | None = None
 
 
-def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -> Path:
-    """Atomically write a named, authenticated graph-training checkpoint."""
+def _validate_checkpoint_rng(checkpoint):
     if checkpoint.rng_state.dtype != torch.uint8 or checkpoint.rng_state.ndim != 1:
         raise ValueError(
             "training checkpoint CPU RNG state must be one-dimensional uint8"
@@ -67,6 +67,12 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
             raise ValueError(
                 f"training checkpoint {name} RNG state must be one-dimensional uint8"
             )
+
+
+def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -> Path:
+    """Atomically write a named, authenticated graph-training checkpoint."""
+    _validate_checkpoint_rng(checkpoint=checkpoint)
+
     root = Path(path)
     root.mkdir(parents=True, exist_ok=True)
     arrays: dict[str, np.ndarray] = {}
@@ -166,6 +172,65 @@ def save_training_checkpoint(path: str | Path, checkpoint: TrainingCheckpoint) -
     return root
 
 
+def _validate_restored_rng(
+    *, schema_version, manifest, rng_backend, declared_devices, accelerator_rng_states
+):
+    if schema_version in {2, 3, 4, 5}:
+        if rng_backend not in {"cpu", "cuda", "mps"}:
+            raise ValueError(
+                f"training checkpoint has unsupported RNG backend {rng_backend!r}"
+            )
+        if declared_devices != set(accelerator_rng_states):
+            raise ValueError(
+                "training checkpoint accelerator RNG device inventory does not match tensors"
+            )
+        if rng_backend == "cpu" and accelerator_rng_states:
+            raise ValueError(
+                "CPU training checkpoint cannot contain accelerator RNG states"
+            )
+        if rng_backend == "cuda" and not accelerator_rng_states:
+            raise ValueError(
+                "CUDA training checkpoint is missing accelerator RNG states"
+            )
+        if rng_backend == "cuda":
+            expected_cuda = [
+                f"cuda:{index}" for index in range(len(accelerator_rng_states))
+            ]
+            if sorted(accelerator_rng_states) != expected_cuda:
+                raise ValueError(
+                    "CUDA training checkpoint RNG devices must be contiguous from cuda:0"
+                )
+        if rng_backend == "mps" and set(accelerator_rng_states) != {"mps"}:
+            raise ValueError(
+                "MPS training checkpoint requires exactly the mps RNG state"
+            )
+
+
+def _read_checkpoint_metadata(manifest, schema_version):
+    reporting_state = manifest.get("reporting_state")
+    if schema_version == 5 and reporting_state is None:
+        raise ValueError("training checkpoint is missing reporting state")
+    if "reporting_state" in manifest and manifest.get(
+        "reporting_state_digest"
+    ) != _json_digest(reporting_state):
+        raise ValueError("training checkpoint reporting state digest mismatch")
+    observation_state = manifest.get("observation_state")
+    if schema_version == 3 and observation_state is None:
+        raise ValueError("audited training checkpoint is missing observation history")
+    if "observation_state" in manifest and manifest.get(
+        "observation_state_digest"
+    ) != _json_digest(observation_state):
+        raise ValueError("training checkpoint observation history digest mismatch")
+    selection_metadata = manifest.get("selection_metadata", {})
+    if "selection_metadata" in manifest and manifest.get(
+        "selection_metadata_digest"
+    ) != _json_digest(selection_metadata):
+        raise ValueError("training checkpoint selection metadata digest mismatch")
+    if schema_version == 4 and selection_metadata.get("contract") is None:
+        raise ValueError("training checkpoint is missing selection contract")
+    return reporting_state, observation_state, selection_metadata
+
+
 def load_training_checkpoint(
     path: str | Path, *, device: str | torch.device = "cpu"
 ) -> TrainingCheckpoint:
@@ -231,56 +296,18 @@ def load_training_checkpoint(
     schema_version = int(manifest["schema_version"])
     rng_backend = manifest.get("rng_backend", "cpu")
     declared_devices = set(manifest.get("accelerator_rng_devices", []))
-    if schema_version in {2, 3, 4, 5}:
-        if rng_backend not in {"cpu", "cuda", "mps"}:
-            raise ValueError(
-                f"training checkpoint has unsupported RNG backend {rng_backend!r}"
-            )
-        if declared_devices != set(accelerator_rng_states):
-            raise ValueError(
-                "training checkpoint accelerator RNG device inventory does not match tensors"
-            )
-        if rng_backend == "cpu" and accelerator_rng_states:
-            raise ValueError(
-                "CPU training checkpoint cannot contain accelerator RNG states"
-            )
-        if rng_backend == "cuda" and not accelerator_rng_states:
-            raise ValueError(
-                "CUDA training checkpoint is missing accelerator RNG states"
-            )
-        if rng_backend == "cuda":
-            expected_cuda = [
-                f"cuda:{index}" for index in range(len(accelerator_rng_states))
-            ]
-            if sorted(accelerator_rng_states) != expected_cuda:
-                raise ValueError(
-                    "CUDA training checkpoint RNG devices must be contiguous from cuda:0"
-                )
-        if rng_backend == "mps" and set(accelerator_rng_states) != {"mps"}:
-            raise ValueError(
-                "MPS training checkpoint requires exactly the mps RNG state"
-            )
-    reporting_state = manifest.get("reporting_state")
-    if schema_version == 5 and reporting_state is None:
-        raise ValueError("training checkpoint is missing reporting state")
-    if "reporting_state" in manifest and manifest.get(
-        "reporting_state_digest"
-    ) != _json_digest(reporting_state):
-        raise ValueError("training checkpoint reporting state digest mismatch")
-    observation_state = manifest.get("observation_state")
-    if schema_version == 3 and observation_state is None:
-        raise ValueError("audited training checkpoint is missing observation history")
-    if "observation_state" in manifest and manifest.get(
-        "observation_state_digest"
-    ) != _json_digest(observation_state):
-        raise ValueError("training checkpoint observation history digest mismatch")
-    selection_metadata = manifest.get("selection_metadata", {})
-    if "selection_metadata" in manifest and manifest.get(
-        "selection_metadata_digest"
-    ) != _json_digest(selection_metadata):
-        raise ValueError("training checkpoint selection metadata digest mismatch")
-    if schema_version == 4 and selection_metadata.get("contract") is None:
-        raise ValueError("training checkpoint is missing selection contract")
+    _validate_restored_rng(
+        schema_version=schema_version,
+        manifest=manifest,
+        rng_backend=rng_backend,
+        declared_devices=declared_devices,
+        accelerator_rng_states=accelerator_rng_states,
+    )
+
+    reporting_state, observation_state, selection_metadata = _read_checkpoint_metadata(
+        manifest=manifest, schema_version=schema_version
+    )
+
     best_checkpoint = None
     if selection_metadata.get("best_manifest_digest") is not None:
         best_root = root / "selected"

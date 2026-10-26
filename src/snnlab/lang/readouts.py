@@ -25,13 +25,16 @@ class Readout:
         return self.signal.id
 
 
+_DEFAULT_WEIGHT = Normal(1.0, 0.1)
+
+
 def MeanVoltage(
     *,
     source: Signal,
     classes: int,
     name: str,
     tau=2 * ms,
-    weight: Spec = Normal(1.0, 0.1),
+    weight: Spec = _DEFAULT_WEIGHT,
     initialization_scaling: str | None = None,
 ) -> Readout:
     net = source.network

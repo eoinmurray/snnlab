@@ -9,6 +9,17 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.28.2] - 2026-10-26
+
+### Changed
+
+1. Enforce Ruff formatting and expanded readability checks, including a cyclomatic complexity limit of 15. Refactor validation, execution setup, recording, analysis, plotting and benchmark helpers to meet these checks; retain explicit complexity exceptions for the forward and training state machines.
+2. Make sequence alignment and loop callback bindings explicit, modernize Python syntax and apply consistent formatting across maintained source, examples and tests. Retained benchmark evidence and numerical fixtures remain excluded from lint and formatting.
+
+### Added
+
+1. Local pre-commit hooks check staged Python files for lint and formatting without modifying them. The development dependencies and README include installation and usage guidance, and package CI now checks formatting alongside lint.
+
 ## [0.28.1] - 2026-10-25
 
 ### Changed

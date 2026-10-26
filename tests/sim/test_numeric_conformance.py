@@ -353,8 +353,7 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
         expected,
         candidate,
         policies={
-            layer: {name: numeric for name in values}
-            for layer, values in expected.items()
+            layer: dict.fromkeys(values, numeric) for layer, values in expected.items()
         },
     ).require_passed()
 
@@ -371,9 +370,7 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
     recipe = snn.TrainSpec(
         objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            snn.ParameterGroup(
-                ["scores_projection.weight"], name="readout", lr=0.1
-            ),
+            snn.ParameterGroup(["scores_projection.weight"], name="readout", lr=0.1),
             snn.ParameterGroup(
                 [name for name in parameter_ids if name != "scores_projection.weight"],
                 name="frozen",
@@ -471,7 +468,7 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
             "loss": {"cross_entropy": numeric},
             "gradients": {"scores_projection.weight": numeric},
             "parameters": {"scores_projection.weight": numeric},
-            "optimizer": {name: numeric for name in direct_optimizer},
+            "optimizer": dict.fromkeys(direct_optimizer, numeric),
         },
     )
     report.require_passed()

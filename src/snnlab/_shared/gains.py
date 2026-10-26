@@ -11,6 +11,7 @@ import importlib
 import json
 import math
 from collections.abc import Mapping
+from itertools import pairwise
 from numbers import Real
 
 from snnlab._shared.timing import _is_integer_ratio, _step_ratio
@@ -119,7 +120,7 @@ def validate(spec):
             )
         for time in times:
             _number(time, "transition time")
-        if any(right <= left for left, right in zip(times, times[1:])):
+        if any(right <= left for left, right in pairwise(times)):
             raise ValueError("piecewise gain times must be strictly increasing")
         for value in values:
             _number(value, "gain")

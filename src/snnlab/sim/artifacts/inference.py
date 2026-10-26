@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import EllipsisType
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import torch
@@ -195,43 +196,7 @@ def write_inference_artifacts(
     return manifest
 
 
-def validate_inference_artifacts(
-    path: str | Path,
-    *,
-    graph: Mapping[str, Any] | None = None,
-    seed: int | None = None,
-    expected_interventions: Mapping[str, Any] | None | EllipsisType = ...,
-    expected_segments: Mapping[str, Any] | None | EllipsisType = ...,
-    expected_retention: Mapping[str, Any] | None | EllipsisType = ...,
-) -> Mapping[str, Any]:
-    """Authenticate a persisted graph inference artifact set before reuse."""
-    root = Path(path)
-    manifest_path = root / "inference-manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-    if manifest.get("schema") != INFERENCE_ARTIFACT_SCHEMA or manifest.get(
-        "schema_version"
-    ) not in {1, 2}:
-        raise ValueError(
-            f"unsupported inference-artifact schema: {manifest.get('schema')}"
-        )
-    claimed_artifact_digest = manifest.get("artifact_digest")
-    unsigned = dict(manifest)
-    unsigned.pop("artifact_digest", None)
-    actual_artifact_digest = _json_digest(unsigned)
-    if claimed_artifact_digest != actual_artifact_digest:
-        raise ValueError(
-            f"inference artifact manifest digest expected {claimed_artifact_digest}, got {actual_artifact_digest}"
-        )
-    if graph is not None:
-        expected_graph_digest = _json_digest(graph)
-        if manifest.get("graph_digest") != expected_graph_digest:
-            raise ValueError(
-                f"inference artifact graph digest expected {expected_graph_digest}, got {manifest.get('graph_digest')}"
-            )
-    if seed is not None and manifest.get("request_seed") != int(seed):
-        raise ValueError(
-            f"inference artifact request seed expected {int(seed)}, got {manifest.get('request_seed')}"
-        )
+def _validate_artifact_files(root, manifest):
     expected_files = {
         "recording.npz",
         "outputs.npz",
@@ -271,6 +236,47 @@ def validate_inference_artifacts(
                 raise ValueError(
                     f"inference artifact {filename} array inventory does not match manifest"
                 )
+
+
+def validate_inference_artifacts(
+    path: str | Path,
+    *,
+    graph: Mapping[str, Any] | None = None,
+    seed: int | None = None,
+    expected_interventions: Mapping[str, Any] | None | EllipsisType = ...,
+    expected_segments: Mapping[str, Any] | None | EllipsisType = ...,
+    expected_retention: Mapping[str, Any] | None | EllipsisType = ...,
+) -> Mapping[str, Any]:
+    """Authenticate a persisted graph inference artifact set before reuse."""
+    root = Path(path)
+    manifest_path = root / "inference-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("schema") != INFERENCE_ARTIFACT_SCHEMA or manifest.get(
+        "schema_version"
+    ) not in {1, 2}:
+        raise ValueError(
+            f"unsupported inference-artifact schema: {manifest.get('schema')}"
+        )
+    claimed_artifact_digest = manifest.get("artifact_digest")
+    unsigned = dict(manifest)
+    unsigned.pop("artifact_digest", None)
+    actual_artifact_digest = _json_digest(unsigned)
+    if claimed_artifact_digest != actual_artifact_digest:
+        raise ValueError(
+            f"inference artifact manifest digest expected {claimed_artifact_digest}, got {actual_artifact_digest}"
+        )
+    if graph is not None:
+        expected_graph_digest = _json_digest(graph)
+        if manifest.get("graph_digest") != expected_graph_digest:
+            raise ValueError(
+                f"inference artifact graph digest expected {expected_graph_digest}, got {manifest.get('graph_digest')}"
+            )
+    if seed is not None and manifest.get("request_seed") != int(seed):
+        raise ValueError(
+            f"inference artifact request seed expected {int(seed)}, got {manifest.get('request_seed')}"
+        )
+    _validate_artifact_files(root=root, manifest=manifest)
+
     metrics = json.loads((root / "metrics.json").read_text())
     if (
         expected_interventions is not Ellipsis

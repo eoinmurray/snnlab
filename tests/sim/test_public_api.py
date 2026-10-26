@@ -17,7 +17,7 @@ def test_all_public_exports_resolve():
         assert getattr(sim, name) is not None
         assert name in dir(sim)
     with pytest.raises(AttributeError, match="no attribute 'missing_export'"):
-        sim.missing_export
+        _ = sim.missing_export
 
 
 @pytest.mark.parametrize(
@@ -50,7 +50,7 @@ def test_infer_is_removed_from_public_and_internal_execution_apis():
     for module in (sim, api, handlers):
         assert "infer" not in dir(module)
         with pytest.raises(AttributeError):
-            getattr(module, "infer")
+            _ = module.infer
     with pytest.raises(ImportError, match="infer"):
         exec("from snnlab.sim import infer")
     with pytest.raises(ValueError, match="unsupported execution request: infer"):

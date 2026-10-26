@@ -3,25 +3,16 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from snnlab import extensions as E
 from snnlab.lang.compilation.diagnostics import Diagnostic, ValidationResult
 from snnlab.lang.compilation.graph_validation import _check_extension
 
 
-def validate_training(
-    graph: Mapping[str, Any], training: Mapping[str, Any]
-) -> ValidationResult:
-    result = ValidationResult()
-    try:
-        E.restore(training)
-    except (ValueError, TypeError) as error:
-        result.diagnostics.append(Diagnostic("error", "E500", str(error)))
-        return result
+def _validate_parameter_groups(graph, training, result):
     parameters = {p["id"] for p in graph["parameters"]}
-    output_signals = {o["signal"] for o in graph["outputs"]}
-    signals = {f"{x['id']}.value" for x in graph["operations"]} | output_signals
     selected: dict[str, str] = {}
     group_names: set[str] = set()
     for group in training.get("parameter_groups", []):
@@ -140,6 +131,9 @@ def validate_training(
                 "error", "E414", "resolved parameter learning rates do not match groups"
             )
         )
+
+
+def _validate_gradient_contract(graph, training, result):
     optimizer = training.get("optimizer", {})
     if optimizer.get("kind") == "custom_optimizer":
         _check_extension(result, "optimizer", optimizer)
@@ -176,11 +170,19 @@ def validate_training(
                 or scale < 0
             ):
                 result.diagnostics.append(
-                    Diagnostic("error", "E416", "fast-sigmoid gradient_scale must be nonnegative and finite")
+                    Diagnostic(
+                        "error",
+                        "E416",
+                        "fast-sigmoid gradient_scale must be nonnegative and finite",
+                    )
                 )
             if not isinstance(surrogate.get("threshold_inclusive", True), bool):
                 result.diagnostics.append(
-                    Diagnostic("error", "E416", "fast-sigmoid threshold_inclusive must be boolean")
+                    Diagnostic(
+                        "error",
+                        "E416",
+                        "fast-sigmoid threshold_inclusive must be boolean",
+                    )
                 )
     expected_gradients = {
         "surrogate": surrogate,
@@ -198,6 +200,9 @@ def validate_training(
                 "resolved gradient contract does not match graph and training recipe",
             )
         )
+
+
+def _validate_objectives(training, output_signals, result):
     for objective in training.get("objectives", []):
         if objective.get("kind") == "custom_objective":
             _check_extension(result, "objective", objective)
@@ -231,6 +236,9 @@ def validate_training(
             result.diagnostics.append(
                 Diagnostic("error", "E404", "objective target is empty")
             )
+
+
+def _validate_regularizers(*, graph, training, signals, result):
     for regularizer in training.get("regularizers", []):
         regularizer_signals = regularizer.get("signals", [])
         if not regularizer_signals:
@@ -308,6 +316,9 @@ def validate_training(
                         "spike-budget aggregation contract is unsupported",
                     )
                 )
+
+
+def _validate_presentation(*, graph, training, signals, result):
     duration = training.get("presentation_duration")
     if duration is not None:
         value = duration.get("value")
@@ -346,6 +357,8 @@ def validate_training(
                 )
             )
 
+
+def _validate_differentiable_routes(graph, training, result):
     trainable = set(training.get("resolved_parameters", {}).get("trainable", []))
     operations = {
         f"{operation['id']}.value": operation
@@ -410,4 +423,35 @@ def validate_training(
                     f"regularizer[{index}]",
                 )
             )
+
+
+def validate_training(
+    graph: Mapping[str, Any], training: Mapping[str, Any]
+) -> ValidationResult:
+    result = ValidationResult()
+    try:
+        E.restore(training)
+    except (ValueError, TypeError) as error:
+        result.diagnostics.append(Diagnostic("error", "E500", str(error)))
+        return result
+    _validate_parameter_groups(graph=graph, training=training, result=result)
+    output_signals = {o["signal"] for o in graph["outputs"]}
+    signals = {f"{x['id']}.value" for x in graph["operations"]} | output_signals
+
+    _validate_gradient_contract(graph=graph, training=training, result=result)
+
+    _validate_objectives(
+        training=training, output_signals=output_signals, result=result
+    )
+
+    _validate_regularizers(
+        graph=graph, training=training, signals=signals, result=result
+    )
+
+    _validate_presentation(
+        graph=graph, training=training, signals=signals, result=result
+    )
+
+    _validate_differentiable_routes(graph=graph, training=training, result=result)
+
     return result

@@ -25,7 +25,7 @@ def test_documented_exports_are_the_complete_public_api():
     assert {name for name in namespace if name != "__builtins__"} == set(names)
     assert all(namespace[name] is getattr(analysis, name) for name in names)
     with pytest.raises(AttributeError, match="missing_export"):
-        analysis.missing_export
+        _ = analysis.missing_export
 
 
 def test_flat_reference_preserves_all_function_anchors():
@@ -34,8 +34,13 @@ def test_flat_reference_preserves_all_function_anchors():
     assert len(names) == len(set(names))
     assert set(names) == set(analysis.__all__)
     for group in (
-        "Activity", "Intervals", "Correlations", "Spectra", "Rhythmicity",
-        "Cycles", "Conductance",
+        "Activity",
+        "Intervals",
+        "Correlations",
+        "Spectra",
+        "Rhythmicity",
+        "Cycles",
+        "Conductance",
     ):
         assert f"## {group}\n" not in reference
     assert 'id="new-measurement-results"' in reference
@@ -43,7 +48,10 @@ def test_flat_reference_preserves_all_function_anchors():
 
 def test_package_alias_and_basic_measurements_do_not_load_scipy():
     subprocess.run(
-        [sys.executable, "-c", """
+        [
+            sys.executable,
+            "-c",
+            """
 import sys
 import snnlab as snn
 assert 'snnlab.analysis' not in sys.modules
@@ -74,14 +82,18 @@ assert 'matplotlib' not in sys.modules
 assert 'torch' not in sys.modules
 assert not any(n == 'snnlab.sim' or n.startswith('snnlab.sim.')
                for n in sys.modules)
-"""],
+""",
+        ],
         check=True,
     )
 
 
 def test_all_exports_remain_independent_of_simulation_and_plotting():
     subprocess.run(
-        [sys.executable, "-c", """
+        [
+            sys.executable,
+            "-c",
+            """
 import sys
 import snnlab as snn
 for name in snn.analysis.__all__:
@@ -93,6 +105,7 @@ assert not any(n == 'snnlab.sim' or n.startswith('snnlab.sim.')
 for name in ('_activity', '_spikes', '_spectra', '_rhythmicity',
              '_cycles', '_conductance'):
     assert 'snnlab.analysis.' + name not in sys.modules
-"""],
+""",
+        ],
         check=True,
     )

@@ -5,8 +5,11 @@ from __future__ import annotations
 import html
 import math
 import textwrap
+from itertools import pairwise
 
 from .model import Diagram, DiagramEdge, DiagramNode, DiagramTheme, WeightLabel
+
+_DEFAULT_THEME = DiagramTheme()
 
 
 def _q(value: str) -> str:
@@ -235,62 +238,7 @@ def _group_entry_links(diagram: Diagram) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(links)) if len(queue) == len(outgoing) else ()
 
 
-def diagram_to_dot(
-    diagram: Diagram,
-    *,
-    theme: DiagramTheme = DiagramTheme(),
-    height_to_width_ratio: float | None = None,
-    canvas_size: tuple[int, int] | None = None,
-) -> str:
-    """Compile a structured diagram into deterministic Graphviz DOT."""
-
-    if height_to_width_ratio is not None and (
-        not math.isfinite(height_to_width_ratio) or height_to_width_ratio <= 0
-    ):
-        raise ValueError("diagram height-to-width ratio must be finite and positive")
-    if canvas_size is not None and (
-        len(canvas_size) != 2
-        or any(type(value) is not int or value <= 0 for value in canvas_size)
-    ):
-        raise ValueError("diagram canvas size must contain two positive integers")
-    title = diagram.title or diagram.name.replace("_", " ")
-    title = title[:1].upper() + title[1:]
-    ratio = (
-        "" if height_to_width_ratio is None else f', ratio="{height_to_width_ratio:g}"'
-    )
-    # Graphviz uses points; PNG exports use 144 DPI, or two pixels per point.
-    viewport = (
-        ""
-        if canvas_size is None
-        else f', viewport="{canvas_size[0] / 2:g},{canvas_size[1] / 2:g},1"'
-    )
-    incoming_nodes = {edge.target for edge in diagram.edges}
-    input_count = sum(
-        node.kind == "input" and node.id not in incoming_nodes for node in diagram.nodes
-    )
-    entry_links = _group_entry_links(diagram)
-    rank_spacing = "1.3" if entry_links else "4.5" if input_count >= 3 else "1.1"
-    matrix_labels = [
-        edge.weight_label for edge in diagram.edges if edge.weight_label is not None
-    ]
-    nodesep = "1.15" if matrix_labels else "0.65"
-    if matrix_labels:
-        longest = max(
-            len(label.symbol) + len(label.subscript) + len(label.superscript)
-            for label in matrix_labels
-        )
-        label_spacing = longest * (theme.secondary_size - 1) * 0.6 / 72 + 0.6
-        rank_spacing = f"{max(float(rank_spacing), 2.0, label_spacing):g}"
-    # Local cluster ranking preserves E/I order in mixed input/population groups.
-    newrank = "false" if entry_links else "true"
-    lines = [
-        f"digraph {_q(diagram.name)} {{",
-        f'graph [rankdir=LR{ratio}{viewport}, bgcolor="{theme.background}", pad="0.3", nodesep="{nodesep}", ranksep="{rank_spacing}",',
-        f'  splines=ortho, outputorder=edgesfirst, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}",',
-        f"  label=<<B>{html.escape(title)}</B>>, labelloc=t, labeljust=l, fontsize={theme.title_size:g}, compound=true, newrank={newrank}];",
-        f'node [shape=plain, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}"];',
-        f'edge [fontname={_q(theme.font_name)}, fontsize={theme.secondary_size - 1:g}, fontcolor="{theme.muted}", color="{theme.ink}", penwidth=1.1, arrowsize=0.65];',
-    ]
+def _append_nodes(diagram, theme, lines):
     known_kinds = {
         "population",
         "output",
@@ -314,31 +262,9 @@ def diagram_to_dot(
             f'fillcolor="{fill}", color="{border}", penwidth={node.pen_width:g}, margin="{margin}", width=0, height=0, nojustify=true];'
         )
     # External sources share the entry column; downstream inputs retain their rank.
-    targets = {edge.target for edge in diagram.edges}
-    grouped = {member for group in diagram.groups for member in group.members}
-    sources = [
-        node.id
-        for node in diagram.nodes
-        if node.kind == "input" and node.id not in targets and node.id not in grouped
-    ]
-    outputs = [
-        node.id
-        for node in diagram.nodes
-        if node.kind == "output"
-        and not any(edge.source == node.id for edge in diagram.edges)
-    ]
-    if len(outputs) > 1:
-        lines.append(
-            "{ rank=same; " + " ".join(f"{_q(node)};" for node in outputs) + " }"
-        )
-    row_membership = {}
-    column_membership = {
-        member: group.id
-        for group in diagram.groups
-        if group.same_rank
-        for member in group.members
-    }
-    # Reciprocal E/I populations form a column even without an authored group.
+
+
+def _population_columns(diagram, column_membership):
     population_ids = {node.id for node in diagram.nodes if node.kind == "population"}
     explicit_rows = {
         member for group in diagram.groups if group.same_row for member in group.members
@@ -364,20 +290,12 @@ def diagram_to_dot(
             column_membership[edge.target] = column_membership[edge.source] = (
                 edge.target
             )
-    for excitatory, inhibitory in population_columns.items():
-        if entry_links:
-            continue
-        grouped_column = any(
-            group.same_rank and {excitatory, inhibitory} <= set(group.members)
-            for group in diagram.groups
-        )
-        lines.append(f"{{ rank=same; {_q(excitatory)}; {_q(inhibitory)}; }}")
-        lines.append(
-            f"{_q(inhibitory)} -> {_q(excitatory)} "
-            f"[style=invis, weight=10000, constraint={'true' if grouped_column else 'false'}];"
-        )
+    return population_columns, explicit_rows
+
+
+def _coupled_population_columns(diagram, population_columns, explicit_rows):
     # Feedback-coupled circuits read left to right, with each local E/I column intact.
-    node_order = {node.id: index for index, node in enumerate(diagram.nodes)}
+    {node.id: index for index, node in enumerate(diagram.nodes)}
     nodes_by_id = {node.id: node for node in diagram.nodes}
     representatives = {
         member: e for e, i in population_columns.items() for member in (e, i)
@@ -397,6 +315,87 @@ def diagram_to_dot(
             and not {source, target} & explicit_rows
         ):
             coupled_columns.add(tuple(sorted((source, target))))
+    return nodes_by_id, coupled_columns
+
+
+def _append_groups(
+    *, diagram, lines, theme, entry_links, population_columns, row_membership
+):
+    for group in diagram.groups:
+        lines.append(
+            f"subgraph {_q('cluster_' + _svg_id(group.id))} {{ label={_q(group.label)}; "
+            f'color="{theme.line}"; fontcolor="{theme.muted}"; fontname={_q(theme.font_name)}; '
+            f'fontsize={theme.secondary_size:g}; penwidth=0.8; style="rounded"; margin=18; labeljust="l";'
+        )
+        if group.same_rank:
+            lines.append("rank=same;")
+        lines.extend(f"{_q(member)};" for member in group.members)
+        if entry_links:
+            for excitatory, inhibitory in population_columns.items():
+                if {excitatory, inhibitory} <= set(group.members):
+                    lines.append(
+                        f"{{ rank=same; {_q(excitatory)}; {_q(inhibitory)}; "
+                        f"{_q(inhibitory)} -> {_q(excitatory)} [style=invis, weight=10000]; }}"
+                    )
+        if group.same_row:
+            # Invisible ordering edges arrange the row without adding scientific links.
+            row_membership.update((member, group.id) for member in group.members)
+            for source, target in pairwise(group.members):
+                lines.append(
+                    f"{_q(source)} -> {_q(target)} "
+                    "[style=invis, weight=100, constraint=true];"
+                )
+        lines.append("}")
+
+
+def _append_layout_constraints(*, diagram, theme, lines, entry_links):
+    targets = {edge.target for edge in diagram.edges}
+    grouped = {member for group in diagram.groups for member in group.members}
+    sources = [
+        node.id
+        for node in diagram.nodes
+        if node.kind == "input" and node.id not in targets and node.id not in grouped
+    ]
+    outputs = [
+        node.id
+        for node in diagram.nodes
+        if node.kind == "output"
+        and not any(edge.source == node.id for edge in diagram.edges)
+    ]
+    if len(outputs) > 1:
+        lines.append(
+            "{ rank=same; " + " ".join(f"{_q(node)};" for node in outputs) + " }"
+        )
+    row_membership = {}
+    column_membership = {
+        member: group.id
+        for group in diagram.groups
+        if group.same_rank
+        for member in group.members
+    }
+    # Reciprocal E/I populations form a column even without an authored group.
+    population_columns, explicit_rows = _population_columns(
+        diagram=diagram, column_membership=column_membership
+    )
+
+    for excitatory, inhibitory in population_columns.items():
+        if entry_links:
+            continue
+        grouped_column = any(
+            group.same_rank and {excitatory, inhibitory} <= set(group.members)
+            for group in diagram.groups
+        )
+        lines.append(f"{{ rank=same; {_q(excitatory)}; {_q(inhibitory)}; }}")
+        lines.append(
+            f"{_q(inhibitory)} -> {_q(excitatory)} "
+            f"[style=invis, weight=10000, constraint={'true' if grouped_column else 'false'}];"
+        )
+    nodes_by_id, coupled_columns = _coupled_population_columns(
+        diagram=diagram,
+        population_columns=population_columns,
+        explicit_rows=explicit_rows,
+    )
+
     if len(sources) > 1 and not coupled_columns:
         lines.append(
             "{ rank=same; " + " ".join(f"{_q(node)};" for node in sources) + " }"
@@ -428,57 +427,77 @@ def diagram_to_dot(
                 f"{_q(population_columns[edge.source])} -> {_q(population_columns[edge.target])} "
                 "[style=invis, weight=1000, constraint=true];"
             )
-    for group in diagram.groups:
-        lines.append(
-            f"subgraph {_q('cluster_' + _svg_id(group.id))} {{ label={_q(group.label)}; "
-            f'color="{theme.line}"; fontcolor="{theme.muted}"; fontname={_q(theme.font_name)}; '
-            f'fontsize={theme.secondary_size:g}; penwidth=0.8; style="rounded"; margin=18; labeljust="l";'
-        )
-        if group.same_rank:
-            lines.append("rank=same;")
-        lines.extend(f"{_q(member)};" for member in group.members)
-        if entry_links:
-            for excitatory, inhibitory in population_columns.items():
-                if {excitatory, inhibitory} <= set(group.members):
-                    lines.append(
-                        f"{{ rank=same; {_q(excitatory)}; {_q(inhibitory)}; "
-                        f"{_q(inhibitory)} -> {_q(excitatory)} [style=invis, weight=10000]; }}"
-                    )
-        if group.same_row:
-            # Invisible ordering edges arrange the row without adding scientific links.
-            row_membership.update((member, group.id) for member in group.members)
-            for source, target in zip(group.members, group.members[1:]):
-                lines.append(
-                    f"{_q(source)} -> {_q(target)} "
-                    "[style=invis, weight=100, constraint=true];"
-                )
-        lines.append("}")
+    _append_groups(
+        diagram=diagram,
+        lines=lines,
+        theme=theme,
+        entry_links=entry_links,
+        population_columns=population_columns,
+        row_membership=row_membership,
+    )
+
     for source, entry in entry_links:
         lines.append(f"{_q(source)} -> {_q(entry)} [style=invis, weight=100];")
-    # Place training annotations below the last component they describe.
-    path = _forward_spine(diagram)
-    spine_order = {identifier: index for index, identifier in enumerate(path)}
-    node_order = {node.id: index for index, node in enumerate(diagram.nodes)}
-    for node in diagram.nodes:
-        if node.kind != "training":
-            continue
-        targets = [
-            edge.target
-            for edge in diagram.edges
-            if edge.source == node.id and edge.role == "training"
-        ]
-        if targets:
-            anchor = max(
-                targets,
-                key=lambda identifier: (
-                    spine_order.get(identifier, -1),
-                    node_order[identifier],
-                ),
+    return (
+        row_membership,
+        column_membership,
+        nodes_by_id,
+        coupled_columns,
+        population_columns,
+    )
+
+
+def _append_edge_ports(
+    *, edge, attributes, column_membership, coupled_columns, row_membership, node_order
+):
+    if edge.source == edge.target:
+        port = "n"
+        attributes.extend([f"tailport={port}", f"headport={port}"])
+    elif edge.connection in {"feedback", "recurrent"} and (
+        edge.source in column_membership
+        and column_membership.get(edge.target) == column_membership[edge.source]
+    ):
+        if edge.role == "inhibitory":
+            attributes.extend(["tailport=nw", "headport=sw"])
+        else:
+            attributes.extend(["tailport=se", "headport=ne"])
+    elif edge.connection == "feedback" and not coupled_columns:
+        if (
+            edge.source in row_membership
+            and edge.target in row_membership
+            and row_membership[edge.source] != row_membership[edge.target]
+        ):
+            # Coupled rows exchange signals through the gap between circuits.
+            forward = node_order[edge.source] < node_order[edge.target]
+            attributes.extend(
+                [
+                    f"tailport={'s' if forward else 'n'}",
+                    f"headport={'n' if forward else 's'}",
+                ]
             )
-            anchor = population_columns.get(anchor, anchor)
-            lines.append(f"{{ rank=same; {_q(anchor)}; {_q(node.id)}; }}")
-            lines.append(f"{_q(anchor)} -> {_q(node.id)} [style=invis, weight=50];")
-    spine = set(zip(path, path[1:]))
+        else:
+            # Opposite directions use opposite sides, rather than sharing a U-turn.
+            if node_order[edge.source] < node_order[edge.target]:
+                attributes.extend(["tailport=e", "headport=w"])
+            else:
+                attributes.extend(["tailport=n", "headport=n"])
+    elif edge.role == "training":
+        attributes.extend(["tailport=n", "headport=s"])
+
+
+def _append_edges(
+    *,
+    diagram,
+    theme,
+    lines,
+    spine,
+    spine_order,
+    node_order,
+    row_membership,
+    column_membership,
+    nodes_by_id,
+    coupled_columns,
+):
     for edge_index, edge in enumerate(diagram.edges):
         colour = theme.ink
         arrow = "normal"
@@ -540,41 +559,123 @@ def diagram_to_dot(
                 else "weight=1",
             ]
         )
-        if edge.source == edge.target:
-            port = "n"
-            attributes.extend([f"tailport={port}", f"headport={port}"])
-        elif edge.connection in {"feedback", "recurrent"} and (
-            edge.source in column_membership
-            and column_membership.get(edge.target) == column_membership[edge.source]
-        ):
-            if edge.role == "inhibitory":
-                attributes.extend(["tailport=nw", "headport=sw"])
-            else:
-                attributes.extend(["tailport=se", "headport=ne"])
-        elif edge.connection == "feedback" and not coupled_columns:
-            if (
-                edge.source in row_membership
-                and edge.target in row_membership
-                and row_membership[edge.source] != row_membership[edge.target]
-            ):
-                # Coupled rows exchange signals through the gap between circuits.
-                forward = node_order[edge.source] < node_order[edge.target]
-                attributes.extend(
-                    [
-                        f"tailport={'s' if forward else 'n'}",
-                        f"headport={'n' if forward else 's'}",
-                    ]
-                )
-            else:
-                # Opposite directions use opposite sides, rather than sharing a U-turn.
-                if node_order[edge.source] < node_order[edge.target]:
-                    attributes.extend(["tailport=e", "headport=w"])
-                else:
-                    attributes.extend(["tailport=n", "headport=n"])
-        elif edge.role == "training":
-            attributes.extend(["tailport=n", "headport=s"])
+        _append_edge_ports(
+            edge=edge,
+            attributes=attributes,
+            column_membership=column_membership,
+            coupled_columns=coupled_columns,
+            row_membership=row_membership,
+            node_order=node_order,
+        )
+
         lines.append(
             f"{_q(edge.source)} -> {_q(edge.target)} [{', '.join(attributes)}];"
         )
+
+
+def diagram_to_dot(
+    diagram: Diagram,
+    *,
+    theme: DiagramTheme = _DEFAULT_THEME,
+    height_to_width_ratio: float | None = None,
+    canvas_size: tuple[int, int] | None = None,
+) -> str:
+    """Compile a structured diagram into deterministic Graphviz DOT."""
+
+    if height_to_width_ratio is not None and (
+        not math.isfinite(height_to_width_ratio) or height_to_width_ratio <= 0
+    ):
+        raise ValueError("diagram height-to-width ratio must be finite and positive")
+    if canvas_size is not None and (
+        len(canvas_size) != 2
+        or any(type(value) is not int or value <= 0 for value in canvas_size)
+    ):
+        raise ValueError("diagram canvas size must contain two positive integers")
+    title = diagram.title or diagram.name.replace("_", " ")
+    title = title[:1].upper() + title[1:]
+    ratio = (
+        "" if height_to_width_ratio is None else f', ratio="{height_to_width_ratio:g}"'
+    )
+    # Graphviz uses points; PNG exports use 144 DPI, or two pixels per point.
+    viewport = (
+        ""
+        if canvas_size is None
+        else f', viewport="{canvas_size[0] / 2:g},{canvas_size[1] / 2:g},1"'
+    )
+    incoming_nodes = {edge.target for edge in diagram.edges}
+    input_count = sum(
+        node.kind == "input" and node.id not in incoming_nodes for node in diagram.nodes
+    )
+    entry_links = _group_entry_links(diagram)
+    rank_spacing = "1.3" if entry_links else "4.5" if input_count >= 3 else "1.1"
+    matrix_labels = [
+        edge.weight_label for edge in diagram.edges if edge.weight_label is not None
+    ]
+    nodesep = "1.15" if matrix_labels else "0.65"
+    if matrix_labels:
+        longest = max(
+            len(label.symbol) + len(label.subscript) + len(label.superscript)
+            for label in matrix_labels
+        )
+        label_spacing = longest * (theme.secondary_size - 1) * 0.6 / 72 + 0.6
+        rank_spacing = f"{max(float(rank_spacing), 2.0, label_spacing):g}"
+    # Local cluster ranking preserves E/I order in mixed input/population groups.
+    newrank = "false" if entry_links else "true"
+    lines = [
+        f"digraph {_q(diagram.name)} {{",
+        f'graph [rankdir=LR{ratio}{viewport}, bgcolor="{theme.background}", pad="0.3", nodesep="{nodesep}", ranksep="{rank_spacing}",',
+        f'  splines=ortho, outputorder=edgesfirst, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}",',
+        f"  label=<<B>{html.escape(title)}</B>>, labelloc=t, labeljust=l, fontsize={theme.title_size:g}, compound=true, newrank={newrank}];",
+        f'node [shape=plain, fontname={_q(theme.font_name)}, fontcolor="{theme.ink}"];',
+        f'edge [fontname={_q(theme.font_name)}, fontsize={theme.secondary_size - 1:g}, fontcolor="{theme.muted}", color="{theme.ink}", penwidth=1.1, arrowsize=0.65];',
+    ]
+    _append_nodes(diagram=diagram, theme=theme, lines=lines)
+
+    (
+        row_membership,
+        column_membership,
+        nodes_by_id,
+        coupled_columns,
+        population_columns,
+    ) = _append_layout_constraints(
+        diagram=diagram, theme=theme, lines=lines, entry_links=entry_links
+    )
+
+    path = _forward_spine(diagram)
+    spine_order = {identifier: index for index, identifier in enumerate(path)}
+    node_order = {node.id: index for index, node in enumerate(diagram.nodes)}
+    for node in diagram.nodes:
+        if node.kind != "training":
+            continue
+        targets = [
+            edge.target
+            for edge in diagram.edges
+            if edge.source == node.id and edge.role == "training"
+        ]
+        if targets:
+            anchor = max(
+                targets,
+                key=lambda identifier: (
+                    spine_order.get(identifier, -1),
+                    node_order[identifier],
+                ),
+            )
+            anchor = population_columns.get(anchor, anchor)
+            lines.append(f"{{ rank=same; {_q(anchor)}; {_q(node.id)}; }}")
+            lines.append(f"{_q(anchor)} -> {_q(node.id)} [style=invis, weight=50];")
+    spine = set(pairwise(path))
+    _append_edges(
+        diagram=diagram,
+        theme=theme,
+        lines=lines,
+        spine=spine,
+        spine_order=spine_order,
+        node_order=node_order,
+        row_membership=row_membership,
+        column_membership=column_membership,
+        nodes_by_id=nodes_by_id,
+        coupled_columns=coupled_columns,
+    )
+
     lines.append("}")
     return "\n".join(lines) + "\n"

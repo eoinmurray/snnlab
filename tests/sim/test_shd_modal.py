@@ -210,4 +210,4 @@ def test_worker_module_import_does_not_assume_local_launcher_depth(
     )
     monkeypatch.setitem(sys.modules, "modal", sdk)
     module = importlib.import_module("benchmarks.shd.benchmark")
-    assert module.modal_launcher().LOCAL_ROOT == Path("/workspace")
+    assert Path("/workspace") == module.modal_launcher().LOCAL_ROOT

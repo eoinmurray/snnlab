@@ -168,7 +168,7 @@ def test_custom_eager_builtin_eager_compiled(constructor, device, monkeypatch):
             (full.outputs, gradient, weights, copy.deepcopy(optimizer.state_dict()))
         )
     for result in results[1:]:
-        for actual, expected in zip(result[:3], results[0][:3]):
+        for actual, expected in zip(result[:3], results[0][:3], strict=True):
             torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-5)
         torch.testing.assert_close(result[3], results[0][3], atol=2e-5, rtol=2e-5)
 

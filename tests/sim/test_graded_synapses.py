@@ -204,7 +204,10 @@ def test_gate_conductance_and_voltage_recording(example):
         recording=sim.RecordingSpec(tuple(sim.SignalRecording(s) for s in signals)),
     )
     for signal, output, unit in zip(
-        signals, ("a_to_b_gate", "a_to_b_conductance", "b_voltage"), ("mV", "uS", "mV")
+        signals,
+        ("a_to_b_gate", "a_to_b_conductance", "b_voltage"),
+        ("mV", "uS", "mV"),
+        strict=True,
     ):
         torch.testing.assert_close(
             recorded.recorded_signals[signal], full.outputs[output], rtol=0, atol=0

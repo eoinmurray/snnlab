@@ -1,8 +1,9 @@
 """Opt-in formatting of finalized epoch reports."""
 
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping, TextIO
+from typing import TextIO
 
 from snnlab.sim.training.history import metric_value
 from snnlab.sim.training.policies import EpochReport

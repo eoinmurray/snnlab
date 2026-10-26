@@ -193,7 +193,9 @@ def test_prefetch_preserves_spikes_metadata_rng_and_partial_batch(tmp_path, devi
     actual = list(iter_batches(provider, requests, prefetch=2))
     assert torch.equal(state, torch.get_rng_state())
     assert len(actual) == 3
-    for (_, tensors, meta), (_, expected, expected_meta) in zip(actual, reference):
+    for (_, tensors, meta), (_, expected, expected_meta) in zip(
+        actual, reference, strict=True
+    ):
         assert meta == expected_meta
         torch.testing.assert_close(
             tensors["events"], expected["events"], atol=0, rtol=0

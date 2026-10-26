@@ -88,7 +88,7 @@ def run(out_dir=HERE / "results"):
     out_dir.mkdir(parents=True, exist_ok=True)
     model, bundle = build_model()
     bundle.visualise(out_dir / "network.png")
-    initial = {name: 0.0 for name in model.states}
+    initial = dict.fromkeys(model.states, 0.0)
     initial.update({"E_A.rate": 5, "I_A.rate": 10, "E_B.rate": 7, "I_B.rate": 10})
     settings = {
         "duration": 600,
@@ -110,7 +110,7 @@ def run(out_dir=HERE / "results"):
     switched.write(out_dir / "switched.json")
     uncoupled.write(out_dir / "uncoupled.json")
     fig, axes = plt.subplots(2, 2, figsize=(12, 6), sharex="col", layout="constrained")
-    for ax, kind in zip(axes.flat, ("E", "E", "I", "I")):
+    for ax, kind in zip(axes.flat, ("E", "E", "I", "I"), strict=True):
         for circuit, color in (("A", "tab:blue"), ("B", "tab:orange")):
             name = f"{kind}_{circuit}.rate"
             ax.plot(

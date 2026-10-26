@@ -1,8 +1,8 @@
 """Absolute boundary schedules, selective voltage resets and online decisions."""
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import torch
 
@@ -115,18 +115,7 @@ class DecisionSegments:
         )
 
 
-def segment_identity(
-    resets: Sequence[ResetVoltage],
-    decisions: DecisionSegments | None,
-    *,
-    graph,
-    batch_size,
-):
-    """Validate and resolve the full policy before execution or cache reuse."""
-    _integer(batch_size, "batch_size")
-    if batch_size == 0:
-        raise ValueError("batch_size must be positive")
-    populations = {row["id"]: row for row in graph["populations"]}
+def _resolve_voltage_resets(resets, populations, batch_size):
     resolved = []
     occupied = set()
     for reset in resets:
@@ -155,6 +144,25 @@ def segment_identity(
                 "steps_by_batch": rows,
             }
         )
+    return resolved
+
+
+def segment_identity(
+    resets: Sequence[ResetVoltage],
+    decisions: DecisionSegments | None,
+    *,
+    graph,
+    batch_size,
+):
+    """Validate and resolve the full policy before execution or cache reuse."""
+    _integer(batch_size, "batch_size")
+    if batch_size == 0:
+        raise ValueError("batch_size must be positive")
+    populations = {row["id"]: row for row in graph["populations"]}
+    resolved = _resolve_voltage_resets(
+        resets=resets, populations=populations, batch_size=batch_size
+    )
+
     policy = None
     if decisions is not None:
         if not isinstance(decisions, DecisionSegments):
@@ -220,21 +228,10 @@ class SegmentAccumulator:
         self.counts = {}
         self.starts = [None] * batch
         self.last_boundary = -1
-        if saved:
-            if saved.get("identity") != identity:
-                raise ValueError("runtime reset/decision policy does not match request")
-            self.starts = list(saved["starts"])
-            self.last_boundary = saved["last_boundary"]
-            if (
-                len(self.starts) != batch
-                or type(self.last_boundary) is not int
-                or self.last_boundary > start_step
-            ):
-                raise ValueError("invalid runtime decision cursor")
-        elif identity and start_step:
-            raise ValueError(
-                "cannot attach reset/decision policy to an unaudited continuation"
-            )
+        self._restore_segment_accumulator(
+            saved=saved, batch=batch, identity=identity, start_step=start_step
+        )
+
         if self.policy:
             if saved:
                 expected_starts = [
@@ -356,3 +353,20 @@ class SegmentAccumulator:
             if self.identity
             else {}
         )
+
+    def _restore_segment_accumulator(self, *, saved, batch, identity, start_step):
+        if saved:
+            if saved.get("identity") != identity:
+                raise ValueError("runtime reset/decision policy does not match request")
+            self.starts = list(saved["starts"])
+            self.last_boundary = saved["last_boundary"]
+            if (
+                len(self.starts) != batch
+                or type(self.last_boundary) is not int
+                or self.last_boundary > start_step
+            ):
+                raise ValueError("invalid runtime decision cursor")
+        elif identity and start_step:
+            raise ValueError(
+                "cannot attach reset/decision policy to an unaudited continuation"
+            )

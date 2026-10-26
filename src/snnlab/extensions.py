@@ -10,10 +10,11 @@ from __future__ import annotations
 import importlib
 import re
 import sys
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from importlib import metadata
 from types import MappingProxyType
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from snnlab._shared import neurons as N
 
@@ -135,6 +136,34 @@ def _check_package(package, package_version):
     return installed
 
 
+def _resolve_callbacks(function, initialize, validate):
+    references = {}
+    callbacks = {}
+    for role, callback in (
+        ("function", function),
+        ("initialize", initialize),
+        ("validate", validate),
+    ):
+        if isinstance(callback, str):
+            references[role] = callback
+            callback = _import_callback(callback)
+        elif callback is not None:
+            reference = _callback_reference(callback)
+            if reference is not None:
+                references[role] = reference
+        callbacks[role] = callback
+    function, initialize, validate = (
+        callbacks[role] for role in ("function", "initialize", "validate")
+    )
+    if (
+        not callable(function)
+        or (initialize is not None and not callable(initialize))
+        or (validate is not None and not callable(validate))
+    ):
+        raise TypeError("extension callbacks must be callable")
+    return function, initialize, validate, references
+
+
 def register(
     category: str,
     name: str,
@@ -162,30 +191,10 @@ def register(
     if not isinstance(capture_safe, bool):
         raise TypeError("capture_safe must be boolean")
     package_version = _check_package(package, package_version)
-    references = {}
-    callbacks = {}
-    for role, callback in (
-        ("function", function),
-        ("initialize", initialize),
-        ("validate", validate),
-    ):
-        if isinstance(callback, str):
-            references[role] = callback
-            callback = _import_callback(callback)
-        elif callback is not None:
-            reference = _callback_reference(callback)
-            if reference is not None:
-                references[role] = reference
-        callbacks[role] = callback
-    function, initialize, validate = (
-        callbacks[role] for role in ("function", "initialize", "validate")
+    function, initialize, validate, references = _resolve_callbacks(
+        function=function, initialize=initialize, validate=validate
     )
-    if (
-        not callable(function)
-        or (initialize is not None and not callable(initialize))
-        or (validate is not None and not callable(validate))
-    ):
-        raise TypeError("extension callbacks must be callable")
+
     if not isinstance(unit, str) or not unit:
         raise ValueError("extension unit must be non-empty")
     if category in {"neuron", "synapse"} and unit not in {"nA", "uS"}:
@@ -596,6 +605,15 @@ def _same_implementation(category, definition, saved):
     }
 
 
+def _validate_saved_callbacks(implementation, category, name):
+    if not isinstance(implementation, Mapping) or "function" not in implementation:
+        raise ValueError(f"invalid implementation descriptor for {category}:{name}")
+    if set(implementation) - {"function", "initialize", "validate"} or any(
+        not isinstance(reference, str) for reference in implementation.values()
+    ):
+        raise ValueError(f"invalid callback references for {category}:{name}")
+
+
 def restore(data):
     """Automatically resolve descriptors in an authenticated graph or recipe."""
     rows = data.get("extensions", [])
@@ -621,12 +639,10 @@ def restore(data):
         if implementation is None:
             get(category, name)  # Older bundles require explicit registration.
             continue
-        if not isinstance(implementation, Mapping) or "function" not in implementation:
-            raise ValueError(f"invalid implementation descriptor for {category}:{name}")
-        if set(implementation) - {"function", "initialize", "validate"} or any(
-            not isinstance(reference, str) for reference in implementation.values()
-        ):
-            raise ValueError(f"invalid callback references for {category}:{name}")
+        _validate_saved_callbacks(
+            implementation=implementation, category=category, name=name
+        )
+
         package, version = row.get("package"), row.get("package_version")
         if package is not None and (not isinstance(version, str) or not version):
             raise ValueError(

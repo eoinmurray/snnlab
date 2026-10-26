@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
-from typing import Mapping
+from collections.abc import Mapping
 
 import torch
 
@@ -27,6 +27,25 @@ def checked_tensor(value, *, shape, device, dtype, name, check_values=True):
     if check_values:
         check_finite(value, name)
     return value
+
+
+def _check_state_values(value, name, check_values):
+    if check_values and _PENDING.get() is not None:
+        for key, tensor in value.items():
+            check_finite(tensor, f"{name}.{key}")
+    elif check_values:
+        # Structural validation above retains useful errors. On valid states,
+        # reduce finite flags per device before asking Python for a scalar.
+        by_device = {}
+        for key, tensor in value.items():
+            by_device.setdefault(tensor.device, []).append(
+                (key, torch.isfinite(tensor).all())
+            )
+        for flags in by_device.values():
+            if not torch.stack([flag for _, flag in flags]).all():
+                for key, flag in flags:
+                    if not flag:
+                        raise ValueError(f"{name}.{key} must be a finite tensor")
 
 
 def checked_state(value, template, name, *, required=(), check_values=True):
@@ -53,22 +72,8 @@ def checked_state(value, template, name, *, required=(), check_values=True):
                 name=f"{name}.{key}",
                 check_values=False,
             )
-    if check_values and _PENDING.get() is not None:
-        for key, tensor in value.items():
-            check_finite(tensor, f"{name}.{key}")
-    elif check_values:
-        # Structural validation above retains useful errors. On valid states,
-        # reduce finite flags per device before asking Python for a scalar.
-        by_device = {}
-        for key, tensor in value.items():
-            by_device.setdefault(tensor.device, []).append(
-                (key, torch.isfinite(tensor).all())
-            )
-        for flags in by_device.values():
-            if not torch.stack([flag for _, flag in flags]).all():
-                for key, flag in flags:
-                    if not flag:
-                        raise ValueError(f"{name}.{key} must be a finite tensor")
+    _check_state_values(value=value, name=name, check_values=check_values)
+
     return dict(value)
 
 

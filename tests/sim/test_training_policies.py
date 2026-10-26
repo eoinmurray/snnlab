@@ -337,7 +337,7 @@ def test_callback_snapshot_observations_rng_and_no_extra_forwards(monkeypatch, t
     assert [r.epoch for r in reports] == [1, 2]
     assert [r.updates for r in reports] == [3, 6]
     assert [r.examples for r in reports] == [5, 10]
-    for report, row in zip(reports, measured.metrics["epochs"][1:]):
+    for report, row in zip(reports, measured.metrics["epochs"][1:], strict=True):
         assert report.train.loss == row["train_loss"]
         assert report.validation.accuracy == row["validation_accuracy"]
         assert (

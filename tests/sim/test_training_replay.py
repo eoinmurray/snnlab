@@ -123,7 +123,7 @@ def compare(actual, expected):
         actual.training_checkpoint.data_state == expected.training_checkpoint.data_state
     )
     assert len(actual.metrics["epochs"]) == len(expected.metrics["epochs"])
-    for a, b in zip(actual.metrics["epochs"], expected.metrics["epochs"]):
+    for a, b in zip(actual.metrics["epochs"], expected.metrics["epochs"], strict=True):
         for key in ("train_loss", "train_accuracy", "validation_loss"):
             if key in b:
                 assert a[key] == pytest.approx(b[key], abs=3e-4, rel=3e-4)

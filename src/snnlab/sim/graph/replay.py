@@ -35,6 +35,49 @@ def _clone(value):
     return value
 
 
+def _replay_fallback_reason(model, inputs, kwargs):
+    reason = None
+    if model.cuda_graphs == "off":
+        reason = "disabled by request"
+    elif torch.is_grad_enabled():
+        reason = "forward autograd enabled"
+    elif not inputs or any(
+        value.device.type != "cuda" or value.requires_grad for value in inputs.values()
+    ):
+        reason = "CUDA inputs without input gradients required"
+    elif current_trace() is not None:
+        reason = "execution tracing"
+    elif (
+        model.surrogate is not None
+        and not E.resolve("surrogate", model.surrogate).capture_safe
+    ):
+        reason = "surrogate requires capture_safe=True"
+    elif model.compile_mode is None:
+        reason = "compilation disabled"
+    elif any(
+        kwargs.get(name)
+        for name in (
+            "runtime_state",
+            "recording",
+            "interventions",
+            "resets",
+            "decisions",
+            "measurement",
+        )
+    ):
+        reason = "continuation, recording or intervention controls"
+    elif any(
+        not E.get(row["category"], row["definition"]).capture_safe
+        for row in E.required(model.plan.graph)
+        if row["category"]
+        in {"neuron", "synapse", "surrogate", "operation", "constraint"}
+    ):
+        reason = "extension requires capture_safe=True"
+    elif model._check_extension_values and E.required(model.plan.graph):
+        reason = "strict extension value validation"
+    return reason
+
+
 class ForwardReplay:
     """Capture the third use of a compatible shape; keep at most two graphs."""
 
@@ -46,46 +89,8 @@ class ForwardReplay:
         self.replays = 0
 
     def run(self, model, inputs, kwargs, step):
-        reason = None
-        if model.cuda_graphs == "off":
-            reason = "disabled by request"
-        elif torch.is_grad_enabled():
-            reason = "forward autograd enabled"
-        elif not inputs or any(
-            value.device.type != "cuda" or value.requires_grad
-            for value in inputs.values()
-        ):
-            reason = "CUDA inputs without input gradients required"
-        elif current_trace() is not None:
-            reason = "execution tracing"
-        elif (
-            model.surrogate is not None
-            and not E.resolve("surrogate", model.surrogate).capture_safe
-        ):
-            reason = "surrogate requires capture_safe=True"
-        elif model.compile_mode is None:
-            reason = "compilation disabled"
-        elif any(
-            kwargs.get(name)
-            for name in (
-                "runtime_state",
-                "recording",
-                "interventions",
-                "resets",
-                "decisions",
-                "measurement",
-            )
-        ):
-            reason = "continuation, recording or intervention controls"
-        elif any(
-            not E.get(row["category"], row["definition"]).capture_safe
-            for row in E.required(model.plan.graph)
-            if row["category"]
-            in {"neuron", "synapse", "surrogate", "operation", "constraint"}
-        ):
-            reason = "extension requires capture_safe=True"
-        elif model._check_extension_values and E.required(model.plan.graph):
-            reason = "strict extension value validation"
+        reason = _replay_fallback_reason(model=model, inputs=inputs, kwargs=kwargs)
+
         if reason:
             self.fallbacks[reason] += 1
             return None
@@ -132,9 +137,11 @@ class ForwardReplay:
                 torch.cuda.current_stream(stream.device).wait_stream(stream)
                 torch.cuda.synchronize(stream.device)
                 graph = torch.cuda.CUDAGraph()
-                with torch.cuda.graph(graph, stream=stream):
-                    with deferred_validation() as checks:
-                        result = step(static)
+                with (
+                    torch.cuda.graph(graph, stream=stream),
+                    deferred_validation() as checks,
+                ):
+                    result = step(static)
                 torch.cuda.current_stream(stream.device).wait_stream(stream)
                 self.entries[key] = (graph, static, result, checks)
             except RuntimeError as error:

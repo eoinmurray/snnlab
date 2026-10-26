@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import copy
 import math
+from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 import torch
 from torch import nn
@@ -78,6 +79,57 @@ class DelayBuffer:
         return result
 
 
+def _apply_initial_sparsity(
+    *, row, init, eligible_fan_in, exclude_autapses, runtime_shape, value
+):
+    zero_fraction = float(init.get("initial_zero_fraction", 0.0))
+    if not 0 <= zero_fraction < 1:
+        raise ValueError(
+            f"{row['id']}: initial_zero_fraction must satisfy 0 <= fraction < 1"
+        )
+    zeroing = init.get("zeroing", "bernoulli")
+    if zero_fraction and eligible_fan_in:
+        if zeroing == "exact_k":
+            if len(runtime_shape) != 2:
+                raise ValueError(f"{row['id']}: exact_k zeroing requires a matrix")
+            fan_in, fan_out = runtime_shape
+            kept = max(1, int(round((1.0 - zero_fraction) * eligible_fan_in)))
+            mask = torch.zeros(runtime_shape)
+            for column in range(fan_out):
+                partners = torch.randperm(eligible_fan_in)[:kept]
+                if exclude_autapses:
+                    partners = partners + (partners >= column).long()
+                mask[partners, column] = 1
+            value = value * mask * (eligible_fan_in / kept)
+        elif zeroing == "bernoulli":
+            value = (
+                value
+                * (torch.rand(*runtime_shape) > zero_fraction)
+                / (1 - zero_fraction)
+            )
+        else:
+            raise ValueError(f"{row['id']}: unsupported initializer zeroing {zeroing}")
+    return value
+
+
+def _projection_initialization_order(plan, pop_ids):
+    def init_priority(projection: PlannedProjection) -> tuple[int, str]:
+        source = projection.source.partition(".")[0]
+        target = projection.target.partition(".")[0]
+        target_kind = next(
+            p["neuron"]["kind"] for p in plan.populations if p["id"] == target
+        )
+        if source not in pop_ids:
+            return (0, projection.id)
+        if target_kind == "leaky_integrator":
+            return (1, projection.id)
+        if projection.polarity == "excitatory":
+            return (2, projection.id)
+        return (3, projection.id)
+
+    return init_priority
+
+
 class GraphExecutor(nn.Module):
     """Dense graph executor whose graph topology is lowered before simulation."""
 
@@ -126,56 +178,12 @@ class GraphExecutor(nn.Module):
         self.plan = plan
         self._signal_parameters = signal_parameters(plan)
         self.seed = int(seed)
-        self.surrogate = (
-            surrogate if (surrogate or {}).get("kind") == "custom_surrogate" else None
-        )
-        builtin = surrogate or {}
-        if builtin and builtin.get("kind") not in {"fast_sigmoid", "custom_surrogate"}:
-            raise ValueError("unsupported surrogate kind")
-        self.surrogate_slope = (
-            builtin.get("slope", surrogate_slope)
-            if self.surrogate is None
-            else surrogate_slope
-        )
-        self.surrogate_gradient_scale = (
-            builtin.get("gradient_scale", 1.0) if self.surrogate is None else 1.0
-        )
-        self.surrogate_threshold_inclusive = (
-            builtin.get("threshold_inclusive", True) if self.surrogate is None else True
-        )
-        for name, value, positive in (
-            ("slope", self.surrogate_slope, True),
-            ("gradient_scale", self.surrogate_gradient_scale, False),
-        ):
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                or (value <= 0 if positive else value < 0)
-            ):
-                domain = "positive" if positive else "nonnegative"
-                raise ValueError(f"surrogate {name} must be finite and {domain}")
-        if not isinstance(self.surrogate_threshold_inclusive, bool):
-            raise ValueError("surrogate threshold_inclusive must be boolean")
-        self.surrogate_slope = float(self.surrogate_slope)
-        self.surrogate_config = (
-            copy.deepcopy(self.surrogate)
-            if self.surrogate is not None
-            else {
-                "kind": "fast_sigmoid",
-                "slope": self.surrogate_slope,
-                "gradient_scale": self.surrogate_gradient_scale,
-                "threshold_inclusive": self.surrogate_threshold_inclusive,
-            }
-        )
-        self._spike_function = X.make_spike(
-            slope=self.surrogate_slope,
-            gradient_scale=self.surrogate_gradient_scale,
-            threshold_inclusive=self.surrogate_threshold_inclusive,
-            custom=self.surrogate,
-            check_values=self._check_extension_values,
+        self._configure_surrogate(
+            surrogate=surrogate,
+            surrogate_slope=surrogate_slope,
             compile_mode=compile_mode,
         )
+
         self._neuron_definitions = {
             row["id"]: E.resolve("neuron", row["neuron"])
             for row in plan.populations
@@ -261,140 +269,11 @@ class GraphExecutor(nn.Module):
         pop_ids = {p["id"] for p in plan.populations}
         trainable = set(trainable_parameters)
 
-        def initialise(
-            row: Mapping[str, Any],
-            *,
-            runtime_shape: tuple[int, ...],
-            scale_by_fanin: bool,
-        ) -> torch.Tensor:
-            scaling = row.get(
-                "initialization_scaling",
-                "fan_in_normalized" if scale_by_fanin else "direct",
-            )
-            if scaling not in ("direct", "fan_in_normalized"):
-                raise ValueError(
-                    f"{row['id']}: invalid initialization_scaling {scaling!r}"
-                )
-            scale_by_fanin = scaling == "fan_in_normalized"
-            exclude_autapses = row["id"] in self._excluded_autapse_parameters
-            eligible_fan_in = runtime_shape[0] - int(exclude_autapses)
-            init = row["initializer"]
-            kind = init["kind"]
-            if kind == "custom_initializer":
-                definition = E.resolve("initializer", init)
-                value = definition.function(
-                    runtime_shape,
-                    init.get("config", {}),
-                    device=torch.device("cpu"),
-                    dtype=torch.float32,
-                )
-                X.checked_tensor(
-                    value,
-                    shape=runtime_shape,
-                    device="cpu",
-                    dtype=torch.float32,
-                    name=definition.name,
-                )
-            elif kind in {"normal", "lower_clamped_normal"}:
-                value = (
-                    torch.randn(*runtime_shape)
-                    .mul_(float(init["std"]))
-                    .add_(float(init["mean"]))
-                    .clamp_(min=0)
-                )
-            elif kind == "signed_normal":
-                value = (
-                    torch.randn(*runtime_shape)
-                    .mul_(float(init["std"]))
-                    .add_(float(init["mean"]))
-                )
-            elif kind == "uniform":
-                value = (
-                    torch.rand(*runtime_shape)
-                    .mul_(float(init["high"]) - float(init["low"]))
-                    .add_(float(init["low"]))
-                )
-            elif init["kind"] == "constant":
-                value = torch.full(runtime_shape, float(init["value"]))
-            elif kind == "zeros":
-                value = torch.zeros(runtime_shape)
-            else:
-                raise ValueError(f"{row['id']}: unsupported initializer {init['kind']}")
-            zero_fraction = float(init.get("initial_zero_fraction", 0.0))
-            if not 0 <= zero_fraction < 1:
-                raise ValueError(
-                    f"{row['id']}: initial_zero_fraction must satisfy 0 <= fraction < 1"
-                )
-            zeroing = init.get("zeroing", "bernoulli")
-            if zero_fraction and eligible_fan_in:
-                if zeroing == "exact_k":
-                    if len(runtime_shape) != 2:
-                        raise ValueError(
-                            f"{row['id']}: exact_k zeroing requires a matrix"
-                        )
-                    fan_in, fan_out = runtime_shape
-                    kept = max(1, int(round((1.0 - zero_fraction) * eligible_fan_in)))
-                    mask = torch.zeros(runtime_shape)
-                    for column in range(fan_out):
-                        partners = torch.randperm(eligible_fan_in)[:kept]
-                        if exclude_autapses:
-                            partners = partners + (partners >= column).long()
-                        mask[partners, column] = 1
-                    value = value * mask * (eligible_fan_in / kept)
-                elif zeroing == "bernoulli":
-                    value = (
-                        value
-                        * (torch.rand(*runtime_shape) > zero_fraction)
-                        / (1 - zero_fraction)
-                    )
-                else:
-                    raise ValueError(
-                        f"{row['id']}: unsupported initializer zeroing {zeroing}"
-                    )
-            constraint = row.get("constraint")
-            if scale_by_fanin:
-                value = value / max(1, eligible_fan_in)
-            if constraint:
-                value = X.apply_constraint(value, constraint)
-            if exclude_autapses:
-                value = value.clone().fill_diagonal_(0)
-            flat = value.reshape(-1)
-            self.initialization_metadata[row["id"]] = {
-                "initializer": dict(init),
-                "constraint": dict(constraint) if constraint else None,
-                "unit": row.get("unit"),
-                "runtime_shape": list(runtime_shape),
-                "scaling": "fan_in_normalized" if scale_by_fanin else "direct",
-                "statistics": {
-                    "count": flat.numel(),
-                    "zero_fraction": float((flat == 0).float().mean()),
-                    "mean": float(flat.mean()),
-                    "std": float(flat.std(unbiased=False)),
-                    "min": float(flat.min()),
-                    "max": float(flat.max()),
-                },
-            }
-            if row["id"] in explicit_parameters:
-                self.initialization_metadata[row["id"]]["autapses"] = {
-                    p.id: dict(plan.autapses[p.id])
-                    for p in plan.projections
-                    if p.parameter == row["id"]
-                }
-            return value
+        initialise = self._parameter_initializer(
+            plan=plan, explicit_parameters=explicit_parameters
+        )
 
-        def init_priority(projection: PlannedProjection) -> tuple[int, str]:
-            source = projection.source.partition(".")[0]
-            target = projection.target.partition(".")[0]
-            target_kind = next(
-                p["neuron"]["kind"] for p in plan.populations if p["id"] == target
-            )
-            if source not in pop_ids:
-                return (0, projection.id)
-            if target_kind == "leaky_integrator":
-                return (1, projection.id)
-            if projection.polarity == "excitatory":
-                return (2, projection.id)
-            return (3, projection.id)
+        init_priority = _projection_initialization_order(plan=plan, pop_ids=pop_ids)
 
         realised: dict[str, torch.Tensor] = {}
         for projection in sorted(plan.projections, key=init_priority):
@@ -636,7 +515,7 @@ class GraphExecutor(nn.Module):
 
         return amp_enabled(self.precision, parameter)
 
-    def _forward_impl(
+    def _forward_impl(  # noqa: C901
         self,
         inputs: Mapping[str, torch.Tensor],
         *,
@@ -657,6 +536,7 @@ class GraphExecutor(nn.Module):
         retain_runtime_state: bool = True,
     ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
         probe = getattr(self, "_stream_probe", None)
+        # This state machine coordinates causal updates, continuation and output ownership.
         trace = current_trace()
         if trace is not None and not trace.active:
             trace = None
@@ -1405,7 +1285,7 @@ class GraphExecutor(nn.Module):
                     conductance_traces[name].extend(
                         samples[f"{name}.{projection_ports[name]}"].unbind()
                     )
-                for name, state in neuron_states.items():
+                for name in neuron_states:
                     for port in self._state_ports["neuron"][name]:
                         signal = f"{name}.{port}"
                         if signal in samples:
@@ -1437,7 +1317,15 @@ class GraphExecutor(nn.Module):
                     for signal in continuous_delays
                 }
 
-                def projection_source(signal, delay):
+                def projection_source(
+                    signal,
+                    delay,
+                    *,
+                    source_cache=source_cache,
+                    old_continuous=old_continuous,
+                    new_spikes=new_spikes,
+                    t=t,
+                ):
                     key = (signal, delay)
                     if key in source_cache:
                         return source_cache[key]
@@ -1493,7 +1381,7 @@ class GraphExecutor(nn.Module):
                             projection.source, projection.delay_steps
                         )
 
-                        def project():
+                        def project(*, projection=projection, source=source):
                             config = projection_rows[projection.id].get("connectivity")
                             if config is not None:
                                 return convolution_drive(
@@ -2072,3 +1960,157 @@ class GraphExecutor(nn.Module):
                 copy.deepcopy(result.metrics["execution_path"])
             )
         return result, signal_values
+
+    def _configure_surrogate(self, *, surrogate, surrogate_slope, compile_mode):
+        self.surrogate = (
+            surrogate if (surrogate or {}).get("kind") == "custom_surrogate" else None
+        )
+        builtin = surrogate or {}
+        if builtin and builtin.get("kind") not in {"fast_sigmoid", "custom_surrogate"}:
+            raise ValueError("unsupported surrogate kind")
+        self.surrogate_slope = (
+            builtin.get("slope", surrogate_slope)
+            if self.surrogate is None
+            else surrogate_slope
+        )
+        self.surrogate_gradient_scale = (
+            builtin.get("gradient_scale", 1.0) if self.surrogate is None else 1.0
+        )
+        self.surrogate_threshold_inclusive = (
+            builtin.get("threshold_inclusive", True) if self.surrogate is None else True
+        )
+        for name, value, positive in (
+            ("slope", self.surrogate_slope, True),
+            ("gradient_scale", self.surrogate_gradient_scale, False),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or (value <= 0 if positive else value < 0)
+            ):
+                domain = "positive" if positive else "nonnegative"
+                raise ValueError(f"surrogate {name} must be finite and {domain}")
+        if not isinstance(self.surrogate_threshold_inclusive, bool):
+            raise ValueError("surrogate threshold_inclusive must be boolean")
+        self.surrogate_slope = float(self.surrogate_slope)
+        self.surrogate_config = (
+            copy.deepcopy(self.surrogate)
+            if self.surrogate is not None
+            else {
+                "kind": "fast_sigmoid",
+                "slope": self.surrogate_slope,
+                "gradient_scale": self.surrogate_gradient_scale,
+                "threshold_inclusive": self.surrogate_threshold_inclusive,
+            }
+        )
+        self._spike_function = X.make_spike(
+            slope=self.surrogate_slope,
+            gradient_scale=self.surrogate_gradient_scale,
+            threshold_inclusive=self.surrogate_threshold_inclusive,
+            custom=self.surrogate,
+            check_values=self._check_extension_values,
+            compile_mode=compile_mode,
+        )
+
+    def _parameter_initializer(self, plan, explicit_parameters):
+        def initialise(
+            row: Mapping[str, Any],
+            *,
+            runtime_shape: tuple[int, ...],
+            scale_by_fanin: bool,
+        ) -> torch.Tensor:
+            scaling = row.get(
+                "initialization_scaling",
+                "fan_in_normalized" if scale_by_fanin else "direct",
+            )
+            if scaling not in ("direct", "fan_in_normalized"):
+                raise ValueError(
+                    f"{row['id']}: invalid initialization_scaling {scaling!r}"
+                )
+            scale_by_fanin = scaling == "fan_in_normalized"
+            exclude_autapses = row["id"] in self._excluded_autapse_parameters
+            eligible_fan_in = runtime_shape[0] - int(exclude_autapses)
+            init = row["initializer"]
+            kind = init["kind"]
+            if kind == "custom_initializer":
+                definition = E.resolve("initializer", init)
+                value = definition.function(
+                    runtime_shape,
+                    init.get("config", {}),
+                    device=torch.device("cpu"),
+                    dtype=torch.float32,
+                )
+                X.checked_tensor(
+                    value,
+                    shape=runtime_shape,
+                    device="cpu",
+                    dtype=torch.float32,
+                    name=definition.name,
+                )
+            elif kind in {"normal", "lower_clamped_normal"}:
+                value = (
+                    torch.randn(*runtime_shape)
+                    .mul_(float(init["std"]))
+                    .add_(float(init["mean"]))
+                    .clamp_(min=0)
+                )
+            elif kind == "signed_normal":
+                value = (
+                    torch.randn(*runtime_shape)
+                    .mul_(float(init["std"]))
+                    .add_(float(init["mean"]))
+                )
+            elif kind == "uniform":
+                value = (
+                    torch.rand(*runtime_shape)
+                    .mul_(float(init["high"]) - float(init["low"]))
+                    .add_(float(init["low"]))
+                )
+            elif init["kind"] == "constant":
+                value = torch.full(runtime_shape, float(init["value"]))
+            elif kind == "zeros":
+                value = torch.zeros(runtime_shape)
+            else:
+                raise ValueError(f"{row['id']}: unsupported initializer {init['kind']}")
+            value = _apply_initial_sparsity(
+                row=row,
+                init=init,
+                eligible_fan_in=eligible_fan_in,
+                exclude_autapses=exclude_autapses,
+                runtime_shape=runtime_shape,
+                value=value,
+            )
+
+            constraint = row.get("constraint")
+            if scale_by_fanin:
+                value = value / max(1, eligible_fan_in)
+            if constraint:
+                value = X.apply_constraint(value, constraint)
+            if exclude_autapses:
+                value = value.clone().fill_diagonal_(0)
+            flat = value.reshape(-1)
+            self.initialization_metadata[row["id"]] = {
+                "initializer": dict(init),
+                "constraint": dict(constraint) if constraint else None,
+                "unit": row.get("unit"),
+                "runtime_shape": list(runtime_shape),
+                "scaling": "fan_in_normalized" if scale_by_fanin else "direct",
+                "statistics": {
+                    "count": flat.numel(),
+                    "zero_fraction": float((flat == 0).float().mean()),
+                    "mean": float(flat.mean()),
+                    "std": float(flat.std(unbiased=False)),
+                    "min": float(flat.min()),
+                    "max": float(flat.max()),
+                },
+            }
+            if row["id"] in explicit_parameters:
+                self.initialization_metadata[row["id"]]["autapses"] = {
+                    p.id: dict(plan.autapses[p.id])
+                    for p in plan.projections
+                    if p.parameter == row["id"]
+                }
+            return value
+
+        return initialise

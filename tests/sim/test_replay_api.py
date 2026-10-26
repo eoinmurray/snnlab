@@ -226,7 +226,7 @@ def test_shd_official_events_and_deterministic_caps(monkeypatch, tmp_path):
         indices = np.random.RandomState(42).choice(len(original_y), 5, replace=False)
         np.testing.assert_array_equal(y, original_y[indices])
         assert x.dtype == object and y.dtype == np.int64
-        for sample, index in zip(x, indices):
+        for sample, index in zip(x, indices, strict=True):
             np.testing.assert_array_equal(sample[0], original_x[index][0])
             np.testing.assert_array_equal(sample[1], original_x[index][1])
             assert sample[0].dtype == np.int16 and sample[1].dtype == np.float32
@@ -261,7 +261,7 @@ def test_mnist_normalization_subsampling_and_validation_partition(monkeypatch):
         capped_x, capped_y, test_size=4, random_state=42, stratify=capped_y
     )
     actual = sim.load_dataset("mnist", max_samples=40, split=True)
-    for a, b in zip(actual, expected):
+    for a, b in zip(actual, expected, strict=True):
         np.testing.assert_array_equal(a, b)
     official = sim.load_dataset(
         "mnist", max_samples=40, split=True, evaluation_split="test"

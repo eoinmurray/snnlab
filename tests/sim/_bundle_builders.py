@@ -61,12 +61,8 @@ def deep_network():
     second = author_ping(
         net, name="association", n_e=256, n_i=64, source=first.E.spikes
     )
-    third = author_ping(
-        net, name="decision", n_e=128, n_i=32, source=second.E.spikes
-    )
-    result = snn.SpikeCount(
-        source=third.E.spikes, classes=20, name="gesture_readout"
-    )
+    third = author_ping(net, name="decision", n_e=128, n_i=32, source=second.E.spikes)
+    result = snn.SpikeCount(source=third.E.spikes, classes=20, name="gesture_readout")
     net.output("gesture_logits", result)
     net.expose(first.E.spikes, second.E.spikes, third.E.spikes)
     recipe = snn.TrainSpec(

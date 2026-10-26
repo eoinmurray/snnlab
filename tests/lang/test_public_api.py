@@ -17,7 +17,7 @@ def test_all_public_exports_resolve():
         assert getattr(lang, name) is not None
         assert name in dir(lang)
     with pytest.raises(AttributeError, match="missing_export"):
-        lang.missing_export
+        _ = lang.missing_export
 
 
 def test_package_alias_and_exports_are_lazy_and_tensor_free():
@@ -69,4 +69,4 @@ def test_package_root_rejects_unknown_exports():
     import snnlab as snn
 
     with pytest.raises(AttributeError, match="missing_export"):
-        snn.missing_export
+        _ = snn.missing_export

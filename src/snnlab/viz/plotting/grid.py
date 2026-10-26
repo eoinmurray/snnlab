@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
@@ -35,9 +36,7 @@ class FigureGrid:
         self.rows = _tracks(self.rows, "rows")
         self.columns = _tracks(self.columns, "columns")
         self.row_gap = self._gaps(self.row_gap, len(self.rows) - 1, "row")
-        self.column_gap = self._gaps(
-            self.column_gap, len(self.columns) - 1, "column"
-        )
+        self.column_gap = self._gaps(self.column_gap, len(self.columns) - 1, "column")
         if not isinstance(self.bounds, FigureRect):
             self.bounds = FigureRect(*self.bounds)
         if self.bounds.width <= 0 or self.bounds.height <= 0:
@@ -146,9 +145,7 @@ class FigureGrid:
         top -= sum(heights[: region.row]) + sum(self.row_gap[: region.row])
         width = sum(widths[region.column : region.column + region.colspan])
         width += sum(
-            self.column_gap[
-                region.column : region.column + region.colspan - 1
-            ]
+            self.column_gap[region.column : region.column + region.colspan - 1]
         )
         height = sum(heights[region.row : region.row + region.rowspan])
         height += sum(self.row_gap[region.row : region.row + region.rowspan - 1])
@@ -171,7 +168,7 @@ class FigureGrid:
         padding: float | tuple[float, float, float, float] = 0.0,
         row_gap: float | Sequence[float] = 0.02,
         column_gap: float | Sequence[float] = 0.02,
-    ) -> "FigureGrid":
+    ) -> FigureGrid:
         """Create a nested grid inside an existing non-reserved region."""
 
         region = self.region(name)

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from snnlab import extensions as E
 from snnlab._shared import neurons as N
@@ -30,29 +31,7 @@ def _validate_neuron(neuron, graph):
         )
 
 
-def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
-    out = ValidationResult()
-    try:
-        validate_spatial(graph)
-    except (ValueError, TypeError, KeyError) as error:
-        out.diagnostics.append(Diagnostic("error", "E119", str(error)))
-    try:
-        E.restore(graph)
-    except (ValueError, TypeError) as error:
-        out.diagnostics.append(Diagnostic("error", "E500", str(error)))
-        return out
-    if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
-        out.diagnostics.append(
-            Diagnostic("error", "E115", "unsupported voltage_sampling contract")
-        )
-    if graph.get("refractory_timing") not in (
-        None,
-        N.REFRACTORY_TIMING,
-        N.LEGACY_REFRACTORY_TIMING,
-    ):
-        out.diagnostics.append(
-            Diagnostic("error", "E116", "unsupported refractory_timing contract")
-        )
+def _validate_identifiers(graph, out):
     collections = (
         "inputs",
         "populations",
@@ -85,9 +64,8 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
             else:
                 seen[name] = collection
 
-    signals: dict[str, dict[str, Any]] = {}
-    for row in graph.get("inputs", []):
-        signals[f"{row['id']}.value"] = row
+
+def _collect_population_signals(graph, out, signals):
     for row in graph.get("populations", []):
         neuron = row.get("neuron", {})
         if neuron.get("kind") == "custom_neuron":
@@ -133,6 +111,14 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                 "shape": ["time", "batch", row["size"]],
                 "unit": "spike",
             }
+
+
+def _collect_validated_signals(graph, out):
+    signals: dict[str, dict[str, Any]] = {}
+    for row in graph.get("inputs", []):
+        signals[f"{row['id']}.value"] = row
+    _collect_population_signals(graph=graph, out=out, signals=signals)
+
     population_sizes = {row["id"]: row["size"] for row in graph.get("populations", [])}
     for row in graph.get("projections", []):
         target = row["target"].partition(".")[0]
@@ -166,8 +152,10 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                 )
     for row in graph.get("operations", []):
         signals[f"{row['id']}.value"] = row
+    return signals
 
-    parameter_rows = {p["id"]: p for p in graph.get("parameters", [])}
+
+def _validate_initializers(parameter_rows, out):
     initializer_fields = {
         "normal": {"mean", "std"},
         "lower_clamped_normal": {"mean", "std", "initial_zero_fraction", "zeroing"},
@@ -223,52 +211,109 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                     row["id"],
                 )
             )
-    parameter_ids = set(parameter_rows)
+
+
+def _validate_projection_physics(graph, row, out):
     try:
-        resolve_autapses(graph)
-    except ValueError as error:
-        out.diagnostics.append(Diagnostic("error", "E117", str(error)))
-    population_ids = {p["id"] for p in graph.get("populations", [])}
-    consumers: set[str] = set()
-    adjacency: dict[str, set[str]] = {p: set() for p in population_ids}
-    for row in graph.get("projections", []):
-        try:
-            synapse = row["synapse"]
-            unit = E.synapse_unit(synapse)
-            target_neuron = next(
-                (
-                    p["neuron"]
-                    for p in graph["populations"]
-                    if p["id"] == row["target"].partition(".")[0]
-                ),
-                None,
+        synapse = row["synapse"]
+        unit = E.synapse_unit(synapse)
+        target_neuron = next(
+            (
+                p["neuron"]
+                for p in graph["populations"]
+                if p["id"] == row["target"].partition(".")[0]
+            ),
+            None,
+        )
+        if target_neuron is not None and unit != E.neuron_unit(target_neuron):
+            out.diagnostics.append(
+                Diagnostic(
+                    "error",
+                    "E502",
+                    f"synapse unit {unit} incompatible with neuron input unit {E.neuron_unit(target_neuron)}",
+                    row["id"],
+                )
             )
-            if target_neuron is not None and unit != E.neuron_unit(target_neuron):
+        validate_source(graph, row)
+        delay_steps(row, float(graph["timebase"]["dt"]["value"]))
+        unit = E.synapse_weight_unit(synapse)
+        if synapse.get("kind") == "exponential_current":
+            tau = synapse.get("tau", {})
+            if (
+                tau.get("unit") != "ms"
+                or not isinstance(tau.get("value"), (int, float))
+                or not math.isfinite(tau["value"])
+                or tau["value"] <= 0
+            ):
+                raise ValueError("ExponentialCurrent tau must be positive finite ms")
+    except (ValueError, TypeError) as error:
+        unit = "uS"
+        out.diagnostics.append(Diagnostic("error", "E500", str(error), row["id"]))
+    return unit
+
+
+def _validate_projection_parameters(
+    *,
+    graph,
+    row,
+    parameter_ids,
+    parameter_rows,
+    unit,
+    signals,
+    source,
+    target_pop,
+    population_ids,
+    out,
+):
+    for pid in row.get("parameters", []):
+        if pid not in parameter_ids:
+            out.diagnostics.append(
+                Diagnostic("error", "E106", f"unresolved parameter {pid}", row["id"])
+            )
+        elif parameter_rows[pid].get("unit") != unit:
+            out.diagnostics.append(
+                Diagnostic(
+                    "error",
+                    "E113",
+                    f"projection parameter requires unit {unit}, got {parameter_rows[pid].get('unit')}",
+                    row["id"],
+                )
+            )
+        elif source in signals and target_pop in population_ids:
+            expected_shape = [
+                next(p["size"] for p in graph["populations"] if p["id"] == target_pop),
+                signals[source]["shape"][-1],
+            ]
+            if "connectivity" in row:
+                try:
+                    expected_shape = projection_shape(graph, row)
+                except (ValueError, TypeError, KeyError):
+                    continue  # Spatial validation above provides the diagnostic.
+            if parameter_rows[pid]["shape"] != expected_shape:
                 out.diagnostics.append(
                     Diagnostic(
                         "error",
-                        "E502",
-                        f"synapse unit {unit} incompatible with neuron input unit {E.neuron_unit(target_neuron)}",
+                        "E107",
+                        f"projection parameter shape {parameter_rows[pid]['shape']} does not match {expected_shape}",
                         row["id"],
                     )
                 )
-            validate_source(graph, row)
-            delay_steps(row, float(graph["timebase"]["dt"]["value"]))
-            unit = E.synapse_weight_unit(synapse)
-            if synapse.get("kind") == "exponential_current":
-                tau = synapse.get("tau", {})
-                if (
-                    tau.get("unit") != "ms"
-                    or not isinstance(tau.get("value"), (int, float))
-                    or not math.isfinite(tau["value"])
-                    or tau["value"] <= 0
-                ):
-                    raise ValueError(
-                        "ExponentialCurrent tau must be positive finite ms"
-                    )
-        except (ValueError, TypeError) as error:
-            unit = "uS"
-            out.diagnostics.append(Diagnostic("error", "E500", str(error), row["id"]))
+
+
+def _validate_projections(
+    *,
+    graph,
+    out,
+    signals,
+    parameter_ids,
+    parameter_rows,
+    population_ids,
+    consumers,
+    adjacency,
+):
+    for row in graph.get("projections", []):
+        unit = _validate_projection_physics(graph=graph, row=row, out=out)
+
         if not isinstance(row.get("enabled", True), bool):
             out.diagnostics.append(
                 Diagnostic(
@@ -325,43 +370,19 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                     row["id"],
                 )
             )
-        for pid in row.get("parameters", []):
-            if pid not in parameter_ids:
-                out.diagnostics.append(
-                    Diagnostic(
-                        "error", "E106", f"unresolved parameter {pid}", row["id"]
-                    )
-                )
-            elif parameter_rows[pid].get("unit") != unit:
-                out.diagnostics.append(
-                    Diagnostic(
-                        "error",
-                        "E113",
-                        f"projection parameter requires unit {unit}, got {parameter_rows[pid].get('unit')}",
-                        row["id"],
-                    )
-                )
-            elif source in signals and target_pop in population_ids:
-                expected_shape = [
-                    next(
-                        p["size"] for p in graph["populations"] if p["id"] == target_pop
-                    ),
-                    signals[source]["shape"][-1],
-                ]
-                if "connectivity" in row:
-                    try:
-                        expected_shape = projection_shape(graph, row)
-                    except (ValueError, TypeError, KeyError):
-                        continue  # Spatial validation above provides the diagnostic.
-                if parameter_rows[pid]["shape"] != expected_shape:
-                    out.diagnostics.append(
-                        Diagnostic(
-                            "error",
-                            "E107",
-                            f"projection parameter shape {parameter_rows[pid]['shape']} does not match {expected_shape}",
-                            row["id"],
-                        )
-                    )
+        _validate_projection_parameters(
+            graph=graph,
+            row=row,
+            parameter_ids=parameter_ids,
+            parameter_rows=parameter_rows,
+            unit=unit,
+            signals=signals,
+            source=source,
+            target_pop=target_pop,
+            population_ids=population_ids,
+            out=out,
+        )
+
         consumers.add(source)
         try:
             source_owner = source_root(graph, source).partition(".")[0]
@@ -374,6 +395,113 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
         ):
             adjacency[source_owner].add(target_pop)
 
+
+def _validate_operation_shape(*, row, primary, parameter_rows, out):
+    if primary:
+        primary_shape = list(primary.get("shape", []))
+        expected_shape: list[Any] | None = None
+        if row["kind"] == "linear":
+            expected_shape = [
+                *primary_shape[:-1],
+                row.get("config", {}).get("size"),
+            ]
+            for pid in row.get("parameters", []):
+                if pid in parameter_rows:
+                    expected_parameter = [
+                        row.get("config", {}).get("size"),
+                        primary_shape[-1],
+                    ]
+                    if parameter_rows[pid]["shape"] != expected_parameter:
+                        out.diagnostics.append(
+                            Diagnostic(
+                                "error",
+                                "E209",
+                                f"linear parameter shape {parameter_rows[pid]['shape']} does not match {expected_parameter}",
+                                row["id"],
+                            )
+                        )
+        elif row["kind"] in {"reduce_mean", "reduce_sum"}:
+            if row.get("config", {}).get("window", "full") != "full":
+                out.diagnostics.append(
+                    Diagnostic(
+                        "error",
+                        "E210",
+                        "only full-window reductions are supported",
+                        row["id"],
+                    )
+                )
+            if "time" not in primary_shape:
+                out.diagnostics.append(
+                    Diagnostic(
+                        "error",
+                        "E211",
+                        "time reduction requires a time axis",
+                        row["id"],
+                    )
+                )
+            else:
+                time_axis = primary_shape.index("time")
+                expected_shape = [
+                    dimension
+                    for index, dimension in enumerate(primary_shape)
+                    if index != time_axis
+                ]
+        elif row["kind"] == "select_final":
+            if not primary_shape or primary_shape[0] != "time":
+                out.diagnostics.append(
+                    Diagnostic(
+                        "error",
+                        "E212",
+                        "final selection requires a leading time axis",
+                        row["id"],
+                    )
+                )
+            else:
+                expected_shape = primary_shape[1:]
+        elif row["kind"] == "cumulative_sum" or row["kind"] == "duration_normalise":
+            expected_shape = primary_shape
+        if expected_shape is not None and row.get("shape") != expected_shape:
+            out.diagnostics.append(
+                Diagnostic(
+                    "error",
+                    "E213",
+                    f"operation shape {row.get('shape')} does not match inferred {expected_shape}",
+                    row["id"],
+                )
+            )
+
+
+def _validate_duration_mask(*, row, primary, signals, out):
+    if row["kind"] == "duration_normalise":
+        mask_id = row["config"].get("mask")
+        if primary and primary.get("unit") != "spike":
+            out.diagnostics.append(
+                Diagnostic(
+                    "error",
+                    "E206",
+                    "spike-rate numerator must have unit spike",
+                    row["id"],
+                )
+            )
+        if mask_id:
+            mask = signals.get(mask_id)
+            if mask and (
+                mask.get("signal_type") != "mask"
+                or mask.get("shape", []) != ["time", "batch"]
+            ):
+                out.diagnostics.append(
+                    Diagnostic(
+                        "error",
+                        "E207",
+                        "valid-duration mask must have type mask and shape (time, batch)",
+                        row["id"],
+                    )
+                )
+
+
+def _validate_operations(
+    *, graph, out, signals, parameter_ids, parameter_rows, consumers
+):
     for row in graph.get("operations", []):
         if row.get("kind") == "custom_operation":
             spec = {
@@ -439,80 +567,10 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                 )
             )
         primary = signals.get(row["sources"][0]) if row.get("sources") else None
-        if primary:
-            primary_shape = list(primary.get("shape", []))
-            expected_shape: list[Any] | None = None
-            if row["kind"] == "linear":
-                expected_shape = [
-                    *primary_shape[:-1],
-                    row.get("config", {}).get("size"),
-                ]
-                for pid in row.get("parameters", []):
-                    if pid in parameter_rows:
-                        expected_parameter = [
-                            row.get("config", {}).get("size"),
-                            primary_shape[-1],
-                        ]
-                        if parameter_rows[pid]["shape"] != expected_parameter:
-                            out.diagnostics.append(
-                                Diagnostic(
-                                    "error",
-                                    "E209",
-                                    f"linear parameter shape {parameter_rows[pid]['shape']} does not match {expected_parameter}",
-                                    row["id"],
-                                )
-                            )
-            elif row["kind"] in {"reduce_mean", "reduce_sum"}:
-                if row.get("config", {}).get("window", "full") != "full":
-                    out.diagnostics.append(
-                        Diagnostic(
-                            "error",
-                            "E210",
-                            "only full-window reductions are supported",
-                            row["id"],
-                        )
-                    )
-                if "time" not in primary_shape:
-                    out.diagnostics.append(
-                        Diagnostic(
-                            "error",
-                            "E211",
-                            "time reduction requires a time axis",
-                            row["id"],
-                        )
-                    )
-                else:
-                    time_axis = primary_shape.index("time")
-                    expected_shape = [
-                        dimension
-                        for index, dimension in enumerate(primary_shape)
-                        if index != time_axis
-                    ]
-            elif row["kind"] == "select_final":
-                if not primary_shape or primary_shape[0] != "time":
-                    out.diagnostics.append(
-                        Diagnostic(
-                            "error",
-                            "E212",
-                            "final selection requires a leading time axis",
-                            row["id"],
-                        )
-                    )
-                else:
-                    expected_shape = primary_shape[1:]
-            elif row["kind"] == "cumulative_sum":
-                expected_shape = primary_shape
-            elif row["kind"] == "duration_normalise":
-                expected_shape = primary_shape
-            if expected_shape is not None and row.get("shape") != expected_shape:
-                out.diagnostics.append(
-                    Diagnostic(
-                        "error",
-                        "E213",
-                        f"operation shape {row.get('shape')} does not match inferred {expected_shape}",
-                        row["id"],
-                    )
-                )
+        _validate_operation_shape(
+            row=row, primary=primary, parameter_rows=parameter_rows, out=out
+        )
+
         if (
             primary
             and row["kind"]
@@ -534,32 +592,10 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                     row["id"],
                 )
             )
-        if row["kind"] == "duration_normalise":
-            mask_id = row["config"].get("mask")
-            if primary and primary.get("unit") != "spike":
-                out.diagnostics.append(
-                    Diagnostic(
-                        "error",
-                        "E206",
-                        "spike-rate numerator must have unit spike",
-                        row["id"],
-                    )
-                )
-            if mask_id:
-                mask = signals.get(mask_id)
-                if mask and (
-                    mask.get("signal_type") != "mask"
-                    or mask.get("shape", []) != ["time", "batch"]
-                ):
-                    out.diagnostics.append(
-                        Diagnostic(
-                            "error",
-                            "E207",
-                            "valid-duration mask must have type mask and shape (time, batch)",
-                            row["id"],
-                        )
-                    )
+        _validate_duration_mask(row=row, primary=primary, signals=signals, out=out)
 
+
+def _validate_consumers(*, graph, out, signals, consumers, population_ids, adjacency):
     roots = {s.partition(".")[0] for s in consumers}
     output_signals = {o["signal"] for o in graph.get("outputs", [])}
     observable_signals = {o["signal"] for o in graph.get("observables", [])}
@@ -595,6 +631,75 @@ def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
                     row["id"],
                 )
             )
+
+
+def validate_graph(graph: Mapping[str, Any]) -> ValidationResult:
+    out = ValidationResult()
+    try:
+        validate_spatial(graph)
+    except (ValueError, TypeError, KeyError) as error:
+        out.diagnostics.append(Diagnostic("error", "E119", str(error)))
+    try:
+        E.restore(graph)
+    except (ValueError, TypeError) as error:
+        out.diagnostics.append(Diagnostic("error", "E500", str(error)))
+        return out
+    if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
+        out.diagnostics.append(
+            Diagnostic("error", "E115", "unsupported voltage_sampling contract")
+        )
+    if graph.get("refractory_timing") not in (
+        None,
+        N.REFRACTORY_TIMING,
+        N.LEGACY_REFRACTORY_TIMING,
+    ):
+        out.diagnostics.append(
+            Diagnostic("error", "E116", "unsupported refractory_timing contract")
+        )
+    _validate_identifiers(graph=graph, out=out)
+
+    signals = _collect_validated_signals(graph=graph, out=out)
+
+    parameter_rows = {p["id"]: p for p in graph.get("parameters", [])}
+    _validate_initializers(parameter_rows=parameter_rows, out=out)
+
+    parameter_ids = set(parameter_rows)
+    try:
+        resolve_autapses(graph)
+    except ValueError as error:
+        out.diagnostics.append(Diagnostic("error", "E117", str(error)))
+    population_ids = {p["id"] for p in graph.get("populations", [])}
+    consumers: set[str] = set()
+    adjacency: dict[str, set[str]] = {p: set() for p in population_ids}
+    _validate_projections(
+        graph=graph,
+        out=out,
+        signals=signals,
+        parameter_ids=parameter_ids,
+        parameter_rows=parameter_rows,
+        population_ids=population_ids,
+        consumers=consumers,
+        adjacency=adjacency,
+    )
+
+    _validate_operations(
+        graph=graph,
+        out=out,
+        signals=signals,
+        parameter_ids=parameter_ids,
+        parameter_rows=parameter_rows,
+        consumers=consumers,
+    )
+
+    _validate_consumers(
+        graph=graph,
+        out=out,
+        signals=signals,
+        consumers=consumers,
+        population_ids=population_ids,
+        adjacency=adjacency,
+    )
+
     return out
 
 

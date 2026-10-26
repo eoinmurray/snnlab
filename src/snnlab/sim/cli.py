@@ -496,6 +496,84 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
+def _cli_inference_overrides(args):
+    inference_overrides = {}
+    projection_scales = {}
+    for item in getattr(args, "scale_projection", []):
+        projection_id, separator, raw_factor = item.partition("=")
+        if not separator or not projection_id or not raw_factor:
+            raise ValueError("--scale-projection expects ID=FACTOR")
+        if projection_id in projection_scales:
+            raise ValueError(f"--scale-projection repeats projection {projection_id!r}")
+        projection_scales[projection_id] = float(raw_factor)
+    if projection_scales:
+        inference_overrides["projection_scales"] = projection_scales
+    if getattr(args, "inference_timestep_ms", None) is not None:
+        inference_overrides["timestep_ms"] = args.inference_timestep_ms
+    return inference_overrides
+
+
+def _cli_dataset_binding(*, args, graph, dataset_file, request):
+    if not args.dataset_encoder:
+        raise ValueError("--dataset-file requires --dataset-encoder")
+    if not args.input_dataset_id or not args.input_split:
+        raise ValueError("--dataset-file requires --input-dataset-id and --input-split")
+    input_ids = [row["id"] for row in graph.get("inputs", [])]
+    input_id = args.dataset_input_id or (input_ids[0] if len(input_ids) == 1 else None)
+    if input_id is None:
+        raise ValueError("multi-input dataset graphs require --dataset-input-id")
+    encoder_kind = args.dataset_encoder.replace("-", "_")
+    encoder = DatasetEncoder(
+        encoder_kind,
+        duration_ms=(
+            args.t_ms if encoder_kind in {"rate_poisson", "event_bin"} else None
+        ),
+        max_rate_hz=(
+            args.spike_rate
+            if encoder_kind == "rate_poisson" and not args.input_rates
+            else None
+        ),
+        seed=request.seed if encoder_kind == "rate_poisson" else 0,
+        rates_hz=(
+            tuple(args.input_rates)
+            if encoder_kind == "rate_poisson" and args.input_rates
+            else None
+        ),
+    )
+    return {
+        "input_bindings": (
+            DatasetSnapshotBinding(
+                path=Path(dataset_file),
+                input_id=input_id,
+                target_id=args.dataset_target_id,
+                dataset_id=args.input_dataset_id,
+                split=args.input_split,
+                encoder=encoder,
+                feature_key=args.dataset_feature_key,
+                label_key=args.dataset_label_key,
+                sample_cap=args.max_samples,
+                shuffle=bool(args.input_shuffle),
+                order_seed=request.seed,
+            ),
+        )
+    }
+
+
+def _validate_cli_input_choice(
+    *, input_file, event_file, poisson_protocol, dataset_file
+):
+    if (
+        sum(
+            bool(value)
+            for value in (input_file, event_file, poisson_protocol, dataset_file)
+        )
+        != 1
+    ):
+        raise SystemExit(
+            "graph execution requires exactly one of --input-file, --event-file, --poisson-protocol, or --dataset-file"
+        )
+
+
 def main(argv=None):
     args = parse_args(argv)
     if args.bundle is None:
@@ -512,87 +590,25 @@ def main(argv=None):
     event_file = getattr(args, "event_file", None)
     poisson_protocol = getattr(args, "poisson_protocol", None)
     dataset_file = getattr(args, "dataset_file", None)
-    if (
-        sum(
-            bool(value)
-            for value in (input_file, event_file, poisson_protocol, dataset_file)
-        )
-        != 1
-    ):
-        raise SystemExit(
-            "graph execution requires exactly one of --input-file, --event-file, --poisson-protocol, or --dataset-file"
-        )
+    _validate_cli_input_choice(
+        input_file=input_file,
+        event_file=event_file,
+        poisson_protocol=poisson_protocol,
+        dataset_file=dataset_file,
+    )
 
     try:
         manifest, graph = load_graph_bundle(args.bundle)
     except (ValueError, TypeError, OSError) as exc:
         raise SystemExit(str(exc)) from exc
     try:
-        inference_overrides = {}
-        projection_scales = {}
-        for item in getattr(args, "scale_projection", []):
-            projection_id, separator, raw_factor = item.partition("=")
-            if not separator or not projection_id or not raw_factor:
-                raise ValueError("--scale-projection expects ID=FACTOR")
-            if projection_id in projection_scales:
-                raise ValueError(
-                    f"--scale-projection repeats projection {projection_id!r}"
-                )
-            projection_scales[projection_id] = float(raw_factor)
-        if projection_scales:
-            inference_overrides["projection_scales"] = projection_scales
-        if getattr(args, "inference_timestep_ms", None) is not None:
-            inference_overrides["timestep_ms"] = args.inference_timestep_ms
+        inference_overrides = _cli_inference_overrides(args=args)
+
         if dataset_file:
-            if not args.dataset_encoder:
-                raise ValueError("--dataset-file requires --dataset-encoder")
-            if not args.input_dataset_id or not args.input_split:
-                raise ValueError(
-                    "--dataset-file requires --input-dataset-id and --input-split"
-                )
-            input_ids = [row["id"] for row in graph.get("inputs", [])]
-            input_id = args.dataset_input_id or (
-                input_ids[0] if len(input_ids) == 1 else None
+            binding_update = _cli_dataset_binding(
+                args=args, graph=graph, dataset_file=dataset_file, request=request
             )
-            if input_id is None:
-                raise ValueError(
-                    "multi-input dataset graphs require --dataset-input-id"
-                )
-            encoder_kind = args.dataset_encoder.replace("-", "_")
-            encoder = DatasetEncoder(
-                encoder_kind,
-                duration_ms=(
-                    args.t_ms if encoder_kind in {"rate_poisson", "event_bin"} else None
-                ),
-                max_rate_hz=(
-                    args.spike_rate
-                    if encoder_kind == "rate_poisson" and not args.input_rates
-                    else None
-                ),
-                seed=request.seed if encoder_kind == "rate_poisson" else 0,
-                rates_hz=(
-                    tuple(args.input_rates)
-                    if encoder_kind == "rate_poisson" and args.input_rates
-                    else None
-                ),
-            )
-            binding_update = {
-                "input_bindings": (
-                    DatasetSnapshotBinding(
-                        path=Path(dataset_file),
-                        input_id=input_id,
-                        target_id=args.dataset_target_id,
-                        dataset_id=args.input_dataset_id,
-                        split=args.input_split,
-                        encoder=encoder,
-                        feature_key=args.dataset_feature_key,
-                        label_key=args.dataset_label_key,
-                        sample_cap=args.max_samples,
-                        shuffle=bool(args.input_shuffle),
-                        order_seed=request.seed,
-                    ),
-                )
-            }
+
         elif poisson_protocol:
             input_ids = [row["id"] for row in graph.get("inputs", [])]
             if len(input_ids) != 1:

@@ -5,9 +5,25 @@ from __future__ import annotations
 import math
 import re
 from copy import deepcopy
+from itertools import pairwise
 
 MIN_WIRE_SPACING = 18.0
 FEEDBACK_LANE_SPACING = 32.0
+
+
+def _arrowhead_replacer(replacements):
+    def replace_edge(match):
+        attributes = match[2]
+        identifier = re.search(r'\bid=(?:"([^"]*)"|(\w+))', attributes)
+        if identifier and (
+            position := replacements.get(identifier[1] or identifier[2])
+        ):
+            attributes = re.sub(
+                r'\bpos="[^"]*"', lambda _: f'pos="{position}"', attributes
+            )
+        return match[1] + attributes + match[3]
+
+    return replace_edge
 
 
 def expose_arrowheads(layout: dict, positioned_dot: str) -> tuple[dict, str]:
@@ -37,7 +53,7 @@ def expose_arrowheads(layout: dict, positioned_dot: str) -> tuple[dict, str]:
         if not points or not old_tip:
             continue
         points.append(tuple(map(float, old_tip[1].split(","))))
-        for index, (a, b) in enumerate(zip(points, points[1:])):
+        for index, (a, b) in enumerate(pairwise(points)):
             if left <= a[0] <= right and bottom <= a[1] <= top:
                 # A self-loop starts inside its own expanded target rectangle;
                 # trim the return, not the outgoing segment.
@@ -63,7 +79,7 @@ def expose_arrowheads(layout: dict, positioned_dot: str) -> tuple[dict, str]:
             base = (tip[0] - direction[0] * length, tip[1] - direction[1] * length)
             route = points[: index + 1] + [base]
             controls = [route[0]]
-            for start, end in zip(route, route[1:]):
+            for start, end in pairwise(route):
                 controls.extend((start, end, end))
             edge["pos"] = f"e,{tip[0]:.4f},{tip[1]:.4f} " + " ".join(
                 f"{px:.4f},{py:.4f}" for px, py in controls
@@ -83,16 +99,7 @@ def expose_arrowheads(layout: dict, positioned_dot: str) -> tuple[dict, str]:
             replacements[edge["id"]] = edge["pos"]
             break
 
-    def replace_edge(match):
-        attributes = match[2]
-        identifier = re.search(r'\bid=(?:"([^"]*)"|(\w+))', attributes)
-        if identifier and (
-            position := replacements.get(identifier[1] or identifier[2])
-        ):
-            attributes = re.sub(
-                r'\bpos="[^"]*"', lambda _: f'pos="{position}"', attributes
-            )
-        return match[1] + attributes + match[3]
+    replace_edge = _arrowhead_replacer(replacements=replacements)
 
     return layout, re.sub(
         r"(^\s*[^\n]* -> [^\n]*\[)(.*?)(\];)",
@@ -100,6 +107,153 @@ def expose_arrowheads(layout: dict, positioned_dot: str) -> tuple[dict, str]:
         positioned_dot,
         flags=re.MULTILINE | re.DOTALL,
     )
+
+
+def _feedback_anchors(
+    *, edge, index, boxes, incident, lane_y, allocated_top, fixed_vertical, group_labels
+):
+    anchors = []
+    for end, other_end in (("tail", "head"), ("head", "tail")):
+        identifier = edge[end]
+        box = boxes[identifier]
+        center_x, center_y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        ports = incident[identifier]
+        offset = (ports.index((index, end)) - (len(ports) - 1) / 2) * MIN_WIRE_SPACING
+        if abs(offset) + 8 > (box[2] - box[0]) / 2:
+            raise ValueError("feedback node is too narrow for separated wire ports")
+        preferred = center_x + offset
+        options = [preferred] + [
+            center_x + step * MIN_WIRE_SPACING for step in range(-10, 11)
+        ]
+        x = None
+        for candidate in sorted(set(options), key=lambda value: abs(value - preferred)):
+            if not box[0] + 8 <= candidate <= box[2] - 8:
+                continue
+            if any(
+                abs(candidate - taken) < MIN_WIRE_SPACING - 0.01
+                for taken in allocated_top.get(identifier, [])
+            ):
+                continue
+            if any(
+                abs(candidate - vx) < MIN_WIRE_SPACING - 0.01
+                and low < lane_y
+                and high > box[3]
+                for vx, low, high in fixed_vertical
+            ):
+                continue
+            if any(
+                label[0] - 4 < candidate < label[2] + 4
+                and label[3] > box[3]
+                and label[1] < lane_y
+                for label in group_labels
+            ):
+                continue
+            x = candidate
+            break
+        clear_above = not any(
+            other != identifier
+            and x is not None
+            and obstacle[0] - 4 < x < obstacle[2] + 4
+            and obstacle[3] > box[3]
+            and obstacle[1] < lane_y
+            for other, obstacle in boxes.items()
+        )
+        if clear_above and x is not None:
+            allocated_top.setdefault(identifier, []).append(x)
+            anchors.append(((x, box[3]), (x, lane_y), "top"))
+        else:
+            other_box = boxes[edge[other_end]]
+            direction = 1 if other_box[0] > box[0] else -1
+            port = (box[2] if direction > 0 else box[0], center_y + offset)
+            escape_x = port[0] + direction * MIN_WIRE_SPACING * (index + 1)
+            for _attempt in range(40):
+                if not any(
+                    other != identifier
+                    and obstacle[0] - 6 < escape_x < obstacle[2] + 6
+                    and obstacle[3] > port[1]
+                    and obstacle[1] < lane_y
+                    for other, obstacle in boxes.items()
+                ):
+                    break
+                escape_x += direction * MIN_WIRE_SPACING
+            else:
+                raise ValueError("no clear vertical escape for feedback lane")
+            anchors.append((port, (escape_x, lane_y), direction))
+    return anchors
+
+
+def _route_feedback_edges(
+    *,
+    edges,
+    boxes,
+    incident,
+    top,
+    allocated_top,
+    fixed_vertical,
+    group_labels,
+    replacements,
+    label_positions,
+):
+    for index, edge in enumerate(edges):
+        lane_y = top + FEEDBACK_LANE_SPACING * (index + 1)
+        anchors = _feedback_anchors(
+            edge=edge,
+            index=index,
+            boxes=boxes,
+            incident=incident,
+            lane_y=lane_y,
+            allocated_top=allocated_top,
+            fixed_vertical=fixed_vertical,
+            group_labels=group_labels,
+        )
+
+        start, first, source_side = anchors[0]
+        tip, last, target_side = anchors[1]
+        points = [start]
+        if source_side != "top":
+            points.append((first[0], start[1]))
+        points.extend((first, last))
+        arrow_length = float(edge.get("arrowsize", "0.65")) * 10 + 2
+        if target_side == "top":
+            points.append((tip[0], tip[1] + arrow_length))
+        else:
+            points.extend(
+                ((last[0], tip[1]), (tip[0] + target_side * arrow_length, tip[1]))
+            )
+        controls = [points[0]]
+        for a, b in pairwise(points):
+            controls.extend((a, b, b))
+        edge["pos"] = f"e,{tip[0]:.4f},{tip[1]:.4f} " + " ".join(
+            f"{x:.4f},{y:.4f}" for x, y in controls
+        )
+        edge["_draw_"] = [{"op": "b", "points": controls}]
+        edge["_hdraw_"] = [
+            {"op": "P", "points": [(tip[0] - 4, tip[1] - 4), (tip[0] + 4, tip[1] + 4)]}
+        ]
+        replacements[edge["id"]] = edge["pos"]
+        if "xlp" in edge:
+            edge["xlp"] = f"{(first[0] + last[0]) / 2:.4f},{lane_y + 12:.4f}"
+            label_positions[edge["id"]] = edge["xlp"]
+
+
+def _feedback_edge_replacer(replacements, label_positions):
+    def replace_edge(match):
+        attributes = match[2]
+        identifier = re.search(r'\bid=(?:"([^"]*)"|(\w+))', attributes)
+        if identifier:
+            new_pos = replacements.get(identifier[1] or identifier[2])
+            if new_pos:
+                attributes = re.sub(
+                    r'\bpos="[^"]*"', lambda _: f'pos="{new_pos}"', attributes
+                )
+                new_label = label_positions.get(identifier[1] or identifier[2])
+                if new_label:
+                    attributes = re.sub(
+                        r'\bxlp="[^"]*"', lambda _: f'xlp="{new_label}"', attributes
+                    )
+        return match[1] + attributes + match[3]
+
+    return replace_edge
 
 
 def route_feedback_lanes(layout: dict, positioned_dot: str) -> tuple[dict, str]:
@@ -131,7 +285,7 @@ def route_feedback_lanes(layout: dict, positioned_dot: str) -> tuple[dict, str]:
             continue
         for command in edge.get("_draw_", []):
             if command["op"] == "b":
-                for a, b in zip(command["points"], command["points"][1:]):
+                for a, b in pairwise(command["points"]):
                     if abs(a[0] - b[0]) < 0.01 and abs(a[1] - b[1]) > 0.01:
                         fixed_vertical.append((a[0], min(a[1], b[1]), max(a[1], b[1])))
     allocated_top = {}
@@ -148,122 +302,21 @@ def route_feedback_lanes(layout: dict, positioned_dot: str) -> tuple[dict, str]:
     top = max(box[3] for box in boxes.values())
     replacements = {}
     label_positions = {}
-    for index, edge in enumerate(edges):
-        lane_y = top + FEEDBACK_LANE_SPACING * (index + 1)
-        anchors = []
-        for end, other_end in (("tail", "head"), ("head", "tail")):
-            identifier = edge[end]
-            box = boxes[identifier]
-            center_x, center_y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
-            ports = incident[identifier]
-            offset = (
-                ports.index((index, end)) - (len(ports) - 1) / 2
-            ) * MIN_WIRE_SPACING
-            if abs(offset) + 8 > (box[2] - box[0]) / 2:
-                raise ValueError("feedback node is too narrow for separated wire ports")
-            preferred = center_x + offset
-            options = [preferred] + [
-                center_x + step * MIN_WIRE_SPACING for step in range(-10, 11)
-            ]
-            x = None
-            for candidate in sorted(
-                set(options), key=lambda value: abs(value - preferred)
-            ):
-                if not box[0] + 8 <= candidate <= box[2] - 8:
-                    continue
-                if any(
-                    abs(candidate - taken) < MIN_WIRE_SPACING - 0.01
-                    for taken in allocated_top.get(identifier, [])
-                ):
-                    continue
-                if any(
-                    abs(candidate - vx) < MIN_WIRE_SPACING - 0.01
-                    and low < lane_y
-                    and high > box[3]
-                    for vx, low, high in fixed_vertical
-                ):
-                    continue
-                if any(
-                    label[0] - 4 < candidate < label[2] + 4
-                    and label[3] > box[3]
-                    and label[1] < lane_y
-                    for label in group_labels
-                ):
-                    continue
-                x = candidate
-                break
-            clear_above = not any(
-                other != identifier
-                and x is not None
-                and obstacle[0] - 4 < x < obstacle[2] + 4
-                and obstacle[3] > box[3]
-                and obstacle[1] < lane_y
-                for other, obstacle in boxes.items()
-            )
-            if clear_above and x is not None:
-                allocated_top.setdefault(identifier, []).append(x)
-                anchors.append(((x, box[3]), (x, lane_y), "top"))
-            else:
-                other_box = boxes[edge[other_end]]
-                direction = 1 if other_box[0] > box[0] else -1
-                port = (box[2] if direction > 0 else box[0], center_y + offset)
-                escape_x = port[0] + direction * MIN_WIRE_SPACING * (index + 1)
-                for attempt in range(40):
-                    if not any(
-                        other != identifier
-                        and obstacle[0] - 6 < escape_x < obstacle[2] + 6
-                        and obstacle[3] > port[1]
-                        and obstacle[1] < lane_y
-                        for other, obstacle in boxes.items()
-                    ):
-                        break
-                    escape_x += direction * MIN_WIRE_SPACING
-                else:
-                    raise ValueError("no clear vertical escape for feedback lane")
-                anchors.append((port, (escape_x, lane_y), direction))
-        start, first, source_side = anchors[0]
-        tip, last, target_side = anchors[1]
-        points = [start]
-        if source_side != "top":
-            points.append((first[0], start[1]))
-        points.extend((first, last))
-        arrow_length = float(edge.get("arrowsize", "0.65")) * 10 + 2
-        if target_side == "top":
-            points.append((tip[0], tip[1] + arrow_length))
-        else:
-            points.extend(
-                ((last[0], tip[1]), (tip[0] + target_side * arrow_length, tip[1]))
-            )
-        controls = [points[0]]
-        for a, b in zip(points, points[1:]):
-            controls.extend((a, b, b))
-        edge["pos"] = f"e,{tip[0]:.4f},{tip[1]:.4f} " + " ".join(
-            f"{x:.4f},{y:.4f}" for x, y in controls
-        )
-        edge["_draw_"] = [{"op": "b", "points": controls}]
-        edge["_hdraw_"] = [
-            {"op": "P", "points": [(tip[0] - 4, tip[1] - 4), (tip[0] + 4, tip[1] + 4)]}
-        ]
-        replacements[edge["id"]] = edge["pos"]
-        if "xlp" in edge:
-            edge["xlp"] = f"{(first[0] + last[0]) / 2:.4f},{lane_y + 12:.4f}"
-            label_positions[edge["id"]] = edge["xlp"]
+    _route_feedback_edges(
+        edges=edges,
+        boxes=boxes,
+        incident=incident,
+        top=top,
+        allocated_top=allocated_top,
+        fixed_vertical=fixed_vertical,
+        group_labels=group_labels,
+        replacements=replacements,
+        label_positions=label_positions,
+    )
 
-    def replace_edge(match):
-        attributes = match[2]
-        identifier = re.search(r'\bid=(?:"([^"]*)"|(\w+))', attributes)
-        if identifier:
-            new_pos = replacements.get(identifier[1] or identifier[2])
-            if new_pos:
-                attributes = re.sub(
-                    r'\bpos="[^"]*"', lambda _: f'pos="{new_pos}"', attributes
-                )
-                new_label = label_positions.get(identifier[1] or identifier[2])
-                if new_label:
-                    attributes = re.sub(
-                        r'\bxlp="[^"]*"', lambda _: f'xlp="{new_label}"', attributes
-                    )
-        return match[1] + attributes + match[3]
+    replace_edge = _feedback_edge_replacer(
+        replacements=replacements, label_positions=label_positions
+    )
 
     positioned_dot = re.sub(
         r"(^\s*[^\n]* -> [^\n]*\[)(.*?)(\];)",
@@ -289,8 +342,27 @@ def _overlaps(a, b):
 
 
 def _bounds(points, padding=0):
-    xs, ys = zip(*points)
+    xs, ys = zip(*points, strict=True)
     return min(xs) - padding, min(ys) - padding, max(xs) + padding, max(ys) + padding
+
+
+def _wire_obstacles(*, layout, wires, routes, obstacles):
+    for index, edge in enumerate(layout.get("edges", [])):
+        if edge.get("style") == "invis":
+            continue
+        segments = []
+        for command in edge.get("_draw_", []):
+            if command["op"] not in {"b", "B", "L"}:
+                continue
+            points = command["points"]
+            for start, end in pairwise(points):
+                if start != end:
+                    segments.append((start, end))
+                    wires.append(_bounds((start, end), 3))
+        routes[index] = segments
+        for command in edge.get("_hdraw_", []):
+            if "points" in command:
+                obstacles.append(_bounds(command["points"], 3))
 
 
 def position_wire_labels(layout: dict, positioned_dot: str) -> str:
@@ -308,22 +380,8 @@ def position_wire_labels(layout: dict, positioned_dot: str) -> str:
     obstacles.extend(_text_boxes(layout.get("_ldraw_", [])))
     wires = []
     routes = {}
-    for index, edge in enumerate(layout.get("edges", [])):
-        if edge.get("style") == "invis":
-            continue
-        segments = []
-        for command in edge.get("_draw_", []):
-            if command["op"] not in {"b", "B", "L"}:
-                continue
-            points = command["points"]
-            for start, end in zip(points, points[1:]):
-                if start != end:
-                    segments.append((start, end))
-                    wires.append(_bounds((start, end), 3))
-        routes[index] = segments
-        for command in edge.get("_hdraw_", []):
-            if "points" in command:
-                obstacles.append(_bounds(command["points"], 3))
+    _wire_obstacles(layout=layout, wires=wires, routes=routes, obstacles=obstacles)
+
     occupied = [*obstacles, *wires]
     replacements = {}
     for index, edge in enumerate(layout.get("edges", [])):

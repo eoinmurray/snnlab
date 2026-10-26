@@ -104,8 +104,6 @@ def test_timeline_composes_slow_motion_repeats_and_holds():
     assert timeline.steps.tolist() == [0, 4, 9, 5, 5, 9, 4, 0]
 
 
-
-
 def test_diagram_contract_compiles_deterministically():
     diagram = Diagram(
         name="small",
@@ -146,7 +144,11 @@ def test_diagram_group_rejects_conflicting_layout():
             name="conflict",
             nodes=(DiagramNode("cell", "Cell", "", "population"),),
             edges=(),
-            groups=(DiagramGroup("group", "Group", ("cell",), same_rank=True, same_row=True),),
+            groups=(
+                DiagramGroup(
+                    "group", "Group", ("cell",), same_rank=True, same_row=True
+                ),
+            ),
         )
 
 
@@ -155,28 +157,54 @@ def test_recurrent_population_rows_render_left_to_right(tmp_path):
         pytest.skip("Graphviz 'dot' is required for diagram rendering")
     nodes, edges, groups = [], [], []
     for name in ("a", "b"):
-        nodes.extend((
-            DiagramNode(f"{name}_drive", "Drive", "128 channels", "spikes", kind="input"),
-            DiagramNode(f"{name}_e", "E", "80 neurons", "population", kind="population"),
-            DiagramNode(f"{name}_i", "I", "20 neurons", "population", kind="population"),
-        ))
-        edges.extend((
-            DiagramEdge(f"{name}_drive", f"{name}_e", role="excitatory"),
-            DiagramEdge(f"{name}_e", f"{name}_i", role="excitatory", connection="recurrent"),
-            DiagramEdge(f"{name}_i", f"{name}_e", role="inhibitory", connection="recurrent"),
-        ))
-        groups.append(DiagramGroup(name, name, (f"{name}_e", f"{name}_i"), same_row=True))
-    edges.extend((
-        DiagramEdge("a_e", "b_e", role="excitatory", connection="feedback", constraint=False),
-        DiagramEdge("b_e", "a_e", role="excitatory", connection="feedback", constraint=False),
-    ))
+        nodes.extend(
+            (
+                DiagramNode(
+                    f"{name}_drive", "Drive", "128 channels", "spikes", kind="input"
+                ),
+                DiagramNode(
+                    f"{name}_e", "E", "80 neurons", "population", kind="population"
+                ),
+                DiagramNode(
+                    f"{name}_i", "I", "20 neurons", "population", kind="population"
+                ),
+            )
+        )
+        edges.extend(
+            (
+                DiagramEdge(f"{name}_drive", f"{name}_e", role="excitatory"),
+                DiagramEdge(
+                    f"{name}_e", f"{name}_i", role="excitatory", connection="recurrent"
+                ),
+                DiagramEdge(
+                    f"{name}_i", f"{name}_e", role="inhibitory", connection="recurrent"
+                ),
+            )
+        )
+        groups.append(
+            DiagramGroup(name, name, (f"{name}_e", f"{name}_i"), same_row=True)
+        )
+    edges.extend(
+        (
+            DiagramEdge(
+                "a_e", "b_e", role="excitatory", connection="feedback", constraint=False
+            ),
+            DiagramEdge(
+                "b_e", "a_e", role="excitatory", connection="feedback", constraint=False
+            ),
+        )
+    )
     diagram = Diagram("coupled", tuple(nodes), tuple(edges), tuple(groups))
     dot = render_diagram(diagram, tmp_path / "rows.dot")
-    result = subprocess.run(["dot", "-Tplain", str(dot)], capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        ["dot", "-Tplain", str(dot)], capture_output=True, text=True, check=True
+    )
     rows = [shlex.split(line) for line in result.stdout.splitlines()]
     graph = next(row for row in rows if row[0] == "graph")
     assert float(graph[2]) > float(graph[3])
-    positions = {row[1]: (float(row[2]), float(row[3])) for row in rows if row[0] == "node"}
+    positions = {
+        row[1]: (float(row[2]), float(row[3])) for row in rows if row[0] == "node"
+    }
     for name in ("a", "b"):
         drive, e, i = (positions[f"{name}_{kind}"] for kind in ("drive", "e", "i"))
         assert drive[0] < e[0] < i[0]
@@ -188,11 +216,22 @@ def test_local_inhibitory_feedback_stays_between_populations(tmp_path):
         pytest.skip("Graphviz 'dot' is required for diagram rendering")
     diagram = Diagram(
         "local_feedback",
-        nodes=tuple(DiagramNode(name, name, "", "", kind="population" if name in {"E", "I"} else "neutral") for name in ("input", "E", "I", "out")),
+        nodes=tuple(
+            DiagramNode(
+                name,
+                name,
+                "",
+                "",
+                kind="population" if name in {"E", "I"} else "neutral",
+            )
+            for name in ("input", "E", "I", "out")
+        ),
         edges=(
             DiagramEdge("input", "E", role="excitatory"),
             DiagramEdge("E", "I", role="excitatory", connection="recurrent"),
-            DiagramEdge("I", "E", role="inhibitory", connection="feedback", constraint=False),
+            DiagramEdge(
+                "I", "E", role="inhibitory", connection="feedback", constraint=False
+            ),
             DiagramEdge("E", "out", role="output"),
         ),
         groups=(DiagramGroup("layer", "Layer", ("E", "I"), same_rank=True),),
@@ -211,7 +250,7 @@ def test_local_inhibitory_feedback_stays_between_populations(tmp_path):
     top = e_y - e_height / 2
     assert bottom < top
     feedback = next(row for row in rows if row[:3] == ["edge", "I", "E"])
-    coordinates = list(map(float, feedback[4:4 + 2 * int(feedback[3])]))
+    coordinates = list(map(float, feedback[4 : 4 + 2 * int(feedback[3])]))
     # The return wire stays in the gap, away from forward signals.
     assert min(coordinates[1::2]) >= bottom - 0.01
     assert max(coordinates[1::2]) <= top + 0.01
@@ -237,8 +276,12 @@ def test_diagram_aligns_external_inputs_and_population_targets(tmp_path):
     diagram = Diagram(
         "columns",
         nodes=(
-            DiagramNode("drive_e", "E afferent", "400 channels", "spikes", kind="input"),
-            DiagramNode("drive_i", "I afferent", "400 channels", "spikes", kind="input"),
+            DiagramNode(
+                "drive_e", "E afferent", "400 channels", "spikes", kind="input"
+            ),
+            DiagramNode(
+                "drive_i", "I afferent", "400 channels", "spikes", kind="input"
+            ),
             DiagramNode("e", "E", "400 neurons", "population", kind="population"),
             DiagramNode("i", "I", "100 neurons", "population", kind="population"),
         ),
@@ -251,9 +294,13 @@ def test_diagram_aligns_external_inputs_and_population_targets(tmp_path):
         groups=(DiagramGroup("cell", "Circuit", ("e", "i"), same_rank=True),),
     )
     dot = render_diagram(diagram, tmp_path / "columns.dot")
-    result = subprocess.run(["dot", "-Tplain", str(dot)], capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        ["dot", "-Tplain", str(dot)], capture_output=True, text=True, check=True
+    )
     rows = [shlex.split(line) for line in result.stdout.splitlines()]
-    positions = {row[1]: (float(row[2]), float(row[3])) for row in rows if row[0] == "node"}
+    positions = {
+        row[1]: (float(row[2]), float(row[3])) for row in rows if row[0] == "node"
+    }
     assert positions["drive_e"][0] == pytest.approx(positions["drive_i"][0])
     assert positions["e"][0] == pytest.approx(positions["i"][0])
     assert positions["drive_e"][0] < positions["e"][0]
@@ -268,9 +315,14 @@ def test_wrapped_diagram_text_preserves_case_and_typographic_hierarchy(tmp_path)
 
     diagram = Diagram(
         "readable",
-        nodes=(DiagramNode(
-            "node", "Long population title", "400 units & conductance model", "spiking population"
-        ),),
+        nodes=(
+            DiagramNode(
+                "node",
+                "Long population title",
+                "400 units & conductance model",
+                "spiking population",
+            ),
+        ),
         edges=(),
     )
     root = ET.parse(render_diagram(diagram, tmp_path / "readable.svg")).getroot()
@@ -295,10 +347,16 @@ def test_forward_path_and_training_annotations_remain_aligned(tmp_path):
         "training_layout",
         nodes=(
             DiagramNode("input", "Input", "64 channels", "spikes", kind="input"),
-            DiagramNode("classifier", "Classifier", "10 units", "population", kind="population"),
-            DiagramNode("hidden", "Hidden", "128 units", "population", kind="population"),
+            DiagramNode(
+                "classifier", "Classifier", "10 units", "population", kind="population"
+            ),
+            DiagramNode(
+                "hidden", "Hidden", "128 units", "population", kind="population"
+            ),
             DiagramNode("scores", "Scores", "10 classes", "output", kind="output"),
-            DiagramNode("learned", "Learned", "2 tensors", "trainable", kind="training"),
+            DiagramNode(
+                "learned", "Learned", "2 tensors", "trainable", kind="training"
+            ),
             DiagramNode("frozen", "Recurrent", "2 tensors", "frozen", kind="training"),
         ),
         edges=(
@@ -307,13 +365,19 @@ def test_forward_path_and_training_annotations_remain_aligned(tmp_path):
             DiagramEdge("classifier", "scores", role="output"),
             DiagramEdge("learned", "classifier", role="training", constraint=False),
             DiagramEdge("learned", "hidden", role="training", constraint=False),
-            DiagramEdge("frozen", "hidden", role="training", constraint=False, frozen=True),
+            DiagramEdge(
+                "frozen", "hidden", role="training", constraint=False, frozen=True
+            ),
         ),
     )
     dot = render_diagram(diagram, tmp_path / "training.dot")
-    result = subprocess.run(["dot", "-Tplain", str(dot)], capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        ["dot", "-Tplain", str(dot)], capture_output=True, text=True, check=True
+    )
     rows = [shlex.split(line) for line in result.stdout.splitlines()]
-    positions = {row[1]: (float(row[2]), float(row[3])) for row in rows if row[0] == "node"}
+    positions = {
+        row[1]: (float(row[2]), float(row[3])) for row in rows if row[0] == "node"
+    }
     baseline = positions["hidden"][1]
     for identifier in ("input", "classifier", "scores"):
         assert positions[identifier][1] == pytest.approx(baseline, abs=0.01)
@@ -321,8 +385,8 @@ def test_forward_path_and_training_annotations_remain_aligned(tmp_path):
         assert positions[annotation][0] == pytest.approx(positions[anchor][0], abs=0.01)
         assert positions[annotation][1] < positions[anchor][1]
     text = dot.read_text()
-    assert 'arrowhead=vee, style=dashed' in text
-    assert 'arrowhead=vee, style=dotted' in text
+    assert "arrowhead=vee, style=dashed" in text
+    assert "arrowhead=vee, style=dotted" in text
 
 
 def test_diagram_canvas_has_matching_svg_and_png_dimensions(tmp_path):
@@ -331,7 +395,9 @@ def test_diagram_canvas_has_matching_svg_and_png_dimensions(tmp_path):
     import struct
     import xml.etree.ElementTree as ET
 
-    diagram = Diagram("canvas", (DiagramNode("cell", "Cell", "32 units", "spiking"),), ())
+    diagram = Diagram(
+        "canvas", (DiagramNode("cell", "Cell", "32 units", "spiking"),), ()
+    )
     svg = render_diagram(diagram, tmp_path / "canvas.svg", canvas_size=(640, 320))
     root = ET.parse(svg).getroot()
     assert (root.attrib["width"], root.attrib["height"]) == ("640px", "320px")
@@ -340,7 +406,9 @@ def test_diagram_canvas_has_matching_svg_and_png_dimensions(tmp_path):
     assert graph.attrib["transform"].startswith("scale(1 1)")
     png = render_diagram(diagram, tmp_path / "canvas.png", canvas_size=(640, 320))
     assert struct.unpack(">II", png.read_bytes()[16:24]) == (640, 320)
-    scaled = render_diagram(diagram, tmp_path / "scaled.png", canvas_size=(640, 320), scale=2)
+    scaled = render_diagram(
+        diagram, tmp_path / "scaled.png", canvas_size=(640, 320), scale=2
+    )
     assert struct.unpack(">II", scaled.read_bytes()[16:24]) == (1280, 640)
     with pytest.raises(ValueError, match="too small"):
         render_diagram(diagram, tmp_path / "clipped.svg", canvas_size=(10, 10))

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 import matplotlib.pyplot as plt
 
@@ -25,9 +26,7 @@ class Scene:
     figure: Any = None
     layout: FigureGrid | None = None
     panels: list[Panel] = field(default_factory=list)
-    callbacks: list[Callable[[int, "Scene"], object]] = field(
-        default_factory=list
-    )
+    callbacks: list[Callable[[int, Scene], object]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.figure is None:
@@ -54,12 +53,10 @@ class Scene:
         self.panels.append(panel)
         return ax
 
-    def on_frame(self, callback: Callable[[int, "Scene"], object]) -> None:
+    def on_frame(self, callback: Callable[[int, Scene], object]) -> None:
         self.callbacks.append(callback)
 
     def update(self, frame: int) -> tuple[object, ...]:
         artists = [panel.update(frame) for panel in self.panels]
-        artists.extend(
-            callback(frame, self) for callback in self.callbacks
-        )
+        artists.extend(callback(frame, self) for callback in self.callbacks)
         return tuple(artists)

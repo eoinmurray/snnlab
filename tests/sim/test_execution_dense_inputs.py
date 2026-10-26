@@ -97,9 +97,7 @@ def _standard_readout_graph(
             mask=valid,
         )
     elif readout == "cumulative":
-        value = snn.CumulativePotential(
-            source=source, classes=2, name="scores"
-        )
+        value = snn.CumulativePotential(source=source, classes=2, name="scores")
     else:
         raise ValueError(readout)
     net.output("class_scores", value)

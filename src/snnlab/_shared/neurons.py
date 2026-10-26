@@ -97,6 +97,39 @@ def state_units(spec):
     return {}
 
 
+def _validate_time_constants(spec, kind, label):
+    for key in ("tau_mem", "tau_adaptation"):
+        if key == "tau_adaptation" and kind not in ADAPTIVE_KINDS:
+            continue
+        quantity = spec.get(key)
+        if (
+            not isinstance(quantity, dict)
+            or quantity.get("unit") != "ms"
+            or isinstance(quantity.get("value"), bool)
+            or not isinstance(quantity.get("value"), (int, float))
+            or not math.isfinite(quantity["value"])
+            or quantity["value"] <= 0
+        ):
+            raise ValueError(f"{label} {key} must be positive finite ms")
+
+
+def _number_validator(spec, label):
+    def number(key, *, positive=False, nonnegative=False):
+        value = spec.get(key)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ValueError(f"{label} {key} must be finite")
+        if positive and value <= 0:
+            raise ValueError(f"{label} {key} must be positive and finite")
+        if nonnegative and value < 0:
+            raise ValueError(f"{label} {key} must be non-negative and finite")
+
+    return number
+
+
 def validate(spec, *, legacy=False):
     """Validate the explicit membrane and adaptation parameter contracts."""
     kind = spec.get("kind")
@@ -113,32 +146,10 @@ def validate(spec, *, legacy=False):
     if kind == "coba_lif":
         return
 
-    def number(key, *, positive=False, nonnegative=False):
-        value = spec.get(key)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-        ):
-            raise ValueError(f"{label} {key} must be finite")
-        if positive and value <= 0:
-            raise ValueError(f"{label} {key} must be positive and finite")
-        if nonnegative and value < 0:
-            raise ValueError(f"{label} {key} must be non-negative and finite")
+    number = _number_validator(spec=spec, label=label)
 
-    for key in ("tau_mem", "tau_adaptation"):
-        if key == "tau_adaptation" and kind not in ADAPTIVE_KINDS:
-            continue
-        quantity = spec.get(key)
-        if (
-            not isinstance(quantity, dict)
-            or quantity.get("unit") != "ms"
-            or isinstance(quantity.get("value"), bool)
-            or not isinstance(quantity.get("value"), (int, float))
-            or not math.isfinite(quantity["value"])
-            or quantity["value"] <= 0
-        ):
-            raise ValueError(f"{label} {key} must be positive finite ms")
+    _validate_time_constants(spec=spec, kind=kind, label=label)
+
     for key in ("capacitance_nf", "voltage_grad_dampen"):
         number(key, positive=True)
     for key in ("resting_mv", "threshold_mv", "reset_mv", "initial_voltage_mv"):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Mapping
+from collections.abc import Mapping
 
 
 def dimensions(value, *, name="spatial_shape", rank=3, minimum=1):
@@ -25,11 +25,11 @@ def geometry(shape, config, *, pooling=False):
     kernel = pair(config["kernel_size"], name="kernel_size")
     stride = pair(config.get("stride", 1), name="stride")
     padding = pair(config.get("padding", 0), name="padding", minimum=0)
-    if pooling and any(p > k // 2 for p, k in zip(padding, kernel)):
+    if pooling and any(p > k // 2 for p, k in zip(padding, kernel, strict=True)):
         raise ValueError("pooling padding must not exceed half the kernel size")
     output = tuple(
         (n + 2 * p - k) // s + 1
-        for n, p, k, s in zip((height, width), padding, kernel, stride)
+        for n, p, k, s in zip((height, width), padding, kernel, stride, strict=True)
     )
     if min(output) < 1:
         raise ValueError("spatial kernel produces an empty output")
@@ -130,7 +130,7 @@ def convolution_drive(source, weight, shape, config):
     return result.flatten(1)
 
 
-def validate_spatial(graph):
+def _validate_spatial_shapes(graph):
     for collection in ("inputs", "populations", "operations"):
         for row in graph.get(collection, []):
             if "spatial_shape" in row:
@@ -148,6 +148,11 @@ def validate_spatial(graph):
                     raise ValueError(
                         "spatial signals require flat (time, batch, channels) shape"
                     )
+
+
+def validate_spatial(graph):
+    _validate_spatial_shapes(graph=graph)
+
     for row in graph.get("operations", []):
         if row["kind"] != "pool2d":
             continue

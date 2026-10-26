@@ -197,19 +197,17 @@ def run(out_dir=HERE / "results"):
         initial=initial,
         controls={"X_to_I.gain": control},
         sample_interval=cfg["sample_interval_ms"],
-        **{
-            "method": cfg["solver"]["method"],
-            "rtol": cfg["solver"]["rtol"],
-            "atol": [
-                cfg["solver"]["rate_atol"]
-                * conductance_per_hz.get(
-                    name,
-                    1,
-                )
-                for name in model.states
-            ],
-            "max_step": cfg["solver"]["max_step_ms"],
-        },
+        method=cfg["solver"]["method"],
+        rtol=cfg["solver"]["rtol"],
+        atol=[
+            cfg["solver"]["rate_atol"]
+            * conductance_per_hz.get(
+                name,
+                1,
+            )
+            for name in model.states
+        ],
+        max_step=cfg["solver"]["max_step_ms"],
     )
     rows = [
         {

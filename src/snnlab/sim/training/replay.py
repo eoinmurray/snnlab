@@ -53,19 +53,22 @@ class TrainingReplay:
         for data in (model.plan.graph, training):
             for row in E.required(data):
                 category = row["category"]
-                if category in {
-                    "neuron",
-                    "synapse",
-                    "surrogate",
-                    "operation",
-                    "objective",
-                    "regularizer",
-                    "constraint",
-                }:
-                    if not E.get(category, row["definition"]).capture_safe:
-                        self.reasons.append(
-                            f"extension requires capture_safe=True: {row['definition']}"
-                        )
+                if (
+                    category
+                    in {
+                        "neuron",
+                        "synapse",
+                        "surrogate",
+                        "operation",
+                        "objective",
+                        "regularizer",
+                        "constraint",
+                    }
+                    and not E.get(category, row["definition"]).capture_safe
+                ):
+                    self.reasons.append(
+                        f"extension requires capture_safe=True: {row['definition']}"
+                    )
         if model._check_extension_values and any(
             E.required(data) for data in (model.plan.graph, training)
         ):
@@ -92,7 +95,7 @@ class TrainingReplay:
     def _fallback(self, reasons):
         self.normal_updates += 1
         self.fallbacks.update(reasons)
-        return None
+        return
 
     def run(self, inputs, targets, step):
         """Return the captured numerical result, or None for normal execution."""
@@ -123,7 +126,7 @@ class TrainingReplay:
             entry.inputs[name].copy_(value)
         for name, value in targets.items():
             entry.targets[name].copy_(value)
-        for parameter, gradient in zip(self.parameters, entry.gradients):
+        for parameter, gradient in zip(self.parameters, entry.gradients, strict=True):
             parameter.grad = gradient
         entry.graph.replay()
         validate_pending(entry.validation)
@@ -195,7 +198,7 @@ class TrainingReplay:
             if not captured:
                 if self.stream is not None:
                     self.stream.synchronize()
-                for parameter, gradient in zip(self.parameters, previous):
+                for parameter, gradient in zip(self.parameters, previous, strict=True):
                     parameter.grad = gradient
                 if graph is not None:
                     graph.reset()

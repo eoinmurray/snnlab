@@ -16,12 +16,15 @@ def test_all_public_exports_resolve():
         assert getattr(viz, name) is not None
         assert name in dir(viz)
     with pytest.raises(AttributeError, match="missing_export"):
-        viz.missing_export
+        _ = viz.missing_export
 
 
 def test_package_alias_and_backend_independent_exports_are_lazy():
     subprocess.run(
-        [sys.executable, "-c", """
+        [
+            sys.executable,
+            "-c",
+            """
 import sys
 import snnlab as snn
 assert 'snnlab.viz' not in sys.modules
@@ -51,17 +54,31 @@ for package in (v.diagrams, v.plotting):
     assert not any(name in vars(package) for name in v.__all__)
 for name in ('animation', 'contracts', 'figure_grid', 'layouts', 'scene', 'styles'):
     assert 'snnlab.viz.' + name not in sys.modules
-"""],
+""",
+        ],
         check=True,
     )
 
 
 @pytest.mark.parametrize(
     "name",
-    ["Recording", "Diagram", "DiagramNode", "DiagramEdge", "DiagramGroup",
-     "DiagramTheme", "FigureRect", "FigureRegion", "FigureGrid", "Scene",
-     "FrameTimeline", "diagram_to_dot", "render_diagram", "grid_layout",
-     "save_animation"],
+    [
+        "Recording",
+        "Diagram",
+        "DiagramNode",
+        "DiagramEdge",
+        "DiagramGroup",
+        "DiagramTheme",
+        "FigureRect",
+        "FigureRegion",
+        "FigureGrid",
+        "Scene",
+        "FrameTimeline",
+        "diagram_to_dot",
+        "render_diagram",
+        "grid_layout",
+        "save_animation",
+    ],
 )
 def test_public_type_annotations_resolve(name):
     assert get_type_hints(getattr(viz, name))

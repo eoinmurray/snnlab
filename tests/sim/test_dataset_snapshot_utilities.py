@@ -172,7 +172,7 @@ def test_explicit_stratified_policy_does_not_touch_global_rng():
     first = sim.stratified_split(**options)
     second = sim.stratified_split(**options)
     after = np.random.get_state()
-    assert all(np.array_equal(a, b) for a, b in zip(state, after))
+    assert all(np.array_equal(a, b) for a, b in zip(state, after, strict=True))
     for name, partition in first.items():
         np.testing.assert_array_equal(partition.sample_ids, second[name].sample_ids)
         assert np.all(np.diff(partition.sample_ids) > 0)

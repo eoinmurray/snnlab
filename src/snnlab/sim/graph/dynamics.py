@@ -227,7 +227,9 @@ def poisson_spikes(rate_hz, shape, dt, generator, device=None):
     """
     p = rate_hz * dt / 1000.0
     draw_device = generator.device if generator is not None else "cpu"
-    spk = (torch.rand(*shape, device=draw_device, generator=generator) < p).to(torch.float32)
+    spk = (torch.rand(*shape, device=draw_device, generator=generator) < p).to(
+        torch.float32
+    )
     return spk.to(device) if device is not None else spk
 
 

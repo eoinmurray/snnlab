@@ -417,7 +417,7 @@ def test_disabling_diagnostics_preserves_outputs_and_branch_state():
         kind="simulate",
         graph=graph,
         input_bindings=tuple(
-            DenseArrayBinding(name, value) for name, value in inputs.items()
+            DenseArrayBinding(name, value) for (name, value) in inputs.items()
         ),
         device="cpu",
         seed=42,

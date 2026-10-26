@@ -6,10 +6,11 @@ import hashlib
 import io
 import json
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from numbers import Integral
 from pathlib import Path
-from typing import Mapping, Sequence, TypeAlias
+from typing import TypeAlias
 
 import numpy as np
 import torch
@@ -264,6 +265,29 @@ class PreparedIntervention:
         )
 
 
+def _validate_replay_intervention(
+    *, intervention, batch_size, populations, name, dt_ms, start_step, steps_count
+):
+    if not isinstance(intervention.replay, (DenseSpikeReplay, SparseSpikeReplay)):
+        raise TypeError("ReplaySpikes requires DenseSpikeReplay or SparseSpikeReplay")
+    header, tensors, digest = intervention.replay._snapshot()
+    if intervention.replay.sha256 != digest:
+        raise ValueError("spike replay digest mismatch")
+    if (
+        header["batch_size"] != batch_size
+        or header["cells_count"] != populations[name]["size"]
+    ):
+        raise ValueError("spike replay batch/cell coverage does not match target")
+    if not math.isclose(header["dt_ms"], dt_ms, rel_tol=0, abs_tol=1e-12):
+        raise ValueError("spike replay dt_ms does not match execution timestep")
+    if (
+        start_step < header["start_step"]
+        or start_step + steps_count > header["start_step"] + header["steps_count"]
+    ):
+        raise ValueError("spike replay does not cover the absolute execution window")
+    return header, tensors, digest
+
+
 def prepare_interventions(
     interventions: Sequence[Intervention],
     *,
@@ -291,32 +315,16 @@ def prepare_interventions(
             raise ValueError(f"intervention population {name!r} does not emit spikes")
         tensors = ()
         if isinstance(intervention, ReplaySpikes):
-            if not isinstance(
-                intervention.replay, (DenseSpikeReplay, SparseSpikeReplay)
-            ):
-                raise TypeError(
-                    "ReplaySpikes requires DenseSpikeReplay or SparseSpikeReplay"
-                )
-            header, tensors, digest = intervention.replay._snapshot()
-            if intervention.replay.sha256 != digest:
-                raise ValueError("spike replay digest mismatch")
-            if (
-                header["batch_size"] != batch_size
-                or header["cells_count"] != populations[name]["size"]
-            ):
-                raise ValueError(
-                    "spike replay batch/cell coverage does not match target"
-                )
-            if not math.isclose(header["dt_ms"], dt_ms, rel_tol=0, abs_tol=1e-12):
-                raise ValueError("spike replay dt_ms does not match execution timestep")
-            if (
-                start_step < header["start_step"]
-                or start_step + steps_count
-                > header["start_step"] + header["steps_count"]
-            ):
-                raise ValueError(
-                    "spike replay does not cover the absolute execution window"
-                )
+            header, tensors, digest = _validate_replay_intervention(
+                intervention=intervention,
+                batch_size=batch_size,
+                populations=populations,
+                name=name,
+                dt_ms=dt_ms,
+                start_step=start_step,
+                steps_count=steps_count,
+            )
+
             row = {
                 "kind": "replay_spikes",
                 "population_id": name,

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from numbers import Integral
 from pathlib import Path
-from typing import Mapping
 
 import numpy as np
 import torch
@@ -141,6 +141,152 @@ def select_tensor(tensor, info, batch):
     )
 
 
+def _validate_time_coordinates(name, value, row):
+    if "time" in row.axes:
+        if (
+            row.step_indices is None
+            or len(row.step_indices) != value.shape[row.axes.index("time")]
+        ):
+            raise ValueError(f"{name}: time axis requires matching step coordinates")
+        steps = np.asarray(row.step_indices)
+        if any(
+            isinstance(step, bool) or not isinstance(step, Integral) or step < 0
+            for step in row.step_indices
+        ) or (len(steps) > 1 and np.any(np.diff(steps) <= 0)):
+            raise ValueError(f"{name}: step coordinates must increase strictly")
+        if len(steps) and (
+            (row.start_step is not None and steps[0] < row.start_step)
+            or (row.end_step is not None and steps[-1] >= row.end_step)
+        ):
+            raise ValueError(f"{name}: step coordinates exceed recording window")
+
+
+def _read_recording_blocks(root, rows):
+    grouped = {}
+    for row in rows:
+        if (
+            row.get("schema", "snnlab.npz-recording-blocks/v1")
+            != "snnlab.npz-recording-blocks/v1"
+        ):
+            raise ValueError("unsupported recording schema")
+        file = member_path(root, row["file"])
+        if sha256_file(file) != row["sha256"]:
+            raise ValueError("recording block digest mismatch")
+        with np.load(file, allow_pickle=False) as archive:
+            tensor = tensor_payload(archive["values"], row, label=row["signal"])
+        axes = row.get("axes")
+        if axes is None:
+            if row["kind"] == "dense":
+                axes = ("time", "batch", "cell")
+            elif row["kind"] == "spike_events":
+                axes = ("event", "coordinate")
+            else:
+                raise ValueError("historical output block lacks axis metadata")
+        if (
+            len(axes) != tensor.ndim
+            or type(row.get("start_step")) is not int
+            or type(row.get("end_step")) is not int
+            or row["start_step"] < 0
+            or row["end_step"] < row["start_step"]
+        ):
+            raise ValueError("recording block axes or time bounds are invalid")
+        if (
+            not isinstance(row.get("dt_ms"), (int, float))
+            or isinstance(row["dt_ms"], bool)
+            or not np.isfinite(row["dt_ms"])
+            or row["dt_ms"] <= 0
+        ):
+            raise ValueError("recording block timestep must be finite and positive")
+        grouped.setdefault(row["signal"], []).append((row, tensor, tuple(axes)))
+    return grouped
+
+
+def _assemble_dense_blocks(*, name, blocks, axes, first):
+    # Blocks may tile time and batch independently (dataset inference).
+    by_batch = {}
+    for row, value, _ in blocks:
+        by_batch.setdefault(row.get("batch_offset", 0), []).append((row, value))
+    pieces, all_steps, batch_size = [], [], 0
+    for offset, tile in sorted(by_batch.items()):
+        tile.sort(key=lambda pair: pair[0]["start_step"])
+        tile_steps = (
+            tuple(
+                step
+                for row, _ in tile
+                for step in (
+                    row.get("step_indices")
+                    if row.get("step_indices") is not None
+                    else range(row["start_step"], row["end_step"])
+                )
+            )
+            if "time" in axes
+            else None
+        )
+        piece = (
+            torch.cat([value for _, value in tile], dim=axes.index("time"))
+            if "time" in axes
+            else tile[0][1]
+        )
+        if "time" not in axes and len(tile) != 1:
+            raise ValueError(f"{name}: duplicate non-temporal block")
+        if "batch" in axes:
+            if offset != batch_size:
+                raise ValueError(f"{name}: missing or overlapping batch blocks")
+            batch_size += piece.shape[axes.index("batch")]
+        pieces.append(piece)
+        all_steps.append(tile_steps)
+    if any(item != all_steps[0] for item in all_steps):
+        raise ValueError(f"{name}: batch blocks have different time coordinates")
+    values = (
+        torch.cat(pieces, dim=axes.index("batch")) if "batch" in axes else pieces[0]
+    )
+    if "batch" not in axes and len(pieces) > 1:
+        raise ValueError(f"{name}: multiple batch tiles lack a declared batch axis")
+    steps = all_steps[0]
+    batch_size = first.get("batch_size") if "batch" not in axes else batch_size
+    return values, steps, batch_size
+
+
+def _validate_event_coordinates(name, value, row):
+    if row.kind == "spike_events":
+        if row.axes != ("event", "coordinate"):
+            raise ValueError(f"{name}: unsupported event axes")
+        if (
+            value.ndim != 2
+            or value.shape[1] != 3
+            or not np.issubdtype(value.dtype, np.integer)
+        ):
+            raise ValueError(f"{name}: events require integer step/batch/cell columns")
+        if value.size and (
+            np.any(value < 0)
+            or (row.start_step is not None and np.any(value[:, 0] < row.start_step))
+            or (row.end_step is not None and np.any(value[:, 0] >= row.end_step))
+        ):
+            raise ValueError(f"{name}: event coordinates exceed recording window")
+        if (
+            value.size
+            and row.batch_size is not None
+            and np.any(value[:, 1] >= row.batch_size)
+        ):
+            raise ValueError(f"{name}: event sample coordinates exceed batch size")
+        if (
+            row.selected_batch is not None
+            and value.size
+            and np.any(value[:, 1] != row.selected_batch)
+        ):
+            raise ValueError(
+                f"{name}: event coordinates disagree with the selected sample"
+            )
+        if (
+            row.cell_ids is not None
+            and value.size
+            and not np.isin(value[:, 2], row.cell_ids).all()
+        ):
+            raise ValueError(f"{name}: unknown event cell identity")
+    elif row.kind not in {"dense", "output"}:
+        raise ValueError(f"{name}: unsupported recording kind")
+
+
 class RecordingData:
     """Independent arrays and truthful metadata shared by readers and plotters."""
 
@@ -172,81 +318,16 @@ class RecordingData:
                 raise ValueError(f"{name}: named axes must be unique")
             if row.dt_ms is not None and (not np.isfinite(row.dt_ms) or row.dt_ms <= 0):
                 raise ValueError(f"{name}: invalid timestep")
-            if row.kind == "spike_events":
-                if row.axes != ("event", "coordinate"):
-                    raise ValueError(f"{name}: unsupported event axes")
-                if (
-                    value.ndim != 2
-                    or value.shape[1] != 3
-                    or not np.issubdtype(value.dtype, np.integer)
-                ):
-                    raise ValueError(
-                        f"{name}: events require integer step/batch/cell columns"
-                    )
-                if value.size and (
-                    np.any(value < 0)
-                    or (
-                        row.start_step is not None
-                        and np.any(value[:, 0] < row.start_step)
-                    )
-                    or (
-                        row.end_step is not None and np.any(value[:, 0] >= row.end_step)
-                    )
-                ):
-                    raise ValueError(
-                        f"{name}: event coordinates exceed recording window"
-                    )
-                if (
-                    value.size
-                    and row.batch_size is not None
-                    and np.any(value[:, 1] >= row.batch_size)
-                ):
-                    raise ValueError(
-                        f"{name}: event sample coordinates exceed batch size"
-                    )
-                if (
-                    row.selected_batch is not None
-                    and value.size
-                    and np.any(value[:, 1] != row.selected_batch)
-                ):
-                    raise ValueError(
-                        f"{name}: event coordinates disagree with the selected sample"
-                    )
-                if (
-                    row.cell_ids is not None
-                    and value.size
-                    and not np.isin(value[:, 2], row.cell_ids).all()
-                ):
-                    raise ValueError(f"{name}: unknown event cell identity")
-            elif row.kind not in {"dense", "output"}:
-                raise ValueError(f"{name}: unsupported recording kind")
+            _validate_event_coordinates(name=name, value=value, row=row)
+
             if row.selected_batch is not None and "batch" in row.axes:
                 raise ValueError(
                     f"{name}: selected recordings cannot retain a batch axis"
                 )
             if "time" not in row.axes and row.step_indices is not None:
                 raise ValueError(f"{name}: step coordinates require a time axis")
-            if "time" in row.axes:
-                if (
-                    row.step_indices is None
-                    or len(row.step_indices) != value.shape[row.axes.index("time")]
-                ):
-                    raise ValueError(
-                        f"{name}: time axis requires matching step coordinates"
-                    )
-                steps = np.asarray(row.step_indices)
-                if any(
-                    isinstance(step, bool) or not isinstance(step, Integral) or step < 0
-                    for step in row.step_indices
-                ) or (len(steps) > 1 and np.any(np.diff(steps) <= 0)):
-                    raise ValueError(f"{name}: step coordinates must increase strictly")
-                if len(steps) and (
-                    (row.start_step is not None and steps[0] < row.start_step)
-                    or (row.end_step is not None and steps[-1] >= row.end_step)
-                ):
-                    raise ValueError(
-                        f"{name}: step coordinates exceed recording window"
-                    )
+            _validate_time_coordinates(name=name, value=value, row=row)
+
             if (
                 "cell" in row.axes
                 and row.cell_ids is not None
@@ -277,42 +358,8 @@ class RecordingData:
             for line in (root / "manifest.jsonl").read_text().splitlines()
             if line.strip()
         ]
-        grouped = {}
-        for row in rows:
-            if (
-                row.get("schema", "snnlab.npz-recording-blocks/v1")
-                != "snnlab.npz-recording-blocks/v1"
-            ):
-                raise ValueError("unsupported recording schema")
-            file = member_path(root, row["file"])
-            if sha256_file(file) != row["sha256"]:
-                raise ValueError("recording block digest mismatch")
-            with np.load(file, allow_pickle=False) as archive:
-                tensor = tensor_payload(archive["values"], row, label=row["signal"])
-            axes = row.get("axes")
-            if axes is None:
-                if row["kind"] == "dense":
-                    axes = ("time", "batch", "cell")
-                elif row["kind"] == "spike_events":
-                    axes = ("event", "coordinate")
-                else:
-                    raise ValueError("historical output block lacks axis metadata")
-            if (
-                len(axes) != tensor.ndim
-                or type(row.get("start_step")) is not int
-                or type(row.get("end_step")) is not int
-                or row["start_step"] < 0
-                or row["end_step"] < row["start_step"]
-            ):
-                raise ValueError("recording block axes or time bounds are invalid")
-            if (
-                not isinstance(row.get("dt_ms"), (int, float))
-                or isinstance(row["dt_ms"], bool)
-                or not np.isfinite(row["dt_ms"])
-                or row["dt_ms"] <= 0
-            ):
-                raise ValueError("recording block timestep must be finite and positive")
-            grouped.setdefault(row["signal"], []).append((row, tensor, tuple(axes)))
+        grouped = _read_recording_blocks(root=root, rows=rows)
+
         signals, metadata = {}, {}
         for name, blocks in grouped.items():
             first, _, axes = blocks[0]
@@ -348,60 +395,10 @@ class RecordingData:
                     max(sizes) if all(size is not None for size in sizes) else None
                 )
             else:
-                # Blocks may tile time and batch independently (dataset inference).
-                by_batch = {}
-                for row, value, _ in blocks:
-                    by_batch.setdefault(row.get("batch_offset", 0), []).append(
-                        (row, value)
-                    )
-                pieces, all_steps, batch_size = [], [], 0
-                for offset, tile in sorted(by_batch.items()):
-                    tile.sort(key=lambda pair: pair[0]["start_step"])
-                    tile_steps = (
-                        tuple(
-                            step
-                            for row, _ in tile
-                            for step in (
-                                row.get("step_indices")
-                                if row.get("step_indices") is not None
-                                else range(row["start_step"], row["end_step"])
-                            )
-                        )
-                        if "time" in axes
-                        else None
-                    )
-                    piece = (
-                        torch.cat([value for _, value in tile], dim=axes.index("time"))
-                        if "time" in axes
-                        else tile[0][1]
-                    )
-                    if "time" not in axes and len(tile) != 1:
-                        raise ValueError(f"{name}: duplicate non-temporal block")
-                    if "batch" in axes:
-                        if offset != batch_size:
-                            raise ValueError(
-                                f"{name}: missing or overlapping batch blocks"
-                            )
-                        batch_size += piece.shape[axes.index("batch")]
-                    pieces.append(piece)
-                    all_steps.append(tile_steps)
-                if any(item != all_steps[0] for item in all_steps):
-                    raise ValueError(
-                        f"{name}: batch blocks have different time coordinates"
-                    )
-                values = (
-                    torch.cat(pieces, dim=axes.index("batch"))
-                    if "batch" in axes
-                    else pieces[0]
+                values, steps, batch_size = _assemble_dense_blocks(
+                    name=name, blocks=blocks, axes=axes, first=first
                 )
-                if "batch" not in axes and len(pieces) > 1:
-                    raise ValueError(
-                        f"{name}: multiple batch tiles lack a declared batch axis"
-                    )
-                steps = all_steps[0]
-                batch_size = (
-                    first.get("batch_size") if "batch" not in axes else batch_size
-                )
+
             source_dtype = str(values.dtype).removeprefix("torch.")
             array = numpy_copy(values)
             sample_ids = first.get("sample_ids")

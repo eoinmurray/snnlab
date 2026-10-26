@@ -48,10 +48,7 @@ def initial_state(context):
         dtype=context.dtype,
     )
     state = {"voltage": voltage}
-    for gate, (alpha, beta) in zip(
-        ("m", "h", "n"),
-        rates(voltage),
-    ):
+    for gate, (alpha, beta) in zip(("m", "h", "n"), rates(voltage), strict=True):
         state[gate] = alpha / (alpha + beta)
     return state
 
@@ -68,10 +65,7 @@ def _derivative(
     )
     gates = tuple(
         alpha * (1 - gate) - beta * gate
-        for gate, (alpha, beta) in zip(
-            (m, h, n),
-            rates(voltage),
-        )
+        for gate, (alpha, beta) in zip((m, h, n), rates(voltage), strict=True)
     )
     return ((current - ionic) / CAPACITANCE_NF, *gates)
 
@@ -95,55 +89,26 @@ def step(context):
             current,
         )
         k2 = _derivative(
-            tuple(
-                y + dt / 2 * k
-                for y, k in zip(
-                    values,
-                    k1,
-                )
-            ),
+            tuple(y + dt / 2 * k for y, k in zip(values, k1, strict=True)),
             current,
         )
         k3 = _derivative(
-            tuple(
-                y + dt / 2 * k
-                for y, k in zip(
-                    values,
-                    k2,
-                )
-            ),
+            tuple(y + dt / 2 * k for y, k in zip(values, k2, strict=True)),
             current,
         )
         k4 = _derivative(
-            tuple(
-                y + dt * k
-                for y, k in zip(
-                    values,
-                    k3,
-                )
-            ),
+            tuple(y + dt * k for y, k in zip(values, k3, strict=True)),
             current,
         )
         updated = tuple(
             y + dt / 6 * (a + 2 * b + 2 * c + d)
-            for y, a, b, c, d in zip(
-                values,
-                k1,
-                k2,
-                k3,
-                k4,
-            )
+            for y, a, b, c, d in zip(values, k1, k2, k3, k4, strict=True)
         )
         crossed = crossed | ((values[0] < 0) & (updated[0] >= 0))
         values = updated
     return {
         **context.state,
-        **dict(
-            zip(
-                keys,
-                values,
-            )
-        ),
+        **dict(zip(keys, values, strict=True)),
     }, crossed.to(values[0].dtype)
 
 
@@ -252,7 +217,7 @@ def run_example(*, render_diagram=False):
             scale=2,
             height_to_width_ratio=None,
         )
-    result = simulate(
+    return simulate(
         graph=bundle.graph,
         device="cpu",
         input_bindings=(
@@ -264,7 +229,6 @@ def run_example(*, render_diagram=False):
         performance=Performance(compile_mode=None),
         extension_validation="strict",
     ).numpy(batch=0)
-    return result
 
 
 def main():
@@ -302,8 +266,7 @@ def main():
     )
     axes[0].legend(loc="upper right")
     for gate, color in zip(
-        ("m", "h", "n"),
-        ("#e08b26", "#4c78a8", "#54a24b"),
+        ("m", "h", "n"), ("#e08b26", "#4c78a8", "#54a24b"), strict=True
     ):
         axes[1].plot(
             time,
@@ -384,6 +347,7 @@ def solve_reference(
         def derivative(
             t,
             y,
+            current=current,
         ):
             v, m, h, n = y
             ionic = (

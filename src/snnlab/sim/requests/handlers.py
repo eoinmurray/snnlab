@@ -7,9 +7,10 @@ import math
 import os
 import time
 import tracemalloc
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import torch
 
@@ -192,6 +193,120 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
     return result
 
 
+def _restore_inference_checkpoint(*, spec, device, source_graph_digest, built):
+    checkpoint_provenance = None
+    if spec.checkpoint:
+        checkpoint_path = Path(spec.checkpoint)
+        if checkpoint_path.is_dir():
+            checkpoint = load_training_checkpoint(checkpoint_path, device=device)
+            graph_digest = source_graph_digest or _json_digest(built.model.plan.graph)
+            if checkpoint.graph_digest != graph_digest:
+                raise ValueError(
+                    f"inference checkpoint graph digest expected {graph_digest}, got {checkpoint.graph_digest}"
+                )
+            parameter_map = built.model.parameter_map()
+            if set(checkpoint.parameters) != set(parameter_map):
+                raise ValueError(
+                    "inference checkpoint parameter names do not match graph"
+                )
+            with torch.no_grad():
+                for name, parameter in parameter_map.items():
+                    restored = checkpoint.parameters[name]
+                    if (
+                        restored.shape != parameter.shape
+                        or restored.dtype != parameter.dtype
+                    ):
+                        raise ValueError(
+                            f"inference checkpoint parameter {name} expected shape={list(parameter.shape)} dtype={parameter.dtype}, "
+                            f"got shape={list(restored.shape)} dtype={restored.dtype}"
+                        )
+                    parameter.copy_(restored)
+            built.model._enforce_autapses()
+            checkpoint_provenance = {
+                "format": TRAINING_CHECKPOINT_SCHEMA,
+                "path": str(checkpoint_path),
+                "graph_digest": checkpoint.graph_digest,
+                "training_digest": checkpoint.training_digest,
+                "completed_updates": checkpoint.completed_updates,
+                "selected_loss": checkpoint.selected_loss,
+            }
+        else:
+            state_dict = torch.load(
+                checkpoint_path, map_location=device, weights_only=True
+            )
+            checkpoint_provenance = {
+                "format": "graph_torch_state_dict",
+                "path": str(checkpoint_path),
+            }
+            built.model.load_state_dict(state_dict)
+    return checkpoint_provenance
+
+
+def _resolve_poisson_overrides(
+    *, overrides, poisson_bindings, sources, built, source_dt_ms
+):
+    if (
+        "duration_ms" in overrides
+        or "input_rate_hz" in overrides
+        or "timestep_ms" in overrides
+    ):
+        if not poisson_bindings or sources.dense or sources.events:
+            raise ValueError(
+                "duration and input-rate inference overrides require Poisson input bindings"
+            )
+        dt_ms = built.model.plan.dt_ms
+        duration_ms = float(
+            overrides.get(
+                "duration_ms",
+                poisson_bindings[0].steps_count * (source_dt_ms or dt_ms),
+            )
+        )
+        raw_steps = duration_ms / dt_ms
+        if duration_ms <= 0 or not math.isclose(
+            raw_steps, round(raw_steps), abs_tol=1e-9
+        ):
+            raise ValueError(
+                f"inference duration {duration_ms} ms must be a positive integer multiple of dt={dt_ms} ms"
+            )
+        rate = overrides.get("input_rate_hz")
+        if rate is not None and (not math.isfinite(float(rate)) or float(rate) < 0):
+            raise ValueError("inference input rate must be finite and non-negative")
+        poisson_bindings = tuple(
+            replace(
+                binding,
+                steps_count=int(round(raw_steps)),
+                rates_hz=(float(rate),) if rate is not None else binding.rates_hz,
+                categorical=False if rate is not None else binding.categorical,
+            )
+            for binding in poisson_bindings
+        )
+    return poisson_bindings
+
+
+def _apply_projection_scales(overrides, built):
+    scales = dict(overrides.get("projection_scales", {}))
+    if scales:
+        projection_parameters = {
+            row["id"]: row["parameters"][0]
+            for row in built.model.plan.graph.get("projections", [])
+        }
+        unknown = sorted(set(scales) - set(projection_parameters))
+        if unknown:
+            raise ValueError(
+                f"inference projection scales target unknown projections: {unknown}"
+            )
+        with torch.no_grad():
+            parameters = built.model.parameter_map()
+            for projection_id, factor in sorted(scales.items()):
+                factor = float(factor)
+                if not math.isfinite(factor) or factor < 0:
+                    raise ValueError(
+                        f"inference projection scale {projection_id} must be finite and non-negative"
+                    )
+                parameters[projection_parameters[projection_id]].mul_(factor)
+    return scales
+
+
 def simulate(
     spec: ExecutionSpec, *, runtime_state: GraphRuntimeState | None = None
 ) -> ExecutionResult:
@@ -246,106 +361,20 @@ def simulate(
     assert isinstance(built.model, GraphExecutor)
     device = resolve_device(spec.device)
     poisson_bindings = sources.poisson
-    if (
-        "duration_ms" in overrides
-        or "input_rate_hz" in overrides
-        or "timestep_ms" in overrides
-    ):
-        if not poisson_bindings or sources.dense or sources.events:
-            raise ValueError(
-                "duration and input-rate inference overrides require Poisson input bindings"
-            )
-        dt_ms = built.model.plan.dt_ms
-        duration_ms = float(
-            overrides.get(
-                "duration_ms",
-                poisson_bindings[0].steps_count * (source_dt_ms or dt_ms),
-            )
-        )
-        raw_steps = duration_ms / dt_ms
-        if duration_ms <= 0 or not math.isclose(
-            raw_steps, round(raw_steps), abs_tol=1e-9
-        ):
-            raise ValueError(
-                f"inference duration {duration_ms} ms must be a positive integer multiple of dt={dt_ms} ms"
-            )
-        rate = overrides.get("input_rate_hz")
-        if rate is not None and (not math.isfinite(float(rate)) or float(rate) < 0):
-            raise ValueError("inference input rate must be finite and non-negative")
-        poisson_bindings = tuple(
-            replace(
-                binding,
-                steps_count=int(round(raw_steps)),
-                rates_hz=(float(rate),) if rate is not None else binding.rates_hz,
-                categorical=False if rate is not None else binding.categorical,
-            )
-            for binding in poisson_bindings
-        )
-    checkpoint_provenance = None
-    if spec.checkpoint:
-        checkpoint_path = Path(spec.checkpoint)
-        if checkpoint_path.is_dir():
-            checkpoint = load_training_checkpoint(checkpoint_path, device=device)
-            graph_digest = source_graph_digest or _json_digest(built.model.plan.graph)
-            if checkpoint.graph_digest != graph_digest:
-                raise ValueError(
-                    f"inference checkpoint graph digest expected {graph_digest}, got {checkpoint.graph_digest}"
-                )
-            parameter_map = built.model.parameter_map()
-            if set(checkpoint.parameters) != set(parameter_map):
-                raise ValueError(
-                    "inference checkpoint parameter names do not match graph"
-                )
-            with torch.no_grad():
-                for name, parameter in parameter_map.items():
-                    restored = checkpoint.parameters[name]
-                    if (
-                        restored.shape != parameter.shape
-                        or restored.dtype != parameter.dtype
-                    ):
-                        raise ValueError(
-                            f"inference checkpoint parameter {name} expected shape={list(parameter.shape)} dtype={parameter.dtype}, "
-                            f"got shape={list(restored.shape)} dtype={restored.dtype}"
-                        )
-                    parameter.copy_(restored)
-            built.model._enforce_autapses()
-            checkpoint_provenance = {
-                "format": TRAINING_CHECKPOINT_SCHEMA,
-                "path": str(checkpoint_path),
-                "graph_digest": checkpoint.graph_digest,
-                "training_digest": checkpoint.training_digest,
-                "completed_updates": checkpoint.completed_updates,
-                "selected_loss": checkpoint.selected_loss,
-            }
-        else:
-            state_dict = torch.load(
-                checkpoint_path, map_location=device, weights_only=True
-            )
-            checkpoint_provenance = {
-                "format": "graph_torch_state_dict",
-                "path": str(checkpoint_path),
-            }
-            built.model.load_state_dict(state_dict)
-    scales = dict(overrides.get("projection_scales", {}))
-    if scales:
-        projection_parameters = {
-            row["id"]: row["parameters"][0]
-            for row in built.model.plan.graph.get("projections", [])
-        }
-        unknown = sorted(set(scales) - set(projection_parameters))
-        if unknown:
-            raise ValueError(
-                f"inference projection scales target unknown projections: {unknown}"
-            )
-        with torch.no_grad():
-            parameters = built.model.parameter_map()
-            for projection_id, factor in sorted(scales.items()):
-                factor = float(factor)
-                if not math.isfinite(factor) or factor < 0:
-                    raise ValueError(
-                        f"inference projection scale {projection_id} must be finite and non-negative"
-                    )
-                parameters[projection_parameters[projection_id]].mul_(factor)
+    poisson_bindings = _resolve_poisson_overrides(
+        overrides=overrides,
+        poisson_bindings=poisson_bindings,
+        sources=sources,
+        built=built,
+        source_dt_ms=source_dt_ms,
+    )
+
+    checkpoint_provenance = _restore_inference_checkpoint(
+        spec=spec, device=device, source_graph_digest=source_graph_digest, built=built
+    )
+
+    scales = _apply_projection_scales(overrides=overrides, built=built)
+
     if spec.timing_mode == "synchronized":
         _synchronize_device(device)
     tracemalloc.start()

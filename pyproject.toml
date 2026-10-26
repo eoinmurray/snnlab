@@ -35,6 +35,7 @@ dev = [
     "ruff>=0.15.20",
     "brian2>=2.10; python_version >= '3.12'",
     "snntorch>=0.9.4,<1.1",
+    "pre-commit>=4.3,<5",
 ]
 
 [tool.pytest.ini_options]
@@ -46,10 +47,23 @@ filterwarnings = ["ignore:`torch.jit.script_method` is deprecated:DeprecationWar
 [tool.ruff]
 target-version = "py310"
 line-length = 88
+include = ["*.py", "*.pyi", "*.ipynb"]
+# Retained benchmark sources and numerical fixtures authenticate historical evidence.
+extend-exclude = ["benchmarks/*/results", "docs/public/shd-benchmark", "tests/sim/fixtures"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
-ignore = ["E501", "E741"]
+select = ["E", "F", "I", "UP", "SIM", "C4", "RET", "B", "C901", "PIE"]
+ignore = ["E501", "E741", "C408"]
+# Keep scientific E/I names and readable dict(key=value, ...) configurations.
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.format]
+# Short signatures stay compact; wrapped signatures use one parameter per line.
+skip-magic-trailing-comma = false
+quote-style = "double"
+indent-style = "space"
 
 [tool.coverage.run]
 source = ["snnlab.sim"]

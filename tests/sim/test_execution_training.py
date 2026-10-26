@@ -78,9 +78,7 @@ def _direct_train_bundle():
     recipe = snn.TrainSpec(
         objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            snn.ParameterGroup(
-                ["scores_projection.weight"], name="readout", lr=0.1
-            ),
+            snn.ParameterGroup(["scores_projection.weight"], name="readout", lr=0.1),
             snn.ParameterGroup(
                 [pid for pid in parameter_ids if pid != "scores_projection.weight"],
                 name="frozen",

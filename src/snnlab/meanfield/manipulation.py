@@ -6,7 +6,7 @@ from dataclasses import replace
 def substitute(model, parameters):
     """Return a model with changed parameter defaults, preserving symbolic names."""
     values = model.values(parameters)
-    return replace(model, defaults=dict(zip(model.parameters, values)))
+    return replace(model, defaults=dict(zip(model.parameters, values, strict=True)))
 
 
 def reduce_states(model, *, method="matched_decay", retain=None):
@@ -63,7 +63,7 @@ def reduce_states(model, *, method="matched_decay", retain=None):
     }
     rhs = tuple(
         expression.subs(substitutions, simultaneous=True)
-        for symbol, expression in zip(model.states.values(), model.rhs)
+        for symbol, expression in zip(model.states.values(), model.rhs, strict=True)
         if symbol not in substitutions
     )
     reconstruction = {
@@ -72,7 +72,7 @@ def reduce_states(model, *, method="matched_decay", retain=None):
     display_rhs = tuple(
         expression
         for symbol, expression in zip(
-            model.states.values(), model.display_rhs or model.rhs
+            model.states.values(), model.display_rhs or model.rhs, strict=True
         )
         if symbol not in substitutions
     )

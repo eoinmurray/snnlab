@@ -16,7 +16,9 @@ def equations(model):
             expression.xreplace(delayed),
             evaluate=False,
         )
-        for (name, symbol), expression in zip(model.states.items(), model.rhs)
+        for (name, symbol), expression in zip(
+            model.states.items(), model.rhs, strict=True
+        )
     }
 
 
@@ -33,7 +35,7 @@ def _latex_equations(model, *, expanded=False):
 
     rhs = model.rhs if expanded else (model.display_rhs or model.rhs)
     rows = {}
-    for (name, symbol), expression in zip(model.states.items(), rhs):
+    for (name, symbol), expression in zip(model.states.items(), rhs, strict=True):
         left = rf"\dot{{{render(symbol)}}}"
         tau = (
             model.parameters.get(name.removesuffix(".rate") + ".tau_rate")

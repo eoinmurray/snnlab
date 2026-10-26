@@ -88,27 +88,10 @@ class DatasetProvider:
                 "validation encoding seeds require a stochastic dataset encoder"
             )
         self._temporary = tempfile.TemporaryDirectory(prefix="snnlab-dataset-")
-        source = Path(binding.path)
-        before = _file_digest(source)
-        if binding.snapshot_digest is not None and before != binding.snapshot_digest:
-            raise ValueError("dataset snapshot digest does not match saved binding")
-        arrays = {}
-        with zipfile.ZipFile(source) as archive:
-            for index, member in enumerate(archive.infolist()):
-                if not member.filename.endswith(".npy") or member.is_dir():
-                    raise ValueError("dataset NPZ must contain only named NPY arrays")
-                key = member.filename[:-4]
-                if key in arrays:
-                    raise ValueError("dataset NPZ contains duplicate array names")
-                destination = Path(self._temporary.name) / f"array-{index}.npy"
-                with (
-                    archive.open(member) as incoming,
-                    destination.open("wb") as outgoing,
-                ):
-                    shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
-                arrays[key] = np.load(destination, mmap_mode="r", allow_pickle=False)
-        if _file_digest(source) != before:
-            raise ValueError("dataset snapshot changed while resolving its content")
+        arrays, before = self._load_dataset_arrays(
+            binding=binding, _file_digest=_file_digest
+        )
+
         self.snapshot = arrays, before
         if binding.label_key not in arrays:
             raise ValueError("dataset snapshot is missing labels")
@@ -129,47 +112,21 @@ class DatasetProvider:
             if binding.sample_ids_key not in arrays:
                 raise ValueError("dataset snapshot is missing sample identities")
             identities = arrays[binding.sample_ids_key]
-            if identities.ndim != 1 or len(identities) != total or identities.dtype.kind not in {"i", "u", "U"} or len(np.unique(identities)) != total:
+            if (
+                identities.ndim != 1
+                or len(identities) != total
+                or identities.dtype.kind not in {"i", "u", "U"}
+                or len(np.unique(identities)) != total
+            ):
                 raise ValueError("dataset sample identities are invalid or duplicated")
             self.sample_ids = identities[self.selected].tolist()
         self.sample_count = cap
         self.labels = torch.from_numpy(np.array(labels[self.selected], dtype=np.int64))
         # Validate stored feature values in bounded sample slices; exact replay remains exact.
-        if binding.encoder.kind in {"rate_poisson", "prebinned_spikes"}:
-            if binding.feature_key not in arrays:
-                raise ValueError("dataset snapshot is missing features")
-            features = arrays[binding.feature_key]
-            for start in range(0, total, 32):
-                chunk = (
-                    features[start : start + 32]
-                    if binding.encoder.kind == "rate_poisson"
-                    else features[:, start : start + 32]
-                )
-                if binding.encoder.kind == "rate_poisson":
-                    if (
-                        not np.isfinite(chunk).all()
-                        or np.any(chunk < 0)
-                        or np.any(chunk > 1)
-                    ):
-                        raise ValueError(
-                            "rate-Poisson dataset features must be finite in [0, 1]"
-                        )
-                elif not np.all((chunk == 0) | (chunk == 1)):
-                    raise ValueError("prebinned dataset spikes must be binary")
-        self.event_index = None
-        if binding.encoder.kind == "event_bin":
-            from snnlab.sim.inputs.events import EventIndex
+        self._validate_dataset_encoder(
+            binding=binding, arrays=arrays, graph=graph, total=total
+        )
 
-            input_spec = next(
-                row for row in graph["inputs"] if row["id"] == binding.input_id
-            )
-            self.event_index = EventIndex(
-                arrays,
-                sample_count=total,
-                channels=int(input_spec["shape"][2]),
-                duration_ms=float(binding.encoder.duration_ms or 0),
-                dt_ms=float(graph["timebase"]["dt"]["value"]),
-            )
         first, _ = resolve_dataset_snapshot_binding(
             graph,
             binding,
@@ -219,20 +176,8 @@ class DatasetProvider:
             "epoch_order_derivation": "execution_seed + epoch",
             "seed_derivation": "sha256(root,domain,phase,epoch,absolute_sample_indices,draw_seed)",
         }
-        supplied = dict(protocol or {})
-        dataset = dict(supplied.pop("dataset", {}))
-        for key, value in dataset.items():
-            if key not in self.protocol["dataset"] or (
-                value is not None and value != self.protocol["dataset"][key]
-            ):
-                raise ValueError(
-                    "dataset execution protocol metadata does not match binding"
-                )
-        if set(supplied) & set(self.protocol):
-            raise ValueError(
-                "dataset execution protocol cannot override reserved fields"
-            )
-        self.protocol.update(supplied)
+        self._merge_dataset_protocol(protocol=protocol)
+
         self.targets = (
             (
                 TargetArrayBinding(
@@ -301,12 +246,91 @@ class DatasetProvider:
             "encoder": resolved.protocol["dataset_binding"]["encoder"],
         }
         if self.binding.sample_ids_key is not None:
-            metadata["sample_ids"] = self.snapshot[0][self.binding.sample_ids_key][absolute].tolist()
+            metadata["sample_ids"] = self.snapshot[0][self.binding.sample_ids_key][
+                absolute
+            ].tolist()
         return resolved, metadata
 
     def with_protocol(self, protocol):
         self.protocol = protocol
         return self
+
+    def _load_dataset_arrays(self, binding, _file_digest):
+        source = Path(binding.path)
+        before = _file_digest(source)
+        if binding.snapshot_digest is not None and before != binding.snapshot_digest:
+            raise ValueError("dataset snapshot digest does not match saved binding")
+        arrays = {}
+        with zipfile.ZipFile(source) as archive:
+            for index, member in enumerate(archive.infolist()):
+                if not member.filename.endswith(".npy") or member.is_dir():
+                    raise ValueError("dataset NPZ must contain only named NPY arrays")
+                key = member.filename[:-4]
+                if key in arrays:
+                    raise ValueError("dataset NPZ contains duplicate array names")
+                destination = Path(self._temporary.name) / f"array-{index}.npy"
+                with (
+                    archive.open(member) as incoming,
+                    destination.open("wb") as outgoing,
+                ):
+                    shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
+                arrays[key] = np.load(destination, mmap_mode="r", allow_pickle=False)
+        if _file_digest(source) != before:
+            raise ValueError("dataset snapshot changed while resolving its content")
+        return arrays, before
+
+    def _validate_dataset_encoder(self, *, binding, arrays, graph, total):
+        if binding.encoder.kind in {"rate_poisson", "prebinned_spikes"}:
+            if binding.feature_key not in arrays:
+                raise ValueError("dataset snapshot is missing features")
+            features = arrays[binding.feature_key]
+            for start in range(0, total, 32):
+                chunk = (
+                    features[start : start + 32]
+                    if binding.encoder.kind == "rate_poisson"
+                    else features[:, start : start + 32]
+                )
+                if binding.encoder.kind == "rate_poisson":
+                    if (
+                        not np.isfinite(chunk).all()
+                        or np.any(chunk < 0)
+                        or np.any(chunk > 1)
+                    ):
+                        raise ValueError(
+                            "rate-Poisson dataset features must be finite in [0, 1]"
+                        )
+                elif not np.all((chunk == 0) | (chunk == 1)):
+                    raise ValueError("prebinned dataset spikes must be binary")
+        self.event_index = None
+        if binding.encoder.kind == "event_bin":
+            from snnlab.sim.inputs.events import EventIndex
+
+            input_spec = next(
+                row for row in graph["inputs"] if row["id"] == binding.input_id
+            )
+            self.event_index = EventIndex(
+                arrays,
+                sample_count=total,
+                channels=int(input_spec["shape"][2]),
+                duration_ms=float(binding.encoder.duration_ms or 0),
+                dt_ms=float(graph["timebase"]["dt"]["value"]),
+            )
+
+    def _merge_dataset_protocol(self, protocol):
+        supplied = dict(protocol or {})
+        dataset = dict(supplied.pop("dataset", {}))
+        for key, value in dataset.items():
+            if key not in self.protocol["dataset"] or (
+                value is not None and value != self.protocol["dataset"][key]
+            ):
+                raise ValueError(
+                    "dataset execution protocol metadata does not match binding"
+                )
+        if set(supplied) & set(self.protocol):
+            raise ValueError(
+                "dataset execution protocol cannot override reserved fields"
+            )
+        self.protocol.update(supplied)
 
 
 def sample_count(inputs):
@@ -334,6 +358,45 @@ def batch_tensors(inputs, indices, *, phase="evaluation", epoch=0, draw_seed=Non
         name: value.index_select(1, torch.as_tensor(indices, device=value.device))
         for name, value in inputs.tensors.items()
     }
+
+
+def _batch_preparer(*, inputs, device, device_encoding, stream):
+    def prepare(request):
+        indices, phase, epoch, draw_seed = request
+        resolved, metadata = inputs._batch(
+            indices,
+            phase=phase,
+            epoch=epoch,
+            draw_seed=draw_seed,
+            device=device if device_encoding else "cpu",
+        )
+        tensors = resolved.tensors
+        if stream is not None and not device_encoding:
+            tensors = {name: value.pin_memory() for name, value in tensors.items()}
+        return tensors, metadata
+
+    return prepare
+
+
+def _batch_stager(*, pending, staged, stream, device, submit):
+    def stage(pool):
+        request, future = pending.popleft()
+        host, metadata = future.result()
+        if stream is not None:
+            with torch.cuda.stream(stream):
+                tensors = {
+                    name: value.to(device, non_blocking=True)
+                    for name, value in host.items()
+                }
+                event = torch.cuda.Event()
+                event.record(stream)
+        else:
+            tensors = {name: value.to(device) for name, value in host.items()}
+            event = None
+        staged.append((request, tensors, metadata, host, event))
+        submit(pool)
+
+    return stage
 
 
 def iter_batches(inputs, requests, *, prefetch=0):
@@ -370,19 +433,9 @@ def iter_batches(inputs, requests, *, prefetch=0):
     )
     caller_preparation = device_encoding or inputs.binding.encoder.kind == "custom"
 
-    def prepare(request):
-        indices, phase, epoch, draw_seed = request
-        resolved, metadata = inputs._batch(
-            indices,
-            phase=phase,
-            epoch=epoch,
-            draw_seed=draw_seed,
-            device=device if device_encoding else "cpu",
-        )
-        tensors = resolved.tensors
-        if stream is not None and not device_encoding:
-            tensors = {name: value.pin_memory() for name, value in tensors.items()}
-        return tensors, metadata
+    prepare = _batch_preparer(
+        inputs=inputs, device=device, device_encoding=device_encoding, stream=stream
+    )
 
     def submit(pool):
         try:
@@ -400,22 +453,9 @@ def iter_batches(inputs, requests, *, prefetch=0):
         pending.append((request, future))
         return True
 
-    def stage(pool):
-        request, future = pending.popleft()
-        host, metadata = future.result()
-        if stream is not None:
-            with torch.cuda.stream(stream):
-                tensors = {
-                    name: value.to(device, non_blocking=True)
-                    for name, value in host.items()
-                }
-                event = torch.cuda.Event()
-                event.record(stream)
-        else:
-            tensors = {name: value.to(device) for name, value in host.items()}
-            event = None
-        staged.append((request, tensors, metadata, host, event))
-        submit(pool)
+    stage = _batch_stager(
+        pending=pending, staged=staged, stream=stream, device=device, submit=submit
+    )
 
     # One worker preserves deterministic preparation order; queue length bounds
     # the number of encoded CPU and device batches owned by this iterator.
@@ -536,8 +576,12 @@ def simulate_dataset(
                 active.append(intervention)
         active_recording = recording
         if recording is not None and recording.sink is not None:
-            def dataset_sink(block):
-                recording.sink(replace(block, sample_ids=tuple(provider.sample_ids[start:end])))
+
+            def dataset_sink(block, *, start=start, end=end):
+                recording.sink(
+                    replace(block, sample_ids=tuple(provider.sample_ids[start:end]))
+                )
+
             active_recording = replace(recording, sink=dataset_sink)
         result = model(
             encoded,
@@ -580,8 +624,11 @@ def simulate_dataset(
     }
     result._batch_size = provider.sample_count
     result._recording_info = {
-        name: replace(info, batch_size=provider.sample_count,
-                      sample_ids=tuple(provider.sample_ids))
+        name: replace(
+            info,
+            batch_size=provider.sample_count,
+            sample_ids=tuple(provider.sample_ids),
+        )
         for name, info in result._recording_info.items()
     }
     result.final_state = {

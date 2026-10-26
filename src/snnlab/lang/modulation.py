@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from snnlab._shared import gains
 from snnlab.lang._specs import Spec

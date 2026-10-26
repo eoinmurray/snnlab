@@ -13,13 +13,15 @@ from .dot import diagram_to_dot
 from .model import Diagram, DiagramTheme
 from .routing import expose_arrowheads, position_wire_labels, route_feedback_lanes
 
+_DEFAULT_THEME = DiagramTheme()
+
 
 def render_diagram(
     diagram: Diagram,
     path: str | Path,
     *,
     scale: int = 1,
-    theme: DiagramTheme = DiagramTheme(),
+    theme: DiagramTheme = _DEFAULT_THEME,
     height_to_width_ratio: float | None = None,
     canvas_size: tuple[int, int] | None = None,
 ) -> Path:
@@ -81,7 +83,7 @@ def render_diagram(
             )
             if any(
                 required > available
-                for required, available in zip(natural, canvas_size)
+                for required, available in zip(natural, canvas_size, strict=True)
             ):
                 raise ValueError(
                     f"diagram canvas is too small; natural layout needs at least {natural[0]} × {natural[1]} pixels"

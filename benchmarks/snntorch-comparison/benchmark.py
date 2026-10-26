@@ -527,7 +527,7 @@ def stratified_indices(labels, count, seed):
     remainder = count - int(allocation.sum())
     allocation[torch.argsort(quotas - allocation, descending=True)[:remainder]] += 1
     selected = []
-    for label, size in zip(classes, allocation):
+    for label, size in zip(classes, allocation, strict=True):
         candidates = torch.where(labels == label)[0]
         selected.append(
             candidates[torch.randperm(len(candidates), generator=generator)[:size]]
@@ -726,6 +726,30 @@ def run_lab_training(
     return metrics
 
 
+def _training_evaluator(*, model, tensors, config, device):
+    def evaluate(split):
+        synchronize(device)
+        begin = time.perf_counter()
+        losses, correct = [], []
+        model.eval()
+        images, labels = tensors[f"{split}_images"], tensors[f"{split}_labels"]
+        with torch.no_grad():
+            for start in range(0, len(images), config.batch_size):
+                batch_images, batch_labels = (
+                    images[start : start + config.batch_size],
+                    labels[start : start + config.batch_size],
+                )
+                spikes, voltage = model(batch_images)
+                losses.append(loss_fn(voltage, batch_labels) * len(batch_labels))
+                correct.append((spikes.sum(0).argmax(1) == batch_labels).sum())
+        loss = float(torch.stack(losses).sum().cpu()) / len(images)
+        accuracy = int(torch.stack(correct).sum().cpu()) / len(images)
+        synchronize(device)
+        return loss, accuracy, time.perf_counter() - begin
+
+    return evaluate
+
+
 def run_training(backend, config, packet, output=None, device="cpu", on_epoch=None):
     device = torch.device(device)
     configure(device)
@@ -804,39 +828,23 @@ def run_training(backend, config, packet, output=None, device="cpu", on_epoch=No
         for epoch in range(config.epochs)
     ]
     synchronize(device)
-    timings = {
-        key: 0.0
-        for key in (
+    timings = dict.fromkeys(
+        (
             "setup_s",
             "training_s",
             "train_evaluation_s",
             "validation_s",
             "checkpoint_s",
             "reporting_s",
-        )
-    }
+        ),
+        0.0,
+    )
     timings["setup_s"] = time.perf_counter() - started
     epoch_timings = []
 
-    def evaluate(split):
-        synchronize(device)
-        begin = time.perf_counter()
-        losses, correct = [], []
-        model.eval()
-        images, labels = tensors[f"{split}_images"], tensors[f"{split}_labels"]
-        with torch.no_grad():
-            for start in range(0, len(images), config.batch_size):
-                batch_images, batch_labels = (
-                    images[start : start + config.batch_size],
-                    labels[start : start + config.batch_size],
-                )
-                spikes, voltage = model(batch_images)
-                losses.append(loss_fn(voltage, batch_labels) * len(batch_labels))
-                correct.append((spikes.sum(0).argmax(1) == batch_labels).sum())
-        loss = float(torch.stack(losses).sum().cpu()) / len(images)
-        accuracy = int(torch.stack(correct).sum().cpu()) / len(images)
-        synchronize(device)
-        return loss, accuracy, time.perf_counter() - begin
+    evaluate = _training_evaluator(
+        model=model, tensors=tensors, config=config, device=device
+    )
 
     initial_train_loss, initial_train_accuracy, initial_train_s = evaluate("train")
     initial_test_loss, initial_test_accuracy, initial_test_s = evaluate("test")
@@ -1193,7 +1201,7 @@ def make_plots(root):
                 color=color,
                 linestyle=style,
             )
-        for label, (name, axis) in zip(("A", "B"), axes.items()):
+        for label, (name, axis) in zip(("A", "B"), axes.items(), strict=True):
             axis.set(
                 xlabel="Epoch",
                 title="Training loss" if name == "loss" else "Test accuracy",
@@ -1251,6 +1259,146 @@ def make_plots(root):
     }
     (root / "results.json").write_text(json.dumps(report, indent=2) + "\n")
     return root / "training-curves.png"
+
+
+def _modal_cli(
+    *, collect, modal, app, train_pair, source_hash, profile_passes, HERE, VOLUME
+):
+    parser = argparse.ArgumentParser(
+        description="Modal MNIST training, profiling and collection"
+    )
+    parser.add_argument(
+        "--mode", choices=("train", "profile", "collect"), default="train"
+    )
+    parser.add_argument("--run-id", default="mnist-30fabde19a1a7aa1")
+    args = parser.parse_args()
+    if args.mode == "collect":
+        return collect(args.run_id)
+    with modal.enable_output(), app.run(detach=True):
+        if args.mode == "train":
+            import uuid
+
+            run_id = "mnist-" + uuid.uuid4().hex[:12]
+            call = train_pair.spawn(run_id, source_hash())
+        else:
+            run_id = args.run_id
+            call = profile_passes.spawn(run_id, source_hash())
+        reset_results(HERE / "results")
+        write_json(
+            HERE / "results/cloud.json",
+            {
+                "run_id": run_id,
+                "call_id": call.object_id,
+                "status": "submitted",
+                "volume": VOLUME,
+            },
+        )
+        print(f"Submitted {run_id}; call={call.object_id}")
+        print(
+            f"Collect: python benchmarks/snntorch-comparison/benchmark.py --modal --mode collect --run-id {run_id}"
+        )
+    return None
+
+
+def _run_training_worker(backend, run_id, volume):
+    import benchmark as b
+    import torch
+
+    volume.reload()
+    root = Path("/results") / run_id
+    packet = torch.load(root / "prepared.pt", map_location="cpu", weights_only=True)
+    result = b.run_training(
+        backend,
+        b.Config(**packet["config"]),
+        packet,
+        root / f"{backend}.pt",
+        "cuda:0",
+        on_epoch=volume.commit,
+    )
+    return json.dumps(result)
+
+
+def _profile_modal_passes(
+    *,
+    run_id,
+    expected_source,
+    source_hash,
+    snapshot,
+    volume,
+):
+    import benchmark as b
+
+    volume.reload()
+    if source_hash() != expected_source:
+        raise RuntimeError("uploaded source mismatch")
+    root = Path("/results") / run_id
+    report = json.loads((root / "results.json").read_text())
+    if report["protocol"]["source_identity"] != b.source_identity():
+        raise RuntimeError("library commit/version differs from training")
+    for path, checksum in report["protocol"]["source_manifest"].items():
+        if path.startswith("src/") and snapshot().get(path) != checksum:
+            raise RuntimeError(f"library source differs from training: {path}")
+    config = b.Config(**report["protocol"]["config"])
+    packet = torch.load(
+        Path("/results") / report["cloud"]["prepared"],
+        map_location="cpu",
+        weights_only=True,
+    )
+    b.configure("cuda")
+    indices = b.epoch_order(config.train_size, config.seed, 0)[: config.batch_size]
+    images, labels = (
+        packet["train_images"][indices].cuda(),
+        packet["train_labels"][indices].cuda(),
+    )
+    profiling = {
+        "source_identity": b.source_identity(),
+        "source_manifest": snapshot(),
+        "batch_size": len(indices),
+        "steps_per_pass": config.steps,
+        "warmups_per_condition": 5,
+        "repetitions_per_condition": 50,
+        "environment": {
+            "torch": str(torch.__version__),
+            "gpu": torch.cuda.get_device_name(),
+        },
+        "scope": "CUDA-synchronized wall latency; forward includes fresh state; backward excludes forward/loss preparation; no Adam or transfers; randomized interleaving on one L4",
+        "states": {},
+    }
+    for state in ("initial", "snntorch_trained", "snnlab_trained"):
+        if state == "initial":
+            weights = packet["weights"]
+            origin = "shared initial weights"
+        else:
+            backend = state.removesuffix("_trained")
+            path = Path("/results") / report["cloud"]["checkpoints"][backend]
+            checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+            if checkpoint["epoch"] != config.epochs:
+                raise RuntimeError("incomplete training checkpoint")
+            weights = checkpoint["parameters"]
+            origin = {
+                "backend": backend,
+                "checkpoint_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        models = {
+            "snntorch": b.TorchNetwork(config, weights).cuda(),
+            "snnlab": b.LabNetwork(config, weights).cuda(),
+        }
+        for model in models.values():
+            for key, parameter in model.canonical_parameters().items():
+                torch.testing.assert_close(
+                    parameter.detach().cpu(), weights[key], atol=0, rtol=0
+                )
+        profiling["states"][state] = {
+            "weight_source": origin,
+            "agreement": b.compare_outputs(models, images, labels),
+            "timings": b.measure_passes(models, images, labels),
+        }
+        print(f"Completed {state}", flush=True)
+    profiling["complete"] = True
+    report["profiling"] = profiling
+    b.write_json(root / "results.json", report)
+    volume.commit()
+    return json.dumps(report)
 
 
 def modal_launcher():
@@ -1326,21 +1474,7 @@ def modal_launcher():
         max_containers=2,
     )
     def train_worker(backend: str, run_id: str):
-        import benchmark as b
-        import torch
-
-        volume.reload()
-        root = Path("/results") / run_id
-        packet = torch.load(root / "prepared.pt", map_location="cpu", weights_only=True)
-        result = b.run_training(
-            backend,
-            b.Config(**packet["config"]),
-            packet,
-            root / f"{backend}.pt",
-            "cuda:0",
-            on_epoch=volume.commit,
-        )
-        return json.dumps(result)
+        return _run_training_worker(backend=backend, run_id=run_id, volume=volume)
 
     @app.function(
         serialized=True,
@@ -1386,80 +1520,13 @@ def modal_launcher():
         timeout=1200,
     )
     def profile_passes(run_id: str, expected_source: str):
-        import benchmark as b
-        import torch
-
-        volume.reload()
-        if source_hash() != expected_source:
-            raise RuntimeError("uploaded source mismatch")
-        root = Path("/results") / run_id
-        report = json.loads((root / "results.json").read_text())
-        if report["protocol"]["source_identity"] != b.source_identity():
-            raise RuntimeError("library commit/version differs from training")
-        for path, checksum in report["protocol"]["source_manifest"].items():
-            if path.startswith("src/") and snapshot().get(path) != checksum:
-                raise RuntimeError(f"library source differs from training: {path}")
-        config = b.Config(**report["protocol"]["config"])
-        packet = torch.load(
-            Path("/results") / report["cloud"]["prepared"],
-            map_location="cpu",
-            weights_only=True,
+        return _profile_modal_passes(
+            run_id=run_id,
+            expected_source=expected_source,
+            source_hash=source_hash,
+            snapshot=snapshot,
+            volume=volume,
         )
-        b.configure("cuda")
-        indices = b.epoch_order(config.train_size, config.seed, 0)[: config.batch_size]
-        images, labels = (
-            packet["train_images"][indices].cuda(),
-            packet["train_labels"][indices].cuda(),
-        )
-        profiling = {
-            "source_identity": b.source_identity(),
-            "source_manifest": snapshot(),
-            "batch_size": len(indices),
-            "steps_per_pass": config.steps,
-            "warmups_per_condition": 5,
-            "repetitions_per_condition": 50,
-            "environment": {
-                "torch": str(torch.__version__),
-                "gpu": torch.cuda.get_device_name(),
-            },
-            "scope": "CUDA-synchronized wall latency; forward includes fresh state; backward excludes forward/loss preparation; no Adam or transfers; randomized interleaving on one L4",
-            "states": {},
-        }
-        for state in ("initial", "snntorch_trained", "snnlab_trained"):
-            if state == "initial":
-                weights = packet["weights"]
-                origin = "shared initial weights"
-            else:
-                backend = state.removesuffix("_trained")
-                path = Path("/results") / report["cloud"]["checkpoints"][backend]
-                checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-                if checkpoint["epoch"] != config.epochs:
-                    raise RuntimeError("incomplete training checkpoint")
-                weights = checkpoint["parameters"]
-                origin = {
-                    "backend": backend,
-                    "checkpoint_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                }
-            models = {
-                "snntorch": b.TorchNetwork(config, weights).cuda(),
-                "snnlab": b.LabNetwork(config, weights).cuda(),
-            }
-            for model in models.values():
-                for key, parameter in model.canonical_parameters().items():
-                    torch.testing.assert_close(
-                        parameter.detach().cpu(), weights[key], atol=0, rtol=0
-                    )
-            profiling["states"][state] = {
-                "weight_source": origin,
-                "agreement": b.compare_outputs(models, images, labels),
-                "timings": b.measure_passes(models, images, labels),
-            }
-            print(f"Completed {state}", flush=True)
-        profiling["complete"] = True
-        report["profiling"] = profiling
-        b.write_json(root / "results.json", report)
-        volume.commit()
-        return json.dumps(report)
 
     def collect(run_id):
         result = json.loads(b"".join(volume.read_file(f"/{run_id}/results.json")))
@@ -1470,39 +1537,16 @@ def modal_launcher():
         print(f"Saved {root}; run_id={run_id}")
 
     def cli():
-        parser = argparse.ArgumentParser(
-            description="Modal MNIST training, profiling and collection"
+        return _modal_cli(
+            collect=collect,
+            modal=modal,
+            app=app,
+            train_pair=train_pair,
+            source_hash=source_hash,
+            profile_passes=profile_passes,
+            HERE=HERE,
+            VOLUME=VOLUME,
         )
-        parser.add_argument(
-            "--mode", choices=("train", "profile", "collect"), default="train"
-        )
-        parser.add_argument("--run-id", default="mnist-30fabde19a1a7aa1")
-        args = parser.parse_args()
-        if args.mode == "collect":
-            return collect(args.run_id)
-        with modal.enable_output(), app.run(detach=True):
-            if args.mode == "train":
-                import uuid
-
-                run_id = "mnist-" + uuid.uuid4().hex[:12]
-                call = train_pair.spawn(run_id, source_hash())
-            else:
-                run_id = args.run_id
-                call = profile_passes.spawn(run_id, source_hash())
-            reset_results(HERE / "results")
-            write_json(
-                HERE / "results/cloud.json",
-                {
-                    "run_id": run_id,
-                    "call_id": call.object_id,
-                    "status": "submitted",
-                    "volume": VOLUME,
-                },
-            )
-            print(f"Submitted {run_id}; call={call.object_id}")
-            print(
-                f"Collect: python benchmarks/snntorch-comparison/benchmark.py --modal --mode collect --run-id {run_id}"
-            )
 
     return SimpleNamespace(**locals())
 

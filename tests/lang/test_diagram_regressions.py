@@ -9,6 +9,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -331,8 +332,8 @@ def test_rendered_inhibitory_populations_are_directly_below_excitatory(
             coordinates = list(
                 map(float, re.findall(r"-?\d+(?:\.\d+)?", path.get("d")))
             )
-            points = list(zip(coordinates[::2], coordinates[1::2]))
-            for (x1, y1), (x2, y2) in zip(points, points[1:]):
+            points = list(zip(coordinates[::2], coordinates[1::2], strict=True))
+            for (x1, y1), (x2, y2) in pairwise(points):
                 assert abs(x1 - x2) < 0.01 or abs(y1 - y2) < 0.01
 
 
@@ -473,7 +474,7 @@ def test_exported_wire_labels_clear_nodes_and_wires(name, view):
             if command["op"] == "b":
                 points = command["points"]
                 obstacles.extend(
-                    _bounds((a, b), 1) for a, b in zip(points, points[1:]) if a != b
+                    _bounds((a, b), 1) for a, b in pairwise(points) if a != b
                 )
     assert labels
     for index, label in enumerate(labels):
@@ -521,7 +522,7 @@ def test_feedback_uses_separated_overhead_lanes(name, view):
             (a, b)
             for command in edge["_draw_"]
             if command["op"] == "b"
-            for a, b in zip(command["points"], command["points"][1:])
+            for a, b in pairwise(command["points"])
             if a != b
         ]
         overhead = [
@@ -536,7 +537,7 @@ def test_feedback_uses_separated_overhead_lanes(name, view):
         )
         assert any(command["op"] == "P" for command in edge["_hdraw_"])
     assert len(lanes) in {2, 4}
-    assert all(b - a >= 31.9 for a, b in zip(sorted(lanes), sorted(lanes)[1:]))
+    assert all(b - a >= 31.9 for a, b in pairwise(sorted(lanes)))
     for index, (edge_id, x, low, high) in enumerate(verticals):
         for other_id, other_x, other_low, other_high in verticals[:index]:
             if edge_id != other_id and min(high, other_high) - max(low, other_low) > 1:

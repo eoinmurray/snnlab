@@ -60,8 +60,36 @@ Graphviz (`dot`) is required for diagram exports. FFmpeg is required for video e
 
 ```sh
 uv sync --dev
+uv run pre-commit install
+uv run ruff check .
+uv run ruff format --check .
 uv run pytest -m "not slow"
 ```
+
+The pre-commit hook checks staged Python files with Ruff lint and formatting.
+Either failure blocks the commit without changing files. Partially staged files
+are checked using their staged content, and unstaged edits are restored afterward.
+Install the hook once per checkout using the command above. To check every tracked
+Python file manually, run `uv run pre-commit run --all-files`.
+
+Python formatting uses [Ruff](https://docs.astral.sh/ruff/formatter/) with an
+88-character line length. Short function signatures stay on one line; wrapped
+signatures put each parameter on its own indented line, with the closing `):`
+below them. A trailing comma preserves the expanded layout. Run
+`uv run ruff format .` to apply formatting; CI checks both lint and formatting.
+
+Readability checks cover modern syntax (`UP`), simpler control flow (`SIM`),
+comprehensions (`C4`), consistent returns (`RET`), common Python pitfalls (`B`),
+redundant constructs (`PIE`), and cyclomatic complexity (`C901`, maximum 15).
+`C408` is excluded to retain readable `dict(key=value, ...)` configurations.
+Keep validation, execution and measurement in named helpers, preserve numerical
+operation order, and review changes to sequence pairing and loop callbacks.
+The main training and forward-execution state machines have explicit `C901`
+exceptions to preserve their shared state ownership. Retained benchmark sources
+and numerical fixtures are excluded from lint and formatting to preserve their
+authenticated historical contents.
+Use `zip(..., strict=True)` for required alignment, `itertools.pairwise()` for
+adjacent samples, and `strict=False` for intentional truncation.
 
 The full Python test suite runs nightly on `main` at 03:17 Europe/London time.
 Pushes and pull requests do not trigger package tests; release checks run lint

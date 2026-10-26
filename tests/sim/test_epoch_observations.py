@@ -269,10 +269,9 @@ def test_silence_is_explicit_and_evaluation_rng_restores_on_error():
     assert output["class_spike_shares"] is None
     assert output["status"] == "no_spikes"
     saved = torch.get_rng_state().clone()
-    with pytest.raises(RuntimeError):
-        with evaluation_rng(10):
-            torch.rand(5)
-            raise RuntimeError("fixture")
+    with pytest.raises(RuntimeError), evaluation_rng(10):
+        torch.rand(5)
+        raise RuntimeError("fixture")
     torch.testing.assert_close(saved, torch.get_rng_state(), rtol=0, atol=0)
 
 

@@ -7,9 +7,10 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 import torch
@@ -202,7 +203,7 @@ def _compatibility_mismatch(
     elif isinstance(expected, list):
         if len(expected) != len(actual):
             return f"{path} length expected {len(expected)}, got {len(actual)}"
-        for index, (left, right) in enumerate(zip(expected, actual)):
+        for index, (left, right) in enumerate(zip(expected, actual, strict=True)):
             mismatch = _compatibility_mismatch(left, right, f"{path}[{index}]")
             if mismatch:
                 return mismatch

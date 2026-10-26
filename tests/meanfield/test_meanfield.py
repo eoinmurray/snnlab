@@ -53,8 +53,8 @@ def test_example_integrates_all_four_recurrent_conductances():
         "I_to_I.conductance",
     ]
     assert not model.reconstructions and not model.constraints
-    initial = dict(zip(model.states, [12, 25, 0.3, 0.07, 0.11, 0.4]))
-    derivative = dict(zip(model.states, mf.evaluate(model, initial)))
+    initial = dict(zip(model.states, [12, 25, 0.3, 0.07, 0.11, 0.4], strict=True))
+    derivative = dict(zip(model.states, mf.evaluate(model, initial), strict=True))
     for pathway in ("E_to_E", "E_to_I", "I_to_E", "I_to_I"):
         state = pathway + ".conductance"
         source_rate = initial[pathway.split("_to_")[0] + ".rate"]
@@ -118,7 +118,7 @@ def test_generated_jacobian_against_finite_differences(models):
 
 def test_mathematical_notation_is_an_exact_presentation_of_the_model(models):
     for model in models[:2]:
-        for display, computational in zip(model.display_rhs, model.rhs):
+        for display, computational in zip(model.display_rhs, model.rhs, strict=True):
             expression = display
             for _ in range(len(model.definitions) + 1):
                 if not expression.free_symbols.intersection(model.definitions):
@@ -222,7 +222,7 @@ def test_custom_closure_can_describe_a_shorthand(tmp_path):
 
 def test_full_and_reduced_vector_fields_agree_on_manifold(models):
     full, model, _ = models
-    state = dict(zip(model.states, [12, 25, 0.07, 0.11]))
+    state = dict(zip(model.states, [12, 25, 0.07, 0.11], strict=True))
     parameters = {
         symbol: model.defaults[name] for name, symbol in model.parameters.items()
     }
@@ -237,8 +237,8 @@ def test_full_and_reduced_vector_fields_agree_on_manifold(models):
             for name, expr in model.reconstructions.items()
         },
     }
-    original = dict(zip(full.states, mf.evaluate(full, expanded)))
-    reduced = dict(zip(model.states, mf.evaluate(model, state)))
+    original = dict(zip(full.states, mf.evaluate(full, expanded), strict=True))
+    reduced = dict(zip(model.states, mf.evaluate(model, state), strict=True))
     np.testing.assert_allclose(
         [original[name] for name in model.states], list(reduced.values()), atol=1e-12
     )
@@ -391,7 +391,7 @@ def test_composes_three_populations_and_inherits_synapse_default():
     assert len(model.states) == 6
     assert model.defaults["A_to_B.tau"] == 1
     state = {name: (10 if name.endswith("rate") else 0.1) for name in model.states}
-    derivative = dict(zip(model.states, mf.evaluate(model, state)))
+    derivative = dict(zip(model.states, mf.evaluate(model, state), strict=True))
     assert derivative["A_to_B.conductance"] == pytest.approx(-0.1 + 0.01)
     with pytest.raises(ValueError, match="bounds"):
         mf.substitute(model, {"A_to_B.tau": 0})

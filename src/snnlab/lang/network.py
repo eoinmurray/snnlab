@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, Protocol, Sequence
+from typing import Any, Protocol
 
 from snnlab.lang._specs import Spec, _value
 from snnlab.lang.parameters import Constant
 from snnlab.lang.units import Quantity, ms
 
 Shape = tuple[int | str, ...]
+
+
+_DEFAULT_WEIGHT = Constant(1.0)
 
 
 class SignalLike(Protocol):
@@ -21,7 +25,7 @@ class SignalLike(Protocol):
 
 @dataclass(frozen=True)
 class Signal:
-    network: "Network" = field(compare=False, repr=False)
+    network: Network = field(compare=False, repr=False)
     id: str
     shape: Shape
     unit: str
@@ -35,13 +39,13 @@ class Signal:
 
 @dataclass(frozen=True)
 class ParameterRef:
-    network: "Network" = field(compare=False, repr=False)
+    network: Network = field(compare=False, repr=False)
     id: str
 
 
 @dataclass
 class Population:
-    network: "Network" = field(repr=False)
+    network: Network = field(repr=False)
     id: str
     size: int
     neuron: Spec
@@ -84,7 +88,7 @@ class Population:
 
 @dataclass
 class Projection:
-    network: "Network" = field(repr=False)
+    network: Network = field(repr=False)
     id: str
     source: str
     target: str
@@ -119,6 +123,22 @@ class Component:
     name: str
     members: list[str] = field(default_factory=list)
     parent: str | None = None
+
+
+def _resolve_modulation(modulation):
+    modulation_data = None
+    if modulation is not None:
+        from snnlab._shared.gains import validate
+
+        if callable(modulation):
+            from snnlab.lang.modulation import CustomGain
+
+            modulation = CustomGain(modulation)
+        if not isinstance(modulation, Spec):
+            raise TypeError("modulation must be a gain specification")
+        modulation_data = modulation.json()
+        validate(modulation_data)
+    return modulation, modulation_data
 
 
 class Network:
@@ -305,7 +325,7 @@ class Network:
         *,
         name: str,
         synapse: Spec,
-        weight: Spec | ParameterRef = Constant(1.0),
+        weight: Spec | ParameterRef = _DEFAULT_WEIGHT,
         constraint: Spec | None = None,
         connection: str = "feedforward",
         delay: Quantity | None = None,
@@ -315,18 +335,8 @@ class Network:
         modulation: Spec | Callable | None = None,
         connectivity: Spec | None = None,
     ) -> Projection:
-        modulation_data = None
-        if modulation is not None:
-            from snnlab._shared.gains import validate
+        modulation, modulation_data = _resolve_modulation(modulation=modulation)
 
-            if callable(modulation):
-                from snnlab.lang.modulation import CustomGain
-
-                modulation = CustomGain(modulation)
-            if not isinstance(modulation, Spec):
-                raise TypeError("modulation must be a gain specification")
-            modulation_data = modulation.json()
-            validate(modulation_data)
         if not isinstance(allow_autapses, bool):
             raise TypeError("allow_autapses must be boolean")
         if initialization_scaling is not None and initialization_scaling not in (
@@ -364,35 +374,15 @@ class Network:
         )
         if not isinstance(enabled, bool):
             raise TypeError("projection enabled must be boolean")
-        if isinstance(weight, ParameterRef):
-            if weight.network is not self:
-                raise ValueError("weight belongs to another network")
-            parameter_id = weight.id
-            parameter = next(p for p in self.parameters if p["id"] == parameter_id)
-            existing = parameter.get("initialization_scaling")
-            if existing is not None and initialization_scaling not in (None, existing):
-                raise ValueError(
-                    "conflicting initialization_scaling for shared parameter"
-                )
-            parameter["initialization_scaling"] = (
-                existing or initialization_scaling or "fan_in_normalized"
-            )
-        else:
-            from snnlab.extensions import synapse_weight_unit
+        parameter_id = self._resolve_projection_weight(
+            weight=weight,
+            initialization_scaling=initialization_scaling,
+            name=name,
+            expected_shape=expected_shape,
+            synapse=synapse,
+            constraint=constraint,
+        )
 
-            parameter_id = f"{name}.weight"
-            self.parameters.append(
-                {
-                    "id": parameter_id,
-                    "shape": expected_shape,
-                    "unit": synapse_weight_unit(synapse.json()),
-                    "initializer": weight.json(),
-                    "initialization_scaling": initialization_scaling
-                    or "fan_in_normalized",
-                    "constraint": constraint.json() if constraint else None,
-                    "group": self.current_group,
-                }
-            )
         row = {
             "id": name,
             "source": source.id,
@@ -522,3 +512,44 @@ class Network:
             yield component
         finally:
             self._group_stack.pop()
+
+    def _resolve_projection_weight(
+        self,
+        *,
+        weight,
+        initialization_scaling,
+        name,
+        expected_shape,
+        synapse,
+        constraint,
+    ):
+        if isinstance(weight, ParameterRef):
+            if weight.network is not self:
+                raise ValueError("weight belongs to another network")
+            parameter_id = weight.id
+            parameter = next(p for p in self.parameters if p["id"] == parameter_id)
+            existing = parameter.get("initialization_scaling")
+            if existing is not None and initialization_scaling not in (None, existing):
+                raise ValueError(
+                    "conflicting initialization_scaling for shared parameter"
+                )
+            parameter["initialization_scaling"] = (
+                existing or initialization_scaling or "fan_in_normalized"
+            )
+        else:
+            from snnlab.extensions import synapse_weight_unit
+
+            parameter_id = f"{name}.weight"
+            self.parameters.append(
+                {
+                    "id": parameter_id,
+                    "shape": expected_shape,
+                    "unit": synapse_weight_unit(synapse.json()),
+                    "initializer": weight.json(),
+                    "initialization_scaling": initialization_scaling
+                    or "fan_in_normalized",
+                    "constraint": constraint.json() if constraint else None,
+                    "group": self.current_group,
+                }
+            )
+        return parameter_id

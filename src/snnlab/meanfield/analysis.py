@@ -167,8 +167,8 @@ def find_equilibrium(model, *, guess, parameters=None, tolerance=1e-9):
             f"equilibrium not found; scaled derivative residual={error:g}"
         )
     return Equilibrium(
-        MappingProxyType(dict(zip(model.states, solution.x))),
-        MappingProxyType(dict(zip(model.parameters, values))),
+        MappingProxyType(dict(zip(model.states, solution.x, strict=True))),
+        MappingProxyType(dict(zip(model.parameters, values, strict=True))),
         error,
     )
 
@@ -184,6 +184,43 @@ def linearise(model, *, at, parameters=None):
         model.numerical_jacobian(*vector, *model.values(parameters)), dtype=float
     )
     return Linearisation(matrix, np.linalg.eigvals(matrix))
+
+
+def _validate_controls(model, controls):
+    # A moving proportionality factor would need an additional derivative term.
+    protected = set().union(
+        *(
+            expr.free_symbols - set(model.states.values())
+            for expr in model.reconstructions.values()
+        )
+    )
+    protected |= set().union(*(expr.free_symbols for expr in model.constraints))
+    if any(model.parameters[name] in protected for name in controls):
+        raise ValueError(
+            "controls cannot vary matched-decay constraints or reconstruction ratios"
+        )
+
+
+def _controlled_parameter_values(model, baseline, controls):
+    indices = {name: i for i, name in enumerate(model.parameters)}
+    baseline_values = tuple(baseline.values())
+
+    def controlled_value(name, time):
+        value = magnitude(controls[name](time), model.units[name])
+        lower, upper = model.parameter_bounds.get(name, (-np.inf, np.inf))
+        if not lower <= value <= upper:
+            raise ValueError(f"invalid controlled parameter: {name}")
+        return value
+
+    def parameter_values(time):
+        if not controls:
+            return baseline_values
+        values = list(baseline_values)
+        for name in controls:
+            values[indices[name]] = controlled_value(name, time)
+        return values
+
+    return controlled_value, parameter_values, baseline_values
 
 
 def integrate(
@@ -211,39 +248,15 @@ def integrate(
     if min(duration, interval, step) <= 0:
         raise ValueError("duration, sample interval and maximum step must be positive")
     vector = model.vector(initial)
-    baseline = dict(zip(model.parameters, model.values(parameters)))
+    baseline = dict(zip(model.parameters, model.values(parameters), strict=True))
     controls = {**model.controls, **dict(controls or {})}
     if set(controls) - set(model.parameters):
         raise ValueError("controls reference an unknown parameter")
-    # A moving proportionality factor would need an additional derivative term.
-    protected = set().union(
-        *(
-            expr.free_symbols - set(model.states.values())
-            for expr in model.reconstructions.values()
-        )
+    _validate_controls(model=model, controls=controls)
+
+    controlled_value, parameter_values, baseline_values = _controlled_parameter_values(
+        model=model, baseline=baseline, controls=controls
     )
-    protected |= set().union(*(expr.free_symbols for expr in model.constraints))
-    if any(model.parameters[name] in protected for name in controls):
-        raise ValueError(
-            "controls cannot vary matched-decay constraints or reconstruction ratios"
-        )
-    indices = {name: i for i, name in enumerate(model.parameters)}
-    baseline_values = tuple(baseline.values())
-
-    def controlled_value(name, time):
-        value = magnitude(controls[name](time), model.units[name])
-        lower, upper = model.parameter_bounds.get(name, (-np.inf, np.inf))
-        if not lower <= value <= upper:
-            raise ValueError(f"invalid controlled parameter: {name}")
-        return value
-
-    def parameter_values(time):
-        if not controls:
-            return baseline_values
-        values = list(baseline_values)
-        for name in controls:
-            values[indices[name]] = controlled_value(name, time)
-        return values
 
     state_indices = {symbol: i for i, symbol in enumerate(model.states.values())}
     parameter_indices = {
@@ -337,11 +350,11 @@ def integrate(
         "modulation_timing": "target_delivery",
         "controls": {n: control_spec(c) for n, c in controls.items()},
         "parameters": baseline,
-        "initial": dict(zip(model.states, vector)),
+        "initial": dict(zip(model.states, vector, strict=True)),
     }
     return Trajectory(
         times,
-        MappingProxyType(dict(zip(model.states, output))),
+        MappingProxyType(dict(zip(model.states, output, strict=True))),
         MappingProxyType(metadata),
     )
 
@@ -358,6 +371,37 @@ def continuation(model, parameter, values, *, guess):
         rows.append((float(value), equilibrium, stability))
         guess = equilibrium.state
     return tuple(rows)
+
+
+def _validate_stability_branch(*, rows, model, parameter, baseline, cache):
+    leading = []
+    for value, equilibrium, stability in rows:
+        if set(equilibrium.parameters) != set(model.parameters):
+            raise ValueError("branch parameters do not match the model")
+        if equilibrium.parameters[parameter] != value or any(
+            equilibrium.parameters[name] != baseline[name]
+            for name in baseline
+            if name != parameter
+        ):
+            raise ValueError("branch must vary only the requested parameter")
+        model.vector(equilibrium.state)
+        model.values(equilibrium.parameters)
+        if (
+            stability.jacobian.shape != (len(model.states), len(model.states))
+            or stability.eigenvalues.shape != (len(model.states),)
+            or not np.isfinite(stability.eigenvalues).all()
+        ):
+            raise ValueError("branch linearisation does not match the model")
+        cache[float(value)] = (equilibrium, stability)
+        leading.append(stability.max_real)
+    if any(
+        left == right == 0
+        for left, right in zip(leading[:-1], leading[1:], strict=True)
+    ):
+        raise ValueError(
+            "adjacent zero-stability points do not identify an isolated crossing"
+        )
+    return leading
 
 
 def find_stability_crossings(
@@ -402,30 +446,9 @@ def find_stability_crossings(
         )
     baseline = dict(rows[0][1].parameters)
     cache = {}
-    leading = []
-    for value, equilibrium, stability in rows:
-        if set(equilibrium.parameters) != set(model.parameters):
-            raise ValueError("branch parameters do not match the model")
-        if equilibrium.parameters[parameter] != value or any(
-            equilibrium.parameters[name] != baseline[name]
-            for name in baseline
-            if name != parameter
-        ):
-            raise ValueError("branch must vary only the requested parameter")
-        model.vector(equilibrium.state)
-        model.values(equilibrium.parameters)
-        if (
-            stability.jacobian.shape != (len(model.states), len(model.states))
-            or stability.eigenvalues.shape != (len(model.states),)
-            or not np.isfinite(stability.eigenvalues).all()
-        ):
-            raise ValueError("branch linearisation does not match the model")
-        cache[float(value)] = (equilibrium, stability)
-        leading.append(stability.max_real)
-    if any(left == right == 0 for left, right in zip(leading[:-1], leading[1:])):
-        raise ValueError(
-            "adjacent zero-stability points do not identify an isolated crossing"
-        )
+    leading = _validate_stability_branch(
+        rows=rows, model=model, parameter=parameter, baseline=baseline, cache=cache
+    )
 
     def evaluate_at(value, guess):
         value = float(value)
@@ -437,7 +460,7 @@ def find_stability_crossings(
         return cache[value]
 
     candidates = []
-    for index, (left, right) in enumerate(zip(rows[:-1], rows[1:])):
+    for index, (left, right) in enumerate(zip(rows[:-1], rows[1:], strict=True)):
         if not (
             (leading[index] < 0 < leading[index + 1])
             or (leading[index] > 0 > leading[index + 1])
@@ -445,7 +468,7 @@ def find_stability_crossings(
             continue
         try:
             value = brentq(
-                lambda value: evaluate_at(value, left[1].state)[1].max_real,
+                lambda value, left=left: evaluate_at(value, left[1].state)[1].max_real,
                 min(left[0], right[0]),
                 max(left[0], right[0]),
                 xtol=tolerance,

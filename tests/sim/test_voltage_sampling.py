@@ -209,8 +209,6 @@ def test_pre_reset_signal_is_limited_to_leaky_integrators_and_unknown_contract_f
         plan_graph(graph)
 
 
-
-
 @pytest.mark.parametrize("phase", ["pre", "post"])
 def test_composed_reductions_keep_phase_under_all_true_mask(phase):
     bundle = fixture()

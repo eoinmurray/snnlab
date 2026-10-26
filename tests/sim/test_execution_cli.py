@@ -101,7 +101,7 @@ def test_diagnostics_default_to_exposed_signals_and_can_be_disabled():
         kind="simulate",
         graph=graph,
         input_bindings=tuple(
-            DenseArrayBinding(name, value) for name, value in inputs.items()
+            DenseArrayBinding(name, value) for (name, value) in inputs.items()
         ),
     )
     default = simulate(ExecutionSpec(**spec))

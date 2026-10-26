@@ -24,11 +24,10 @@ def inter_spike_intervals(spikes, dt, *, window=None, trial_boundaries=None):
         or boundaries[0] != 0
         or boundaries[-1] != len(spikes)
         or np.any(np.diff(boundaries) <= 0)
-    ):
-        if not (len(spikes) == 0 and trial_boundaries is None):
-            raise ValueError(
-                "trial_boundaries must strictly partition the full raster from 0 to T"
-            )
+    ) and not (len(spikes) == 0 and trial_boundaries is None):
+        raise ValueError(
+            "trial_boundaries must strictly partition the full raster from 0 to T"
+        )
     intervals, trial_ids, spike_counts = (
         [],
         [],
@@ -36,7 +35,9 @@ def inter_spike_intervals(spikes, dt, *, window=None, trial_boundaries=None):
     )
     for cell in range(values.shape[1]):
         pieces, ids = [], []
-        for trial, (a, b) in enumerate(zip(boundaries[:-1], boundaries[1:])):
+        for trial, (a, b) in enumerate(
+            zip(boundaries[:-1], boundaries[1:], strict=True)
+        ):
             events = (
                 np.flatnonzero(
                     values[max(a, start) - start : max(min(b, end) - start, 0), cell]
@@ -82,7 +83,7 @@ def isi_cv(
     cvs = np.full(len(result["intervals_ms"]), np.nan)
     interval_counts = np.zeros(len(cvs), dtype=np.int64)
     for cell, (intervals, ids) in enumerate(
-        zip(result["intervals_ms"], result["trial_indices"])
+        zip(result["intervals_ms"], result["trial_indices"], strict=True)
     ):
         kept = intervals[result["spike_counts"][ids, cell] >= min_spikes]
         interval_counts[cell] = len(kept)

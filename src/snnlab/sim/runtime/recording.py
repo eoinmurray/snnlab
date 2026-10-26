@@ -6,9 +6,9 @@ import copy
 import hashlib
 import json
 from collections import deque
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
-from typing import Callable, Sequence
 
 import numpy as np
 import torch
@@ -88,7 +88,9 @@ class NPZRecordingSink:
         values, storage = numpy_payload(block.values)
         np.savez_compressed(destination, values=values)
         metadata = {
-            item.name: getattr(block, item.name) for item in fields(block) if item.name != "values"
+            item.name: getattr(block, item.name)
+            for item in fields(block)
+            if item.name != "values"
         }
         metadata.update(
             schema=self.identity,
@@ -207,7 +209,9 @@ class Recorder:
         self.units = {}
         self.output_axes = {}
         if graph:
-            self.output_axes = {row["id"]: axes[row["signal"]] for row in graph.get("outputs", ())}
+            self.output_axes = {
+                row["id"]: axes[row["signal"]] for row in graph.get("outputs", ())
+            }
             self.units.update(
                 {
                     f"{row['id']}.value": row.get("unit")
@@ -270,15 +274,30 @@ class Recorder:
     def send(self, block):
         # User sinks cannot perturb the executor's random streams or tensors.
         if block.axes is None:
-            axes = ("event", "coordinate") if block.kind == "spike_events" else self.output_axes.get(block.signal, self.axes.get(block.signal))
+            axes = (
+                ("event", "coordinate")
+                if block.kind == "spike_events"
+                else self.output_axes.get(block.signal, self.axes.get(block.signal))
+            )
             if axes is None:
-                raise ValueError(f"recording axis metadata is missing for {block.signal!r}")
+                raise ValueError(
+                    f"recording axis metadata is missing for {block.signal!r}"
+                )
             axes = tuple("cell" if isinstance(axis, int) else axis for axis in axes)
             size = block.values.shape[axes.index("batch")] if "batch" in axes else None
-            block = replace(block, axes=axes,
-                            step_indices=tuple(range(block.start_step, block.end_step)) if "time" in axes else None,
-                            sample_ids=tuple(range(block.batch_offset, block.batch_offset + size)) if size is not None else block.sample_ids,
-                            batch_size=block.batch_offset + size if size is not None else block.batch_size)
+            block = replace(
+                block,
+                axes=axes,
+                step_indices=tuple(range(block.start_step, block.end_step))
+                if "time" in axes
+                else None,
+                sample_ids=tuple(range(block.batch_offset, block.batch_offset + size))
+                if size is not None
+                else block.sample_ids,
+                batch_size=block.batch_offset + size
+                if size is not None
+                else block.batch_size,
+            )
         with evaluation_rng():
             self.spec.sink(block)
 
@@ -360,7 +379,9 @@ class Recorder:
                     cells,
                     self.units.get(name),
                     batch_size=self.batch_offset + host.shape[1],
-                    sample_ids=tuple(range(self.batch_offset, self.batch_offset + host.shape[1])),
+                    sample_ids=tuple(
+                        range(self.batch_offset, self.batch_offset + host.shape[1])
+                    ),
                 )
             )
         else:
@@ -425,18 +446,37 @@ class Recorder:
 
         if not self.spec or self.spec.sink:
             return {}
-        start = max(self.start, self.spec.window.start_step) if self.spec.window else self.start
+        start = (
+            max(self.start, self.spec.window.start_step)
+            if self.spec.window
+            else self.start
+        )
         end = min(self.end, self.spec.window.end_step) if self.spec.window else self.end
         end = max(start, end)
         return {
             name: SignalInfo(
-                axes=("event", "coordinate") if row.kind == "spike_events" else tuple("cell" if isinstance(axis, int) else axis for axis in self.axes[name]),
-                kind=row.kind, unit=self.units.get(name), cell_ids=self.selected_cells[name],
+                axes=("event", "coordinate")
+                if row.kind == "spike_events"
+                else tuple(
+                    "cell" if isinstance(axis, int) else axis
+                    for axis in self.axes[name]
+                ),
+                kind=row.kind,
+                unit=self.units.get(name),
+                cell_ids=self.selected_cells[name],
                 sample_ids=tuple(range(batch_size)),
-                step_indices=None if row.kind == "spike_events" else tuple(range(start, end)),
-                dt_ms=self.dt_ms, start_step=start, end_step=end,
-                batch_size=batch_size, source_dtype="int64" if row.kind == "spike_events" else str(self.dtype).removeprefix("torch."),
-            ) for name, row in self.rows.items()
+                step_indices=None
+                if row.kind == "spike_events"
+                else tuple(range(start, end)),
+                dt_ms=self.dt_ms,
+                start_step=start,
+                end_step=end,
+                batch_size=batch_size,
+                source_dtype="int64"
+                if row.kind == "spike_events"
+                else str(self.dtype).removeprefix("torch."),
+            )
+            for name, row in self.rows.items()
         }
 
 
@@ -492,79 +532,14 @@ class OnlineReductions:
                 raise ValueError(
                     f"recording of this operation requires a dense history: {signal}"
                 )
-        if enabled:
-            for signal, op in self.ops.items():
-                if op["kind"] not in {"reduce_sum", "reduce_mean", "select_final"}:
-                    continue
-                selected = {}
-                mask = op.get("config", {}).get("mask")
-                if mask and mask in self.ops:
-                    continue
-                if not pointwise(op["sources"][0], selected):
-                    continue
-                self.points.update(selected)
-                self.reductions[signal] = op
-            for signal, op in self.ops.items():
-                mask = op.get("config", {}).get("mask")
-                if op["kind"] == "duration_normalise" and mask and mask not in self.ops:
-                    self.duration_masks[signal] = mask
-            if window:
-                unsupported = [
-                    op["id"]
-                    for op in self.ops.values()
-                    if op["kind"] in {"reduce_sum", "reduce_mean", "select_final"}
-                    and f"{op['id']}.value" not in self.reductions
-                ]
-                if unsupported:
-                    raise ValueError(
-                        f"measurement window cannot stream these reductions: {unsupported}"
-                    )
-                for signal, op in self.ops.items():
-                    if op["kind"] == "duration_normalise" and op.get("config", {}).get(
-                        "mask"
-                    ):
-                        if op["config"]["mask"] in self.ops:
-                            raise ValueError(
-                                "measurement duration masks must be input signals"
-                            )
-                        self.duration_masks[signal] = op["config"]["mask"]
-                self.spec = {
-                    "window": asdict(window),
-                    "reductions": list(self.reductions.values()),
-                    "duration_masks": self.duration_masks,
-                }
-        if saved:
-            if (
-                saved.get("policy") != self.spec
-                or saved.get("completed_steps") != start
-            ):
-                raise ValueError(
-                    "runtime measurement policy/cursor does not match request"
-                )
-            expected_keys = {
-                signal + suffix
-                for signal in self.reductions
-                for suffix in ("/value", "/count")
-            }
-            expected_keys.update(signal + "/duration" for signal in self.duration_masks)
-            if set(tensors) != expected_keys:
-                raise ValueError("runtime measurement tensor keys do not match policy")
-            if (
-                device is not None
-                and torch.device(device).type == "mps"
-                and any(value.dtype == torch.float64 for value in tensors.values())
-            ):
-                raise ValueError(
-                    "runtime measurement float64 accumulators cannot be restored on MPS; continue on a float64-capable backend"
-                )
-            self.tensors = {
-                name: value.detach().to(device=device).clone()
-                for name, value in tensors.items()
-            }
-        elif self.spec and start:
-            raise ValueError(
-                "cannot attach a measurement window to an unaudited continuation"
-            )
+        self._configure_online_reductions(
+            enabled=enabled, pointwise=pointwise, window=window
+        )
+
+        self._restore_online_reductions(
+            saved=saved, start=start, tensors=tensors, device=device
+        )
+
         self.initial_keys = set(self.tensors)
         self.used_keys = set()
 
@@ -718,3 +693,80 @@ class OnlineReductions:
             if self.spec
             else {}
         )
+
+    def _configure_online_reductions(self, *, enabled, pointwise, window):
+        if enabled:
+            for signal, op in self.ops.items():
+                if op["kind"] not in {"reduce_sum", "reduce_mean", "select_final"}:
+                    continue
+                selected = {}
+                mask = op.get("config", {}).get("mask")
+                if mask and mask in self.ops:
+                    continue
+                if not pointwise(op["sources"][0], selected):
+                    continue
+                self.points.update(selected)
+                self.reductions[signal] = op
+            for signal, op in self.ops.items():
+                mask = op.get("config", {}).get("mask")
+                if op["kind"] == "duration_normalise" and mask and mask not in self.ops:
+                    self.duration_masks[signal] = mask
+            if window:
+                unsupported = [
+                    op["id"]
+                    for op in self.ops.values()
+                    if op["kind"] in {"reduce_sum", "reduce_mean", "select_final"}
+                    and f"{op['id']}.value" not in self.reductions
+                ]
+                if unsupported:
+                    raise ValueError(
+                        f"measurement window cannot stream these reductions: {unsupported}"
+                    )
+                for signal, op in self.ops.items():
+                    if op["kind"] == "duration_normalise" and op.get("config", {}).get(
+                        "mask"
+                    ):
+                        if op["config"]["mask"] in self.ops:
+                            raise ValueError(
+                                "measurement duration masks must be input signals"
+                            )
+                        self.duration_masks[signal] = op["config"]["mask"]
+                self.spec = {
+                    "window": asdict(window),
+                    "reductions": list(self.reductions.values()),
+                    "duration_masks": self.duration_masks,
+                }
+
+    def _restore_online_reductions(self, *, saved, start, tensors, device):
+        if saved:
+            if (
+                saved.get("policy") != self.spec
+                or saved.get("completed_steps") != start
+            ):
+                raise ValueError(
+                    "runtime measurement policy/cursor does not match request"
+                )
+            expected_keys = {
+                signal + suffix
+                for signal in self.reductions
+                for suffix in ("/value", "/count")
+            }
+            expected_keys.update(signal + "/duration" for signal in self.duration_masks)
+            if set(tensors) != expected_keys:
+                raise ValueError("runtime measurement tensor keys do not match policy")
+            if (
+                device is not None
+                and torch.device(device).type == "mps"
+                and any(value.dtype == torch.float64 for value in tensors.values())
+            ):
+                raise ValueError(
+                    "runtime measurement float64 accumulators cannot be restored on MPS; continue on a float64-capable backend"
+                )
+            self.tensors = {
+                name: value.detach().to(device=device).clone()
+                for name, value in tensors.items()
+            }
+        elif self.spec and start:
+            raise ValueError(
+                "cannot attach a measurement window to an unaudited continuation"
+            )

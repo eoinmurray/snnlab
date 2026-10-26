@@ -11,47 +11,7 @@ from snnlab.lang.compilation.bundles import Bundle
 from snnlab.viz import Diagram, DiagramEdge, DiagramGroup, DiagramNode, WeightLabel
 
 
-def diagram(
-    bundle: Bundle,
-    *,
-    view: str = "circuit",
-    weight_labels: bool | Mapping[str, WeightLabel] = False,
-) -> Diagram:
-    """Project a bundle into a diagram without choosing a rendering backend."""
-
-    if view not in {"circuit", "training", "expanded"}:
-        raise ValueError("view must be circuit, training, or expanded")
-    graph = bundle.graph
-    if not isinstance(weight_labels, (bool, Mapping)):
-        raise TypeError(
-            "weight_labels must be a bool or a mapping of projection IDs to WeightLabel"
-        )
-    weighted = {
-        projection["id"]
-        for projection in graph["projections"]
-        if any(parameter.endswith(".weight") for parameter in projection["parameters"])
-    }
-    if isinstance(weight_labels, Mapping):
-        if unknown := weight_labels.keys() - weighted:
-            raise ValueError(
-                f"weight labels require weighted projection IDs: {sorted(unknown)}"
-            )
-        if any(not isinstance(label, WeightLabel) for label in weight_labels.values()):
-            raise TypeError("weight label overrides must be WeightLabel instances")
-    if len(graph["projections"]) + len(graph["operations"]) > 120:
-        raise ValueError(
-            "graph is too dense for a legible explicit static view; filter it"
-        )
-    groups = {group["id"]: group for group in graph["groups"]}
-    nodes: list[DiagramNode] = []
-    edges: list[DiagramEdge] = []
-    diagram_groups: list[DiagramGroup] = []
-    rendered: set[str] = set()
-
-    def add_node(node: DiagramNode) -> None:
-        nodes.append(node)
-        rendered.add(node.id)
-
+def _diagram_text_formatters():
     def local_title(identifier: str, group_id: str | None) -> str:
         prefix = f"{group_id}_" if group_id else ""
         return identifier.removeprefix(prefix).replace("_", " ")
@@ -75,6 +35,12 @@ def diagram(
             return definition.rsplit("/", 1)[0].rsplit(".", 1)[-1].replace("_", " ")
         return kind.replace("_", " ").capitalize()
 
+    return local_title, shape_text, unit_line, operation_text
+
+
+def _add_graph_nodes(
+    *, graph, add_node, shape_text, unit_line, local_title, nodes, operation_text
+):
     for row in graph["inputs"]:
         add_node(
             DiagramNode(
@@ -158,20 +124,8 @@ def diagram(
             )
         )
 
-    population_ids = {population["id"] for population in graph["populations"]}
-    for group_id, group in groups.items():
-        members = tuple(member for member in group["members"] if member in rendered)
-        if members:
-            diagram_groups.append(
-                DiagramGroup(
-                    id=group_id,
-                    label=group_id.replace("_", " "),
-                    members=members,
-                    same_rank=len(members) > 1
-                    and all(member in population_ids for member in members),
-                )
-            )
 
+def _add_output_nodes(*, graph, bundle, add_node, shape_text, unit_line):
     signal_shapes = {f"{row['id']}.value": row["shape"] for row in graph["operations"]}
     for population in graph["populations"]:
         for signal in (
@@ -241,6 +195,8 @@ def diagram(
             )
         )
 
+
+def _add_graph_edges(*, graph, rendered, edges, weight_labels, weighted):
     for projection in graph["projections"]:
         source = projection["source"].partition(".")[0]
         target = projection["target"].partition(".")[0]
@@ -288,107 +244,206 @@ def diagram(
                 DiagramEdge(source=owner, target="out:" + output["id"], role="output")
             )
 
-    if view == "training" and bundle.training:
-        parameter_sizes = {
-            row["id"]: math.prod(row["shape"]) for row in graph["parameters"]
+
+def _add_training_groups(graph, bundle, add_node):
+    parameter_sizes = {
+        row["id"]: math.prod(row["shape"]) for row in graph["parameters"]
+    }
+    for parameter_group in bundle.training["parameter_groups"]:
+        frozen = parameter_group["frozen"]
+        count = sum(
+            parameter_sizes[identifier] for identifier in parameter_group["parameters"]
+        )
+        info = ["Frozen" if frozen else "Trainable"]
+        if not frozen:
+            info.append(f"Learning rate: {parameter_group['lr']:g}")
+        info.append(f"{count:,} parameters")
+        add_node(
+            DiagramNode(
+                id="train:" + parameter_group["id"],
+                title=parameter_group["id"].replace("_", " "),
+                detail="\n".join(info),
+                badge="frozen" if frozen else "trainable",
+                kind="training",
+                accent_role="training_line",
+                classes=("training", "frozen" if frozen else "trainable"),
+                pen_width=1.0,
+                margin=(0.15, 0.1),
+            )
+        )
+
+
+def _add_training_objectives(*, graph, bundle, add_node, edges):
+    for index, objective in enumerate(bundle.training["objectives"]):
+        objective_id = f"objective:{index}"
+        definition = objective.get("definition") or objective.get("config", {}).get(
+            "definition"
+        )
+        title = (
+            definition.rsplit("/", 1)[0].rsplit(".", 1)[-1]
+            if definition
+            else objective["kind"]
+        )
+        info = [f"Target: {objective['target']}"]
+        if objective.get("weight", 1) != 1:
+            info.append(f"Weight: {objective['weight']:g}")
+        settings = objective.get("config", {})
+        for key, value in sorted(settings.items()):
+            if key != "definition" and isinstance(value, (str, int, float, bool)):
+                info.append(f"{key.replace('_', ' ').capitalize()}: {value}")
+                break
+        add_node(
+            DiagramNode(
+                id=objective_id,
+                title=title[:1].upper() + title[1:].replace("_", " "),
+                detail="\n".join(info),
+                badge="objective",
+                kind="objective",
+                accent_role="output_line",
+                classes=("objective",),
+                pen_width=1.0,
+                margin=(0.15, 0.1),
+            )
+        )
+        matching = next(
+            (
+                output["id"]
+                for output in graph["outputs"]
+                if output["signal"] == objective["prediction"]
+            ),
+            None,
+        )
+        if matching:
+            edges.append(
+                DiagramEdge(
+                    source="out:" + matching,
+                    target=objective_id,
+                    role="output",
+                    pen_width=1.1,
+                )
+            )
+
+
+def _add_training_edges(*, graph, bundle, rendered, edges):
+    parameter_owners: dict[str, set[str]] = {}
+    for projection in graph["projections"]:
+        for parameter in projection["parameters"]:
+            parameter_owners.setdefault(parameter, set()).add(
+                projection["target"].partition(".")[0]
+            )
+    for operation in graph["operations"]:
+        for parameter in operation["parameters"]:
+            parameter_owners.setdefault(parameter, set()).add(operation["id"])
+    for parameter_group in bundle.training["parameter_groups"]:
+        targets = {
+            owner
+            for parameter in parameter_group["parameters"]
+            for owner in parameter_owners.get(parameter, ())
         }
-        for parameter_group in bundle.training["parameter_groups"]:
-            frozen = parameter_group["frozen"]
-            count = sum(
-                parameter_sizes[identifier]
-                for identifier in parameter_group["parameters"]
-            )
-            info = ["Frozen" if frozen else "Trainable"]
-            if not frozen:
-                info.append(f"Learning rate: {parameter_group['lr']:g}")
-            info.append(f"{count:,} parameters")
-            add_node(
-                DiagramNode(
-                    id="train:" + parameter_group["id"],
-                    title=parameter_group["id"].replace("_", " "),
-                    detail="\n".join(info),
-                    badge="frozen" if frozen else "trainable",
-                    kind="training",
-                    accent_role="training_line",
-                    classes=("training", "frozen" if frozen else "trainable"),
-                    pen_width=1.0,
-                    margin=(0.15, 0.1),
-                )
-            )
-        for index, objective in enumerate(bundle.training["objectives"]):
-            objective_id = f"objective:{index}"
-            definition = objective.get("definition") or objective.get("config", {}).get(
-                "definition"
-            )
-            title = (
-                definition.rsplit("/", 1)[0].rsplit(".", 1)[-1]
-                if definition
-                else objective["kind"]
-            )
-            info = [f"Target: {objective['target']}"]
-            if objective.get("weight", 1) != 1:
-                info.append(f"Weight: {objective['weight']:g}")
-            settings = objective.get("config", {})
-            for key, value in sorted(settings.items()):
-                if key != "definition" and isinstance(value, (str, int, float, bool)):
-                    info.append(f"{key.replace('_', ' ').capitalize()}: {value}")
-                    break
-            add_node(
-                DiagramNode(
-                    id=objective_id,
-                    title=title[:1].upper() + title[1:].replace("_", " "),
-                    detail="\n".join(info),
-                    badge="objective",
-                    kind="objective",
-                    accent_role="output_line",
-                    classes=("objective",),
-                    pen_width=1.0,
-                    margin=(0.15, 0.1),
-                )
-            )
-            matching = next(
-                (
-                    output["id"]
-                    for output in graph["outputs"]
-                    if output["signal"] == objective["prediction"]
-                ),
-                None,
-            )
-            if matching:
+        for target in sorted(targets):
+            if target in rendered:
                 edges.append(
                     DiagramEdge(
-                        source="out:" + matching,
-                        target=objective_id,
-                        role="output",
-                        pen_width=1.1,
+                        source="train:" + parameter_group["id"],
+                        target=target,
+                        role="training",
+                        constraint=False,
+                        frozen=parameter_group["frozen"],
                     )
                 )
-        parameter_owners: dict[str, set[str]] = {}
-        for projection in graph["projections"]:
-            for parameter in projection["parameters"]:
-                parameter_owners.setdefault(parameter, set()).add(
-                    projection["target"].partition(".")[0]
+
+
+def diagram(
+    bundle: Bundle,
+    *,
+    view: str = "circuit",
+    weight_labels: bool | Mapping[str, WeightLabel] = False,
+) -> Diagram:
+    """Project a bundle into a diagram without choosing a rendering backend."""
+
+    if view not in {"circuit", "training", "expanded"}:
+        raise ValueError("view must be circuit, training, or expanded")
+    graph = bundle.graph
+    if not isinstance(weight_labels, (bool, Mapping)):
+        raise TypeError(
+            "weight_labels must be a bool or a mapping of projection IDs to WeightLabel"
+        )
+    weighted = {
+        projection["id"]
+        for projection in graph["projections"]
+        if any(parameter.endswith(".weight") for parameter in projection["parameters"])
+    }
+    if isinstance(weight_labels, Mapping):
+        if unknown := weight_labels.keys() - weighted:
+            raise ValueError(
+                f"weight labels require weighted projection IDs: {sorted(unknown)}"
+            )
+        if any(not isinstance(label, WeightLabel) for label in weight_labels.values()):
+            raise TypeError("weight label overrides must be WeightLabel instances")
+    if len(graph["projections"]) + len(graph["operations"]) > 120:
+        raise ValueError(
+            "graph is too dense for a legible explicit static view; filter it"
+        )
+    groups = {group["id"]: group for group in graph["groups"]}
+    nodes: list[DiagramNode] = []
+    edges: list[DiagramEdge] = []
+    diagram_groups: list[DiagramGroup] = []
+    rendered: set[str] = set()
+
+    def add_node(node: DiagramNode) -> None:
+        nodes.append(node)
+        rendered.add(node.id)
+
+    local_title, shape_text, unit_line, operation_text = _diagram_text_formatters()
+
+    _add_graph_nodes(
+        graph=graph,
+        add_node=add_node,
+        shape_text=shape_text,
+        unit_line=unit_line,
+        local_title=local_title,
+        nodes=nodes,
+        operation_text=operation_text,
+    )
+
+    population_ids = {population["id"] for population in graph["populations"]}
+    for group_id, group in groups.items():
+        members = tuple(member for member in group["members"] if member in rendered)
+        if members:
+            diagram_groups.append(
+                DiagramGroup(
+                    id=group_id,
+                    label=group_id.replace("_", " "),
+                    members=members,
+                    same_rank=len(members) > 1
+                    and all(member in population_ids for member in members),
                 )
-        for operation in graph["operations"]:
-            for parameter in operation["parameters"]:
-                parameter_owners.setdefault(parameter, set()).add(operation["id"])
-        for parameter_group in bundle.training["parameter_groups"]:
-            targets = {
-                owner
-                for parameter in parameter_group["parameters"]
-                for owner in parameter_owners.get(parameter, ())
-            }
-            for target in sorted(targets):
-                if target in rendered:
-                    edges.append(
-                        DiagramEdge(
-                            source="train:" + parameter_group["id"],
-                            target=target,
-                            role="training",
-                            constraint=False,
-                            frozen=parameter_group["frozen"],
-                        )
-                    )
+            )
+
+    _add_output_nodes(
+        graph=graph,
+        bundle=bundle,
+        add_node=add_node,
+        shape_text=shape_text,
+        unit_line=unit_line,
+    )
+
+    _add_graph_edges(
+        graph=graph,
+        rendered=rendered,
+        edges=edges,
+        weight_labels=weight_labels,
+        weighted=weighted,
+    )
+
+    if view == "training" and bundle.training:
+        _add_training_groups(graph=graph, bundle=bundle, add_node=add_node)
+
+        _add_training_objectives(
+            graph=graph, bundle=bundle, add_node=add_node, edges=edges
+        )
+
+        _add_training_edges(graph=graph, bundle=bundle, rendered=rendered, edges=edges)
 
     return Diagram(
         name="snnlang",

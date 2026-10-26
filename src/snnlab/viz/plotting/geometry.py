@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 
@@ -24,7 +24,7 @@ class FigureRect:
     def inset(
         self,
         padding: float | tuple[float, float, float, float],
-    ) -> "FigureRect":
+    ) -> FigureRect:
         """Inset by relative left, bottom, right and top fractions."""
 
         if isinstance(padding, (int, float)):
@@ -44,6 +44,7 @@ class FigureRect:
             height,
         )
 
+
 @dataclass(frozen=True)
 class FigureRegion:
     """A named rectangular selection of grid tracks."""
@@ -54,6 +55,7 @@ class FigureRegion:
     rowspan: int = 1
     colspan: int = 1
     reserved: bool = False
+
 
 def _tracks(value: int | Sequence[float], label: str) -> tuple[float, ...]:
     if isinstance(value, int):
@@ -80,7 +82,5 @@ def grid_layout(
     if count == 0:
         return np.empty((0, 2), dtype=float)
     rows = int(np.ceil(count / columns))
-    x, y = np.meshgrid(
-        np.linspace(*x_range, columns), np.linspace(*y_range, rows)
-    )
+    x, y = np.meshgrid(np.linspace(*x_range, columns), np.linspace(*y_range, rows))
     return np.c_[x.ravel()[:count], y.ravel()[:count]]

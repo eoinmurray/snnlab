@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 import torch
 
@@ -100,18 +101,8 @@ class ExecutionSpec:
 
     def __post_init__(self):
         _performance_from_spec(self)
-        if self.snapshot is not None:
-            if not isinstance(self.snapshot, (str, Path, SnapshotSpec)):
-                raise TypeError("snapshot must be a path or SnapshotSpec")
-            if isinstance(self.snapshot, (str, Path)):
-                SnapshotSpec(self.snapshot)
-            if self.kind == "build":
-                raise ValueError("snapshots require simulate or train")
-        if self.tracing is not None:
-            if not isinstance(self.tracing, TraceSpec):
-                raise TypeError("tracing must be a TraceSpec")
-            if self.kind != "train":
-                raise ValueError("tracing currently requires kind='train'")
+        self._validate_capture_requests()
+
         for name in ("retain_parameters", "retain_final_state", "retain_runtime_state"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be boolean")
@@ -135,3 +126,17 @@ class ExecutionSpec:
             raise TypeError("measurement must be MeasurementWindow")
         if not isinstance(self.retain_outputs, bool):
             raise TypeError("retain_outputs must be boolean")
+
+    def _validate_capture_requests(self):
+        if self.snapshot is not None:
+            if not isinstance(self.snapshot, (str, Path, SnapshotSpec)):
+                raise TypeError("snapshot must be a path or SnapshotSpec")
+            if isinstance(self.snapshot, (str, Path)):
+                SnapshotSpec(self.snapshot)
+            if self.kind == "build":
+                raise ValueError("snapshots require simulate or train")
+        if self.tracing is not None:
+            if not isinstance(self.tracing, TraceSpec):
+                raise TypeError("tracing must be a TraceSpec")
+            if self.kind != "train":
+                raise ValueError("tracing currently requires kind='train'")

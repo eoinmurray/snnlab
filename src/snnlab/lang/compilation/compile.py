@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 
 from snnlab import extensions as E
 from snnlab._shared import neurons as N

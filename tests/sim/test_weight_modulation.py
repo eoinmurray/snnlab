@@ -286,9 +286,11 @@ def test_invalid_callback_result_fails_before_simulation(value):
     net, _ = network(schedule)
     from unittest.mock import patch
 
-    with patch("snnlab._shared.gains.import_function", return_value=lambda t, c: value):
-        with pytest.raises(ValueError, match="gain at t=0"):
-            executor(net)({"events": torch.ones(2, 1, 1)})
+    with (
+        patch("snnlab._shared.gains.import_function", return_value=lambda t, c: value),
+        pytest.raises(ValueError, match="gain at t=0"),
+    ):
+        executor(net)({"events": torch.ones(2, 1, 1)})
 
 
 def test_disabled_callbacks_are_not_evaluated_and_exceptions_propagate():

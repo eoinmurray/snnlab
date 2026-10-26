@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 import torch
 
@@ -209,55 +210,7 @@ class GraphPlan:
     autapses: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
 
-def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
-    validate_spatial(graph)
-    E.restore(graph)
-    autapses = resolve_autapses(graph)
-    if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
-        raise ValueError("unsupported voltage_sampling contract")
-    if graph.get("refractory_timing") not in (
-        None,
-        N.REFRACTORY_TIMING,
-        N.LEGACY_REFRACTORY_TIMING,
-    ):
-        raise ValueError("unsupported refractory_timing contract")
-    legacy_refractory = graph.get("refractory_timing") != N.REFRACTORY_TIMING
-    populations = {p["id"]: p for p in graph.get("populations", [])}
-    signal_references = [
-        r["signal"] for r in (*graph.get("outputs", []), *graph.get("observables", []))
-    ]
-    signal_references.extend(
-        source for op in graph.get("operations", []) for source in op["sources"]
-    )
-    for signal in signal_references:
-        owner, _, port = signal.partition(".")
-        if (
-            port == "pre_reset_voltage"
-            and populations.get(owner, {}).get("neuron", {}).get("kind")
-            != "leaky_integrator"
-        ):
-            raise ValueError(f"{signal}: pre_reset_voltage requires a leaky integrator")
-    for population in populations.values():
-        N.validate(population["neuron"], legacy=legacy_refractory)
-    issues = graph_capability_issues(graph)
-    if issues:
-        detail = "; ".join(
-            f"{x.element} requires {x.capability}: {x.message}" for x in issues
-        )
-        raise ValueError(f"graph executor capability failure: {detail}")
-    dt = float(graph["timebase"]["dt"]["value"])
-    if not math.isfinite(dt) or dt <= 0:
-        raise ValueError("graph timebase dt must be finite and positive")
-    refractory = {}
-    for population in populations.values():
-        if population["neuron"]["kind"] in N.SPIKING_KINDS:
-            try:
-                refractory[population["id"]] = N.resolve_refractory(
-                    population["neuron"], dt, legacy=legacy_refractory
-                )
-            except ValueError as error:
-                raise ValueError(f"{population['id']}: {error}") from error
-    parameter_rows = {row["id"]: row for row in graph.get("parameters", [])}
+def _plan_projections(graph, dt, parameter_rows):
     planned = []
     for row in graph.get("projections", []):
         validate_source(graph, row)
@@ -313,6 +266,60 @@ def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
                 continuous=continuous,
             )
         )
+    return planned
+
+
+def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
+    validate_spatial(graph)
+    E.restore(graph)
+    autapses = resolve_autapses(graph)
+    if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
+        raise ValueError("unsupported voltage_sampling contract")
+    if graph.get("refractory_timing") not in (
+        None,
+        N.REFRACTORY_TIMING,
+        N.LEGACY_REFRACTORY_TIMING,
+    ):
+        raise ValueError("unsupported refractory_timing contract")
+    legacy_refractory = graph.get("refractory_timing") != N.REFRACTORY_TIMING
+    populations = {p["id"]: p for p in graph.get("populations", [])}
+    signal_references = [
+        r["signal"] for r in (*graph.get("outputs", []), *graph.get("observables", []))
+    ]
+    signal_references.extend(
+        source for op in graph.get("operations", []) for source in op["sources"]
+    )
+    for signal in signal_references:
+        owner, _, port = signal.partition(".")
+        if (
+            port == "pre_reset_voltage"
+            and populations.get(owner, {}).get("neuron", {}).get("kind")
+            != "leaky_integrator"
+        ):
+            raise ValueError(f"{signal}: pre_reset_voltage requires a leaky integrator")
+    for population in populations.values():
+        N.validate(population["neuron"], legacy=legacy_refractory)
+    issues = graph_capability_issues(graph)
+    if issues:
+        detail = "; ".join(
+            f"{x.element} requires {x.capability}: {x.message}" for x in issues
+        )
+        raise ValueError(f"graph executor capability failure: {detail}")
+    dt = float(graph["timebase"]["dt"]["value"])
+    if not math.isfinite(dt) or dt <= 0:
+        raise ValueError("graph timebase dt must be finite and positive")
+    refractory = {}
+    for population in populations.values():
+        if population["neuron"]["kind"] in N.SPIKING_KINDS:
+            try:
+                refractory[population["id"]] = N.resolve_refractory(
+                    population["neuron"], dt, legacy=legacy_refractory
+                )
+            except ValueError as error:
+                raise ValueError(f"{population['id']}: {error}") from error
+    parameter_rows = {row["id"]: row for row in graph.get("parameters", [])}
+    planned = _plan_projections(graph=graph, dt=dt, parameter_rows=parameter_rows)
+
     populations = list(graph.get("populations", []))
     population_ids = {p["id"] for p in populations}
     zero_edges = [

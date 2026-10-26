@@ -52,7 +52,7 @@ def test_fast_projection_mode_preserves_strict_trajectory_gradients_and_update(a
         spikes, voltage = model(images)
         outputs.append((spikes, voltage))
         comparison.loss_fn(voltage, labels).backward()
-    for actual, expected in zip(outputs[0], outputs[1]):
+    for actual, expected in zip(outputs[0], outputs[1], strict=True):
         torch.testing.assert_close(actual, expected, atol=0, rtol=0)
     for key, gradient in fast.canonical_gradients().items():
         torch.testing.assert_close(
@@ -147,7 +147,7 @@ def test_two_epoch_training_and_plot_artifacts_keep_partial_batches(
         torch.testing.assert_close(
             right_checkpoint["parameters"][name], expected, atol=2e-6, rtol=2e-5
         )
-    for left, right in zip(results[0]["updates"], results[1]["updates"]):
+    for left, right in zip(results[0]["updates"], results[1]["updates"], strict=True):
         assert left["train_loss"] == pytest.approx(right["train_loss"], abs=2e-4)
     for result in results:
         assert result["complete"] and result["synthetic"]
@@ -182,11 +182,13 @@ def test_two_epoch_training_and_plot_artifacts_keep_partial_batches(
             row["train_examples"] == 18 and row["test_examples"] == 11
             for row in result["epochs"]
         )
-    for left, right in zip(results[0]["epochs"], results[1]["epochs"]):
+    for left, right in zip(results[0]["epochs"], results[1]["epochs"], strict=True):
         assert left["train_loss"] == pytest.approx(right["train_loss"], abs=2e-4)
         assert left["test_loss"] == pytest.approx(right["test_loss"], abs=2e-4)
         assert left["test_accuracy"] == right["test_accuracy"]
-    report = runner.combined_results(dict(zip(("snntorch", "snnlab"), results)))
+    report = runner.combined_results(
+        dict(zip(("snntorch", "snnlab"), results, strict=True))
+    )
     runner.write_json(tmp_path / "results.json", report)
     png = plotter.make_plots(tmp_path)
     assert png.read_bytes().startswith(b"\x89PNG")

@@ -64,9 +64,7 @@ def direct_train_bundle():
     recipe = snn.TrainSpec(
         objectives=[snn.CrossEntropy(prediction=scores, target="label")],
         parameter_groups=[
-            snn.ParameterGroup(
-                ["scores_projection.weight"], name="readout", lr=0.1
-            ),
+            snn.ParameterGroup(["scores_projection.weight"], name="readout", lr=0.1),
             snn.ParameterGroup(
                 [pid for pid in parameter_ids if pid != "scores_projection.weight"],
                 name="frozen",
@@ -105,9 +103,7 @@ def standard_readout_graph(
             mask=valid,
         )
     elif readout == "cumulative":
-        value = snn.CumulativePotential(
-            source=source, classes=2, name="scores"
-        )
+        value = snn.CumulativePotential(source=source, classes=2, name="scores")
     else:
         raise ValueError(readout)
     net.output("class_scores", value)

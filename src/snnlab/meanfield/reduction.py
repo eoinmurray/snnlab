@@ -1,8 +1,8 @@
 """Translate authored networks into a closure's symbolic construction context."""
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Mapping
 
 import numpy as np
 

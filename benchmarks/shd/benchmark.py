@@ -101,6 +101,9 @@ class Config:
             raise ValueError("invalid corruption probabilities")
 
 
+_DEFAULT_CONFIG = Config()
+
+
 def equal_class_cross_entropy(prediction, target, config):
     losses = torch.nn.functional.cross_entropy(
         prediction, target.long(), reduction="none"
@@ -143,7 +146,7 @@ extensions.register_initializer("benchmarks.shd.identity_gain/v1", identity_gain
 extensions.register_optimizer("benchmarks.shd.adam/v1", adam_optimizer)
 
 
-def author_network(cfg=Config()):
+def author_network(cfg=_DEFAULT_CONFIG):
     net = lang.Network("shd_coba", dt=cfg.dt_ms * lang.ms)
     source = net.input(
         "drive",
@@ -1150,7 +1153,9 @@ def render(root):
     )
     rates = [activity[name]["per_neuron_rate_hz"] for name in signal_ids[1:]]
     bins = np.linspace(0, np.ceil(max(map(max, rates)) / 20) * 20, 21)
-    for values, label, color in zip(rates, labels[1:], [theme.ink, theme.accent]):
+    for values, label, color in zip(
+        rates, labels[1:], [theme.ink, theme.accent], strict=True
+    ):
         axes[0, 1].hist(
             values, bins=bins, histtype="step", linewidth=1.8, label=label, color=color
         )
@@ -1191,7 +1196,7 @@ def render(root):
         for row in tracing["weights"]
         if row["phase"] == "after_window"
     }
-    for label, name in zip(["Input→E1", "E1→E2", "E2→out"], names):
+    for label, name in zip(["Input→E1", "E1→E2", "E2→out"], names, strict=True):
         row = rows[name]
         table_rows.append(
             [label, f"{row['blocks'] - row['nonzero_blocks']}/{row['blocks']}"]
@@ -1274,7 +1279,7 @@ def render(root):
         "CUDA copies",
     ]
     colors = [theme.accent, theme.mid_grey, theme.ink, theme.amber]
-    for index, (lane, color) in enumerate(zip(lanes, colors)):
+    for index, (lane, color) in enumerate(zip(lanes, colors, strict=True)):
         spans = [
             (event["start_ms"], event["duration_ms"])
             for event in excerpt["events"]
@@ -1324,6 +1329,53 @@ def render(root):
         },
     )
     return analysis
+
+
+def _validate_modal_options(*, epochs, trace_mode, trace_skip_updates, trace_updates):
+    if epochs < 1:
+        raise ValueError("epochs must be positive")
+    if trace_mode not in {"off", "monitor", "profile", "both"}:
+        raise ValueError("trace mode must be off, monitor, profile or both")
+    if trace_skip_updates < 0 or trace_updates < 1:
+        raise ValueError("invalid trace update window")
+
+
+def _collect_modal_reports(*, run_id, cloud_paths, volume, LOCAL_ROOT):
+    """Read persisted reports directly from the Volume; no worker invocation."""
+    cloud = cloud_paths(run_id)
+    remote = f"/{cloud['directory']}"
+    # A completion manifest is written only after all requested work succeeds.
+    # Missing manifests propagate rather than collecting an unfinished run.
+    try:
+        completed = json.loads(b"".join(volume.read_file(f"{remote}/cloud.json")))
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"No completion manifest for {run_id}; check the Modal dashboard and collect after the run succeeds"
+        ) from exc
+    if completed.get("status") != "complete" or completed.get("run_id") != run_id:
+        raise ValueError("remote manifest does not describe this completed run")
+    names = completed["report_files"]
+    for name in names:
+        path = Path(name)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or path.suffix not in {".json", ".csv"}
+        ):
+            raise ValueError("invalid report path in remote manifest")
+    destination = LOCAL_ROOT / "benchmarks/shd/results"
+    ticket_path = destination / "cloud.json"
+    ticket = json.loads(ticket_path.read_text()) if ticket_path.exists() else {}
+    if ticket.get("run_id") != run_id:
+        ticket = {}
+    reset_results(destination)
+    for name in names:
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"".join(volume.read_file(f"{remote}/{name}")))
+    ticket_path.write_text(json.dumps({**ticket, **completed}, indent=2) + "\n")
+    print(f"Collected reports: {destination}")
+    return destination
 
 
 def modal_launcher(local_root=None, data_root=None):
@@ -1458,12 +1510,12 @@ def modal_launcher(local_root=None, data_root=None):
         }
 
     def validate_options(epochs, trace_mode, trace_skip_updates, trace_updates):
-        if epochs < 1:
-            raise ValueError("epochs must be positive")
-        if trace_mode not in {"off", "monitor", "profile", "both"}:
-            raise ValueError("trace mode must be off, monitor, profile or both")
-        if trace_skip_updates < 0 or trace_updates < 1:
-            raise ValueError("invalid trace update window")
+        _validate_modal_options(
+            epochs=epochs,
+            trace_mode=trace_mode,
+            trace_skip_updates=trace_skip_updates,
+            trace_updates=trace_updates,
+        )
 
     def submit(
         epochs=10,
@@ -1505,41 +1557,9 @@ def modal_launcher(local_root=None, data_root=None):
         return ticket
 
     def collect(run_id):
-        """Read persisted reports directly from the Volume; no worker invocation."""
-        cloud = cloud_paths(run_id)
-        remote = f"/{cloud['directory']}"
-        # A completion manifest is written only after all requested work succeeds.
-        # Missing manifests propagate rather than collecting an unfinished run.
-        try:
-            completed = json.loads(b"".join(volume.read_file(f"{remote}/cloud.json")))
-        except FileNotFoundError as exc:
-            raise RuntimeError(
-                f"No completion manifest for {run_id}; check the Modal dashboard and collect after the run succeeds"
-            ) from exc
-        if completed.get("status") != "complete" or completed.get("run_id") != run_id:
-            raise ValueError("remote manifest does not describe this completed run")
-        names = completed["report_files"]
-        for name in names:
-            path = Path(name)
-            if (
-                path.is_absolute()
-                or ".." in path.parts
-                or path.suffix not in {".json", ".csv"}
-            ):
-                raise ValueError("invalid report path in remote manifest")
-        destination = LOCAL_ROOT / "benchmarks/shd/results"
-        ticket_path = destination / "cloud.json"
-        ticket = json.loads(ticket_path.read_text()) if ticket_path.exists() else {}
-        if ticket.get("run_id") != run_id:
-            ticket = {}
-        reset_results(destination)
-        for name in names:
-            path = destination / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(b"".join(volume.read_file(f"{remote}/{name}")))
-        ticket_path.write_text(json.dumps({**ticket, **completed}, indent=2) + "\n")
-        print(f"Collected reports: {destination}")
-        return destination
+        return _collect_modal_reports(
+            run_id=run_id, cloud_paths=cloud_paths, volume=volume, LOCAL_ROOT=LOCAL_ROOT
+        )
 
     def cli():
         """Direct Python CLI always launches with detach=True; collection is read-only."""

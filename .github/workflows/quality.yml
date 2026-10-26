@@ -30,6 +30,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
       - run: uv run ruff check .
+      - run: uv run ruff format --check .
       - name: Run tests
         if: github.event_name == 'schedule'
         run: uv run pytest -q

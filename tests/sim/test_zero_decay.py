@@ -194,7 +194,7 @@ def test_independent_snapshot_controls_preserve_results_and_recordings(flags):
         rtol=0,
     )
     assert actual.metrics["result_snapshots"] == dict(
-        zip(("parameters", "final_state", "runtime_state"), flags)
+        zip(("parameters", "final_state", "runtime_state"), flags, strict=True)
     )
     actual.outputs["voltage"].sum().backward()
     assert torch.isfinite(model.parameter_map()["drive.weight"].grad).all()

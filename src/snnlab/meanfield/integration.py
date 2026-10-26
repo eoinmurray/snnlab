@@ -76,7 +76,7 @@ def solve_segments(rhs, initial, *, duration, times, delays, points, history, op
         index = min(bisect_left(ends, time), len(solutions) - 1)
         return solutions[index](min(time, ends[-1]))
 
-    for left, stop in zip(stops[:-1], stops[1:]):
+    for left, stop in zip(stops[:-1], stops[1:], strict=True):
         while left < stop:
             right = min(stop, left + minimum)
             if abs(right - stop) <= 8 * abs(np.spacing(stop)):
@@ -88,7 +88,13 @@ def solve_segments(rhs, initial, *, duration, times, delays, points, history, op
             interior_left = np.nextafter(left, right)
             interior_right = np.nextafter(right, left)
 
-            def wrapped(time, vector):
+            def wrapped(
+                time,
+                vector,
+                *,
+                interior_left=interior_left,
+                interior_right=interior_right,
+            ):
                 # Use each segment's interior limit at both endpoints: the
                 # following segment evaluates the new control value. State is
                 # continuous, so this affects only the derivative at a switch.

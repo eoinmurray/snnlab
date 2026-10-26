@@ -177,7 +177,7 @@ def test_subthreshold_input_gradients_match_snntorch():
     membrane = torch.zeros_like(voltage)
     refractory = torch.zeros_like(voltage, dtype=torch.long)
     config = lang.CUBA_LIF().json()
-    for current, ref_current in zip(drive, ref_drive):
+    for current, ref_current in zip(drive, ref_drive, strict=True):
         voltage, spikes, refractory = X.current_lif(
             {"voltage": voltage, "refractory": refractory},
             current,
@@ -304,7 +304,7 @@ def test_mixed_recurrent_network_matches_snntorch(
         spikes, membrane = reference(gain * (currents[0] - currents[1]), membrane)
         spike_history.append(spikes.double())
         for key, value in zip(
-            expected, (membrane - 65.0, spikes, currents[0], currents[1])
+            expected, (membrane - 65.0, spikes, currents[0], currents[1]), strict=True
         ):
             expected[key].append(value)
 
@@ -413,7 +413,7 @@ def test_compiled_synaptic_input_and_weight_gradients_match_snntorch(
         drive.grad, reference_drive.grad, atol=1e-6, rtol=1e-5, check_dtype=False
     )
     assert drive.grad.abs().sum() > 0
-    for weight, reference_weight in zip(weights, reference_weights):
+    for weight, reference_weight in zip(weights, reference_weights, strict=True):
         torch.testing.assert_close(
             weight.grad, reference_weight.grad, atol=1e-6, rtol=1e-5, check_dtype=False
         )

@@ -69,7 +69,7 @@ def graph_control(spec, dt):
         # Several authored transitions may map to the same simulation timestep.
         values = {
             _transition_step(t, dt) * dt: value
-            for t, value in zip(spec["times_ms"], spec["values"][1:])
+            for t, value in zip(spec["times_ms"], spec["values"][1:], strict=True)
         }
         return PiecewiseConstant(tuple(values), (spec["values"][0], *values.values()))
     if kind == "ramp_gain":

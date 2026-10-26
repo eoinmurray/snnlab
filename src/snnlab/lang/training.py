@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 from snnlab.lang._specs import Spec
 from snnlab.lang.network import ParameterRef, Signal, SignalLike
@@ -149,7 +150,7 @@ class StopGradient:
     signal: str
 
     @classmethod
-    def at(cls, signal: Signal) -> "StopGradient":
+    def at(cls, signal: Signal) -> StopGradient:
         return cls(signal.id)
 
 

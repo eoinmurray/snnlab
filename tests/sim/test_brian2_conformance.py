@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 from fractions import Fraction
+from itertools import pairwise
 
 import numpy as np
 import pytest
@@ -427,7 +428,9 @@ def test_reciprocal_ei_spikes_converge_with_brian2(dt_ms):
     snnsim_populations = _snnsim_ei_pair(dt_ms)
     brian_populations = _brian_ei_pair(dt_ms)
 
-    for snnsim_times, brian_times in zip(snnsim_populations, brian_populations):
+    for snnsim_times, brian_times in zip(
+        snnsim_populations, brian_populations, strict=True
+    ):
         assert len(snnsim_times) == len(brian_times)
         assert len(snnsim_times) > 0, "protocol must recruit both populations"
         np.testing.assert_allclose(
@@ -634,7 +637,7 @@ def test_ping_population_observables_match_brian2(dt_ms):
     brian_events = _brian_ping_network(dt_ms)
 
     for population_size, snnsim_population, brian_population in zip(
-        (PING_N_E, PING_N_I), snnsim_events, brian_events
+        (PING_N_E, PING_N_I), snnsim_events, brian_events, strict=True
     ):
         snnsim = _population_observables(snnsim_population, population_size)
         brian = _population_observables(brian_population, population_size)
@@ -660,7 +663,7 @@ def test_brian2_gap_is_smaller_than_snnsim_timestep_sensitivity():
         scales = {"rate_hz": 20.0, "gamma_hz": 50.0, "synchrony": 1.0}
         squared_error = 0.0
         for population_size, left_population, right_population in zip(
-            (PING_N_E, PING_N_I), left_events, right_events
+            (PING_N_E, PING_N_I), left_events, right_events, strict=True
         ):
             left = _population_observables(left_population, population_size)
             right = _population_observables(right_population, population_size)
@@ -712,7 +715,7 @@ def _cycle_sparsity_observables(events, dt_ms=0.1):
     per_cycle = np.stack(
         [
             e_spikes[start:stop].sum(axis=0)
-            for start, stop in zip(boundaries[:-1], boundaries[1:])
+            for start, stop in zip(boundaries[:-1], boundaries[1:], strict=True)
         ]
     )
     flat_counts = per_cycle.ravel()
@@ -781,8 +784,5 @@ def test_gamma_gated_sparsity_tau_sweep_matches_brian2():
 
     snnsim_frequencies = [row["cycle_frequency_hz"] for row in snnsim_rows]
     brian_frequencies = [row["cycle_frequency_hz"] for row in brian_rows]
-    assert all(
-        faster > slower
-        for faster, slower in zip(snnsim_frequencies, snnsim_frequencies[1:])
-    )
+    assert all(faster > slower for faster, slower in pairwise(snnsim_frequencies))
     np.testing.assert_allclose(snnsim_frequencies, brian_frequencies, atol=1e-12)

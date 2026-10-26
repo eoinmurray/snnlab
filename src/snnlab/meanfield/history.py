@@ -68,7 +68,7 @@ class ConstantHistory:
         return {
             "kind": "constant",
             "interval_ms": [-maximum, 0],
-            "state": dict(zip(model.states, model.vector(self.state))),
+            "state": dict(zip(model.states, model.vector(self.state), strict=True)),
             "units": {n: model.units[n] for n in model.states},
         }
 

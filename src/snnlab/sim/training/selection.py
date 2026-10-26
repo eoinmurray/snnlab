@@ -1,8 +1,9 @@
 """Serializable policies for selecting graph-training checkpoints."""
 
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from typing import Literal, Mapping, Sequence
+from typing import Literal
 
 from snnlab.sim.graph.extensions import classification
 
@@ -89,6 +90,37 @@ class CheckpointSelection:
             raise ValueError("validation checkpoint selection requires ValidationSpec")
         if not isinstance(self.include_initial, bool):
             raise ValueError("include_initial must be boolean")
+        self._validate_selection_metrics(training=training)
+
+    def scores(self, metrics):
+        values = []
+        for metric in (self.metric, *self.tie_break):
+            group = (
+                "cross_entropies" if metric.kind == "cross_entropy" else "accuracies"
+            )
+            value = (
+                metrics.get("loss")
+                if metric.kind == "loss"
+                else metrics.get(group, {}).get(f"objective[{metric.objective}]")
+            )
+            if value is None or not math.isfinite(value):
+                raise ValueError(
+                    f"checkpoint selection metric {metric.kind} objective[{metric.objective}] is missing or non-finite"
+                )
+            values.append(float(value))
+        return values
+
+    def better(self, values, previous):
+        if previous is None:
+            return True
+        for metric, value, old in zip(
+            (self.metric, *self.tie_break), values, previous, strict=True
+        ):
+            if value != old:
+                return value < old if metric.direction == "min" else value > old
+        return False
+
+    def _validate_selection_metrics(self, training):
         seen = set()
         for metric in (self.metric, *self.tie_break):
             if not isinstance(metric, SelectionMetric):
@@ -123,31 +155,3 @@ class CheckpointSelection:
             if identity in seen:
                 raise ValueError("duplicate checkpoint selection metric")
             seen.add(identity)
-
-    def scores(self, metrics):
-        values = []
-        for metric in (self.metric, *self.tie_break):
-            group = (
-                "cross_entropies" if metric.kind == "cross_entropy" else "accuracies"
-            )
-            value = (
-                metrics.get("loss")
-                if metric.kind == "loss"
-                else metrics.get(group, {}).get(f"objective[{metric.objective}]")
-            )
-            if value is None or not math.isfinite(value):
-                raise ValueError(
-                    f"checkpoint selection metric {metric.kind} objective[{metric.objective}] is missing or non-finite"
-                )
-            values.append(float(value))
-        return values
-
-    def better(self, values, previous):
-        if previous is None:
-            return True
-        for metric, value, old in zip(
-            (self.metric, *self.tie_break), values, previous, strict=True
-        ):
-            if value != old:
-                return value < old if metric.direction == "min" else value > old
-        return False

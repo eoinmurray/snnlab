@@ -5,9 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 
-def exponential_trace(
-    events: np.ndarray, *, dt_ms: float, tau_ms: float
-) -> np.ndarray:
+def exponential_trace(events: np.ndarray, *, dt_ms: float, tau_ms: float) -> np.ndarray:
     events = np.asarray(events)
     if events.ndim != 2:
         raise ValueError("events must have shape (time, units)")
@@ -33,9 +31,7 @@ def projection_activity(
     source, target = np.nonzero(weight)
     values = trace[:, source] * weight[source, target]
     scale_array = np.asarray(scale)
-    return values * (
-        scale_array[:, None] if scale_array.ndim else float(scale_array)
-    )
+    return values * (scale_array[:, None] if scale_array.ndim else float(scale_array))
 
 
 def representative_frame(
@@ -49,9 +45,7 @@ def representative_frame(
     if any(len(np.asarray(signal)) != length for signal in signals):
         raise ValueError("signals must share a time dimension")
     indices = (
-        np.arange(length)
-        if candidates is None
-        else np.asarray(candidates, dtype=int)
+        np.arange(length) if candidates is None else np.asarray(candidates, dtype=int)
     )
     score = np.zeros(len(indices), dtype=float)
     for signal in signals:

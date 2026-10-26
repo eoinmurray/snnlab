@@ -39,7 +39,7 @@ def write_model(model, path):
         for name, symbol in model.parameters.items()
     }
     equation_records = _latex_equations(model)
-    display_rhs = dict(zip(model.states, model.display_rhs or model.rhs))
+    display_rhs = dict(zip(model.states, model.display_rhs or model.rhs, strict=True))
     definitions = {
         str(symbol): expression for symbol, expression in model.definitions.items()
     }
@@ -115,12 +115,12 @@ def write_model(model, path):
             "expression_format": "sympy-str",
             "rhs": {
                 name: str(expression)
-                for name, expression in zip(model.states, model.rhs)
+                for name, expression in zip(model.states, model.rhs, strict=True)
             },
             "display_rhs": {
                 name: str(expression)
                 for name, expression in zip(
-                    model.states, model.display_rhs or model.rhs
+                    model.states, model.display_rhs or model.rhs, strict=True
                 )
             },
             "definitions": {

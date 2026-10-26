@@ -32,7 +32,7 @@ def test_split_and_spike_replay_are_reproducible_and_disjoint():
     assert not set(train_indices) & set(test_indices)
     assert sorted(train_indices + test_indices) == list(range(1797))
     assert metadata == again[2]
-    for split, repeated in zip((train, test), again[:2]):
+    for split, repeated in zip((train, test), again[:2], strict=True):
         torch.testing.assert_close(split[0], repeated[0], rtol=0, atol=0)
         torch.testing.assert_close(split[1], repeated[1], rtol=0, atol=0)
         assert set(split[0].unique().tolist()) == {0.0, 1.0}

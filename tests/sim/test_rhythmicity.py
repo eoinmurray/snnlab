@@ -54,7 +54,9 @@ def test_population_event_times_count_and_sorted():
 def test_autocorrelogram_peaks_at_period():
     rng = np.random.default_rng(0)
     dt, period = 0.25, 25.0  # 40 Hz
-    raster = _volley_raster(period, dt, n_neurons=200, t_ms=2000.0, jitter_ms=1.0, rng=rng)
+    raster = _volley_raster(
+        period, dt, n_neurons=200, t_ms=2000.0, jitter_ms=1.0, rng=rng
+    )
     lags, ac = spike_autocorrelogram(raster, dt, max_lag_ms=80.0, bin_ms=1.0)
     # The autocorrelogram should peak near one period (and not at, say, 1.5×).
     band = (lags > period * 0.6) & (lags < period * 1.4)
@@ -67,8 +69,12 @@ def test_autocorrelogram_peaks_at_period():
 @pytest.mark.parametrize("dt", [0.1, 0.3, 0.6])
 def test_nonintegral_bins_keep_physical_lags_and_biophysical_lookup(dt):
     raster = _volley_raster(
-        30.0, dt, n_neurons=10, t_ms=1800.0,
-        jitter_ms=0, rng=np.random.default_rng(0),
+        30.0,
+        dt,
+        n_neurons=10,
+        t_ms=1800.0,
+        jitter_ms=0,
+        rng=np.random.default_rng(0),
     )
     result = rhythmicity_metrics(raster, dt, max_lag_ms=60, bio_lag_ms=30)
     lags, ac = result["ac_lags"], result["ac"]
@@ -118,9 +124,9 @@ def test_contrast_bounded_and_separates():
     volley = _volley_raster(25.0, 0.25, 400, 3000.0, jitter_ms=1.5, rng=rng)
     cf = rhythmicity_metrics(flat, dt=0.25)["contrast"]
     cv = rhythmicity_metrics(volley, dt=0.25)["contrast"]
-    assert 0.0 <= cf < 0.2, cf            # flat ≈ 0
-    assert 0.0 <= cv < 1.0, cv            # bounded above by 1
-    assert cv > cf + 0.3                  # rhythm clearly higher
+    assert 0.0 <= cf < 0.2, cf  # flat ≈ 0
+    assert 0.0 <= cv < 1.0, cv  # bounded above by 1
+    assert cv > cf + 0.3  # rhythm clearly higher
 
 
 def test_conductance_loop_score_is_bounded_scale_invariant_and_directional():

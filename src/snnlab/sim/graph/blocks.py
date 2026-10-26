@@ -65,6 +65,141 @@ def signal_parameters(plan):
     return dependencies
 
 
+def _batch_stage_projections(
+    *,
+    stage_edges,
+    sources,
+    spatial,
+    stage_ids,
+    steps,
+    pop_ids,
+    trajectories,
+    initial_histories,
+    inputs,
+    input_histories,
+    weights,
+):
+    batched = {}
+    for projection in stage_edges:
+        owner, chain = sources[projection.id]
+        if (
+            not projection.enabled
+            or chain
+            or projection.id in spatial
+            or owner in stage_ids
+        ):
+            continue
+        delay = projection.delay_steps
+        # A previous stage has a complete spike trajectory. External
+        # inputs are already available for the entire bounded window.
+        source_steps = []
+        for t in range(steps):
+            if owner in pop_ids:
+                source = (
+                    trajectories[owner][t - delay]
+                    if t >= delay
+                    else initial_histories[owner][t - delay]
+                )
+            else:
+                source = (
+                    inputs[owner][t - delay]
+                    if t >= delay
+                    else input_histories[owner][t - delay]
+                )
+            source_steps.append(source)
+        source = torch.stack(source_steps)
+        drive = source.flatten(0, 1) @ weights[projection.parameter]
+        batched[projection.id] = drive.reshape(steps, source.shape[1], drive.shape[-1])
+    return batched
+
+
+def _projection_drive(
+    *,
+    owner,
+    stage_ids,
+    spikes,
+    delay,
+    histories,
+    pop_ids,
+    trajectories,
+    t,
+    initial_histories,
+    inputs,
+    input_histories,
+    chain,
+    projection,
+    spatial,
+    weights,
+):
+    if owner in stage_ids:
+        source = spikes[owner] if delay == 0 else histories[owner][-delay]
+    elif owner in pop_ids:
+        source = (
+            trajectories[owner][t - delay]
+            if t >= delay
+            else initial_histories[owner][t - delay]
+        )
+    else:
+        source = (
+            inputs[owner][t - delay]
+            if t >= delay
+            else input_histories[owner][t - delay]
+        )
+    for shape, config in chain:
+        source = pool_tensor(source, shape, config)
+    if projection.id in spatial:
+        shape, config = spatial[projection.id]
+        drive = convolution_drive(source, weights[projection.parameter], shape, config)
+    else:
+        drive = source @ weights[projection.parameter]
+    return drive
+
+
+def _block_projection_sources(plan, pools, projection_rows):
+    sources = {}
+    spatial = {}
+    for projection in plan.projections:
+        signal, chain = projection.source, []
+        while signal in pools:
+            op = pools[signal]
+            chain.append(
+                (signal_spatial_shape(plan.graph, op["sources"][0]), op["config"])
+            )
+            signal = op["sources"][0]
+        sources[projection.id] = signal.partition(".")[0], tuple(reversed(chain))
+        config = projection_rows[projection.id].get("connectivity")
+        if config is not None:
+            spatial[projection.id] = (
+                signal_spatial_shape(plan.graph, projection.source),
+                config,
+            )
+    return sources, spatial
+
+
+def _record_block_step(
+    *,
+    stage_edges,
+    ports,
+    conductance,
+    signals,
+    values,
+    samples,
+    histories,
+    stage_ids,
+    spikes,
+):
+    for projection in stage_edges:
+        values[f"{projection.id}.{ports[projection.id]}"] = conductance[
+            (projection.id, projection.polarity)
+        ]
+    for signal in signals:
+        if signal in values:
+            samples[signal].append(values[signal])
+    for name in histories:
+        if name in stage_ids:
+            histories[name] = histories[name][1:] + [spikes[name]]
+
+
 def network_block(plan, *, spike_function, projection_mode, signals, compile_mode):
     """Resolve topology once; the returned callable owns no trajectory state."""
     populations = tuple(plan.populations)
@@ -103,23 +238,10 @@ def network_block(plan, *, spike_function, projection_mode, signals, compile_mod
         for row in plan.graph.get("operations", ())
         if row["kind"] == "pool2d"
     }
-    sources = {}
-    spatial = {}
-    for projection in plan.projections:
-        signal, chain = projection.source, []
-        while signal in pools:
-            op = pools[signal]
-            chain.append(
-                (signal_spatial_shape(plan.graph, op["sources"][0]), op["config"])
-            )
-            signal = op["sources"][0]
-        sources[projection.id] = signal.partition(".")[0], tuple(reversed(chain))
-        config = projection_rows[projection.id].get("connectivity")
-        if config is not None:
-            spatial[projection.id] = (
-                signal_spatial_shape(plan.graph, projection.source),
-                config,
-            )
+    sources, spatial = _block_projection_sources(
+        plan=plan, pools=pools, projection_rows=projection_rows
+    )
+
     ports = {
         p.id: "current"
         if projection_rows[p.id]["synapse"]["kind"] == "exponential_current"
@@ -162,39 +284,20 @@ def network_block(plan, *, spike_function, projection_mode, signals, compile_mod
             stage_edges = tuple(
                 p for p in plan.projections if p.target.partition(".")[0] in stage_ids
             )
-            batched = {}
-            for projection in stage_edges:
-                owner, chain = sources[projection.id]
-                if (
-                    not projection.enabled
-                    or chain
-                    or projection.id in spatial
-                    or owner in stage_ids
-                ):
-                    continue
-                delay = projection.delay_steps
-                # A previous stage has a complete spike trajectory. External
-                # inputs are already available for the entire bounded window.
-                source_steps = []
-                for t in range(steps):
-                    if owner in pop_ids:
-                        source = (
-                            trajectories[owner][t - delay]
-                            if t >= delay
-                            else initial_histories[owner][t - delay]
-                        )
-                    else:
-                        source = (
-                            inputs[owner][t - delay]
-                            if t >= delay
-                            else input_histories[owner][t - delay]
-                        )
-                    source_steps.append(source)
-                source = torch.stack(source_steps)
-                drive = source.flatten(0, 1) @ weights[projection.parameter]
-                batched[projection.id] = drive.reshape(
-                    steps, source.shape[1], drive.shape[-1]
-                )
+            batched = _batch_stage_projections(
+                stage_edges=stage_edges,
+                sources=sources,
+                spatial=spatial,
+                stage_ids=stage_ids,
+                steps=steps,
+                pop_ids=pop_ids,
+                trajectories=trajectories,
+                initial_histories=initial_histories,
+                inputs=inputs,
+                input_histories=input_histories,
+                weights=weights,
+            )
+
             for t in range(steps):
                 spikes = {}
                 values = {}
@@ -212,33 +315,24 @@ def network_block(plan, *, spike_function, projection_mode, signals, compile_mod
                         if projection.id in batched:
                             drive = batched[projection.id][t]
                         else:
-                            if owner in stage_ids:
-                                source = (
-                                    spikes[owner]
-                                    if delay == 0
-                                    else histories[owner][-delay]
-                                )
-                            elif owner in pop_ids:
-                                source = (
-                                    trajectories[owner][t - delay]
-                                    if t >= delay
-                                    else initial_histories[owner][t - delay]
-                                )
-                            else:
-                                source = (
-                                    inputs[owner][t - delay]
-                                    if t >= delay
-                                    else input_histories[owner][t - delay]
-                                )
-                            for shape, config in chain:
-                                source = pool_tensor(source, shape, config)
-                            if projection.id in spatial:
-                                shape, config = spatial[projection.id]
-                                drive = convolution_drive(
-                                    source, weights[projection.parameter], shape, config
-                                )
-                            else:
-                                drive = source @ weights[projection.parameter]
+                            drive = _projection_drive(
+                                owner=owner,
+                                stage_ids=stage_ids,
+                                spikes=spikes,
+                                delay=delay,
+                                histories=histories,
+                                pop_ids=pop_ids,
+                                trajectories=trajectories,
+                                t=t,
+                                initial_histories=initial_histories,
+                                inputs=inputs,
+                                input_histories=input_histories,
+                                chain=chain,
+                                projection=projection,
+                                spatial=spatial,
+                                weights=weights,
+                            )
+
                         if projection.id in gains:
                             drive = drive * gains[projection.id][t]
                         conductance[key] = synapses[projection.id](
@@ -278,16 +372,18 @@ def network_block(plan, *, spike_function, projection_mode, signals, compile_mod
                     values[f"{name}.spikes"] = spikes[name]
                     trajectories.setdefault(name, []).append(spikes[name])
                     final_spikes[name] = spikes[name]
-                for projection in stage_edges:
-                    values[f"{projection.id}.{ports[projection.id]}"] = conductance[
-                        (projection.id, projection.polarity)
-                    ]
-                for signal in signals:
-                    if signal in values:
-                        samples[signal].append(values[signal])
-                for name in histories:
-                    if name in stage_ids:
-                        histories[name] = histories[name][1:] + [spikes[name]]
+                _record_block_step(
+                    stage_edges=stage_edges,
+                    ports=ports,
+                    conductance=conductance,
+                    signals=signals,
+                    values=values,
+                    samples=samples,
+                    histories=histories,
+                    stage_ids=stage_ids,
+                    spikes=spikes,
+                )
+
         next_inputs = {
             name: torch.cat((value, inputs[name]), dim=0)[-value.shape[0] :]
             for name, value in input_histories.items()

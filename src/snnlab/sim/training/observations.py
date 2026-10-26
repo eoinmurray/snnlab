@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import math
 import random
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Mapping, Sequence
+from itertools import pairwise
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import torch
@@ -163,9 +165,9 @@ class GradientMeasurements:
         self.names = tuple(names)
         self.state = state or {
             "updates": 0,
-            "counts": {name: 0 for name in names},
-            "pre": {name: 0.0 for name in names},
-            "post": {name: 0.0 for name in names},
+            "counts": dict.fromkeys(names, 0),
+            "pre": dict.fromkeys(names, 0.0),
+            "post": dict.fromkeys(names, 0.0),
         }
 
     def add(self, before, parameters):
@@ -225,7 +227,7 @@ def validate_observation_state(state, contract, data_state, completed_updates):
             not isinstance(value, int) or value < 0 or value > completed_updates
             for value in updates
         )
-        or any(a >= b for a, b in zip(updates, updates[1:]))
+        or any(a >= b for a, b in pairwise(updates))
     ):
         raise ValueError("checkpoint epoch observation update coordinates are invalid")
     gradients = state["gradients"]

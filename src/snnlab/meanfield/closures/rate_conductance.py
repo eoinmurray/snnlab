@@ -1,11 +1,90 @@
 """Homogeneous rate/conductance closure used by the Pinglab examples."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 import sympy as sp
 
 from snnlab.meanfield.model import Filter, magnitude
+
+
+def _build_projection_conductance(
+    *,
+    ctx,
+    source,
+    populations,
+    delay,
+    expected,
+    target,
+    projection,
+    name,
+    rates,
+    source_rates,
+    tau,
+    coupling,
+    gain,
+):
+    recurrent = source in populations
+    if (
+        ctx.delays == "explicit"
+        and delay
+        and not recurrent
+        and ctx.external_filters == "quasistatic"
+    ):
+        raise ValueError("explicit external delays require dynamic external filters")
+    receptor = "e" if expected == "excitatory" else "i"
+    conductance_label = rf"g_{{{receptor}}}^{{{target}}}"
+    matching = [p for p in ctx.projections if p["target"] == projection["target"]]
+    if recurrent:
+        if sum(p["source"].rsplit(".", 1)[0] in populations for p in matching) > 1:
+            conductance_label = rf"g_{{{receptor},{source}}}^{{{target}}}"
+    else:
+        external_count = sum(
+            p["source"].rsplit(".", 1)[0] not in populations for p in matching
+        )
+        conductance_label = (
+            rf"g_{{\mathrm{{ext}}}}^{{{target}}}"
+            if external_count == 1
+            else rf"g_{{\mathrm{{ext}},{source}}}^{{{target}}}"
+        )
+    if recurrent or ctx.external_filters == "dynamic":
+        conductance = ctx.state(
+            f"{name}.conductance", unit="uS", bounds=(0, float("inf"))
+        )
+        rate = rates[source] if recurrent else source_rates[source]
+        if ctx.delays == "explicit":
+            rate = ctx.delay(rate, delay, name=f"{name}.delayed_rate")
+        ctx.derivative(conductance, -conductance / tau + coupling * gain * rate / 1000)
+        if recurrent:
+            ctx.filters.append(Filter(conductance, source, tau, coupling * gain))
+        ctx.notation[conductance] = conductance_label
+        ctx.describe(
+            conductance,
+            description=f"Mean synaptic conductance from {source} into {target}",
+        )
+        display_conductance = conductance
+    else:
+        conductance = tau * coupling * gain * source_rates[source] / 1000
+        display_conductance = ctx.display_definition(
+            f"{name}.mean_conductance",
+            conductance,
+            latex=conductance_label,
+            description=f"Quasistatic mean external conductance from {source} into {target}",
+            unit="uS",
+        )
+    return conductance, display_conductance
+
+
+def _build_external_rates(ctx, source_rates):
+    for name, rate in ctx.inputs.items():
+        source_rates[name] = ctx.parameter(
+            f"{name}.rate", rate.rate, unit="Hz", bounds=(0, float("inf"))
+        )
+        ctx.notation[source_rates[name]] = rf"r_{{{name}}}"
+        ctx.describe(
+            source_rates[name],
+            description=f"Mean firing rate per external source channel in {name}",
+        )
 
 
 @dataclass(frozen=True)
@@ -28,69 +107,20 @@ class RateConductance:
             raise ValueError("tau_rate must specify every population exactly once")
         currents, rates, gains, relaxation = {}, {}, {}, {}
         display_currents, driving_forces = {}, {}
-        for name, population in populations.items():
-            if population["neuron"]["kind"] != "coba_lif" or not population["spiking"]:
-                raise ValueError(
-                    f"{name}: RateConductance supports spiking COBA_LIF only"
-                )
-            gains[name], maximum = self.gain.bind(ctx, population)
-            rates[name] = ctx.state(f"{name}.rate", unit="Hz", bounds=(0, maximum))
-            tau = (
-                self.tau_rate[name]
-                if isinstance(self.tau_rate, Mapping)
-                else self.tau_rate
-            )
-            if magnitude(tau, "ms") <= 0:
-                raise ValueError("rate relaxation times must be positive")
-            relaxation[name] = ctx.parameter(
-                f"{name}.tau_rate", tau, unit="ms", bounds=(1e-300, float("inf"))
-            )
-            currents[name] = ctx.parameter(
-                f"{name}.applied_current", ctx.applied_current.get(name, 0), unit="nA"
-            )
-            ctx.notation[rates[name]] = rf"r_{{{name}}}"
-            ctx.notation[relaxation[name]] = rf"\tau_{{r,{name}}}"
-            ctx.notation[currents[name]] = rf"I_{{\mathrm{{ext}},{name}}}"
-            ctx.describe(
-                rates[name], description=f"Mean firing rate of population {name}"
-            )
-            ctx.describe(
-                relaxation[name],
-                description=f"Rate relaxation time of population {name}",
-            )
-            ctx.describe(
-                currents[name],
-                description=f"Applied external current to population {name}",
-            )
-            display_currents[name] = currents[name]
-            neuron = population["neuron"]
-            rest = neuron.get("resting_mv", -65)
-            driving_forces[name] = {
-                "excitatory": ctx.display_definition(
-                    f"{name}.driving_force_exc",
-                    neuron.get("excitatory_reversal_mv", 0) - rest,
-                    latex=rf"\Delta V_{{\mathrm{{exc}},{name}}}",
-                    description=f"Excitatory reversal potential minus resting voltage of {name}",
-                    unit="mV",
-                ),
-                "inhibitory": ctx.display_definition(
-                    f"{name}.driving_force_inh",
-                    rest - neuron.get("inhibitory_reversal_mv", -80),
-                    latex=rf"\Delta V_{{\mathrm{{inh}},{name}}}",
-                    description=f"Resting voltage of {name} minus inhibitory reversal potential",
-                    unit="mV",
-                ),
-            }
+        self._build_population_rates(
+            ctx=ctx,
+            populations=populations,
+            currents=currents,
+            rates=rates,
+            gains=gains,
+            relaxation=relaxation,
+            display_currents=display_currents,
+            driving_forces=driving_forces,
+        )
+
         source_rates = {}
-        for name, rate in ctx.inputs.items():
-            source_rates[name] = ctx.parameter(
-                f"{name}.rate", rate.rate, unit="Hz", bounds=(0, float("inf"))
-            )
-            ctx.notation[source_rates[name]] = rf"r_{{{name}}}"
-            ctx.describe(
-                source_rates[name],
-                description=f"Mean firing rate per external source channel in {name}",
-            )
+        _build_external_rates(ctx=ctx, source_rates=source_rates)
+
         for projection in ctx.projections:
             name = projection["id"]
             delay_spec = projection.get("delay") or {"value": 0, "unit": "ms"}
@@ -188,65 +218,22 @@ class RateConductance:
                     },
                 },
             )
-            recurrent = source in populations
-            if (
-                ctx.delays == "explicit"
-                and delay
-                and not recurrent
-                and ctx.external_filters == "quasistatic"
-            ):
-                raise ValueError(
-                    "explicit external delays require dynamic external filters"
-                )
-            receptor = "e" if expected == "excitatory" else "i"
-            conductance_label = rf"g_{{{receptor}}}^{{{target}}}"
-            matching = [
-                p for p in ctx.projections if p["target"] == projection["target"]
-            ]
-            if recurrent:
-                if (
-                    sum(p["source"].rsplit(".", 1)[0] in populations for p in matching)
-                    > 1
-                ):
-                    conductance_label = rf"g_{{{receptor},{source}}}^{{{target}}}"
-            else:
-                external_count = sum(
-                    p["source"].rsplit(".", 1)[0] not in populations for p in matching
-                )
-                conductance_label = (
-                    rf"g_{{\mathrm{{ext}}}}^{{{target}}}"
-                    if external_count == 1
-                    else rf"g_{{\mathrm{{ext}},{source}}}^{{{target}}}"
-                )
-            if recurrent or ctx.external_filters == "dynamic":
-                conductance = ctx.state(
-                    f"{name}.conductance", unit="uS", bounds=(0, float("inf"))
-                )
-                rate = rates[source] if recurrent else source_rates[source]
-                if ctx.delays == "explicit":
-                    rate = ctx.delay(rate, delay, name=f"{name}.delayed_rate")
-                ctx.derivative(
-                    conductance, -conductance / tau + coupling * gain * rate / 1000
-                )
-                if recurrent:
-                    ctx.filters.append(
-                        Filter(conductance, source, tau, coupling * gain)
-                    )
-                ctx.notation[conductance] = conductance_label
-                ctx.describe(
-                    conductance,
-                    description=f"Mean synaptic conductance from {source} into {target}",
-                )
-                display_conductance = conductance
-            else:
-                conductance = tau * coupling * gain * source_rates[source] / 1000
-                display_conductance = ctx.display_definition(
-                    f"{name}.mean_conductance",
-                    conductance,
-                    latex=conductance_label,
-                    description=f"Quasistatic mean external conductance from {source} into {target}",
-                    unit="uS",
-                )
+            conductance, display_conductance = _build_projection_conductance(
+                ctx=ctx,
+                source=source,
+                populations=populations,
+                delay=delay,
+                expected=expected,
+                target=target,
+                projection=projection,
+                name=name,
+                rates=rates,
+                source_rates=source_rates,
+                tau=tau,
+                coupling=coupling,
+                gain=gain,
+            )
+
             neuron = populations[target]["neuron"]
             reversal = (
                 neuron.get("excitatory_reversal_mv", 0)
@@ -285,3 +272,69 @@ class RateConductance:
             ]
         )
         return ctx.build()
+
+    def _build_population_rates(
+        self,
+        *,
+        ctx,
+        populations,
+        currents,
+        rates,
+        gains,
+        relaxation,
+        display_currents,
+        driving_forces,
+    ):
+        for name, population in populations.items():
+            if population["neuron"]["kind"] != "coba_lif" or not population["spiking"]:
+                raise ValueError(
+                    f"{name}: RateConductance supports spiking COBA_LIF only"
+                )
+            gains[name], maximum = self.gain.bind(ctx, population)
+            rates[name] = ctx.state(f"{name}.rate", unit="Hz", bounds=(0, maximum))
+            tau = (
+                self.tau_rate[name]
+                if isinstance(self.tau_rate, Mapping)
+                else self.tau_rate
+            )
+            if magnitude(tau, "ms") <= 0:
+                raise ValueError("rate relaxation times must be positive")
+            relaxation[name] = ctx.parameter(
+                f"{name}.tau_rate", tau, unit="ms", bounds=(1e-300, float("inf"))
+            )
+            currents[name] = ctx.parameter(
+                f"{name}.applied_current", ctx.applied_current.get(name, 0), unit="nA"
+            )
+            ctx.notation[rates[name]] = rf"r_{{{name}}}"
+            ctx.notation[relaxation[name]] = rf"\tau_{{r,{name}}}"
+            ctx.notation[currents[name]] = rf"I_{{\mathrm{{ext}},{name}}}"
+            ctx.describe(
+                rates[name], description=f"Mean firing rate of population {name}"
+            )
+            ctx.describe(
+                relaxation[name],
+                description=f"Rate relaxation time of population {name}",
+            )
+            ctx.describe(
+                currents[name],
+                description=f"Applied external current to population {name}",
+            )
+            display_currents[name] = currents[name]
+            neuron = population["neuron"]
+            rest = neuron.get("resting_mv", -65)
+            driving_forces[name] = {
+                "excitatory": ctx.display_definition(
+                    f"{name}.driving_force_exc",
+                    neuron.get("excitatory_reversal_mv", 0) - rest,
+                    latex=rf"\Delta V_{{\mathrm{{exc}},{name}}}",
+                    description=f"Excitatory reversal potential minus resting voltage of {name}",
+                    unit="mV",
+                ),
+                "inhibitory": ctx.display_definition(
+                    f"{name}.driving_force_inh",
+                    rest - neuron.get("inhibitory_reversal_mv", -80),
+                    latex=rf"\Delta V_{{\mathrm{{inh}},{name}}}",
+                    description=f"Resting voltage of {name} minus inhibitory reversal potential",
+                    unit="mV",
+                ),
+            }

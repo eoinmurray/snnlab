@@ -64,7 +64,7 @@ def run(*, baseline_ref, repeats, duration, output):
         sample_interval=0.5,
         method="DOP853",
         max_step=0.1,
-        rtol=1e-8,
+        rtol=1e-08,
         atol=1e-10,
     )
     current_solver = integration.solve_segments
