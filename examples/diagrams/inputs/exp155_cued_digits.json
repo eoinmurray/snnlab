@@ -1,0 +1,1115 @@
+{
+  "source": {
+    "repository": "eoinmurray/pinglab",
+    "revision": "d6a320e86539b90bcc4bba51534bd28a66f52c63",
+    "path": "experiments/exp155/recipe.py",
+    "sha256": "7ddb5b8ce3a14b5460430c554281c113eea7e8bea15a5f817acb29b96c7115f3",
+    "variant": "learned, paired, pixel wiring, feedforward training",
+    "authoring_call": "author_network('learned', configuration())",
+    "dependencies": [
+      {
+        "path": "experiments/exp155/custom/initializers.py",
+        "sha256": "2a39c5cea6e37d01161ee3da4c78f7fb17390673c2896b519f9cc6bcf24da846"
+      }
+    ]
+  },
+  "graph": {
+    "schema": "snnlang.graph/v1",
+    "voltage_sampling": "explicit",
+    "refractory_timing": "following_steps",
+    "name": "exp155",
+    "timebase": {
+      "dt": {
+        "value": 0.2,
+        "unit": "ms"
+      }
+    },
+    "inputs": [
+      {
+        "id": "cue_A",
+        "shape": [
+          "time",
+          "batch",
+          16
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      },
+      {
+        "id": "cue_B",
+        "shape": [
+          "time",
+          "batch",
+          16
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      },
+      {
+        "id": "digit_A",
+        "shape": [
+          "time",
+          "batch",
+          64
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      },
+      {
+        "id": "digit_B",
+        "shape": [
+          "time",
+          "batch",
+          64
+        ],
+        "signal_type": "spikes",
+        "unit": "spike"
+      }
+    ],
+    "populations": [
+      {
+        "id": "A_E",
+        "size": 128,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 1.0,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.05,
+          "refractory": {
+            "value": 1.2,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 20.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 1000.0
+        },
+        "spiking": true,
+        "group": null
+      },
+      {
+        "id": "A_I",
+        "size": 32,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 0.5,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.1,
+          "refractory": {
+            "value": 0.6,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 5.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 1000.0
+        },
+        "spiking": true,
+        "group": null
+      },
+      {
+        "id": "B_E",
+        "size": 128,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 1.0,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.05,
+          "refractory": {
+            "value": 1.2,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 20.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 1000.0
+        },
+        "spiking": true,
+        "group": null
+      },
+      {
+        "id": "B_I",
+        "size": 32,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 0.5,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.1,
+          "refractory": {
+            "value": 0.6,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 5.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 1000.0
+        },
+        "spiking": true,
+        "group": null
+      },
+      {
+        "id": "C_E",
+        "size": 128,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 1.0,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.05,
+          "refractory": {
+            "value": 1.2,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 20.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 1000.0
+        },
+        "spiking": true,
+        "group": null
+      },
+      {
+        "id": "C_I",
+        "size": 32,
+        "neuron": {
+          "kind": "coba_lif",
+          "capacitance_nf": 0.5,
+          "initial_voltage_mv": -65.0,
+          "leak_us": 0.1,
+          "refractory": {
+            "value": 0.6,
+            "unit": "ms"
+          },
+          "reset_mv": -65.0,
+          "resting_mv": -65.0,
+          "tau_mem": {
+            "value": 5.0,
+            "unit": "ms"
+          },
+          "threshold_mv": -50.0,
+          "voltage_grad_dampen": 1000.0
+        },
+        "spiking": true,
+        "group": null
+      }
+    ],
+    "projections": [
+      {
+        "id": "F_CA",
+        "source": "A_E.spikes",
+        "target": "C_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "F_CA.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "F_CB",
+        "source": "B_E.spikes",
+        "target": "C_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "F_CB.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "Q_A",
+        "source": "cue_A.value",
+        "target": "A_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "Q_A.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "Q_B",
+        "source": "cue_B.value",
+        "target": "B_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "Q_B.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "U_A",
+        "source": "digit_A.value",
+        "target": "A_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "U_A.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "U_B",
+        "source": "digit_B.value",
+        "target": "B_E.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "feedforward",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": null,
+        "parameters": [
+          "U_B.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "W_A_EI",
+        "source": "A_I.spikes",
+        "target": "A_E.inhibitory",
+        "synapse": {
+          "kind": "gaba",
+          "tau": {
+            "value": 6.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "inhibitory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.2,
+          "unit": "ms"
+        },
+        "parameters": [
+          "W_A_EI.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "W_A_IE",
+        "source": "A_E.spikes",
+        "target": "A_I.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.2,
+          "unit": "ms"
+        },
+        "parameters": [
+          "W_A_IE.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "W_B_EI",
+        "source": "B_I.spikes",
+        "target": "B_E.inhibitory",
+        "synapse": {
+          "kind": "gaba",
+          "tau": {
+            "value": 6.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "inhibitory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.2,
+          "unit": "ms"
+        },
+        "parameters": [
+          "W_B_EI.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "W_B_IE",
+        "source": "B_E.spikes",
+        "target": "B_I.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.2,
+          "unit": "ms"
+        },
+        "parameters": [
+          "W_B_IE.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "W_C_EI",
+        "source": "C_I.spikes",
+        "target": "C_E.inhibitory",
+        "synapse": {
+          "kind": "gaba",
+          "tau": {
+            "value": 6.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "inhibitory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.2,
+          "unit": "ms"
+        },
+        "parameters": [
+          "W_C_EI.weight"
+        ],
+        "group": null
+      },
+      {
+        "id": "W_C_IE",
+        "source": "C_E.spikes",
+        "target": "C_I.excitatory",
+        "synapse": {
+          "kind": "ampa",
+          "tau": {
+            "value": 2.0,
+            "unit": "ms"
+          }
+        },
+        "connection": "recurrent",
+        "polarity": "excitatory",
+        "allow_autapses": false,
+        "delay": {
+          "value": 0.2,
+          "unit": "ms"
+        },
+        "parameters": [
+          "W_C_IE.weight"
+        ],
+        "group": null
+      }
+    ],
+    "operations": [
+      {
+        "id": "R",
+        "kind": "linear",
+        "sources": [
+          "sum_C_E.value"
+        ],
+        "shape": [
+          "batch",
+          10
+        ],
+        "unit": "spike",
+        "signal_type": "continuous",
+        "parameters": [
+          "R.weight"
+        ],
+        "config": {
+          "size": 10,
+          "trainable": true
+        },
+        "group": null
+      },
+      {
+        "id": "sum_C_E",
+        "kind": "reduce_sum",
+        "sources": [
+          "C_E.spikes"
+        ],
+        "shape": [
+          "batch",
+          128
+        ],
+        "unit": "spike",
+        "signal_type": "continuous",
+        "parameters": [],
+        "config": {
+          "mask": null,
+          "window": "full"
+        },
+        "group": null
+      }
+    ],
+    "parameters": [
+      {
+        "id": "F_CA.weight",
+        "shape": [
+          128,
+          128
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "custom_initializer",
+          "config": {
+            "start": 0,
+            "stop": 128,
+            "mean": 0.9,
+            "std": 0.0,
+            "mapping": "pixel"
+          },
+          "definition": "pinglab.exp155.input_block/v1"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "F_CB.weight",
+        "shape": [
+          128,
+          128
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "custom_initializer",
+          "config": {
+            "start": 0,
+            "stop": 128,
+            "mean": 0.9,
+            "std": 0.0,
+            "mapping": "pixel"
+          },
+          "definition": "pinglab.exp155.input_block/v1"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "Q_A.weight",
+        "shape": [
+          128,
+          16
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "custom_initializer",
+          "config": {
+            "start": 0,
+            "stop": 16,
+            "mean": 0.1,
+            "std": 0.0,
+            "mapping": "dense"
+          },
+          "definition": "pinglab.exp155.input_block/v1"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "Q_B.weight",
+        "shape": [
+          128,
+          16
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "custom_initializer",
+          "config": {
+            "start": 0,
+            "stop": 16,
+            "mean": 0.1,
+            "std": 0.0,
+            "mapping": "dense"
+          },
+          "definition": "pinglab.exp155.input_block/v1"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "R.weight",
+        "shape": [
+          10,
+          128
+        ],
+        "unit": "1",
+        "initializer": {
+          "kind": "constant",
+          "value": 0.0
+        },
+        "constraint": null,
+        "group": null
+      },
+      {
+        "id": "U_A.weight",
+        "shape": [
+          128,
+          64
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "custom_initializer",
+          "config": {
+            "start": 0,
+            "stop": 64,
+            "mean": 0.9,
+            "std": 0.09,
+            "mapping": "pixel"
+          },
+          "definition": "pinglab.exp155.input_block/v1"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "U_B.weight",
+        "shape": [
+          128,
+          64
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "custom_initializer",
+          "config": {
+            "start": 0,
+            "stop": 64,
+            "mean": 0.9,
+            "std": 0.09,
+            "mapping": "pixel"
+          },
+          "definition": "pinglab.exp155.input_block/v1"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "W_A_EI.weight",
+        "shape": [
+          128,
+          32
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.0625,
+          "std": 0.00625,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "W_A_IE.weight",
+        "shape": [
+          32,
+          128
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.0078125,
+          "std": 0.00078125,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "W_B_EI.weight",
+        "shape": [
+          128,
+          32
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.0625,
+          "std": 0.00625,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "W_B_IE.weight",
+        "shape": [
+          32,
+          128
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.0078125,
+          "std": 0.00078125,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "W_C_EI.weight",
+        "shape": [
+          128,
+          32
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.0625,
+          "std": 0.00625,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      },
+      {
+        "id": "W_C_IE.weight",
+        "shape": [
+          32,
+          128
+        ],
+        "unit": "uS",
+        "initializer": {
+          "kind": "lower_clamped_normal",
+          "initial_zero_fraction": 0.0,
+          "mean": 0.0078125,
+          "std": 0.00078125,
+          "zeroing": "bernoulli"
+        },
+        "initialization_scaling": "direct",
+        "constraint": {
+          "kind": "non_negative"
+        },
+        "group": null
+      }
+    ],
+    "constants": [],
+    "outputs": [
+      {
+        "id": "class_scores",
+        "signal": "R.value"
+      }
+    ],
+    "observables": [],
+    "assets": [],
+    "groups": [],
+    "extensions": [
+      {
+        "category": "initializer",
+        "definition": "pinglab.exp155.input_block/v1",
+        "unit": "1",
+        "state_units": {},
+        "classification": false,
+        "implementation": {
+          "function": "experiments.exp155.custom.initializers:initialize"
+        }
+      }
+    ]
+  },
+  "training": {
+    "schema": "snnlang.training/v1",
+    "graph_digest": "sha256:49ab3b6a22b9c431d86fbf1d988d0f2315716e8f59fa052bca636661db8b310a",
+    "objectives": [
+      {
+        "kind": "cross_entropy",
+        "prediction": "R.value",
+        "target": "digit",
+        "weight": 1.0
+      }
+    ],
+    "parameter_groups": [
+      {
+        "id": "classifier",
+        "parameters": [
+          "R.weight"
+        ],
+        "lr": 0.0004,
+        "frozen": false
+      },
+      {
+        "id": "feedback",
+        "parameters": [
+          "W_A_EI.weight",
+          "W_A_IE.weight",
+          "W_B_EI.weight",
+          "W_B_IE.weight",
+          "W_C_EI.weight",
+          "W_C_IE.weight"
+        ],
+        "lr": 0.0,
+        "frozen": true
+      },
+      {
+        "id": "feedforward",
+        "parameters": [
+          "F_CA.weight",
+          "F_CB.weight",
+          "U_A.weight",
+          "U_B.weight"
+        ],
+        "lr": 0.0004,
+        "frozen": false
+      },
+      {
+        "id": "fixed",
+        "parameters": [
+          "Q_A.weight",
+          "Q_B.weight"
+        ],
+        "lr": 0.0,
+        "frozen": true
+      }
+    ],
+    "resolved_parameters": {
+      "trainable": [
+        "F_CA.weight",
+        "F_CB.weight",
+        "R.weight",
+        "U_A.weight",
+        "U_B.weight"
+      ],
+      "frozen": [
+        "Q_A.weight",
+        "Q_B.weight",
+        "W_A_EI.weight",
+        "W_A_IE.weight",
+        "W_B_EI.weight",
+        "W_B_IE.weight",
+        "W_C_EI.weight",
+        "W_C_IE.weight"
+      ],
+      "learning_rates": {
+        "R.weight": 0.0004,
+        "F_CA.weight": 0.0004,
+        "F_CB.weight": 0.0004,
+        "U_A.weight": 0.0004,
+        "U_B.weight": 0.0004
+      }
+    },
+    "regularizers": [],
+    "stop_gradients": [],
+    "optimizer": {
+      "kind": "adamw",
+      "config": {
+        "lr": 0.0004,
+        "weight_decay": 0.0
+      }
+    },
+    "epochs": 30,
+    "gradient_clip": 1.0,
+    "surrogate": {
+      "kind": "fast_sigmoid",
+      "slope": 1.0
+    },
+    "presentation_duration": {
+      "value": 200.0,
+      "unit": "ms"
+    },
+    "resolved_gradients": {
+      "surrogate": {
+        "kind": "fast_sigmoid",
+        "slope": 1.0
+      },
+      "voltage_gradient_dampening": {
+        "A_E": 1000.0,
+        "A_I": 1000.0,
+        "B_E": 1000.0,
+        "B_I": 1000.0,
+        "C_E": 1000.0,
+        "C_I": 1000.0
+      }
+    }
+  },
+  "manifest": {
+    "schema": "snnlang.bundle/v1",
+    "compiler": {
+      "name": "snnlang",
+      "version": "0.2.0"
+    },
+    "graph_digest": "sha256:49ab3b6a22b9c431d86fbf1d988d0f2315716e8f59fa052bca636661db8b310a",
+    "target": "tools/snnsim",
+    "required_capabilities": {
+      "schema": "snnlang.capabilities/v1",
+      "elements": [
+        {
+          "element": "A_E",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "A_I",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "B_E",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "B_I",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "C_E",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "C_I",
+          "features": [
+            "neuron:coba_lif"
+          ]
+        },
+        {
+          "element": "F_CA",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "F_CB",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "Q_A",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "Q_B",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "R",
+          "features": [
+            "operation:linear"
+          ]
+        },
+        {
+          "element": "U_A",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "U_B",
+          "features": [
+            "synapse:ampa",
+            "connection:feedforward",
+            "delay:none"
+          ]
+        },
+        {
+          "element": "W_A_EI",
+          "features": [
+            "synapse:gaba",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "W_A_IE",
+          "features": [
+            "synapse:ampa",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "W_B_EI",
+          "features": [
+            "synapse:gaba",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "W_B_IE",
+          "features": [
+            "synapse:ampa",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "W_C_EI",
+          "features": [
+            "synapse:gaba",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "W_C_IE",
+          "features": [
+            "synapse:ampa",
+            "connection:recurrent",
+            "delay:explicit"
+          ]
+        },
+        {
+          "element": "sum_C_E",
+          "features": [
+            "operation:reduce_sum"
+          ]
+        }
+      ]
+    },
+    "files": [
+      {
+        "path": "graph.json",
+        "digest": "sha256:49ab3b6a22b9c431d86fbf1d988d0f2315716e8f59fa052bca636661db8b310a"
+      },
+      {
+        "path": "training.json",
+        "digest": "sha256:82dcc856200d3ae80e97ca67c2e4dc437d09584f5ee9119f2d22afc97b5d44f9"
+      }
+    ],
+    "assets": [],
+    "extensions": [
+      {
+        "category": "initializer",
+        "definition": "pinglab.exp155.input_block/v1",
+        "unit": "1",
+        "state_units": {},
+        "classification": false,
+        "implementation": {
+          "function": "experiments.exp155.custom.initializers:initialize"
+        }
+      }
+    ]
+  }
+}

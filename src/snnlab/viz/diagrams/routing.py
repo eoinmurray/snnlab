@@ -448,11 +448,13 @@ def _text_boxes(commands):
     size = 10
     boxes = []
     for command in commands:
-        if command["op"] == "F":
+        if command.get("op") == "F":
             size = command["size"]
-        elif command["op"] == "T":
+        elif command.get("op") == "T":
             x, y = command["pt"]
             width = command["width"]
             x -= {"l": 0, "c": width / 2, "r": width}[command["align"]]
             boxes.append((x, y - size * 0.3, x + width, y + size))
+        elif command.get("op") in {"p", "P"}:
+            boxes.append(_bounds(command["points"]))
     return boxes

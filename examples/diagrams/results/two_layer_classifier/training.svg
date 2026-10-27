@@ -30,14 +30,12 @@
 <title>layer_1_E:se&#45;&gt;layer_1_I:ne</title>
 <path fill="none" stroke="#24292f" stroke-width="1.3" d="M202.09,-158.42C202.09,-158.42 202.09,-120.05 202.09,-120.05 202.09,-120.05 202.09,-123.08 202.09,-123.08"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="204.37,-123.05 202.09,-116.55 199.82,-123.05 204.37,-123.05"/>
-<text xml:space="preserve" text-anchor="start" x="143.34" y="-126.14" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- layer_1_E&#45;&gt;layer_2_E -->
 <g id="e_n_input_to_layer_2" class="edge edge excitatory feedforward">
 <title>layer_1_E&#45;&gt;layer_2_E</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M231.73,-205C231.73,-205 301.81,-205 301.81,-205 301.81,-205 298.95,-205 298.95,-205"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="299.29,-207.28 305.79,-205 299.29,-202.73 299.29,-207.28"/>
-<text xml:space="preserve" text-anchor="start" x="252.9" y="-184" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- layer_1_I&#45;&gt;layer_1_E -->
 <!-- layer_1_I&#45;&gt;layer_1_E -->
@@ -47,7 +45,6 @@
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="184.82,-146.95 187.09,-153.45 189.37,-146.95 184.82,-146.95"/>
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="190.34,-145.65 183.84,-145.65 183.84,-144.35 190.34,-144.35 190.34,-145.65"/>
 <polyline fill="none" stroke="#aa5b63" stroke-width="1.3" points="187.09,-146.3 187.09,-143.05"/>
-<text xml:space="preserve" text-anchor="start" x="90.34" y="-137.55" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">GABA</text>
 </g>
 <!-- layer_1_I&#45;&gt;layer_2_I -->
 <!-- layer_2_E&#45;&gt;layer_2_I -->
@@ -55,7 +52,6 @@
 <title>layer_2_E:se&#45;&gt;layer_2_I:ne</title>
 <path fill="none" stroke="#24292f" stroke-width="1.3" d="M332.09,-158.42C332.09,-158.42 332.09,-120.05 332.09,-120.05 332.09,-120.05 332.09,-123.08 332.09,-123.08"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="334.37,-123.05 332.09,-116.55 329.82,-123.05 334.37,-123.05"/>
-<text xml:space="preserve" text-anchor="start" x="43.34" y="-126.14" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- layer_2_E&#45;&gt;classifier_projection -->
 <g id="e_layout_7" class="edge edge signal feedforward">
@@ -71,7 +67,6 @@
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="351.82,-146.95 354.09,-153.45 356.37,-146.95 351.82,-146.95"/>
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="357.34,-145.65 350.84,-145.65 350.84,-144.35 357.34,-144.35 357.34,-145.65"/>
 <polyline fill="none" stroke="#aa5b63" stroke-width="1.3" points="354.09,-146.3 354.09,-143.05"/>
-<text xml:space="preserve" text-anchor="start" x="257.34" y="-111.59" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">GABA</text>
 </g>
 <!-- classifier_count&#45;&gt;out:class_scores -->
 <g id="e_layout_8" class="edge edge output feedforward">
@@ -121,7 +116,6 @@
 <title>inputs&#45;&gt;layer_1_E</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M64.69,-205C64.69,-205 134.64,-205 134.64,-205 134.64,-205 131.79,-205 131.79,-205"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="132.13,-207.28 138.63,-205 132.13,-202.73 132.13,-207.28"/>
-<text xml:space="preserve" text-anchor="start" x="85.79" y="-184" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- out:class_scores&#45;&gt;objective:0 -->
 <g id="e_layout_9" class="edge edge output feedforward">

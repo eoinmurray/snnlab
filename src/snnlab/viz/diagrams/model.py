@@ -57,15 +57,6 @@ class DiagramNode:
 
 
 @dataclass(frozen=True)
-class WeightLabel:
-    """A matrix symbol with literal subscript and superscript text, not LaTeX."""
-
-    symbol: str = "W"
-    subscript: str = ""
-    superscript: str = ""
-
-
-@dataclass(frozen=True)
 class DiagramEdge:
     """A directed semantic relationship between two diagram nodes."""
 
@@ -79,7 +70,6 @@ class DiagramEdge:
     constraint: bool = True
     pen_width: float = 1.1
     frozen: bool = False
-    weight_label: WeightLabel | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +100,8 @@ class Diagram:
             raise ValueError("diagram node ids must be unique")
         known = set(ids)
         for edge in self.edges:
+            if not isinstance(edge.label, str):
+                raise TypeError("diagram connection labels must be strings")
             if edge.source not in known or edge.target not in known:
                 raise ValueError(
                     f"diagram edge references unknown node: {edge.source} -> {edge.target}"

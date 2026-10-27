@@ -12,6 +12,23 @@ from snnlab.lang.compilation.bundles import Bundle
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "results"
 
+LABEL_EXAMPLES = {
+    "all_box_types": {
+        "input_projection": "encoded input",
+        "E_to_I": r"$J_{E\to I}$",
+        "I_to_E": r"$J_{I\to E}$",
+        "readout_projection": r"$W_{\mathrm{out}}$",
+    },
+    "exp155_cued_digits": {
+        "U_A": "Digit A",
+        "Q_A": "Cue A",
+        "U_B": "Digit B",
+        "Q_B": "Cue B",
+        "F_CA": r"$F_{CA}$",
+        "F_CB": r"$F_{CB}$",
+    },
+}
+
 
 @dataclass(frozen=True)
 class VisualCase:
@@ -163,8 +180,8 @@ def all_box_types() -> VisualCase:
     )
 
 
-def case_diagram(case: VisualCase, view: str, *, weight_labels=False) -> viz.Diagram:
-    visual = lang.diagram(case.bundle, view=view, weight_labels=weight_labels)
+def case_diagram(case: VisualCase, view: str, *, connection_labels=None) -> viz.Diagram:
+    visual = lang.diagram(case.bundle, view=view, connection_labels=connection_labels)
     if case.external_encoder:
         visual = replace(
             visual,
@@ -196,6 +213,7 @@ def cases() -> tuple[VisualCase, ...]:
         "exp133_coupled": "Two PING circuits with 1,024-channel drives and reciprocal, delayed, step-modulated coupling.",
         "exp133_sender_receiver": "Independently driven sender and receiver PING circuits with one-way, delayed E-to-E and E-to-I coupling.",
         "exp136_sustained_cue_ping": "Two independently driven sender PING circuits converge on a receiver, each with its own non-recurrent neuronal cue population. Five authored groups include sensory and cue inputs. Uncalibrated circuit proposal; no simulation or training results.",
+        "exp155_cued_digits": "Cued digit classifier: separate 64-channel digit and 16-channel cue inputs drive each of two 128-E/32-I senders, A and B, which converge on a third E/I module C. Only C E spike counts feed the ten-class linear readout. Digit inputs, sender-to-C weights, and classifier weights learn; E/I recurrence and cue weights are frozen.",
     }
     snapshots = []
     for name, description in descriptions.items():
@@ -257,65 +275,22 @@ def main() -> None:
             if case.name == "all_box_types"
             else ("circuit", "training")
         )
-        if case.name in {"all_box_types", "two_layer_classifier", "exp131_coupled"}:
-            views = (*views, "circuit_weights")
+        if case.name in LABEL_EXAMPLES:
+            views = (*views, "circuit_labels")
         for name in views:
-            view = "circuit" if name == "circuit_weights" else name
-            weight_labels = name == "circuit_weights"
-            if weight_labels and case.name == "all_box_types":
-                weight_labels = {
-                    "input_projection": viz.WeightLabel(subscript="in"),
-                    "E_to_I": viz.WeightLabel("J", "E→I", "rec"),
-                    "I_to_E": viz.WeightLabel("J", "I→E", "rec"),
-                    "readout_projection": viz.WeightLabel(subscript="out"),
-                }
-            elif weight_labels and case.name == "two_layer_classifier":
-                weight_labels = {
-                    "input_to_layer_1": viz.WeightLabel(subscript="in"),
-                    "input_to_layer_2": viz.WeightLabel(subscript="E1→E2"),
-                    **{
-                        f"layer_{layer}_{path}": viz.WeightLabel(
-                            subscript=f"{source}{layer}→{target}{layer}"
-                        )
-                        for layer in (1, 2)
-                        for path, source, target in (
-                            ("E_to_I", "E", "I"),
-                            ("I_to_E", "I", "E"),
-                        )
-                    },
-                }
-            elif weight_labels and case.name == "exp131_coupled":
-                aliases = {
-                    "drive_A_300_Hz": "inA",
-                    "drive_B_260_Hz": "inB",
-                    "PING_A_E": "EA",
-                    "PING_A_I": "IA",
-                    "PING_B_E": "EB",
-                    "PING_B_I": "IB",
-                }
-                weight_labels = {
-                    row["id"]: viz.WeightLabel(
-                        subscript=f"{aliases[row['source'].partition('.')[0]]}→{aliases[row['target'].partition('.')[0]]}"
-                    )
-                    for row in case.bundle.graph["projections"]
-                }
-            diagram = case_diagram(case, view, weight_labels=weight_labels)
+            view = "circuit" if name == "circuit_labels" else name
+            connection_labels = (
+                LABEL_EXAMPLES[case.name] if name == "circuit_labels" else None
+            )
+            diagram = case_diagram(case, view, connection_labels=connection_labels)
             stem = f"{case.name}/{name}"
             for suffix in ("svg", "png"):
                 viz.render_diagram(
                     diagram, output / f"{stem}.{suffix}", scale=args.scale
                 )
-            options = f"view={view}; weight labels={bool(weight_labels)}; all groups explicit; PNG scale={args.scale}"
-            legend = ""
-            if name == "circuit_weights":
-                legend = {
-                    "all_box_types": "W: projection weights; J: recurrent weights; E/I: excitatory/inhibitory populations; in/out: input/readout; rec: recurrent.",
-                    "two_layer_classifier": "W: projection weights; E1/I1: excitatory/inhibitory populations in layer 1; E2/I2: populations in layer 2; in: input weights.",
-                    "exp131_coupled": "W: projection weights; EA/IA: excitatory/inhibitory populations in PING A; EB/IB: populations in PING B; inA/inB: their external drives.",
-                }[case.name] + " Subscripts use source→target order."
+            options = f"view={view}; custom connection labels={bool(connection_labels)}; all groups explicit; PNG scale={args.scale}"
             figures.append(
                 f"<figure><figcaption><h3>{html.escape(name.replace('_', ' '))}</h3>"
-                + (f"<p>{html.escape(legend)}</p>" if legend else "")
                 + f"<code>{html.escape(options)}</code> "
                 f'<a href="{stem}.svg">SVG</a> · <a href="{stem}.png">PNG</a>'
                 f'</figcaption><a href="{stem}.svg">'

@@ -32,6 +32,171 @@ def snapshot(name):
 
 
 @pytest.mark.parametrize("view", ["circuit", "training", "expanded"])
+def test_cued_digit_snapshot_preserves_separate_inputs_and_classifier(view):
+    bundle = snapshot("exp155_cued_digits")
+    visual = lang.diagram(bundle, view=view)
+    assert len(bundle.graph["populations"]) == 6
+    assert len(bundle.graph["projections"]) == 12
+    assert len(bundle.graph["operations"]) == 2
+    assert len(bundle.graph["outputs"]) == 1
+    assert {row["id"]: row["shape"][-1] for row in bundle.graph["inputs"]} == {
+        "digit_A": 64,
+        "digit_B": 64,
+        "cue_A": 16,
+        "cue_B": 16,
+    }
+    assert {row["id"] for row in bundle.graph["projections"]} <= {
+        edge.id for edge in visual.edges
+    }
+    pathways = {(edge.source, edge.target) for edge in visual.edges}
+    for module in ("A", "B"):
+        assert (f"digit_{module}", f"{module}_E") in pathways
+        assert (f"cue_{module}", f"{module}_E") in pathways
+    assert ("C_E", "sum_C_E") in pathways
+    assert {node.id for node in visual.nodes if node.kind == "output"} == {
+        "out:class_scores"
+    }
+    assert ("A_E", "C_E") in pathways
+    assert ("B_E", "C_E") in pathways
+    assert ("sum_C_E", "R") in pathways
+    assert ("R", "out:class_scores") in pathways
+    if view == "training":
+        assert {node.id for node in visual.nodes if node.kind == "training"} == {
+            "train:classifier",
+            "train:feedback",
+            "train:feedforward",
+            "train:fixed",
+        }
+        assert ("out:class_scores", "objective:0") in pathways
+        assert {
+            node.id: node.badge for node in visual.nodes if node.kind == "training"
+        } == {
+            "train:classifier": "trainable",
+            "train:feedforward": "trainable",
+            "train:feedback": "frozen",
+            "train:fixed": "frozen",
+        }
+
+
+def diagnostic_fan_in_snapshot():
+    """Add data-only diagnostic branches to stress the optional readout layout."""
+    bundle = snapshot("exp155_cued_digits")
+    template = next(row for row in bundle.graph["operations"] if row["id"] == "sum_C_E")
+    for population in bundle.graph["populations"]:
+        name = population["id"]
+        if name != "C_E":
+            bundle.graph["operations"].append(
+                {
+                    **template,
+                    "id": f"sum_{name}",
+                    "sources": [f"{name}.spikes"],
+                    "shape": ["batch", population["size"]],
+                }
+            )
+        bundle.graph["outputs"].append(
+            {"id": f"{name}_counts", "signal": f"sum_{name}.value"}
+        )
+    return bundle
+
+
+@pytest.mark.parametrize("view", ["circuit", "training"])
+@pytest.mark.parametrize("rename", [False, True])
+@pytest.mark.parametrize("diagnostics", [False, True])
+def test_rendered_fan_in_keeps_pairs_compact_and_readouts_aligned(
+    view, rename, diagnostics, tmp_path
+):
+    if any(shutil.which(program) is None for program in ("dot", "neato")):
+        pytest.skip("Graphviz is required")
+    bundle = (
+        diagnostic_fan_in_snapshot() if diagnostics else snapshot("exp155_cued_digits")
+    )
+    visual = lang.diagram(bundle, view=view)
+    ids = {
+        node.id: f"node_{index}" if rename else node.id
+        for index, node in enumerate(visual.nodes)
+    }
+    visual = replace(
+        visual,
+        nodes=tuple(replace(node, id=ids[node.id]) for node in visual.nodes),
+        edges=tuple(
+            replace(edge, source=ids[edge.source], target=ids[edge.target])
+            for edge in visual.edges
+        ),
+    )
+    path = viz.render_diagram(visual, tmp_path / "fan-in.svg")
+    ns = {"svg": "http://www.w3.org/2000/svg"}
+    groups = ET.parse(path).getroot().findall(".//svg:g", ns)
+    positions, boxes = {}, {}
+    for group in groups:
+        if "node" not in group.get("class", "").split():
+            continue
+        points = [
+            tuple(map(float, point.split(",")))
+            for point in group.find("svg:polygon", ns).get("points").split()
+        ]
+        x, y = zip(*points, strict=True)
+        identifier = group.find("svg:title", ns).text
+        positions[identifier] = ((min(x) + max(x)) / 2, (min(y) + max(y)) / 2)
+        boxes[identifier] = (min(x), min(y), max(x), max(y))
+    assert set(positions) == set(ids.values())
+    assert len(
+        [group for group in groups if "edge" in group.get("class", "").split()]
+    ) == len(visual.edges)
+    population_rows = {
+        ids[f"{module}_{kind}"]: positions[ids[f"{module}_{kind}"]][1]
+        for module in ("A", "B", "C")
+        for kind in ("E", "I")
+    }
+    for module in ("A", "B", "C"):
+        e, i = ids[f"{module}_E"], ids[f"{module}_I"]
+        assert positions[e][0] == pytest.approx(positions[i][0], abs=0.01)
+        assert boxes[e][3] < boxes[i][1]
+        assert boxes[i][1] - boxes[e][3] < 60
+        assert not any(
+            positions[e][1] < y < positions[i][1]
+            for node, y in population_rows.items()
+            if node not in {e, i}
+        )
+        for kind in ("E", "I"):
+            population = f"{module}_{kind}"
+            if not diagnostics and population != "C_E":
+                continue
+            assert positions[ids[population]][1] == pytest.approx(
+                positions[ids[f"sum_{population}"]][1], abs=0.01
+            )
+    assert positions[ids["A_E"]][0] < positions[ids["C_E"]][0]
+    assert positions[ids["B_E"]][0] < positions[ids["C_E"]][0]
+    for node in ("R", "out:class_scores"):
+        assert positions[ids[node]][1] == pytest.approx(
+            positions[ids["C_E"]][1], abs=0.01
+        )
+    if diagnostics:
+        assert positions[ids["out:C_E_counts"]][1] > positions[ids["C_I"]][1]
+
+
+@pytest.mark.parametrize("change", ["cycle", "group", "missing_readout"])
+def test_fan_in_layout_falls_back_for_other_topologies(change):
+    from snnlab.viz.diagrams.fan_in import position_readout_fan_in
+
+    visual = lang.diagram(snapshot("exp155_cued_digits"))
+    if change == "cycle":
+        visual = replace(
+            visual,
+            edges=(*visual.edges, viz.DiagramEdge("C_E", "A_E", role="excitatory")),
+        )
+    elif change == "group":
+        visual = replace(
+            visual, groups=(viz.DiagramGroup("sender", "Sender", ("A_E", "A_I")),)
+        )
+    else:
+        visual = replace(
+            visual,
+            edges=tuple(edge for edge in visual.edges if edge.target != "sum_C_E"),
+        )
+    assert position_readout_fan_in(visual, {}, viz.diagram_to_dot(visual)) is None
+
+
+@pytest.mark.parametrize("view", ["circuit", "training", "expanded"])
 def test_sustained_cue_case_preserves_inputs_groups_and_pathways(view):
     bundle = snapshot("exp136_sustained_cue_ping")
     visual = lang.diagram(bundle, view=view)
@@ -176,6 +341,7 @@ def test_collapsed_component_box_is_rejected():
         "exp124_ping",
         "exp133_coupled",
         "exp136_sustained_cue_ping",
+        "exp155_cued_digits",
         "self_loop",
     ],
 )
@@ -426,9 +592,12 @@ def test_grouped_fan_in_layout_separates_stages_and_keeps_e_above_i(view):
         ("exp131_phase_response", "expanded"),
         ("exp136_sustained_cue_ping", "circuit"),
         ("exp136_sustained_cue_ping", "training"),
+        ("exp155_cued_digits", "circuit"),
+        ("exp155_cued_digits", "training"),
     ],
 )
-def test_exported_wire_labels_clear_nodes_and_wires(name, view):
+@pytest.mark.parametrize("math_labels", [False, True])
+def test_exported_wire_labels_clear_nodes_and_wires(name, view, math_labels, tmp_path):
     if any(shutil.which(program) is None for program in ("dot", "neato")):
         pytest.skip("Graphviz is required")
     from snnlab.viz.diagrams.routing import (
@@ -440,11 +609,36 @@ def test_exported_wire_labels_clear_nodes_and_wires(name, view):
         route_feedback_lanes,
     )
 
-    source = viz.diagram_to_dot(lang.diagram(snapshot(name), view=view))
+    bundle = snapshot(name)
+    visual = lang.diagram(
+        bundle,
+        view=view,
+        connection_labels={
+            row["id"]: rf"$J_{{{index}}}$" if math_labels else f"Path {index}"
+            for index, row in enumerate(bundle.graph["projections"])
+        },
+    )
+    source = viz.diagram_to_dot(visual)
+    from snnlab.viz.diagrams.fan_in import position_readout_fan_in
+    from snnlab.viz.diagrams.labels import math_labels_to_dot, prepare_math_labels
+
+    assets = prepare_math_labels(visual, viz.DiagramTheme(), tmp_path)
+    source = math_labels_to_dot(source, visual, viz.DiagramTheme(), assets)
+
     layout = json.loads(
         subprocess.check_output(["dot", "-Tjson"], input=source, text=True)
     )
-    positioned = subprocess.check_output(["dot", "-Tdot"], input=source, text=True)
+    pinned = position_readout_fan_in(visual, layout, source)
+    if pinned is not None:
+        source = pinned
+        layout = json.loads(
+            subprocess.check_output(["neato", "-n", "-Tjson"], input=source, text=True)
+        )
+    positioned = subprocess.check_output(
+        ["neato", "-n", "-Tdot"] if pinned else ["dot", "-Tdot"],
+        input=source,
+        text=True,
+    )
     layout, positioned = route_feedback_lanes(layout, positioned)
     layout, positioned = expose_arrowheads(layout, positioned)
     adjusted = position_wire_labels(layout, positioned)
@@ -545,96 +739,107 @@ def test_feedback_uses_separated_overhead_lanes(name, view):
 
 
 @pytest.mark.parametrize("view", ["circuit", "training", "expanded"])
-def test_weight_labels_are_opt_in_and_preserve_diagram_semantics(view):
+def test_connection_labels_are_explicit_and_preserve_semantics(view):
     bundle = all_box_types().bundle
     original = json.dumps(bundle.graph, sort_keys=True)
     plain = lang.diagram(bundle, view=view)
-    labelled = lang.diagram(bundle, view=view, weight_labels=True)
-    assert all(edge.weight_label is None for edge in plain.edges)
-    weighted_ids = {row["id"] for row in bundle.graph["projections"]}
-    assert {edge.id for edge in labelled.edges if edge.weight_label} == weighted_ids
-    for edge in labelled.edges:
-        if edge.weight_label:
-            assert edge.weight_label == viz.WeightLabel(
-                subscript=f"{edge.source}→{edge.target}"
-            )
+    assert all(edge.label == "" for edge in plain.edges)
+    labels = {"E_to_I": r"$J_{E\to I}$", "input_projection": "encoded input"}
+    labelled = lang.diagram(bundle, view=view, connection_labels=labels)
+    assert {edge.id: edge.label for edge in labelled.edges if edge.label} == labels
     assert (
         replace(
-            labelled,
-            edges=tuple(replace(edge, weight_label=None) for edge in labelled.edges),
+            labelled, edges=tuple(replace(edge, label="") for edge in labelled.edges)
         )
         == plain
     )
     assert json.dumps(bundle.graph, sort_keys=True) == original
 
 
-def test_custom_weight_labels_select_projections_and_validate_ids():
+def test_connection_labels_validate_ids_and_strings():
     bundle = all_box_types().bundle
-    label = viz.WeightLabel("J", "E→I", "rec")
-    visual = lang.diagram(bundle, weight_labels={"E_to_I": label})
-    assert {
-        edge.id: edge.weight_label for edge in visual.edges if edge.weight_label
-    } == {"E_to_I": label}
-    with pytest.raises(ValueError, match="weighted projection IDs"):
-        lang.diagram(bundle, weight_labels={"missing": label})
-    with pytest.raises(TypeError, match="WeightLabel instances"):
-        lang.diagram(bundle, weight_labels={"E_to_I": "J"})
-    bundle.graph["projections"][0]["parameters"] = []
-    identifier = bundle.graph["projections"][0]["id"]
-    visual = lang.diagram(bundle, weight_labels=True)
-    assert (
-        next(edge for edge in visual.edges if edge.id == identifier).weight_label
-        is None
-    )
-    with pytest.raises(ValueError, match="weighted projection IDs"):
-        lang.diagram(bundle, weight_labels={identifier: label})
+    with pytest.raises(ValueError, match="known projection IDs"):
+        lang.diagram(bundle, connection_labels={"missing": "gain"})
+    with pytest.raises(TypeError, match="must be strings"):
+        lang.diagram(bundle, connection_labels={"E_to_I": 3})
+    with pytest.raises(TypeError, match="must be a mapping"):
+        lang.diagram(bundle, connection_labels=True)
+    with pytest.raises(TypeError, match="must be strings"):
+        viz.Diagram(
+            "invalid",
+            (viz.DiagramNode("a", "A", "", ""),),
+            (viz.DiagramEdge("a", "a", label=3),),
+        )
+    assert not hasattr(viz, "WeightLabel")
 
 
-@pytest.mark.parametrize("suffix", ["svg", "png", "pdf"])
-def test_math_weight_labels_render_with_escaped_text(tmp_path, suffix):
+@pytest.mark.parametrize("suffix", ["svg", "png", "pdf", "dot"])
+def test_connection_math_labels_render_and_survive_temporary_assets(tmp_path, suffix):
     if any(shutil.which(program) is None for program in ("dot", "neato")):
         pytest.skip("Graphviz is required")
+    formula = r"$\frac{J_{E\to I}^{\mathrm{rec}}}{\tau_I}$"
     visual = lang.diagram(
         all_box_types().bundle,
-        weight_labels={"E_to_I": viz.WeightLabel("J<&", "E→I", "rec")},
+        connection_labels={"E_to_I": formula, "input_projection": "u_A <&"},
     )
-    dot = viz.diagram_to_dot(visual)
-    assert "<B><I>J&lt;&amp;</I></B>" in dot
-    assert "<SUB>" not in dot and "<SUP>" not in dot
-    assert 'ROWSPAN="2"' in dot
-    path = viz.render_diagram(visual, tmp_path / f"weights.{suffix}")
+    path = viz.render_diagram(visual, tmp_path / f"labels.{suffix}")
     if suffix == "svg":
         root = ET.parse(path).getroot()
-        edge = next(
-            element for element in root.iter() if element.get("id") == "e_n_E_to_I"
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        assert not root.findall(".//svg:image", ns)
+        nested = root.findall(".//svg:svg", ns)
+        assert nested and nested[0].find("svg:title", ns).text == formula
+        assert nested[0].findall(".//svg:path", ns)
+        identifiers = [node.get("id") for node in root.iter() if node.get("id")]
+        assert len(identifiers) == len(set(identifiers))
+        assert "u_A &lt;&amp;" in path.read_text()
+        assert "AMPA" not in path.read_text() and "GABA" not in path.read_text()
+        assert "snnviz-diagram-" not in path.read_text()
+    elif suffix == "dot":
+        images = re.findall(r'IMG SRC="([^"]+)"', path.read_text())
+        assert images and all(Path(image).is_file() for image in images)
+        result = subprocess.run(
+            ["dot", "-Tpng", str(path), "-o", str(tmp_path / "from-dot.png")],
+            capture_output=True,
+            text=True,
+            check=True,
         )
-        text = [element for element in edge.iter() if element.tag.endswith("}text")]
-        assert {element.text for element in text} >= {"AMPA", "J<&", "E→I", "rec"}
-        symbol = next(element for element in text if element.text == "J<&")
-        assert symbol.get("font-weight") == "bold"
-        assert symbol.get("font-style") == "italic"
-        subscript = next(element for element in text if element.text == "E→I")
-        superscript = next(element for element in text if element.text == "rec")
-        assert float(subscript.get("font-size")) < float(symbol.get("font-size"))
-        assert float(superscript.get("font-size")) < float(symbol.get("font-size"))
-        assert (
-            float(superscript.get("y"))
-            < float(symbol.get("y"))
-            < float(subscript.get("y"))
-        )
-        assert float(subscript.get("x")) == pytest.approx(float(superscript.get("x")))
-        assert float(subscript.get("x")) > float(symbol.get("x"))
-        assert all("baseline-shift" not in element.attrib for element in text)
+        assert "No such file" not in result.stderr
+        assert "No or improper image" not in result.stderr
     else:
         assert path.read_bytes().startswith(b"\x89PNG" if suffix == "png" else b"%PDF")
 
 
-def test_long_default_weight_names_fit_grouped_classifier(tmp_path):
+def test_connection_math_svg_is_deterministic_and_respects_canvas(tmp_path):
     if any(shutil.which(program) is None for program in ("dot", "neato")):
         pytest.skip("Graphviz is required")
     visual = lang.diagram(
-        diagram_cases.representative_classifier().bundle, weight_labels=True
+        all_box_types().bundle,
+        connection_labels={"E_to_I": r"$J_{EI}$", "I_to_E": r"$J_{EI}$"},
     )
-    path = viz.render_diagram(visual, tmp_path / "classifier.svg")
-    text = "".join(ET.parse(path).getroot().itertext())
-    assert "layer_2_I→layer_2_E" in text
+    first = viz.render_diagram(visual, tmp_path / "first.svg", canvas_size=(4000, 2200))
+    second = viz.render_diagram(
+        visual, tmp_path / "second.svg", canvas_size=(4000, 2200)
+    )
+    assert first.read_bytes() == second.read_bytes()
+    root = ET.parse(first).getroot()
+    assert root.get("width") == "4000px" and root.get("height") == "2200px"
+    identifiers = [node.get("id") for node in root.iter() if node.get("id")]
+    assert len(identifiers) == len(set(identifiers))
+
+
+def test_invalid_connection_math_fails_clearly(tmp_path):
+    visual = lang.diagram(
+        all_box_types().bundle, connection_labels={"E_to_I": r"$\notacommand$"}
+    )
+    with pytest.raises(ValueError, match="invalid connection label"):
+        viz.render_diagram(visual, tmp_path / "invalid.svg")
+
+
+def test_bundle_visualise_accepts_connection_labels(tmp_path):
+    if any(shutil.which(program) is None for program in ("dot", "neato")):
+        pytest.skip("Graphviz is required")
+    path = all_box_types().bundle.visualise(
+        tmp_path / "label.svg", connection_labels={"E_to_I": "custom_gain"}
+    )
+    assert "custom_gain" in path.read_text()

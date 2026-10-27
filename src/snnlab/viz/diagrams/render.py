@@ -10,10 +10,27 @@ import tempfile
 from pathlib import Path
 
 from .dot import diagram_to_dot
+from .fan_in import position_readout_fan_in
+from .labels import embed_math_svg, math_labels_to_dot, prepare_math_labels
 from .model import Diagram, DiagramTheme
 from .routing import expose_arrowheads, position_wire_labels, route_feedback_lanes
 
 _DEFAULT_THEME = DiagramTheme()
+
+
+def _finish_svg(output, assets, canvas_size):
+    embed_math_svg(output, assets)
+    if canvas_size is not None:
+        # Match SVG's intrinsic pixel dimensions to the PNG, preserving viewBox.
+        svg = re.sub(
+            r'(<svg\b[^>]*\bwidth=")[^"]+("[^>]*\bheight=")[^"]+(")',
+            lambda match: (
+                f"{match[1]}{canvas_size[0]}px{match[2]}{canvas_size[1]}px{match[3]}"
+            ),
+            output.read_text(),
+            count=1,
+        )
+        output.write_text(svg)
 
 
 def render_diagram(
@@ -41,9 +58,15 @@ def render_diagram(
     if suffix not in {".svg", ".png", ".pdf", ".dot"}:
         raise ValueError("diagram output must be .svg, .png, .pdf, or .dot")
     if suffix == ".dot":
+        assets = prepare_math_labels(
+            diagram, theme, output.parent / f"{output.stem}.labels"
+        )
+        dot = math_labels_to_dot(dot, diagram, theme, assets)
         output.write_text(dot)
         return output
     with tempfile.TemporaryDirectory(prefix="snnviz-diagram-") as temporary:
+        assets = prepare_math_labels(diagram, theme, Path(temporary), scale=scale)
+        dot = math_labels_to_dot(dot, diagram, theme, assets)
         dot_path = Path(temporary) / "diagram.dot"
         dot_path.write_text(dot)
         layout_path = Path(temporary) / "layout.json"
@@ -61,6 +84,31 @@ def render_diagram(
             )
             if layout.returncode:
                 raise RuntimeError(f"Graphviz failed: {layout.stderr.strip()}")
+        pinned = (
+            position_readout_fan_in(diagram, json.loads(layout_path.read_text()), dot)
+            if height_to_width_ratio is None
+            else None
+        )
+        if pinned is not None:
+            dot_path.write_text(pinned)
+            for format_name, destination in (
+                ("json", layout_path),
+                ("dot", positioned_path),
+            ):
+                layout = subprocess.run(
+                    [
+                        "neato",
+                        "-n",
+                        f"-T{format_name}",
+                        "-o",
+                        str(destination),
+                        str(dot_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                if layout.returncode:
+                    raise RuntimeError(f"Graphviz failed: {layout.stderr.strip()}")
         layout_data, positioned_dot = route_feedback_lanes(
             json.loads(layout_path.read_text()), positioned_path.read_text()
         )
@@ -101,14 +149,6 @@ def render_diagram(
         result = subprocess.run(args, capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError(f"Graphviz failed: {result.stderr.strip()}")
-    if canvas_size is not None and suffix == ".svg":
-        # Match SVG's intrinsic pixel dimensions to the PNG, preserving viewBox.
-        svg = output.read_text()
-        svg = re.sub(
-            r'<svg\s+width="[^"]+"\s+height="[^"]+"',
-            f'<svg width="{canvas_size[0]}px" height="{canvas_size[1]}px"',
-            svg,
-            count=1,
-        )
-        output.write_text(svg)
+    if suffix == ".svg":
+        _finish_svg(output, assets, canvas_size)
     return output

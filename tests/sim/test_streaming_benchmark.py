@@ -105,6 +105,7 @@ def test_streaming_timing_bars_and_numerical_gate(tmp_path, monkeypatch, mode):
     )
     monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--plot-only", str(tmp_path)])
     benchmark.main()
+    assert benchmark.plot_detailed_report(report_path).name == "streaming-details.png"
 
 
 @pytest.mark.parametrize(
@@ -186,6 +187,54 @@ def test_legacy_reports_redraw_without_inventing_deadline_data(tmp_path):
     path = tmp_path / "report.json"
     path.write_text(json.dumps(report))
     assert benchmark.plot_report(path).read_bytes().startswith(b"\x89PNG")
+
+
+def test_callback_summary_pools_raw_durations_and_separates_late_starts(tmp_path):
+    # Three cheap callbacks start late; only one callback actually exceeds budget.
+    runs = [
+        {
+            "deadlines": {
+                "period_ms": 1,
+                "samples": [
+                    [0, 0, 2_000_000],
+                    [1_000_000, 2_000_000, 2_100_000],
+                ],
+            },
+        },
+        {
+            "deadlines": {
+                "period_ms": 1,
+                "samples": [
+                    [0, 950_000, 1_050_000],
+                    [1_000_000, 2_000_000, 2_100_000],
+                    [2_000_000, 2_100_000, 2_200_000],
+                ],
+            },
+        },
+    ]
+    summary = benchmark.callback_summary(runs)
+    assert summary["windows"] == 5
+    assert summary["seeds"] == 2
+    assert summary["mean_ms"] == pytest.approx(0.48)
+    # Linear sample percentiles of [0.1, 0.1, 0.1, 0.1, 2.0].
+    assert summary["p95_ms"] == pytest.approx(1.62)
+    assert summary["p99_ms"] == pytest.approx(1.924)
+    assert summary["missed_deadlines"] == 4
+    assert summary["callback_overruns"] == 1
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps({"cases": [{"config": {"hidden": 32}, "runs": runs}]}))
+    assert benchmark.plot_report(path).read_bytes().startswith(b"\x89PNG")
+
+
+def test_callback_summary_rejects_missing_samples_and_mixed_budgets():
+    with pytest.raises(ValueError, match="requires paced samples"):
+        benchmark.callback_summary([{}])
+    runs = [
+        {"deadlines": {"period_ms": period, "samples": [[0, 0, 100_000]]}}
+        for period in (1, 2)
+    ]
+    with pytest.raises(ValueError, match="same deadline budget"):
+        benchmark.callback_summary(runs)
 
 
 def test_interval_rates_reset_and_use_actual_partial_bin_counts():

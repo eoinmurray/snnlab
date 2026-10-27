@@ -16,7 +16,6 @@ _EXPORTS = {
     "DiagramGroup": "diagrams.model",
     "DiagramNode": "diagrams.model",
     "DiagramTheme": "diagrams.model",
-    "WeightLabel": "diagrams.model",
     "diagram_to_dot": "diagrams.dot",
     "render_diagram": "diagrams.render",
     "FigureGrid": "plotting.grid",

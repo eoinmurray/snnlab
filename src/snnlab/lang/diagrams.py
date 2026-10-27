@@ -8,7 +8,7 @@ from dataclasses import replace
 
 from snnlab import extensions as E
 from snnlab.lang.compilation.bundles import Bundle
-from snnlab.viz import Diagram, DiagramEdge, DiagramGroup, DiagramNode, WeightLabel
+from snnlab.viz import Diagram, DiagramEdge, DiagramGroup, DiagramNode
 
 
 def _diagram_text_formatters():
@@ -196,7 +196,7 @@ def _add_output_nodes(*, graph, bundle, add_node, shape_text, unit_line):
         )
 
 
-def _add_graph_edges(*, graph, rendered, edges, weight_labels, weighted):
+def _add_graph_edges(*, graph, rendered, edges, connection_labels):
     for projection in graph["projections"]:
         source = projection["source"].partition(".")[0]
         target = projection["target"].partition(".")[0]
@@ -209,19 +209,7 @@ def _add_graph_edges(*, graph, rendered, edges, weight_labels, weighted):
                 source=source,
                 target=target,
                 role=polarity,
-                label=(
-                    {"ampa": "AMPA", "gaba": "GABA"}.get(
-                        projection["synapse"]["kind"],
-                        projection["synapse"]["kind"].replace("_", " "),
-                    )
-                ),
-                weight_label=(
-                    WeightLabel(subscript=f"{source}→{target}")
-                    if weight_labels is True and projection["id"] in weighted
-                    else weight_labels.get(projection["id"])
-                    if isinstance(weight_labels, Mapping)
-                    else None
-                ),
+                label=connection_labels.get(projection["id"], ""),
                 connection=connection,
                 id=projection["id"],
                 classes=(polarity, connection),
@@ -357,29 +345,27 @@ def diagram(
     bundle: Bundle,
     *,
     view: str = "circuit",
-    weight_labels: bool | Mapping[str, WeightLabel] = False,
+    connection_labels: Mapping[str, str] | None = None,
 ) -> Diagram:
     """Project a bundle into a diagram without choosing a rendering backend."""
 
     if view not in {"circuit", "training", "expanded"}:
         raise ValueError("view must be circuit, training, or expanded")
     graph = bundle.graph
-    if not isinstance(weight_labels, (bool, Mapping)):
+    if connection_labels is None:
+        connection_labels = {}
+    if not isinstance(connection_labels, Mapping):
         raise TypeError(
-            "weight_labels must be a bool or a mapping of projection IDs to WeightLabel"
+            "connection_labels must be a mapping of projection IDs to strings"
         )
-    weighted = {
-        projection["id"]
-        for projection in graph["projections"]
-        if any(parameter.endswith(".weight") for parameter in projection["parameters"])
-    }
-    if isinstance(weight_labels, Mapping):
-        if unknown := weight_labels.keys() - weighted:
-            raise ValueError(
-                f"weight labels require weighted projection IDs: {sorted(unknown)}"
-            )
-        if any(not isinstance(label, WeightLabel) for label in weight_labels.values()):
-            raise TypeError("weight label overrides must be WeightLabel instances")
+    if unknown := connection_labels.keys() - {
+        row["id"] for row in graph["projections"]
+    }:
+        raise ValueError(
+            f"connection labels require known projection IDs: {sorted(unknown)}"
+        )
+    if any(not isinstance(label, str) for label in connection_labels.values()):
+        raise TypeError("connection labels must be strings")
     if len(graph["projections"]) + len(graph["operations"]) > 120:
         raise ValueError(
             "graph is too dense for a legible explicit static view; filter it"
@@ -432,8 +418,7 @@ def diagram(
         graph=graph,
         rendered=rendered,
         edges=edges,
-        weight_labels=weight_labels,
-        weighted=weighted,
+        connection_labels=connection_labels,
     )
 
     if view == "training" and bundle.training:

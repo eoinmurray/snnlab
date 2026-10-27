@@ -444,6 +444,10 @@ class Theme:
 
 ## Advanced: custom diagrams
 
+For diagrams generated from a bundle, use
+[`lang.diagram(connection_labels=...)`](/api/lang#connection-labels).
+The [Defining Networks guide](/snnlang#3-connection-labels) shows plain-text and
+mathematical examples. For custom diagrams, set `DiagramEdge.label` as below.
 
 ### Diagram data
 
@@ -488,23 +492,15 @@ class DiagramEdge:
     constraint: bool = True
     pen_width: float = 1.1
     frozen: bool = False
-    weight_label: WeightLabel | None = None
 ```
 
-#### WeightLabel
-
-```python
-class WeightLabel:
-    symbol: str = "W"
-    subscript: str = ""
-    superscript: str = ""
-```
-
-A weight matrix name rendered beneath the edge's ordinary label. The symbol is
-bold italic; subscripts and superscripts use mathematical placement. Fields are
-literal text and are escaped by the renderer. SVG, PNG and PDF use the same
-Graphviz layout without requiring a TeX installation. `lang.diagram` can generate
-these labels automatically or accept a mapping for selected projections.
+`label` is optional and empty by default. Use a string for literal text, or
+include `$...$` expressions for LaTeX-style mathematics using Matplotlib
+MathText. Newlines create multiple rows. Labels are escaped, not interpreted as
+HTML. Maths supports MathText's subset of LaTeX, including Greek letters,
+fractions, subscripts and superscripts, without a system TeX installation.
+Unsupported math commands raise `ValueError` during rendering. The same label
+system handles matrix names and other connection annotations.
 
 #### DiagramGroup
 
@@ -533,7 +529,7 @@ def diagram_to_dot(
 ) -> str: ...
 ```
 
-Returns Graphviz DOT text without invoking Graphviz or writing a file. `height_to_width_ratio` must be finite and positive, or `None` for unconstrained natural layout. The default uses natural layout without a fixed ratio. `canvas_size=(1920, 900)` requests a centred canvas at a constant node and type scale; dimensions are positive integers in pixels at the base 144 DPI.
+Returns Graphviz DOT text without invoking Graphviz or writing a file. Mathematical labels retain their literal source in this raw export; use `render_diagram` for rendered mathematics or DOT with image assets. `height_to_width_ratio` must be finite and positive, or `None` for unconstrained natural layout. The default uses natural layout without a fixed ratio. `canvas_size=(1920, 900)` requests a centred canvas at a constant node and type scale; dimensions are positive integers in pixels at the base 144 DPI.
 
 ### render_diagram
 
@@ -549,7 +545,7 @@ def render_diagram(
 ) -> Path: ...
 ```
 
-Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT writes source directly; other formats use Graphviz `dot` for layout and `neato -n2` to export fixed routes after wire and label clearance. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. When `canvas_size` is supplied, SVG intrinsic dimensions match PNG dimensions; PNG `scale` multiplies the canvas dimensions. A canvas smaller than the natural layout raises `ValueError` before export, preventing clipping. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
+Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT exports with mathematical labels also write PNG assets in a sibling `<stem>.labels/` directory; the DOT references these files by path. Other formats use Graphviz for layout and export after wire and label clearance. SVG embeds mathematical labels as self-contained vector paths; PNG and PDF embed high-resolution images. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. When `canvas_size` is supplied, SVG intrinsic dimensions match PNG dimensions; PNG `scale` multiplies the canvas dimensions. A canvas smaller than the natural layout raises `ValueError` before export, preventing clipping. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
 
 ### DiagramTheme
 

@@ -48,3 +48,38 @@ Run `uv run python examples/snnlang/example.py` from the repository root. The sa
 ![Thirty-two spike input channels drive two grouped layers. Each layer contains excitatory and inhibitory COBA-LIF populations joined by AMPA excitation and GABA feedback. Layer 1 excites Layer 2, whose excitatory spikes form the output.](/snnlang/recurrent.png)
 
 `view="expanded"` shows all four populations inside their layer groups, including the local feedback loops. The circuit contains six projections: two within each layer, one input projection and one between layers. Compilation and rendering describe the architecture; they do not establish its stability or activity. The neuron and weight parameters here illustrate authoring rather than a tuned dynamical regime.
+
+## 3. Connection labels
+
+Connections are unlabelled by default. Add labels when drawing a compiled bundle
+by mapping projection names from `net.connect(name=...)` to strings:
+
+```python
+visual = lang.diagram(
+    bundle,
+    connection_labels={
+        "input_to_layer_1": "sensory input",
+        "layer_1_E_to_I": r"$J_{E\to I}^{(1)}$",
+        "layer_1_I_to_E": r"$\frac{g_I}{\tau_I}$",
+    },
+)
+viz.render_diagram(visual, "labelled-network.svg")
+```
+
+Use this after `bundle = lang.compile(net)` in the recurrent example. Names must
+match projection IDs exactly; omitted connections stay unlabelled. The same
+mapping works with `bundle.visualise("labelled-network.svg", connection_labels=...)`.
+For a hand-built `viz.Diagram`, set each `viz.DiagramEdge.label` directly.
+
+Plain text retains underscores and is escaped literally. Enclose mathematics in
+`$...$` and use raw Python strings for backslashes. Mathematical labels use
+[Matplotlib MathText](https://matplotlib.org/stable/users/explain/text/mathtext.html),
+a LaTeX-style subset supporting Greek letters, fractions, subscripts and
+superscripts without a TeX installation. Newlines create separate label rows.
+Here the symbols are illustrative names supplied by the caller; they do not
+change the network equations or weight values.
+
+SVG embeds mathematics as vector paths; PNG and PDF embed high-resolution math
+images. Labels affect presentation only and leave the compiled bundle unchanged.
+See the [connection label reference](/api/lang#connection-labels) for validation
+rules and the [diagram export reference](/api/viz#render-diagram) for output formats.

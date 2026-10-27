@@ -1048,6 +1048,7 @@ bundle.visualise(
     *,
     view="circuit",
     scale=1,
+    connection_labels=None,
 )
 ```
 
@@ -1072,20 +1073,43 @@ def diagram(
     bundle: Bundle,
     *,
     view: str = "circuit",
-    weight_labels: bool | Mapping[str, viz.WeightLabel] = False,
+    connection_labels: Mapping[str, str] | None = None,
 ) -> Diagram: ...
 ```
 
 `lang.diagram` returns a renderer-neutral `viz.Diagram`. `view` accepts `"circuit"`, `"training"` or `"expanded"`. Every view shows all populations, operations and projections explicitly; groups are labelled boundaries, never collapsed boxes. The training view additionally shows parameter groups and objectives. `"expanded"` remains an alias for the explicit circuit view. The former `expand_groups` argument has been removed. Unsupported views raise `ValueError`. All static views reject graphs with more than 120 projections plus operations. See [diagram rendering](/api/viz#advanced-custom-diagrams).
 
-Set `weight_labels=True` to add a bold italic W with a source→target subscript
-under each weighted projection's synapse label. This is display notation and does
-not specify the matrix's storage orientation. Alternatively, supply a mapping
-from projection IDs to `viz.WeightLabel(symbol="J", subscript="E→I", superscript="rec")`
-to label only selected projections. Unknown or unweighted projection IDs raise
-`ValueError`. All fields are literal text, not LaTeX or HTML. Labels are disabled
-by default. The runnable `examples/diagrams/example.py` gallery includes both
-default and custom matrix labels alongside unlabelled views.
+#### Connection labels
+
+Connections have no labels by default; synapse types such as AMPA and GABA are
+not automatically printed. Supply `connection_labels` to label selected
+projections by ID. Values are strings, with plain text or LaTeX-style mathematics
+delimited by `$...$`:
+
+```python
+visual = lang.diagram(
+    bundle,
+    connection_labels={
+        "input_to_E": "sensory input",
+        "E_to_I": r"$J_{E\to I}$",
+        "I_to_E": r"$\frac{g_I}{\tau_I}$",
+    },
+)
+viz.render_diagram(visual, "network.svg")
+```
+
+Omitted IDs stay unlabelled. Unknown projection IDs raise `ValueError`;
+non-string values raise `TypeError`. Labels affect presentation only and leave
+the bundle unchanged. `bundle.visualise(..., connection_labels=...)` accepts the
+same mapping. Mathematical syntax uses [Matplotlib MathText](https://matplotlib.org/stable/users/explain/text/mathtext.html),
+including fractions, Greek letters, subscripts and superscripts, without a TeX
+installation. Unsupported commands raise a descriptive `ValueError`; full LaTeX
+preambles and packages are not supported. Plain text retains underscores and is
+escaped literally; newlines create separate label rows.
+
+SVG contains vector mathematics with no external image dependencies. PNG and
+PDF embed high-resolution mathematical labels. The diagram gallery includes
+unlabelled views and examples of custom connection labels.
 
 ## Physical time
 

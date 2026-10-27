@@ -9,6 +9,13 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-27
+
+### Changed
+
+1. Network connections are unlabelled by default. Use `connection_labels={projection_id: text}` with `lang.diagram` or `bundle.visualise` for optional plain text or LaTeX-style MathText labels. This replaces the removed `WeightLabel` and `weight_labels` API. SVG embeds vector mathematics; PNG and PDF embed high-resolution labels. The diagram gallery includes exp155 and updated custom-label examples.
+2. Streaming benchmarks now summarize pooled callback mean, p95 and p99 alongside individual deadline misses and budget overruns. The default size sweep extends through 2,048 hidden neurons; `--detailed-plot` retains the diagnostic figure. Published measurements retain separate source reports and batch provenance for the original and extended size sweeps.
+
 ### Added
 
 1. A small streaming inference example with consecutive 5 ms input windows, continuing neuron and synapse state, generated diagrams and response plots, downloadable recordings, and a colocated documentation guide.

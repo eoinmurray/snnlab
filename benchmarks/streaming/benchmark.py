@@ -1,4 +1,4 @@
-"""Measure streaming deadlines and processing phases in one multipanel report."""
+"""Measure streaming deadlines and processing phases, with a two-panel summary."""
 
 from __future__ import annotations
 
@@ -672,7 +672,209 @@ def interval_seed_series(runs, interval_ms=100):
     return result
 
 
+def callback_summary(runs):
+    """Pool original paced callbacks, not seed percentiles or interval means."""
+    durations = []
+    periods = set()
+    missed = overruns = 0
+    for run in runs:
+        deadlines = run.get("deadlines")
+        if not deadlines or not deadlines.get("samples"):
+            raise ValueError("Callback summary requires paced samples for every seed")
+        period = deadlines["period_ms"]
+        periods.add(period)
+        raw = deadline_arrays(
+            np.asarray(deadlines["samples"], dtype=np.int64), round(period * 1e6)
+        )
+        durations.append(raw["callback_ns"] / 1e6)
+        missed += int(raw["deadline_missed"].sum())
+        overruns += int(raw["callback_overrun"].sum())
+    if len(periods) != 1:
+        raise ValueError("Callback summary requires the same deadline budget per seed")
+    values = np.concatenate(durations)
+    return {
+        "windows": len(values),
+        "seeds": len(runs),
+        "period_ms": periods.pop(),
+        "mean_ms": float(values.mean()),
+        "p95_ms": float(np.percentile(values, 95)),
+        "p99_ms": float(np.percentile(values, 99)),
+        "missed_deadlines": missed,
+        "callback_overruns": overruns,
+    }
+
+
 def plot_report(report_path, output=None):
+    """Pooled paced callback mean/tails and individual deadline failure counts."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    from matplotlib.ticker import FuncFormatter, MaxNLocator, ScalarFormatter
+
+    report_path = Path(report_path)
+    report = json.loads(report_path.read_text())
+    cases = [c for c in report["cases"] if c.get("runs", [c])]
+    if not cases:
+        return None
+    # Legacy reports have no raw paced samples; retain their diagnostic redraw.
+    if any(
+        not r.get("deadlines", {}).get("samples")
+        for c in cases
+        for r in c.get("runs", [c])
+    ):
+        return plot_detailed_report(
+            report_path, output or report_path.with_name("streaming.png")
+        )
+    cases.sort(key=lambda c: c["config"]["hidden"])
+    summaries = [callback_summary(c.get("runs", [c])) for c in cases]
+    periods = {s["period_ms"] for s in summaries}
+    if len(periods) != 1:
+        raise ValueError("Summary plot requires the same deadline budget across sizes")
+    period = periods.pop()
+    sizes = [c["config"]["hidden"] for c in cases]
+    x = np.arange(len(sizes))
+    fig = Figure(figsize=(11.6, 5.4))
+    FigureCanvasAgg(fig)
+    axes = fig.subplots(1, 2)
+    fig.subplots_adjust(left=0.08, right=0.98, bottom=0.26, top=0.79, wspace=0.29)
+    ax = axes[0]
+    for metric, label, colour, marker in (
+        ("mean_ms", "Mean", "#2563a6", "o"),
+        ("p95_ms", "p95", "#168477", "s"),
+        ("p99_ms", "p99", "#b56a12", "^"),
+    ):
+        ax.plot(
+            sizes,
+            [s[metric] for s in summaries],
+            label=label,
+            color=colour,
+            marker=marker,
+            linewidth=2,
+            markersize=6,
+        )
+    ax.axhline(period, color="#b72e35", linestyle="--", linewidth=1.6)
+    budget_label = (
+        "realtime budget"
+        if all(c["config"].get("window_ms", period) == period for c in cases)
+        else "deadline budget"
+    )
+    ax.annotate(
+        f"{period:g} ms {budget_label}",
+        xy=(0.02, period),
+        xycoords=("axes fraction", "data"),
+        xytext=(0, 6),
+        textcoords="offset points",
+        ha="left",
+        color="#a12630",
+        fontsize=11,
+    )
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(sizes, [str(size) for size in sizes])
+    ax.set_yscale("log")
+    values = [s[m] for s in summaries for m in ("mean_ms", "p95_ms", "p99_ms")]
+    lower = min(min(values), period) * 0.7
+    upper = max(max(values), period) * 1.35
+    ticks = [
+        unit * 10.0**power
+        for power in range(
+            int(np.floor(np.log10(lower))), int(np.ceil(np.log10(upper))) + 1
+        )
+        for unit in (1, 2, 5)
+        if lower <= unit * 10.0**power <= upper
+    ]
+    ax.set_yticks(ticks)
+    ax.yaxis.set_major_formatter(ScalarFormatter())
+    ax.minorticks_off()
+    ax.set_ylim(lower, upper)
+    ax.set_ylabel("Callback time (ms, log scale)", fontsize=12)
+    ax.set_title("A   Callback duration", loc="left", fontsize=14, pad=14)
+    ax.legend(loc="upper left", ncol=3, frameon=False, fontsize=11)
+
+    ax = axes[1]
+    maximum = max(
+        s[k] for s in summaries for k in ("missed_deadlines", "callback_overruns")
+    )
+    positive_counts = [
+        s[k]
+        for s in summaries
+        for k in ("missed_deadlines", "callback_overruns")
+        if s[k] > 0
+    ]
+    log_counts = bool(positive_counts) and maximum / min(positive_counts) >= 100
+    for offset, metric, label, colour in (
+        (-0.19, "missed_deadlines", "Missed deadline", "#b72e35"),
+        (0.19, "callback_overruns", f"Callback > {period:g} ms", "#2563a6"),
+    ):
+        counts = [s[metric] for s in summaries]
+        ax.bar(x + offset, counts, width=0.34, color=colour, label=label, zorder=3)
+        for position, count in zip(x + offset, counts, strict=True):
+            ax.annotate(
+                f"{count / 1000:g}k" if count >= 1000 else str(count),
+                (position, count),
+                xytext=((-3 if offset < 0 else 3) if count >= 1000 else 0, 5),
+                textcoords="offset points",
+                ha="center",
+                fontsize=10 if count >= 1000 else 12,
+                color=colour,
+                fontweight="bold",
+            )
+    windows = {s["windows"] for s in summaries}
+    count_label = (
+        f"Count / {next(iter(windows)):,} callbacks" if len(windows) == 1 else "Count"
+    )
+    ax.set_ylabel(count_label + ("\n(log above 1)" if log_counts else ""), fontsize=12)
+    ax.set_xticks(x, [str(size) for size in sizes])
+    if log_counts:
+        ax.set_yscale("symlog", linthresh=1, linscale=0.5)
+        ax.set_yticks([0, 1, 10, 100, 1000, 10000, 100000])
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(
+                lambda value, _: f"{value / 1000:g}k" if value >= 1000 else f"{value:g}"
+            )
+        )
+        ax.set_ylim(0, maximum * 4)
+    else:
+        ax.set_ylim(0, max(maximum, 1) * 1.45)
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_title("B   Deadline failures", loc="left", fontsize=14, pad=14)
+    ax.legend(loc="upper left", frameon=False, fontsize=11)
+    for ax in axes:
+        ax.set_xlabel("Hidden neurons", fontsize=12)
+        ax.tick_params(labelsize=11)
+        ax.grid(axis="y", alpha=0.2)
+        ax.set_axisbelow(True)
+        ax.spines[["top", "right"]].set_visible(False)
+    cfg = cases[0]["config"]
+    fig.suptitle("Streaming performance as network size increases", fontsize=17, y=0.98)
+    sample_text = "; ".join(
+        f"{size}: {s['windows']:,} callbacks / {s['seeds']} seeds"
+        for size, s in zip(sizes, summaries, strict=True)
+    )
+    if len(windows) == 1 and len({s["seeds"] for s in summaries}) == 1:
+        sample_text = f"{summaries[0]['windows']:,} callbacks per size · {summaries[0]['seeds']} seeds pooled"
+    fig.text(
+        0.5,
+        0.89,
+        f"{cfg.get('device', 'cpu').upper()} · {sample_text}",
+        ha="center",
+        fontsize=11,
+    )
+    fig.text(
+        0.08,
+        0.09,
+        "Mean / p95 / p99 use original paced callback durations, including input and output processing.\n"
+        "Deadline miss: finish after scheduled release + budget. Callback overrun: duration > budget. Counts overlap.\n"
+        "A low p99 can coexist with rare overruns. Observed host timings; no hard realtime guarantee.",
+        fontsize=10,
+        linespacing=1.5,
+        va="center",
+    )
+    output = Path(output) if output else report_path.with_name("streaming.png")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=170, facecolor="white")
+    return output
+
+
+def plot_detailed_report(report_path, output=None):
     """Means and SD across seeds; one row per network, four measurement panels."""
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
@@ -884,7 +1086,7 @@ def plot_report(report_path, output=None):
         "SD = sample standard deviation (ddof=1) across seed-level measurements; windows are not independent replicates. Timing panels average within each 100 ms interval before combining seeds.\nMisses are counted from each original window before averaging: mean timing can hide isolated deadline failures. Full totals are inclusive; remaining diagnostic phases sum to them.\nLate windows catch up without dropping steps. Thread CPU excludes workers/device compute. Seed variation also includes host scheduling variation; SD is not a hard-deadline guarantee.",
         fontsize=10,
     )
-    output = Path(output) if output else report_path.with_name("streaming.png")
+    output = Path(output) if output else report_path.with_name("streaming-details.png")
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150, facecolor="white")
     return output
@@ -897,13 +1099,18 @@ def main():
         "--plot-only", type=Path, help="Redraw charts from a saved report or directory"
     )
     parser.add_argument(
+        "--detailed-plot",
+        action="store_true",
+        help="Draw the four-panel-per-size diagnostics as streaming-details.png",
+    )
+    parser.add_argument(
         "--seeds",
         nargs="+",
         type=int,
         help="Explicit distinct seeds; default is five consecutive seeds starting at --seed (7)",
     )
     parser.add_argument(
-        "--hidden-sizes", nargs="+", type=int, default=[64, 128, 256, 512]
+        "--hidden-sizes", nargs="+", type=int, default=[64, 128, 256, 512, 1024, 2048]
     )
     for name, kind, default in (
         ("inputs", int, 64),
@@ -932,10 +1139,11 @@ def main():
     )
     args = vars(parser.parse_args())
     plot_only = args.pop("plot_only")
+    plot = plot_detailed_report if args.pop("detailed_plot") else plot_report
     output = args.pop("output")
     if plot_only is not None:
         report_path = plot_only / "report.json" if plot_only.is_dir() else plot_only
-        print(plot_report(report_path))
+        print(plot(report_path))
         return
     if output is None:
         output = Path(__file__).resolve().parent / "results"
@@ -959,6 +1167,7 @@ def main():
         "case-*-deadlines.npz",
         "report.json",
         "streaming.png",
+        "streaming-details.png",
         "breakdown.png",
         "advance-internals.png",
     ):
@@ -1004,7 +1213,7 @@ def main():
             case["summary"] = summarize_seeds(case["runs"])
             report["execution_order"].append({"seed": seed, "hidden": cfg.hidden})
             report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
-    print(plot_report(report_path), flush=True)
+    print(plot(report_path), flush=True)
     report["complete"] = True
     report["wall_time_seconds"] = time.perf_counter() - wall_started
     report["wall_time_scope"] = (

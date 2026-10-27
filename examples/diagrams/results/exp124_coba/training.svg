@@ -16,7 +16,6 @@
 <title>E1&#45;&gt;E2</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M233.92,-265.2C233.92,-265.2 322.74,-265.2 322.74,-265.2 322.74,-265.2 319.85,-265.2 319.85,-265.2"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="320.19,-267.48 326.69,-265.2 320.19,-262.93 320.19,-267.48"/>
-<text xml:space="preserve" text-anchor="start" x="242.25" y="-244.2" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- train:input&#45;&gt;E1 -->
 <g id="e_layout_10" class="edge edge training feedforward">
@@ -30,8 +29,6 @@
 <title>E2&#45;&gt;readout</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M420.02,-265.2C420.02,-265.2 500.23,-265.2 500.23,-265.2 500.23,-265.2 497.33,-265.2 497.33,-265.2"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="497.66,-267.48 504.16,-265.2 497.66,-262.93 497.66,-267.48"/>
-<text xml:space="preserve" text-anchor="start" x="439.12" y="-244.2" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">leaky</text>
-<text xml:space="preserve" text-anchor="start" x="439.12" y="-232.2" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">integrator</text>
 </g>
 <!-- E2&#45;&gt;normalization_counts -->
 <g id="e_layout_3" class="edge edge signal feedforward">
@@ -76,7 +73,6 @@
 <title>drive&#45;&gt;E1</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M57.17,-265.2C57.17,-265.2 136.87,-265.2 136.87,-265.2 136.87,-265.2 133.75,-265.2 133.75,-265.2"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="134.09,-267.48 140.59,-265.2 134.09,-262.93 134.09,-267.48"/>
-<text xml:space="preserve" text-anchor="start" x="83.14" y="-244.2" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- normalization_counts&#45;&gt;normalized_scores -->
 <g id="e_layout_5" class="edge edge signal feedforward">

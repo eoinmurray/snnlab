@@ -25,7 +25,6 @@
 <title>PING_R_E:se&#45;&gt;PING_R_I:ne</title>
 <path fill="none" stroke="#24292f" stroke-width="1.3" d="M170.67,-158.42C170.67,-158.42 170.67,-120.05 170.67,-120.05 170.67,-120.05 170.67,-123.08 170.67,-123.08"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="172.95,-123.05 170.67,-116.55 168.4,-123.05 172.95,-123.05"/>
-<text xml:space="preserve" text-anchor="start" x="131.92" y="-135.74" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- PING_R_E&#45;&gt;drive_S -->
 <!-- PING_R_I&#45;&gt;PING_R_E -->
@@ -36,7 +35,6 @@
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="212.4,-146.95 214.67,-153.45 216.95,-146.95 212.4,-146.95"/>
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="217.92,-145.65 211.42,-145.65 211.42,-144.35 217.92,-144.35 217.92,-145.65"/>
 <polyline fill="none" stroke="#aa5b63" stroke-width="1.3" points="214.67,-146.3 214.67,-143.05"/>
-<text xml:space="preserve" text-anchor="start" x="233.67" y="-137.55" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">GABA</text>
 </g>
 <!-- PING_R_I&#45;&gt;PING_S_I -->
 <!-- PING_S_E&#45;&gt;PING_R_E -->
@@ -44,21 +42,18 @@
 <title>PING_S_E&#45;&gt;PING_R_E</title>
 <path fill="none" stroke="#24292f" stroke-width="1.3" stroke-dasharray="5,2" d="M578.58,-251.58C578.58,-251.58 578.58,-283.58 578.58,-283.58 578.58,-283.58 192.62,-283.58 192.62,-283.58 192.62,-283.58 192.62,-260.08 192.62,-260.08 192.62,-260.08 192.62,-263.08 192.62,-263.08"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="194.9,-263.05 192.62,-256.55 190.35,-263.05 194.9,-263.05"/>
-<text xml:space="preserve" text-anchor="start" x="371.73" y="-297.58" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- PING_S_E&#45;&gt;PING_R_I -->
 <g id="e_n_PING_S_E_to_PING_R_I" class="edge edge excitatory feedback">
 <title>PING_S_E&#45;&gt;PING_R_I</title>
 <path fill="none" stroke="#24292f" stroke-width="1.3" stroke-dasharray="5,2" d="M596.58,-251.58C596.58,-251.58 596.58,-315.58 596.58,-315.58 596.58,-315.58 272.71,-315.58 272.71,-315.58 272.71,-315.58 272.71,-65 272.71,-65 272.71,-65 245.21,-65 245.21,-65 245.21,-65 248.21,-65 248.21,-65"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="248.17,-62.73 241.67,-65 248.17,-67.28 248.17,-62.73"/>
-<text xml:space="preserve" text-anchor="start" x="420.77" y="-329.58" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- PING_S_E&#45;&gt;PING_S_I -->
 <g id="e_n_PING_S_E_to_I" class="edge edge excitatory recurrent">
 <title>PING_S_E:se&#45;&gt;PING_S_I:ne</title>
 <path fill="none" stroke="#24292f" stroke-width="1.3" d="M565.67,-158.42C565.67,-158.42 565.67,-120.05 565.67,-120.05 565.67,-120.05 565.67,-123.08 565.67,-123.08"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="567.95,-123.05 565.67,-116.55 563.4,-123.05 567.95,-123.05"/>
-<text xml:space="preserve" text-anchor="start" x="526.92" y="-135.74" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- PING_S_I&#45;&gt;PING_S_E -->
 <!-- PING_S_I&#45;&gt;PING_S_E -->
@@ -68,21 +63,18 @@
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="585.4,-146.95 587.67,-153.45 589.95,-146.95 585.4,-146.95"/>
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="590.92,-145.65 584.42,-145.65 584.42,-144.35 590.92,-144.35 590.92,-145.65"/>
 <polyline fill="none" stroke="#aa5b63" stroke-width="1.3" points="587.67,-146.3 587.67,-143.05"/>
-<text xml:space="preserve" text-anchor="start" x="606.67" y="-137.55" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">GABA</text>
 </g>
 <!-- drive_R&#45;&gt;PING_R_E -->
 <g id="e_n_PING_R_input_to_E" class="edge edge excitatory feedforward">
 <title>drive_R&#45;&gt;PING_R_E</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M69.8,-205C69.8,-205 139.9,-205 139.9,-205 139.9,-205 137.03,-205 137.03,-205"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="137.37,-207.28 143.87,-205 137.37,-202.73 137.37,-207.28"/>
-<text xml:space="preserve" text-anchor="start" x="90.97" y="-184" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- drive_S&#45;&gt;PING_S_E -->
 <g id="e_n_PING_S_input_to_E" class="edge edge excitatory feedforward">
 <title>drive_S&#45;&gt;PING_S_E</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M464.66,-205C464.66,-205 535.05,-205 535.05,-205 535.05,-205 531.99,-205 531.99,-205"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="532.33,-207.28 538.83,-205 532.33,-202.73 532.33,-207.28"/>
-<text xml:space="preserve" text-anchor="start" x="485.98" y="-184" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- PING_R_E -->
 <g id="n_PING_R_E" class="node node population spiking">

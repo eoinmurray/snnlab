@@ -1,0 +1,232 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="1051pt" height="369pt" viewBox="0.00 0.00 1051.00 369.00">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 347.1)">
+<title>snnlang</title>
+<polygon fill="#ffffff" stroke="none" points="-21.6,21.6 -21.6,-347.1 1029.35,-347.1 1029.35,21.6 -21.6,21.6" />
+<text xml:space="preserve" text-anchor="start" x="8" y="-309.4" font-family="Helvetica Neue" font-weight="bold" font-size="18.00" fill="#24292f">All box types network</text>
+<g id="clust2" class="cluster">
+<title>cluster_n_circuit</title>
+<path fill="#ffffff" stroke="#d8dee3" stroke-width="0.8" d="M357.71,0C357.71,0 457.88,0 457.88,0 463.88,0 469.88,-6 469.88,-12 469.88,-12 469.88,-279 469.88,-279 469.88,-285 463.88,-291 457.88,-291 457.88,-291 357.71,-291 357.71,-291 351.71,-291 345.71,-285 345.71,-279 345.71,-279 345.71,-12 345.71,-12 345.71,-6 351.71,0 357.71,0" />
+<text xml:space="preserve" text-anchor="middle" x="368.71" y="-276.55" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">circuit</text>
+</g>
+
+<g id="e_n_E_to_I" class="edge edge excitatory recurrent">
+<title>circuit_E:se-&gt;circuit_I:ne</title>
+<path fill="none" stroke="#24292f" stroke-width="1.3" d="M407.75,-158.42C407.75,-158.42 407.75,-120.05 407.75,-120.05 407.75,-120.05 407.75,-123.08 407.75,-123.08" />
+<polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="410.03,-123.05 407.75,-116.55 405.48,-123.05 410.03,-123.05" />
+<polygon fill="none" stroke="none" points="418.75,-133.24 418.75,-145.24 439.75,-145.24 439.75,-133.24 418.75,-133.24" />
+<svg width="19px" height="10px" viewBox="0 0 19 10" version="1.1" x="419.751" y="-144.235" preserveAspectRatio="xMinYMin meet">
+ <title>$J_{E\to I}$</title><metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="math_0_figure_1">
+  <g id="math_0_patch_1">
+   <path d="M 0 10  L 19 10  L 19 0  L 0 0  L 0 10  z " style="fill: none" />
+  </g>
+  <g id="math_0_text_1">
+
+   <g style="fill: #59636e" transform="translate(0 8) scale(0.1 -0.1)">
+    <defs>
+     <path id="math_0_DejaVuSans-Oblique-2d" d="M 1069 4666  L 1703 4666  L 856 325  Q 691 -522 298 -901  Q -94 -1281 -800 -1281  L -1050 -1281  L -947 -750  L -750 -750  Q -328 -750 -109 -509  Q 109 -269 225 325  L 1069 4666  z " transform="scale(0.015625)" />
+     <path id="math_0_DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+     <path id="math_0_DejaVuSans-c1c" d="M 5050 2147  L 5050 1866  L 3822 638  L 3447 1013  L 4175 1741  L 366 1741  L 366 2272  L 4175 2272  L 3447 3000  L 3822 3375  L 5050 2147  z " transform="scale(0.015625)" />
+     <path id="math_0_DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#math_0_DejaVuSans-Oblique-2d" transform="translate(0 0.09375)" />
+    <use xlink:href="#math_0_DejaVuSans-Oblique-28" transform="translate(29.492188 -14.906201) scale(0.7)" />
+    <use xlink:href="#math_0_DejaVuSans-c1c" transform="translate(87.358398 -14.906201) scale(0.7)" />
+    <use xlink:href="#math_0_DejaVuSans-Oblique-2c" transform="translate(159.648438 -14.906201) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg></g>
+
+<g id="e_n_readout_projection" class="edge edge excitatory feedforward">
+<title>circuit_E-&gt;readout</title>
+<path fill="none" stroke="#24292f" stroke-width="1.1" d="M452.16,-205C452.16,-205 522.31,-205 522.31,-205 522.31,-205 519.38,-205 519.38,-205" />
+<polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="519.72,-207.28 526.22,-205 519.72,-202.73 519.72,-207.28" />
+<polygon fill="none" stroke="none" points="475.24,-182 475.24,-194 499.24,-194 499.24,-182 475.24,-182" />
+<svg width="22px" height="10px" viewBox="0 0 22 10" version="1.1" x="476.236" y="-193" preserveAspectRatio="xMinYMin meet">
+ <title>$W_{\mathrm{out}}$</title><metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="math_1_figure_1">
+  <g id="math_1_patch_1">
+   <path d="M 0 10  L 22 10  L 22 0  L 0 0  L 0 10  z " style="fill: none" />
+  </g>
+  <g id="math_1_text_1">
+
+   <g style="fill: #59636e" transform="translate(0 8) scale(0.1 -0.1)">
+    <defs>
+     <path id="math_1_DejaVuSans-Oblique-3a" d="M 616 4666  L 1228 4666  L 1453 697  L 3213 4666  L 3916 4666  L 4147 697  L 5888 4666  L 6528 4666  L 4453 0  L 3659 0  L 3444 3891  L 1697 0  L 903 0  L 616 4666  z " transform="scale(0.015625)" />
+     <path id="math_1_DejaVuSans-52" d="M 1959 3097  Q 1497 3097 1228 2736  Q 959 2375 959 1747  Q 959 1119 1226 758  Q 1494 397 1959 397  Q 2419 397 2687 759  Q 2956 1122 2956 1747  Q 2956 2369 2687 2733  Q 2419 3097 1959 3097  z M 1959 3584  Q 2709 3584 3137 3096  Q 3566 2609 3566 1747  Q 3566 888 3137 398  Q 2709 -91 1959 -91  Q 1206 -91 779 398  Q 353 888 353 1747  Q 353 2609 779 3096  Q 1206 3584 1959 3584  z " transform="scale(0.015625)" />
+     <path id="math_1_DejaVuSans-58" d="M 544 1381  L 544 3500  L 1119 3500  L 1119 1403  Q 1119 906 1312 657  Q 1506 409 1894 409  Q 2359 409 2629 706  Q 2900 1003 2900 1516  L 2900 3500  L 3475 3500  L 3475 0  L 2900 0  L 2900 538  Q 2691 219 2414 64  Q 2138 -91 1772 -91  Q 1169 -91 856 284  Q 544 659 544 1381  z M 1991 3584  L 1991 3584  z " transform="scale(0.015625)" />
+     <path id="math_1_DejaVuSans-57" d="M 1172 4494  L 1172 3500  L 2356 3500  L 2356 3053  L 1172 3053  L 1172 1153  Q 1172 725 1289 603  Q 1406 481 1766 481  L 2356 481  L 2356 0  L 1766 0  Q 1100 0 847 248  Q 594 497 594 1153  L 594 3053  L 172 3053  L 172 3500  L 594 3500  L 594 4494  L 1172 4494  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#math_1_DejaVuSans-Oblique-3a" transform="translate(0 0.09375)" />
+    <use xlink:href="#math_1_DejaVuSans-52" transform="translate(98.876953 -14.906201) scale(0.7)" />
+    <use xlink:href="#math_1_DejaVuSans-58" transform="translate(141.704102 -14.906201) scale(0.7)" />
+    <use xlink:href="#math_1_DejaVuSans-57" transform="translate(186.069336 -14.906201) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg></g>
+
+
+<g id="e_n_I_to_E" class="edge edge inhibitory feedback">
+<title>circuit_I:nw-&gt;circuit_E:sw</title>
+<path fill="none" stroke="#aa5b63" stroke-width="1.3" stroke-dasharray="5,2" d="M385.75,-111.58C385.75,-111.58 385.75,-146.7 385.75,-146.7 385.75,-146.7 385.75,-140.42 385.75,-140.42" />
+<polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="383.48,-146.95 385.75,-153.45 388.03,-146.95 383.48,-146.95" />
+<polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="389,-145.65 382.5,-145.65 382.5,-144.35 389,-144.35 389,-145.65" />
+<polyline fill="none" stroke="#aa5b63" stroke-width="1.3" points="385.75,-146.3 385.75,-143.05" />
+<polygon fill="none" stroke="none" points="345.75,-123.14 345.75,-135.14 366.75,-135.14 366.75,-123.14 345.75,-123.14" />
+<svg width="19px" height="10px" viewBox="0 0 19 10" version="1.1" x="346.751" y="-134.14" preserveAspectRatio="xMinYMin meet">
+ <title>$J_{I\to E}$</title><metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="math_2_figure_1">
+  <g id="math_2_patch_1">
+   <path d="M 0 10  L 19 10  L 19 0  L 0 0  L 0 10  z " style="fill: none" />
+  </g>
+  <g id="math_2_text_1">
+
+   <g style="fill: #59636e" transform="translate(0 8) scale(0.1 -0.1)">
+    <defs>
+     <path id="math_2_DejaVuSans-Oblique-2d" d="M 1069 4666  L 1703 4666  L 856 325  Q 691 -522 298 -901  Q -94 -1281 -800 -1281  L -1050 -1281  L -947 -750  L -750 -750  Q -328 -750 -109 -509  Q 109 -269 225 325  L 1069 4666  z " transform="scale(0.015625)" />
+     <path id="math_2_DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+     <path id="math_2_DejaVuSans-c1c" d="M 5050 2147  L 5050 1866  L 3822 638  L 3447 1013  L 4175 1741  L 366 1741  L 366 2272  L 4175 2272  L 3447 3000  L 3822 3375  L 5050 2147  z " transform="scale(0.015625)" />
+     <path id="math_2_DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#math_2_DejaVuSans-Oblique-2d" transform="translate(0 0.09375)" />
+    <use xlink:href="#math_2_DejaVuSans-Oblique-2c" transform="translate(29.492188 -14.906201) scale(0.7)" />
+    <use xlink:href="#math_2_DejaVuSans-c1c" transform="translate(63.774414 -14.906201) scale(0.7)" />
+    <use xlink:href="#math_2_DejaVuSans-Oblique-28" transform="translate(136.064453 -14.906201) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg></g>
+
+<g id="e_layout_0" class="edge edge signal feedforward">
+<title>external_encoder-&gt;inputs</title>
+<path fill="none" stroke="#7a8690" stroke-width="1.1" d="M141.8,-205C141.8,-205 212.39,-205 212.39,-205 212.39,-205 208.93,-205 208.93,-205" />
+<polygon fill="#7a8690" stroke="#7a8690" stroke-width="1.1" points="216.09,-205 209.59,-207.93 214.18,-205.05 209.59,-205.05 209.59,-205 209.59,-204.95 214.18,-204.95 209.59,-202.08 216.09,-205" />
+</g>
+
+<g id="e_n_input_projection" class="edge edge excitatory feedforward">
+<title>inputs-&gt;circuit_E</title>
+<path fill="none" stroke="#24292f" stroke-width="1.1" d="M285.11,-205C285.11,-205 355.06,-205 355.06,-205 355.06,-205 352.22,-205 352.22,-205" />
+<polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="352.55,-207.28 359.05,-205 352.55,-202.73 352.55,-207.28" />
+<text xml:space="preserve" text-anchor="start" x="270.72" y="-148" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">encoded input</text>
+</g>
+
+<g id="e_layout_5" class="edge edge signal feedforward">
+<title>readout-&gt;mean_scores</title>
+<path fill="none" stroke="#7a8690" stroke-width="1.1" d="M636.58,-205C636.58,-205 707.03,-205 707.03,-205 707.03,-205 703.8,-205 703.8,-205" />
+<polygon fill="#7a8690" stroke="#7a8690" stroke-width="1.1" points="710.96,-205 704.46,-207.93 709.05,-205.05 704.46,-205.05 704.46,-205 704.46,-204.95 709.05,-204.95 704.46,-202.08 710.96,-205" />
+</g>
+
+<g id="e_layout_6" class="edge edge output feedforward">
+<title>mean_scores-&gt;out:class_scores</title>
+<path fill="none" stroke="#58768f" stroke-width="1.1" d="M821.73,-205C821.73,-205 892.19,-205 892.19,-205 892.19,-205 889.21,-205 889.21,-205" />
+<polygon fill="#58768f" stroke="#58768f" stroke-width="1.1" points="889.55,-207.28 896.05,-205 889.55,-202.73 889.55,-207.28" />
+</g>
+
+<g id="n_circuit_E" class="node node population spiking">
+<title>circuit_E</title>
+<polygon fill="#f5f4f1" stroke="#756b5b" stroke-opacity="0.501961" points="451.89,-251.58 363.72,-251.58 363.72,-158.42 451.89,-158.42 451.89,-251.58" />
+<text xml:space="preserve" text-anchor="start" x="376.68" y="-232" font-family="Helvetica Neue" font-size="10.00" fill="#756b5b">POPULATION</text>
+<text xml:space="preserve" text-anchor="start" x="376.68" y="-212.2" font-family="Helvetica Neue" font-weight="bold" font-size="14.00" fill="#24292f">E</text>
+<text xml:space="preserve" text-anchor="start" x="376.68" y="-190.8" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">16 neurons</text>
+<text xml:space="preserve" text-anchor="start" x="376.68" y="-171.8" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">COBA-LIF</text>
+</g>
+
+<g id="n_circuit_I" class="node node population spiking">
+<title>circuit_I</title>
+<polygon fill="#f5f4f1" stroke="#aa5b63" stroke-opacity="0.501961" points="451.89,-111.58 363.72,-111.58 363.72,-18.42 451.89,-18.42 451.89,-111.58" />
+<text xml:space="preserve" text-anchor="start" x="376.68" y="-92" font-family="Helvetica Neue" font-size="10.00" fill="#aa5b63">POPULATION</text>
+<text xml:space="preserve" text-anchor="start" x="376.68" y="-72.2" font-family="Helvetica Neue" font-weight="bold" font-size="14.00" fill="#24292f">I</text>
+<text xml:space="preserve" text-anchor="start" x="376.68" y="-50.8" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">4 neurons</text>
+<text xml:space="preserve" text-anchor="start" x="376.68" y="-31.8" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">COBA-LIF</text>
+</g>
+
+<g id="n_external_encoder" class="node node neutral">
+<title>external_encoder</title>
+<polygon fill="#f3f4f5" stroke="#69717b" stroke-opacity="0.501961" points="141.42,-242.08 0,-242.08 0,-167.92 141.42,-167.92 141.42,-242.08" />
+<text xml:space="preserve" text-anchor="start" x="12.96" y="-222.5" font-family="Helvetica Neue" font-size="10.00" fill="#69717b">NEUTRAL / EXTERNAL</text>
+<text xml:space="preserve" text-anchor="start" x="12.96" y="-202.7" font-family="Helvetica Neue" font-weight="bold" font-size="14.00" fill="#24292f">External encoder</text>
+<text xml:space="preserve" text-anchor="start" x="12.96" y="-181.3" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">Samples to spike trains</text>
+</g>
+
+<g id="n_inputs" class="node node input">
+<title>inputs</title>
+<polygon fill="#f3f6f8" stroke="#536d82" stroke-opacity="0.501961" points="284.72,-240.64 220.43,-240.64 220.43,-169.36 284.72,-169.36 284.72,-240.64" />
+<text xml:space="preserve" text-anchor="start" x="231.95" y="-222.5" font-family="Helvetica Neue" font-size="10.00" fill="#536d82">INPUT</text>
+<text xml:space="preserve" text-anchor="start" x="231.95" y="-202.7" font-family="Helvetica Neue" font-weight="bold" font-size="14.00" fill="#24292f">inputs</text>
+<text xml:space="preserve" text-anchor="start" x="231.95" y="-181.3" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">Spikes</text>
+</g>
+
+<g id="n_readout" class="node node population analogue">
+<title>readout</title>
+<polygon fill="#f5f4f1" stroke="#756b5b" stroke-opacity="0.501961" points="636.3,-251.58 530.88,-251.58 530.88,-158.42 636.3,-158.42 636.3,-251.58" />
+<text xml:space="preserve" text-anchor="start" x="543.84" y="-232" font-family="Helvetica Neue" font-size="10.00" fill="#756b5b">POPULATION</text>
+<text xml:space="preserve" text-anchor="start" x="543.84" y="-212.2" font-family="Helvetica Neue" font-weight="bold" font-size="14.00" fill="#24292f">readout</text>
+<text xml:space="preserve" text-anchor="start" x="543.84" y="-190.8" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">4 units</text>
+<text xml:space="preserve" text-anchor="start" x="543.84" y="-171.8" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">Leaky integrator</text>
+</g>
+
+<g id="n_mean_scores" class="node node operation">
+<title>mean_scores</title>
+<polygon fill="#f5f3f7" stroke="#726581" stroke-opacity="0.501961" points="821.71,-239.2 715.3,-239.2 715.3,-170.8 821.71,-170.8 821.71,-239.2" />
+<text xml:space="preserve" text-anchor="start" x="725.38" y="-222.5" font-family="Helvetica Neue" font-size="10.00" fill="#726581">OPERATION</text>
+<text xml:space="preserve" text-anchor="start" x="725.38" y="-202.7" font-family="Helvetica Neue" font-weight="bold" font-size="14.00" fill="#24292f">mean scores</text>
+<text xml:space="preserve" text-anchor="start" x="725.38" y="-181.3" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">Mean over time</text>
+</g>
+
+<g id="n_out_class_scores" class="node node output">
+<title>out:class_scores</title>
+<polygon fill="#f1f5f3" stroke="#526f62" stroke-opacity="0.501961" points="1007.75,-240.64 900.71,-240.64 900.71,-169.36 1007.75,-169.36 1007.75,-240.64" />
+<text xml:space="preserve" text-anchor="start" x="912.23" y="-222.5" font-family="Helvetica Neue" font-size="10.00" fill="#526f62">OUTPUT</text>
+<text xml:space="preserve" text-anchor="start" x="912.23" y="-202.7" font-family="Helvetica Neue" font-weight="bold" font-size="14.00" fill="#24292f">class scores</text>
+<text xml:space="preserve" text-anchor="start" x="912.23" y="-181.3" font-family="Helvetica Neue" font-size="11.00" fill="#59636e">Class scores</text>
+</g>
+</g>
+</svg>

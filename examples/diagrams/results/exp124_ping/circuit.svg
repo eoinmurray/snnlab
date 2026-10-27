@@ -15,14 +15,12 @@
 <title>E1:se&#45;&gt;I1:ne</title>
 <path fill="none" stroke="#24292f" stroke-width="1.3" d="M179.82,-140C179.82,-140 179.82,-101.63 179.82,-101.63 179.82,-101.63 179.82,-104.66 179.82,-104.66"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="182.1,-104.63 179.82,-98.13 177.55,-104.63 182.1,-104.63"/>
-<text xml:space="preserve" text-anchor="start" x="190.82" y="-117.32" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- E1&#45;&gt;E2 -->
 <g id="e_n_E1_to_E2" class="edge edge excitatory feedforward">
 <title>E1&#45;&gt;E2</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M224.23,-186.58C224.23,-186.58 294.31,-186.58 294.31,-186.58 294.31,-186.58 291.46,-186.58 291.46,-186.58"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="291.8,-188.86 298.3,-186.58 291.8,-184.31 291.8,-188.86"/>
-<text xml:space="preserve" text-anchor="start" x="245.39" y="-165.58" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- I1&#45;&gt;E1 -->
 <!-- I1&#45;&gt;E1 -->
@@ -32,7 +30,6 @@
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="155.55,-128.53 157.82,-135.03 160.1,-128.53 155.55,-128.53"/>
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="161.07,-127.23 154.57,-127.23 154.57,-125.93 161.07,-125.93 161.07,-127.23"/>
 <polyline fill="none" stroke="#aa5b63" stroke-width="1.3" points="157.82,-127.88 157.82,-124.63"/>
-<text xml:space="preserve" text-anchor="start" x="111.07" y="-119.13" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">GABA</text>
 </g>
 <!-- I1&#45;&gt;I2 -->
 <!-- E2&#45;&gt;I2 -->
@@ -40,15 +37,12 @@
 <title>E2:se&#45;&gt;I2:ne</title>
 <path fill="none" stroke="#24292f" stroke-width="1.3" d="M320.82,-140C320.82,-140 320.82,-101.63 320.82,-101.63 320.82,-101.63 320.82,-104.66 320.82,-104.66"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.3" points="323.1,-104.63 320.82,-98.13 318.55,-104.63 323.1,-104.63"/>
-<text xml:space="preserve" text-anchor="start" x="282.07" y="-117.32" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- E2&#45;&gt;readout -->
 <g id="e_n_readout_projection" class="edge edge excitatory feedforward">
 <title>E2&#45;&gt;readout</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M391.41,-186.58C391.41,-186.58 461.56,-186.58 461.56,-186.58 461.56,-186.58 458.63,-186.58 458.63,-186.58"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="458.96,-188.86 465.46,-186.58 458.96,-184.31 458.96,-188.86"/>
-<text xml:space="preserve" text-anchor="start" x="405.49" y="-165.58" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">leaky</text>
-<text xml:space="preserve" text-anchor="start" x="405.49" y="-153.58" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">integrator</text>
 </g>
 <!-- E2&#45;&gt;normalization_counts -->
 <g id="e_layout_7" class="edge edge signal feedforward">
@@ -64,14 +58,12 @@
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="335.55,-128.53 337.82,-135.03 340.1,-128.53 335.55,-128.53"/>
 <polygon fill="#aa5b63" stroke="#aa5b63" stroke-width="1.3" points="341.07,-127.23 334.57,-127.23 334.57,-125.93 341.07,-125.93 341.07,-127.23"/>
 <polyline fill="none" stroke="#aa5b63" stroke-width="1.3" points="337.82,-127.88 337.82,-124.63"/>
-<text xml:space="preserve" text-anchor="start" x="384.82" y="-119.13" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">GABA</text>
 </g>
 <!-- drive&#45;&gt;E1 -->
 <g id="e_n_input_to_E1" class="edge edge excitatory feedforward">
 <title>drive&#45;&gt;E1</title>
 <path fill="none" stroke="#24292f" stroke-width="1.1" d="M57.24,-186.58C57.24,-186.58 127.17,-186.58 127.17,-186.58 127.17,-186.58 124.29,-186.58 124.29,-186.58"/>
 <polygon fill="#24292f" stroke="#24292f" stroke-width="1.1" points="124.63,-188.86 131.13,-186.58 124.63,-184.31 124.63,-188.86"/>
-<text xml:space="preserve" text-anchor="start" x="78.33" y="-165.58" font-family="Helvetica Neue" font-size="10.00" fill="#59636e">AMPA</text>
 </g>
 <!-- readout&#45;&gt;scores -->
 <g id="e_layout_11" class="edge edge signal feedforward">

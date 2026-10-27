@@ -7,7 +7,7 @@ import math
 import textwrap
 from itertools import pairwise
 
-from .model import Diagram, DiagramEdge, DiagramNode, DiagramTheme, WeightLabel
+from .model import Diagram, DiagramNode, DiagramTheme
 
 _DEFAULT_THEME = DiagramTheme()
 
@@ -44,47 +44,12 @@ def _label(value: str, columns: int) -> str:
     """Wrap display text without dropping words or shrinking its type."""
     text = "".join(
         html.escape(line) + '<BR ALIGN="LEFT"/>'
-        for paragraph in value.replace("_", " ").splitlines()
+        for paragraph in value.splitlines()
         for line in textwrap.wrap(paragraph, width=columns, break_long_words=False)
     )
     return (
         '<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5">'
         f'<TR><TD ALIGN="LEFT">{text}</TD></TR></TABLE>'
-    )
-
-
-def _matrix_label(matrix: WeightLabel, size: float) -> str:
-    symbol = (
-        f'<FONT FACE="Times New Roman" POINT-SIZE="{size:g}">'
-        f"<B><I>{html.escape(matrix.symbol)}</I></B></FONT>"
-    )
-    if not matrix.subscript and not matrix.superscript:
-        return symbol
-    script_size = size * 0.7
-
-    def script(text: str) -> str:
-        return (
-            f'<TD ALIGN="LEFT"><FONT FACE="Times New Roman" '
-            f'POINT-SIZE="{script_size:g}">{html.escape(text) or " "}</FONT></TD>'
-        )
-
-    # Explicit table cells give all exporters the same script sizes and positions.
-    # Graphviz's SVG SUB/SUP output relies on browser-dependent baseline-shift.
-    return (
-        '<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">'
-        f'<TR><TD ROWSPAN="2" VALIGN="MIDDLE">{symbol}</TD>'
-        f"{script(matrix.superscript)}</TR><TR>{script(matrix.subscript)}</TR></TABLE>"
-    )
-
-
-def _edge_label(edge: DiagramEdge, columns: int, size: float) -> str:
-    text = _label(edge.label, columns)
-    if edge.weight_label is None:
-        return text
-    matrix = _matrix_label(edge.weight_label, size)
-    return (
-        text.removesuffix("</TABLE>")
-        + f'<TR><TD ALIGN="LEFT">{matrix}</TD></TR></TABLE>'
     )
 
 
@@ -546,8 +511,8 @@ def _append_edges(
                 f"arrowhead={arrow}",
                 f"style={style}",
                 (
-                    f"xlabel=<{_edge_label(edge, min(14, theme.wrap_columns), theme.secondary_size)}>"
-                    if edge.label or edge.weight_label is not None
+                    f"xlabel=<{_label(edge.label, min(14, theme.wrap_columns))}>"
+                    if edge.label
                     else 'label=""'
                 ),
                 f"constraint={'true' if edge.constraint and not internal_row and not internal_column else 'false'}",
@@ -608,17 +573,7 @@ def diagram_to_dot(
     )
     entry_links = _group_entry_links(diagram)
     rank_spacing = "1.3" if entry_links else "4.5" if input_count >= 3 else "1.1"
-    matrix_labels = [
-        edge.weight_label for edge in diagram.edges if edge.weight_label is not None
-    ]
-    nodesep = "1.15" if matrix_labels else "0.65"
-    if matrix_labels:
-        longest = max(
-            len(label.symbol) + len(label.subscript) + len(label.superscript)
-            for label in matrix_labels
-        )
-        label_spacing = longest * (theme.secondary_size - 1) * 0.6 / 72 + 0.6
-        rank_spacing = f"{max(float(rank_spacing), 2.0, label_spacing):g}"
+    nodesep = "0.65"
     # Local cluster ranking preserves E/I order in mixed input/population groups.
     newrank = "false" if entry_links else "true"
     lines = [

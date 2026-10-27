@@ -1,109 +1,34 @@
 ---
-title: "Streaming: Deadlines and Processing Costs"
-description: Five-seed CPU timings and deadline misses for recurrent COBA networks processing one millisecond of simulation per callback.
+title: "Streaming"
+description: Callback mean, p95 and p99 versus network size, alongside deadline misses and callback overruns.
 ---
 
-This benchmark measures batch-one streaming inference with `prepare_stream()`
-on four recurrent conductance-based networks, using **64, 128, 256 and 512 hidden
-neurons**. Each callback advances **1 ms of model time**, with a new release and
-deadline every **1 ms of wall time**. Five seeds contribute 5,000 windows each,
-giving **25,000 measured windows per network size** on a macOS arm64 CPU.
+# Benchmark Setup
 
-Mean unpaced callback costs range from **63.5 to 113.5 µs**. The separate paced
-passes record **3, 0, 7 and 2 deadline misses**, respectively. These are observed
-host timings; low mean processing cost does not establish a hard deadline
-guarantee.
+![Benchmark network: 64 input spike channels drive 2,048 recurrent COBA-LIF hidden neurons, which drive eight COBA-LIF readout neurons. Hidden and readout spikes are declared outputs; all projections use AMPA synapses.](/streaming-benchmark/streaming-198c79bb6d42/network-2048.png)
 
-![Four rows for 64, 128, 256 and 512 hidden neurons, showing callback costs, internal advance phases, paced response times and deadline miss rates.](/streaming-benchmark/streaming-fd5b334b444c/streaming.png)
+This benchmark measures how quickly a recurrent spiking network processes a
+continuous stream of input spikes as its size increases. Independent Poisson
+spikes arrive on 64 input channels at 25 Hz per channel, drive a recurrent
+population of conductance-based leaky integrate-and-fire (COBA-LIF) neurons, and
+produce spikes from eight readout neurons. The hidden population ranges from
+64 to 2,048 neurons. Weights are randomly initialized and remain fixed throughout
+inference; no training is performed.
 
-**Processing costs and deadlines.** Each row is one network size. From left to
-right: callback wall and caller-thread CPU costs; phases inside `stream.advance()`;
-paced callback and release-to-completion times; deadline miss and callback overrun
-rates. Error bars show sample standard deviation (SD) across five seeds. Timing
-curves first average within fixed 100 ms intervals; miss rates count failures
-from the original windows before averaging across seeds. Worst individual
-completion times remain in the panel titles because interval means hide outliers.
-[Open the full-resolution figure](/streaming-benchmark/streaming-fd5b334b444c/streaming.png)
-to inspect the phase labels.
+# Results
 
-**Network and execution configuration**
+![Two panels: callback mean, p95 and p99 versus 64 through 2,048 hidden neurons, crossing the dashed 1 ms budget at 2,048; deadline miss and callback overrun counts, reaching 25,000 each at 2,048.](/streaming-benchmark/streaming-198c79bb6d42/streaming.png)
 
-| Setting | Value |
-| --- | --- |
-| Architecture | 64 inputs → 64 / 128 / 256 / 512 recurrent hidden neurons → 8 spiking readouts |
-| Neurons | COBA LIF in hidden and readout populations; membrane time constant 20 ms; refractory period 2 ms |
-| Synapses | Excitatory AMPA; decay time constant 5 ms |
-| Recurrence | Hidden-to-hidden; one-step delay (0.1 ms); no autapses |
-| Weight initialization | Lower-clamped normal; means 0.08 / 0.02 / 0.10 for input / recurrent / readout projections; SD one fifth of each mean; fan-in normalized |
-| Weight sparsity | Initial zero fraction 90%; stored and computed as dense matrices |
-| Training | None; random initialized weights |
-| Input | Independent Poisson counts, 25 Hz per channel; generated inside each timed callback |
-| Batch size / precision | 1 / float32; highest matmul precision |
-| Simulation timestep / callback window | 0.1 ms / 1 ms; ten numerical steps per callback |
-| Release spacing / deadline budget | 1 ms / 1 ms after scheduled release |
-| State | Prepared stream retains state across windows; reset between measurement passes |
-| Execution | Compiled ten-step blocks; native C++ compiler wrapper; no fallback in recorded checks |
-| Warmup and numerical probe | 20 windows per seed and size; compilation before measured passes |
-| Seeds / windows | 7–11 / 5,000 paced windows per seed and size |
-| Run order | Serial; size order rotates between seeds |
-| Waiting policy | Poll the monotonic clock for the full 1 ms period; no priority or affinity changes |
-| CPU threads | PyTorch configured for one thread; paced caller-thread CPU use 99.8–99.9% |
-| Recorded platform | macOS 26.6.2, arm64; CPU model not recorded |
-| Software | Python 3.12.12; PyTorch 2.14.1; SNNLab version and source revision not recorded |
+- A **callback** generates input spikes, advances the network by **1 ms of simulated
+time**, and extracts the output spikes.
+- Callbacks are scheduled every **1 ms of
+wall time**, with a **deadline** 1 ms after each scheduled start.
+- Durations below the dashed 1 ms line fit the realtime processing budget, provided the callback
+starts on time.
+- A **callback overrun** takes longer than 1 ms; a **deadline miss**
+finishes after its deadline, which can also happen when a shorter callback starts
+late.
 
-**Measured Timings**
-
-Unpaced wall times are equal-weight means ± sample SD across the five seed-level
-means. Deadline counts and worst responses come from the separate paced pass.
-
-| Hidden neurons | Full callback, µs | Prepared advance, µs | Deadline misses / 25,000 | Callback overruns / 25,000 | Worst response, ms |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 64 | 63.5 ± 1.3 | 55.0 ± 1.5 | 3 (0.012%) | 1 | 1.721 |
-| 128 | 68.4 ± 1.6 | 60.0 ± 1.4 | 0 (0%) | 0 | 0.377 |
-| 256 | 79.2 ± 2.0 | 70.7 ± 1.7 | 7 (0.028%) | 3 | 1.737 |
-| 512 | 113.5 ± 6.2 | 104.6 ± 5.5 | 2 (0.008%) | 2 | 1.795 |
-
-**Table legend**
-
-1. **Full callback:** input generation, stream advance, host spike/event extraction and device completion. Excludes the wait for the next release, warmup and compilation.
-2. **Prepared advance:** the `stream.advance()` portion of the unpaced callback pass. Internal phase bars use another instrumented pass, so their inclusive total need not equal this column. Phase clocks and completion fences affect timings; the compiled-block phase includes dispatch and completion waiting, not only numerical kernels.
-3. **Deadline miss:** completion later than scheduled release plus 1 ms. **Callback overrun:** callback duration longer than 1 ms. A late start can cause a deadline miss even when the callback itself fits the budget. Releases stay anchored to one epoch; late callbacks catch up without dropping steps or moving deadlines.
-4. **Worst response:** the largest individual release-to-completion duration across all five seeds. It is neither a mean nor a percentile.
-5. **SD:** sample standard deviation across five seed-level measurements, using `ddof=1`. It is not SEM; the 25,000 windows are not independent seed replicates. Seeds change weights and inputs, and their variation also includes host scheduling effects.
-
-Busy waiting occupies approximately one CPU thread even though inference takes
-only a fraction of the 1 ms slot. These measurements exclude ROS scheduling,
-communication, sensors and actuators. They do not establish performance in a VM,
-on another processor or under deployment load. Zero observed misses at 128 hidden
-neurons does not guarantee zero future misses.
-
-**Numerical checks and reproduction**
-
-Every seed and network size passed a 200-step comparison of prepared windows
-against eager whole-sequence execution. The probe adds synchronous bursts at
-window boundaries: spikes match exactly, and final state agrees with absolute
-and relative tolerances of `3e-4`. Internal phase instrumentation also preserves
-outputs and exported state exactly against an uninstrumented run. These checks
-validate the measured execution paths for this workload.
-
-Run from the repository root:
-
-```sh
-uv run python benchmarks/streaming/benchmark.py \
-  --hidden-sizes 64 128 256 512 \
-  --windows 5000 \
-  --seeds 7 8 9 10 11
-```
-
-The command overwrites `benchmarks/streaming/results`. The post retains a separate
-[JSON report](/streaming-benchmark/streaming-fd5b334b444c/report.json), including
-configuration, numerical checks, per-seed summaries and all paced
-release/start/finish timestamps. Its SHA-256 is
-`fd5b334b444ca6d7763c1fd0c5a319e02ce4336afbbff21e22c4519c0d7b4dd9`.
-The report does not record an execution date or source revision, so this command
-describes the workload rather than a fully version-pinned reproduction.
-
-See the [Streaming Inference example](/streaming) for using prepared sessions in
-an application, and the
-[benchmark source](https://github.com/eoinmurray/snnlab/tree/main/benchmarks/streaming)
-for alternative devices, waiting policies and plotting saved reports.
+The left panel shows the mean, 95th percentile (p95) and 99th percentile
+(p99) of callback duration; the right counts individual misses and overruns.
+The two counts overlap, and a p99 below 1 ms does not rule out rare failures.

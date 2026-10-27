@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -67,12 +68,13 @@ class Bundle:
         *,
         view: str = "circuit",
         scale: int = 1,
+        connection_labels: Mapping[str, str] | None = None,
     ) -> Path:
         from snnlab.lang.diagrams import diagram
         from snnlab.viz import render_diagram
 
         return render_diagram(
-            diagram(self, view=view),
+            diagram(self, view=view, connection_labels=connection_labels),
             Path(path),
             scale=scale,
         )
