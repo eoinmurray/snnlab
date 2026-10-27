@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,3 +26,7 @@ const pinnedRecipe = join(source, 'shd_recipe.py');
 if (hash(pinnedRecipe) !== configuration.source_sha256[recipe]) {
   throw new Error('Retained SHD recipe differs from the uploaded numerical source');
 }
+copyFileSync(
+  join(repo, 'benchmarks/shd/benchmark.mdx'),
+  join(repo, 'docs/content/docs/shd-benchmark.mdx'),
+);

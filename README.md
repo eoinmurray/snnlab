@@ -31,6 +31,8 @@ flag-built networks and config replay have been removed; see the
 
 Each directory under `examples/` has one `example.py`. Run it with `uv run python examples/<name>/example.py`; generated files go into its `results/` directory, which is replaced on every run. Inference and PyTorch reuse the saved model in `examples/training/results/`.
 
+Published benchmark guides live beside their scripts as `benchmarks/<name>/benchmark.mdx` (SHD, snnTorch comparison and streaming), following the examples' colocated `example.mdx` pattern. Documentation development, checks and builds synchronize these sources into the site while preserving pinned result snapshots.
+
 The [diagram gallery](examples/diagrams/README.md) renders nine network cases in circuit and training views, with SVG and PNG downloads. Run `uv run python examples/diagrams/example.py`, then open `examples/diagrams/results/index.html`. Graphviz’s `dot` and `neato` executables must be on `PATH`.
 
 Native training also supports online minibatch metrics, validation-only epoch evaluation, stratified schedules with configurable tails, and immutable epoch progress callbacks. See `examples/native-training/example.py` for partial checkpoint resume and final/selected checkpoints, and the [execution policies](docs/content/docs/api/sim#inputs-and-execution-settings.mdx) for measurement and RNG contracts.

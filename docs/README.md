@@ -9,6 +9,17 @@ bun run dev
 
 The development server defaults to `http://localhost:3001`. Static preview also uses port 3001.
 
+Astro generates the documentation automatically before development, type checks
+and builds. The package commands invoke Astro directly; there is no separate
+startup chain to maintain. `scripts/content-sources.mjs` is the shared registry
+for generators and watched authoring sources, and the integration in
+`scripts/content-reload.mjs` runs them before Astro discovers pages. Add a new
+generated example or benchmark to that registry so startup and hot reload agree.
+The generators still extract executable Python code, insert measured results,
+and publish figures and downloads; they never run simulations or benchmarks.
+Use `bun run sync:content` only when you want to regenerate these files separately.
+Preview serves the existing build without regenerating content.
+
 The site contains Installation, Quickstart, Training, Inference, PyTorch Integration, a collapsible API Reference section and Changelog. `/` is the Welcome documentation page, with the shared sidebar, search and page navigation. Its source is `content/docs/index.mdx`; Installation remains at `/installation`. Page URLs omit trailing slashes: Astro exports `installation.html`, which GitHub Pages serves at `/installation`. Former `/installation/` URLs use static HTML redirects to the slash-free URL. Cloudflare redirects previous `/docs/` links to the new paths.
 
 
@@ -23,11 +34,12 @@ content locations. Short navigation labels live in `src/lib/navigation.ts`;
 sidebar labels and article titles use title case, preserving API and library names. Keep Changelog last.
 
 During development, navigation and page rendering use Vite's current content
-files rather than a cached collection snapshot. Edits to the root Changelog, example templates, Python
+files rather than a cached collection snapshot. Edits to the root Changelog, benchmark templates, example templates, Python
 scripts, or generated PNGs rerun the corresponding sync script automatically.
 Python simulations still need to be run explicitly to regenerate their figures.
 
 ```sh
+bun test
 bun run types:check
 bun run build
 bun run preview
@@ -81,10 +93,17 @@ Current-based LIF follows Inference and demonstrates built-in current neurons an
 
 Customisation follows Current-based LIF and demonstrates current-based LIF neurons, adaptive dynamics and a custom initializer supplied by an external importable `custom_neurons.py` module. `scripts/sync-customisation.ts` publishes both Python files and figures; run `../examples/customisation/customisation.py` to regenerate outputs, then add `--simulate` to load the saved bundle in a fresh process without registration or rebuilding.
 
-The SHD workload report is authored in `content/docs/shd-benchmark.mdx`. Its four
-figures and raw/derived downloads are pinned to `shd-59e3371bb384`; regenerate with
-`../benchmarks/shd/plot.py` before running `scripts/sync-shd.ts`. The sync script
-verifies artifact, renderer and recipe hashes and runs before development/checks/builds.
-It does not download the raw trace, run training or silently choose another run.
+Benchmark pages are authored beside their Python sources as
+`../benchmarks/<name>/benchmark.mdx` for `shd`, `snntorch-comparison` and `streaming`.
+`scripts/sync-benchmarks.ts` publishes these sources into `content/docs` before
+development, checks and builds; template edits also synchronize during hot reload.
+The generated benchmark pages are ignored by Git; edit the colocated sources.
+Their existing URLs
+and pinned evidence in `public/` are preserved when local benchmark results change.
+
+The SHD report's four figures and raw/derived downloads are pinned to
+`shd-59e3371bb384`. `scripts/sync-shd.ts` verifies artifact, renderer and recipe
+hashes before publishing the SHD page. Synchronization does not download traces,
+run benchmarks or silently choose another run.
 
 The Hodgkin–Huxley example follows Custom Neurons and Synapses in Examples. Edit `../examples/hodgkin-huxley/example.mdx` and `../examples/hodgkin-huxley/example.py`. Run the Python script to regenerate the network diagram, response plot, SciPy error plot and `comparison.json`; `scripts/sync-hodgkin-huxley.ts` publishes the page, measured table and downloads before development, checks and builds.

@@ -3,13 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "bun scripts/sync-snnlang.ts && bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-streaming.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-hodgkin-huxley.ts && bun scripts/sync-meanfield.ts && bun scripts/sync-animated-neuron.ts && bun scripts/sync-shd.ts && bun scripts/sync-changelog.ts && bun run --bun astro build",
-    "dev": "bun scripts/sync-snnlang.ts && bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-streaming.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-hodgkin-huxley.ts && bun scripts/sync-meanfield.ts && bun scripts/sync-animated-neuron.ts && bun scripts/sync-shd.ts && bun scripts/sync-changelog.ts && bun run --bun astro dev",
+    "build": "bun run --bun astro build",
+    "dev": "bun run --bun astro dev",
     "start": "bun run preview",
+    "test": "bun test scripts",
     "test:animation": "bun scripts/sync-animated-neuron.ts && bun scripts/check-neuron-replay.ts",
-    "types:check": "bun scripts/sync-snnlang.ts && bun scripts/sync-quickstart.ts && bun scripts/sync-training.ts && bun scripts/sync-pytorch.ts && bun scripts/sync-inference.ts && bun scripts/sync-streaming.ts && bun scripts/sync-current-lif.ts && bun scripts/sync-customisation.ts && bun scripts/sync-hodgkin-huxley.ts && bun scripts/sync-meanfield.ts && bun scripts/sync-animated-neuron.ts && bun scripts/sync-shd.ts && bun scripts/sync-changelog.ts && bun run --bun astro check",
+    "types:check": "bun run --bun astro check",
     "preview": "bun run --bun astro preview",
-    "deploy:cloudflare": "bun run build && bunx --bun wrangler deploy"
+    "deploy:cloudflare": "bun run build && bunx --bun wrangler deploy",
+    "sync:content": "bun scripts/sync-content.ts"
   },
   "dependencies": {
     "@astrojs/check": "0.9.10",

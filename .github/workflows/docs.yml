@@ -3,9 +3,9 @@ name: Deploy documentation
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'examples/**', 'CHANGELOG.md', 'src/snnlab/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'examples/**', 'benchmarks/**', 'CHANGELOG.md', 'src/snnlab/**', '.github/workflows/docs.yml']
   pull_request:
-    paths: ['docs/**', 'examples/**', 'CHANGELOG.md', 'src/snnlab/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'examples/**', 'benchmarks/**', 'CHANGELOG.md', 'src/snnlab/**', '.github/workflows/docs.yml']
   workflow_dispatch:
     inputs:
       skip_tests:
@@ -35,7 +35,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Run documentation tests
         if: ${{ !inputs.skip_tests }}
-        run: bun test scripts/hydration-preloads.test.mjs
+        run: bun test
       - run: bun run types:check
       - run: bun run build
         env:

@@ -6,7 +6,7 @@ import { unified } from '@astrojs/markdown-remark';
 import { rehypeCode, remarkGfm, remarkHeading, remarkStructure } from 'fumadocs-core/mdx-plugins';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import contentReload from './scripts/content-reload.mjs';
+import generatedContent from './scripts/content-reload.mjs';
 import hydrationPreloads from './scripts/hydration-preloads.mjs';
 import slashRedirects from './scripts/slash-redirects.mjs';
 import apiRedirects from './scripts/api-redirects.mjs';
@@ -65,6 +65,6 @@ export default defineConfig({
       rehypePlugins: [[rehypeKatex, { strict: 'error', throwOnError: true }], rehypeCode, baseLinks],
     }),
   },
-  integrations: [isolatedCaches(), react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false }), hydrationPreloads(), slashRedirects()],
-  vite: { plugins: [tailwindcss(), contentReload()] },
+  integrations: [isolatedCaches(), generatedContent(), react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false }), hydrationPreloads(), slashRedirects()],
+  vite: { plugins: [tailwindcss()] },
 });

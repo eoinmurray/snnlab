@@ -107,7 +107,7 @@ def test_changed_batch_size_cannot_silently_relabel_report(retained):
 
 
 def test_report_links_and_published_figures_match_retained_run():
-    content = (ROOT / "docs/content/docs/shd-benchmark.mdx").read_text()
+    content = (ROOT / "benchmarks/shd/benchmark.mdx").read_text()
     links = re.findall(r"\]\((/shd-benchmark/[^)]+)\)", content)
     assert links
     for link in links:

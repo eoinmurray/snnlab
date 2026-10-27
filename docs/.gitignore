@@ -2,6 +2,9 @@
 /node_modules
 
 # generated content
+/content/docs/shd-benchmark.mdx
+/content/docs/snntorch-comparison.mdx
+/content/docs/streaming-benchmark.mdx
 
 # test & build
 /coverage
