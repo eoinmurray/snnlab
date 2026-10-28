@@ -35,6 +35,21 @@ Published benchmark guides live beside their scripts as `benchmarks/<name>/bench
 
 The [diagram gallery](examples/diagrams/README.md) renders nine network cases in circuit and training views, with SVG and PNG downloads. Run `uv run python examples/diagrams/example.py`, then open `examples/diagrams/results/index.html`. Graphviz’s `dot` and `neato` executables must be on `PATH`.
 
+For editable drawings, use `bundle.excalidraw_export("network.excalidraw")`, then
+`viz.render_excalidraw("network.excalidraw", "network.png", scale=2)`. Open the
+same document in the free Excalidraw web editor, save your adjustments, and render
+that file again. Existing drawings are protected unless `overwrite=True` is
+supplied. Mathematical `layout.edges[id].label` annotations using `$...$` are
+typeset and embedded directly in the drawing, with their source retained; no supporting image files
+are needed. The [Excalidraw example](examples/excalidraw/README.md) produces an
+editable circuit and its PNG: `uv run python examples/excalidraw/example.py`.
+
+Use `viz.DiagramLayout` with either drawing method for pinned/relative placement,
+nested groups, ports, routes and mixed text/MathText annotations. Save the layout
+as versioned JSON, inspect geometry with `viz.resolve_diagram`, and reuse a resolved
+scene for static PNG/JPEG/SVG/PDF and editable exports. Typography and colours live
+in `DiagramTheme`. See the [layout API](https://snnlab.eoinmurray.info/api/viz#diagramlayout).
+
 Native training also supports online minibatch metrics, validation-only epoch evaluation, stratified schedules with configurable tails, and immutable epoch progress callbacks. See `examples/native-training/example.py` for partial checkpoint resume and final/selected checkpoints, and the [execution policies](docs/content/docs/api/sim#inputs-and-execution-settings.mdx) for measurement and RNG contracts.
 
 Use `sim.TrainingHistory` and `sim.NetworkSnapshot` to read native experiment evidence,
@@ -58,7 +73,12 @@ uv run snnsim --help
 uv run python -m snnlab.sim sim --help
 ```
 
-Graphviz (`dot`) is required for diagram exports. FFmpeg is required for video exports. Install these separately through your operating system package manager. Core authoring and simulation do not require either executable.
+Graphviz (`dot` and `neato`) is required for static diagrams and initial Excalidraw
+exports. Rendering a saved Excalidraw document requires the official `excalidraw`
+CLI on `PATH` (install separately with `bun install -g @excalidraw/cli`) and an
+installed Chrome, Chromium, Edge or Firefox browser. FFmpeg is required for video
+exports. SNNLab does not install these tools. Core authoring and simulation do not
+require them.
 
 ## Development
 

@@ -6,6 +6,13 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-10-28
+
+### Added
+
+1. `viz.DiagramLayout` shares placement and annotation controls across static and Excalidraw exports: pinned and relative positions, required/weighted constraints, nested groups, ports, routes, feedback lanes and mixed text/MathText labels. Versioned JSON specifications and resolved geometry support agent inspection and edits. Existing automatic rendering remains available; explicit layouts support PNG, JPEG, SVG and PDF.
+2. `Bundle.excalidraw_export` writes editable native Excalidraw drawings with grouped labels, bound arrows, stable semantic IDs and source graph provenance. Mathematical connection labels are typeset as embedded PNGs with their source retained, so drawings remain self-contained. `viz.render_excalidraw` renders saved drawings to PNG through an already installed official CLI, preserving manual edits. Includes a runnable circuit example and API documentation; external tools are installed separately.
+
 ## [0.29.0] - 2026-10-27
 
 ### Changed

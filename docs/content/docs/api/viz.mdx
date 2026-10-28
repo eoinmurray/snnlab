@@ -13,6 +13,8 @@ Import plotting tools with `from snnlab import viz`. Use `plot_raster` and `plot
 | `Scene`, `FrameTimeline`, `save_animation` | Compose and export animations. |
 | `exponential_trace`, `projection_activity`, `representative_frame` | Prepare arrays for plotting. |
 | `render_diagram`, `diagram_to_dot` | Render or export a network diagram. |
+| `DiagramLayout`, `resolve_diagram`, `export_excalidraw` | Control placement and annotations; inspect or export shared geometry. |
+| `render_excalidraw` | Render a saved editable Excalidraw document to PNG. |
 
 Figures use Matplotlib; diagrams require Graphviz when rendering through `dot`.
 
@@ -517,6 +519,214 @@ class DiagramGroup:
 
 Colour roles resolve against `DiagramTheme`. Use roles such as `signal`, `inhibitory`, `modulatory`, `output_line` or `training_line`, rather than arbitrary colour values in an edge's `role`. Node `classes` and edge `classes` become rendering metadata.
 
+### DiagramLayout
+
+`DiagramLayout` is a presentation specification shared by
+`bundle.visualise(..., layout=...)`, `bundle.excalidraw_export(..., layout=...)`
+and `viz.render_diagram(..., layout=...)`. It does not change the compiled graph,
+weights or simulation. Import every class below from `snnlab.viz`.
+
+```python
+layout = viz.DiagramLayout(
+    canvas=viz.CanvasLayout(direction="right", padding=32),
+    defaults=viz.LayoutDefaults(gap=80, parallel_gap=16),
+    nodes={"E": viz.NodeLayout(position=(400, 200))},
+    groups={},
+    edges={
+        "E_to_I": viz.EdgeLayout(
+            label=viz.DiagramLabel(
+                text=r"$J_{E\to I}$",
+                position=0.5,
+                offset=(-40, 0),
+            ),
+            source_port="bottom",
+            target_port="top",
+        ),
+    },
+    below={"I": "E"},
+    align_x=[("E", "I")],
+)
+```
+
+Here `J` annotates the E-to-I coupling. Mathematical expressions use
+[Matplotlib MathText](https://matplotlib.org/stable/users/explain/text/mathtext.html),
+not a full TeX installation. Plain strings abbreviate `DiagramLabel(text=...)`.
+Newlines allow mixed text/math rows. `None` inherits the diagram's label;
+`""` hides it. Equations become self-contained images in Excalidraw and vector
+paths in SVG; PNG/JPEG/PDF use high-resolution equation images.
+
+#### Coordinates and overrides
+
+Coordinates are logical canvas units, with x increasing right and y increasing
+down. At export `scale=1`, one unit is one raster pixel; higher scales change
+resolution without changing resolved geometry. Node and group positions pin
+centres; node `anchor` can instead pin a corner. Group-relative node coordinates
+start at that group's top-left corner. Negative coordinates are supported.
+
+Specifications inherit non-`None` fields from defaults. Node settings are applied
+in this order: global defaults, containing groups' `node_defaults` from outermost
+to innermost, then the individual node. Per-group and per-edge settings override
+their global defaults. Sequence and mapping fields replace the inherited field.
+An empty annotation sequence clears inherited annotations.
+
+| Specification | Fields and behaviour |
+| --- | --- |
+| `CanvasLayout` | `direction="right"` (`left`, `down`, `up` also supported), `padding=32`, `origin=(0, 0)`, optional `size=(width, height)`, `fit="expand"`, `alignment=("center", "center")`. |
+| `LayoutDefaults` | `node=NodeLayout()`, `group=GroupLayout()`, `edge=EdgeLayout()`, `gap=80`, `parallel_gap=16`. |
+| `NodeLayout` | Optional `position`, `relative_to` containing group ID, `anchor` (`center`, `top_left`, `top_right`, `bottom_left`, `bottom_right`), `min_size`, `max_size`, `wrap_columns`, `content_align` (`left`, `center`, `right`), `padding`, `clearance`, `label`, `annotations`, `ports`. |
+| `GroupLayout` | Optional `members` (node IDs), `parent` group ID, `position`, `arrangement` (`auto`, `row`, `column`, `grid`), `order`, `columns`, `gap`, `padding`, `alignment` (`start`, `center`, `end`), `title_position` (`top`, `bottom`), `label`, `min_size`, `max_size`, `node_defaults`. |
+| `EdgeLayout` | Optional `label`, `source_port`, `target_port`, `routing` (`orthogonal`, `polyline`, `curved`), `waypoints`, `clearance`, `lane`, `lane_side` (`top`, `bottom`, `left`, `right`). |
+| `DiagramLabel` | Required `text`; optional `position` (fraction 0–1 along an edge), `offset=(0, 0)`, `anchor="center"` (`top`, `bottom`, `left`, `right` also supported), `avoid_collisions=True`. |
+
+The direction sets the initial automatic flow; explicit constraints can override
+it. `gap` supplies default minimum node separation and relation spacing.
+A group-specific `gap` overrides the global minimum for its members.
+`clearance` reserves space around nodes for placement and routing. Sizes are
+measured before placement, including mathematical labels. Content exceeding a
+node's `max_size` raises an error; text is never silently shrunk or clipped.
+
+A fixed canvas with `fit="error"` rejects content outside its padded bounds.
+`expand` grows the canvas to include it. `contain` fits the complete drawing into
+the requested size, preserving geometry and aspect ratio; `alignment` chooses
+`start`, `center` or `end` on each axis for unused space. Without a fixed size,
+the canvas grows to include the drawing and origin.
+
+Groups normally fit their contents. New visual groups need `members`; changing
+visual membership does not alter the network. Nested groups require an explicit
+`parent`, with the child's nodes also included in the parent's members. Groups
+sharing nodes without a parent relationship are rejected. `order` lists every
+immediate child exactly once, including child group IDs. Ordering requires an
+explicit row, column or grid arrangement; `columns` requires grid.
+
+Node `label` replaces the title inside its card. Use `annotations` for additional
+labels anchored around the node; their offsets control placement. Group labels
+use `title_position` and offsets. Fractional `position` applies only to edge
+labels. Automatic edge labels search for space clear of boxes, other labels and
+wires. Explicit positions/offsets stay fixed; box/label collisions raise errors
+unless `avoid_collisions=False`. Explicit labels may intentionally cover a wire.
+
+#### Constraints
+
+```python
+viz.LayoutConstraint(
+    kind="order_x",
+    nodes=("drive", "E", "out:E_spikes"),
+    gap=100,
+    required=True,
+    priority=1,
+    name="forward path",
+)
+```
+
+`nodes` may name nodes or groups. Supported kinds are `above`, `below`, `left_of`,
+`right_of`, `align_x`, `align_y`, `order_x`, `order_y`, `equal_spacing_x`,
+`equal_spacing_y`, and `non_overlap`. Directional pairs describe the first ID
+relative to the second. Ordering follows the supplied sequence. Alignment and
+equal spacing refer to box centres. Gaps refer to box edges.
+
+`DiagramLayout` also accepts `positions={id: (x, y)}`, directional mappings such
+as `below={"I": "E"}`, and `align_x`/`align_y` sequences. These abbreviate node
+centre pins and required constraints. `non_overlap=True` prevents node overlap,
+keeps unrelated groups apart, and keeps external nodes outside group boundaries.
+
+Required constraints and pins are enforced together using SciPy's mixed-integer
+solver. Preferences use `required=False`; `priority` is a positive weight in a
+weighted absolute-error objective, alongside preferences for initial automatic
+positions. It is not a strict lexicographic priority. Unmet explicit preferences
+appear in resolved diagnostics. Soft `non_overlap` is unsupported. An infeasible
+layout raises `ValueError` listing candidate required constraints and pins; this
+list is not a minimal conflict set. The solver fixes its discrete separation choices and refines the continuous
+geometry to remove integer-tolerance drift. It has a 30-second limit and raises
+if it cannot establish a solution within that limit.
+
+#### Ports and routes
+
+Ports accept `auto`, `top`, `bottom`, `left`, `right`, or a node's named port:
+`NodeLayout(ports={"feedback": (1, 0.8)})`. Named ports use normalized boundary
+coordinates between 0 and 1; interior points and reserved names are rejected.
+Parallel connections receive distinct automatic attachment offsets controlled by
+`parallel_gap`; named ports remain exact.
+
+Orthogonal routing avoids node obstacles. Explicit `waypoints` are absolute
+canvas coordinates. Polyline routing with waypoints uses straight segments and
+rejects segments crossing obstacles; without waypoints it uses the automatic
+orthogonal route. Curved routing rounds corners within a clearance corridor,
+using at least six units of clearance; its waypoints describe the underlying
+route. `lane` is a distance outside the node union on `lane_side` (default
+`right`). Lanes and waypoints cannot be combined. Inhibitory bar heads,
+modulatory diamonds, feedback dashes and training styles retain their semantics.
+Routing avoids nodes and reserved node/group annotations; wire crossings can
+still occur.
+
+#### JSON, inspection and editing
+
+```python
+layout.write("layout.json")
+layout = viz.DiagramLayout.read("layout.json")
+scene = viz.resolve_diagram(
+    lang.diagram(bundle),
+    layout=layout,
+)
+scene.write("geometry.json")
+adjusted = scene.move("I", (400, 700))
+viz.render_diagram(adjusted, "network.png")
+viz.export_excalidraw(adjusted, "network.excalidraw")
+adjusted.layout.write("adjusted-layout.json")
+```
+
+`to_dict`/`from_dict` round-trip a JSON-safe specification with schema
+`"snnlab.diagram-layout/v1"`. Unknown fields, IDs, unsupported schemas and
+non-finite coordinates are rejected. `layout=` also accepts this versioned
+mapping. Use `lang.diagram(bundle)` to discover semantic node, group and
+connection IDs before resolving. Anonymous edges have IDs `edge:<index>` in the
+resolver; named connection IDs are preferable for persistent sidecars.
+
+`resolve_diagram` returns `ResolvedDiagram`, exposing `nodes`/`groups` as boxes
+with `x`, `y`, `width`, `height` and `.center`, plus `ports`, `edges` (routes and
+attachments), `labels`, `canvas`, `viewport`, `diagnostics`, and the native `scene`.
+`to_dict()` and `write()` export inspectable geometry. Font availability can
+change measurements across machines.
+
+`move(id, centre)` returns a new resolved scene, preserves the other node centres
+and reroutes connections. Moving a group translates its member nodes together.
+All required constraints still apply, so an incompatible move raises an error.
+Edit those relationships in the layout specification when intentionally changing
+them. A resolved scene owns its theme and layout: resolve again to change either.
+
+Explicit/resolved layouts support PNG, JPEG, SVG and PDF. They use one shared
+geometry model and preserve positions across static and editable exports;
+typography may differ between viewers. DOT remains available through the legacy
+automatic path, without a layout specification. Do not combine `layout` with the
+legacy `canvas_size` or `height_to_width_ratio` arguments; use `layout.canvas`.
+Existing automatic PNG/SVG/PDF/DOT rendering is preserved when layout is omitted.
+
+Excalidraw exports include the layout sidecar and resolved geometry as additional
+JSON metadata, plus a native Canvas frame. `render_excalidraw` uses that saved
+frame and its recorded view scale so canvas padding, bounds and `contain` fitting
+apply to CLI renders too. Manual edits outside the frame are clipped; resize the
+frame when enlarging the drawing. Removing the frame requires removing
+`snnlabExport` metadata to return to whole-scene rendering. Editing the scene in Excalidraw does not update that metadata or a
+saved sidecar. To preserve manual edits, render the saved `.excalidraw` file with
+`render_excalidraw`; re-exporting does not merge browser/MCP edits.
+
+### export_excalidraw
+
+```python
+viz.export_excalidraw(
+    diagram_or_resolved_scene,
+    "network.excalidraw",
+    layout=None,
+    theme=viz.DiagramTheme(),
+    graph_digest=None,
+    overwrite=False,
+)
+```
+
+Returns the saved drawing's `Path`. `bundle.excalidraw_export` supplies its graph
+digest automatically. With the low-level helper, `graph_digest` optionally adds
+provenance to every native element. Existing files are protected unless
+`overwrite=True`. No Excalidraw CLI is needed for export.
+
 ### diagram_to_dot
 
 ```python
@@ -535,17 +745,54 @@ Returns Graphviz DOT text without invoking Graphviz or writing a file. Mathemati
 
 ```python
 def render_diagram(
-    diagram: Diagram,
+    diagram: Diagram | ResolvedDiagram,
     path: str | Path,
     *,
     scale: int = 1,
     theme: DiagramTheme = DiagramTheme(),
     height_to_width_ratio: float | None = None,
     canvas_size: tuple[int, int] | None = None,
+    layout: DiagramLayout | dict | None = None,
 ) -> Path: ...
 ```
 
 Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT exports with mathematical labels also write PNG assets in a sibling `<stem>.labels/` directory; the DOT references these files by path. Other formats use Graphviz for layout and export after wire and label clearance. SVG embeds mathematical labels as self-contained vector paths; PNG and PDF embed high-resolution images. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. When `canvas_size` is supplied, SVG intrinsic dimensions match PNG dimensions; PNG `scale` multiplies the canvas dimensions. A canvas smaller than the natural layout raises `ValueError` before export, preventing clipping. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
+
+### render_excalidraw
+
+```python
+def render_excalidraw(
+    source: str | Path,
+    path: str | Path,
+    *,
+    scale: int = 1,
+) -> Path: ...
+```
+
+Renders an existing `.excalidraw` file to `.png` using the installed official
+`excalidraw` CLI. Returns the PNG `Path` and creates parent directories. It reads
+the saved document directly, preserving user and agent edits without modifying
+the source or requiring a bundle or Graphviz. Generate the initial document with
+[`bundle.excalidraw_export`](/api/lang#bundleexcalidraw_export).
+
+Install the CLI separately, for example with `bun install -g @excalidraw/cli`,
+and put `excalidraw` on `PATH`. The CLI also needs an installed Chrome, Chromium,
+Edge or Firefox browser; use its `EXCALIDRAW_BROWSER_PATH` environment variable
+for a nonstandard location. Local rendering needs no account, API key or paid
+subscription. SNNLab does not install or update dependencies.
+
+`scale` must be an integer between 1 and 16. The CLI caps output at 16384 pixels
+per side and 64 megapixels. Optional font downloads are disabled; CJK text can
+fall back to installed system fonts. Images must be embedded in the scene's
+`files` mapping; the CLI does not load external image URLs or live embeds.
+Mathematical connection labels generated by `bundle.excalidraw_export` already
+contain their typeset images in this mapping. Rendering needs neither Matplotlib
+nor a TeX installation to display them; the CLI does not interpret LaTeX source.
+Unsupported suffixes and invalid scale raise `ValueError`; missing source files
+and executables raise `FileNotFoundError` with instructions. Browser or CLI
+failures, missing PNG output and a 60-second process timeout raise `RuntimeError`.
+Rendering replaces the destination image only after success, retaining any
+previous PNG on failure.
 
 ### DiagramTheme
 

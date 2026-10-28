@@ -1,0 +1,40 @@
+---
+title: Excalidraw Export
+description: Export an editable circuit diagram and render the saved drawing to PNG.
+---
+
+![An external input drives 80 excitatory neurons, which connect to 20 inhibitory neurons with feedback to the excitatory population.](/excalidraw/network.png)
+
+Given a compiled `bundle`, export an editable drawing and render it to PNG:
+
+```python
+from snnlab import viz
+
+layout = viz.DiagramLayout(
+    below={"I": "E"},
+    edges={"E_to_I": viz.EdgeLayout(label=r"$J_{E\to I}$")},
+)
+drawing = bundle.excalidraw_export(
+    "network.excalidraw",
+    layout=layout,
+)
+viz.render_excalidraw(
+    drawing,
+    "network.png",
+    scale=2,
+)
+```
+
+[`bundle.excalidraw_export`](/api/lang#bundleexcalidraw_export) returns the drawing's
+`Path`. The same [layout](/api/viz#diagramlayout) works with
+`bundle.visualise("network.png", layout=layout)`. Boxes, text and arrows are editable; mathematical labels are embedded
+images. Here `J` labels the E-to-I coupling without changing model parameters.
+Export requires Graphviz; rendering requires the separately installed
+[Excalidraw CLI](https://github.com/excalidraw/cli) and a supported browser.
+
+Open the [example drawing](/excalidraw/network.excalidraw) in
+[Excalidraw](https://excalidraw.com), edit it and save locally. Call
+[`viz.render_excalidraw`](/api/viz#render_excalidraw) on that saved file to preserve
+your edits. The [layout specification](/excalidraw/layout.json) is reusable.
+Re-exporting creates a fresh drawing; existing files are protected
+unless `overwrite=True` is supplied.

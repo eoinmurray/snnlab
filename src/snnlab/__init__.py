@@ -5,7 +5,7 @@ Subpackages are imported on demand: lang, sim, viz, analysis, meanfield, extensi
 
 from importlib import import_module
 
-__version__ = "0.29.0"
+__version__ = "0.30.0"
 
 _SUBPACKAGES = ("lang", "sim", "viz", "analysis", "meanfield", "extensions")
 __all__ = [*_SUBPACKAGES, "__version__"]

@@ -8,7 +8,7 @@ const repoDir = path.dirname(docsDir);
 // One registry drives initial generation, source watching and generator dependencies.
 export const contentTasks = [
   ...[
-    'snnlang', 'quickstart', 'training', 'pytorch', 'inference', 'streaming',
+    'snnlang', 'excalidraw', 'quickstart', 'training', 'pytorch', 'inference', 'streaming',
     'current-lif', 'customisation', 'hodgkin-huxley', 'meanfield', 'animated-neuron',
   ].map(name => ({
     script: `sync-${name}.ts`,
@@ -39,7 +39,7 @@ export function syncScriptFor(file) {
   const relative = path.relative(docsDir, absolute).split(path.sep).join('/');
   const generator = /^scripts\/(sync-[\w-]+\.ts)$/.exec(relative)?.[1];
   const example = path.relative(path.join(repoDir, 'examples'), absolute).split(path.sep).join('/');
-  const exampleSource = /^([^/]+)\/(?:example\.mdx|(?:results\/)?[^/]+\.(?:py|png|json|tex))$/.exec(example)?.[1];
+  const exampleSource = /^([^/]+)\/(?:example\.mdx|(?:results\/)?[^/]+\.(?:py|png|json|tex|excalidraw))$/.exec(example)?.[1];
   const benchmark = path.relative(path.join(repoDir, 'benchmarks'), absolute).split(path.sep).join('/');
   const benchmarkSource = /^([^/]+)\/benchmark\.mdx$/.exec(benchmark)?.[1];
   return contentTasks.find(task =>

@@ -1049,10 +1049,82 @@ bundle.visualise(
     view="circuit",
     scale=1,
     connection_labels=None,
+    layout=None,
+    theme=None,
 )
 ```
 
-Renders one selected view to the given path and returns its `Path`. The suffix selects the output format. All groups show their contents. This combines `lang.diagram` with `viz.render_diagram` without changing the bundle.
+Renders one selected view to the given path and returns its `Path`. The suffix selects the output format. All groups show their contents. This combines `lang.diagram` with `viz.render_diagram` without changing the bundle. Pass a shared [`viz.DiagramLayout`](/api/viz#diagramlayout) for placement and annotations, and `DiagramTheme` for typography and colours. Connection annotations belong in `layout.edges[projection_id].label`. The older `connection_labels` mapping remains compatible; conflicting labels supplied through both mechanisms raise `ValueError`.
+
+#### Bundle.excalidraw_export
+
+```python
+bundle.excalidraw_export(
+    path,
+    *,
+    view="circuit",
+    connection_labels=None,
+    overwrite=False,
+    layout=None,
+    theme=None,
+) -> Path
+```
+
+Exports a native editable `.excalidraw` document and returns its `Path`, creating
+parent directories. It accepts the same views and projection-label mapping as
+`visualise`, and uses Graphviz's `dot` and `neato` executables for initial node
+placement and orthogonal routes. Export does not require the Excalidraw CLI and
+does not execute or change the network. Pass the same
+[`viz.DiagramLayout`](/api/viz#diagramlayout) to static and editable exports for
+shared placement, routes and annotations. `theme` accepts `DiagramTheme`.
+
+Cards and group boundaries become rectangles, labels become editable text
+grouped with their owner, and arrows bind to their source and target boxes.
+Inhibitory arrows end in a bar; feedback remains dashed. Card summaries match
+the static renderer. Full titles, details and badges, stable semantic IDs, the
+source graph digest and selected view are retained in `customData.snnlab`.
+Connection-label lines containing `$...$` expressions are typeset with
+[Matplotlib MathText](https://matplotlib.org/stable/users/explain/text/mathtext.html)
+and embedded as high-resolution transparent PNG images. The images are included
+as base64 data URLs in the document's `files` mapping; no supporting files or TeX
+installation are needed. Plain label lines remain editable text, including in
+mixed text/math labels with newline-separated rows. Image dimensions participate
+in the same wire and label clearance pass as static diagrams.
+
+Each equation image retains its full label, projection ID and individual source
+line in `customData.snnlab.math_source`, with `math_format="mathtext"`. The web
+editor can move and resize it; changing the equation requires regenerating the
+image from its source. MathText supports a subset of LaTeX, and unsupported
+commands raise `ValueError` before the destination drawing is written.
+
+Existing drawings raise `FileExistsError` unless `overwrite=True` is explicitly
+supplied. Re-exporting generates a fresh scene and does not merge manual edits
+or architecture changes. Keep the edited drawing as the source for subsequent
+image renders:
+
+```python
+from snnlab import viz
+
+drawing = bundle.excalidraw_export(
+    "network.excalidraw",
+    layout=viz.DiagramLayout(
+        edges={"input_projection": viz.EdgeLayout(label=r"$J_{\mathrm{in}}$")},
+    ),
+)
+viz.render_excalidraw(
+    drawing,
+    "network.png",
+    scale=2,
+)
+```
+
+Here `J` with subscript `in` is a user-chosen annotation for the input coupling;
+labels are presentation settings and do not evaluate or change model parameters.
+
+Open the document in the free [Excalidraw editor](https://excalidraw.com), edit it,
+and save it locally. Render that saved file directly with
+[`viz.render_excalidraw`](/api/viz#render_excalidraw) to preserve your changes.
+The runnable example is `examples/excalidraw/example.py` in the source repository.
 
 ### load_bundle
 

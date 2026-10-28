@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import re
 import subprocess
@@ -10,10 +9,11 @@ import tempfile
 from pathlib import Path
 
 from .dot import diagram_to_dot
-from .fan_in import position_readout_fan_in
+from .geometry import ResolvedDiagram
 from .labels import embed_math_svg, math_labels_to_dot, prepare_math_labels
+from .layout import position_diagram
 from .model import Diagram, DiagramTheme
-from .routing import expose_arrowheads, position_wire_labels, route_feedback_lanes
+from .spec import DiagramLayout
 
 _DEFAULT_THEME = DiagramTheme()
 
@@ -34,16 +34,34 @@ def _finish_svg(output, assets, canvas_size):
 
 
 def render_diagram(
-    diagram: Diagram,
+    diagram: Diagram | ResolvedDiagram,
     path: str | Path,
     *,
     scale: int = 1,
     theme: DiagramTheme = _DEFAULT_THEME,
     height_to_width_ratio: float | None = None,
     canvas_size: tuple[int, int] | None = None,
+    layout: DiagramLayout | dict | None = None,
 ) -> Path:
     """Render a diagram as SVG, PNG, PDF, or its deterministic DOT source."""
 
+    from .resolved import resolve_diagram
+    from .scene_render import render_resolved
+
+    if layout is not None or isinstance(diagram, ResolvedDiagram):
+        return _render_with_layout(
+            diagram, path, scale, theme, layout, height_to_width_ratio, canvas_size
+        )
+    if Path(path).suffix.lower() in {".jpg", ".jpeg"}:
+        if height_to_width_ratio is not None or canvas_size is not None:
+            raise ValueError("use layout.canvas for JPEG canvas settings")
+        from .spec import DiagramLayout
+
+        return render_resolved(
+            resolve_diagram(diagram, layout=DiagramLayout(), theme=theme),
+            path,
+            scale=scale,
+        )
     if not isinstance(scale, int) or scale < 1:
         raise ValueError("diagram scale must be a positive integer")
     output = Path(path)
@@ -67,53 +85,9 @@ def render_diagram(
     with tempfile.TemporaryDirectory(prefix="snnviz-diagram-") as temporary:
         assets = prepare_math_labels(diagram, theme, Path(temporary), scale=scale)
         dot = math_labels_to_dot(dot, diagram, theme, assets)
-        dot_path = Path(temporary) / "diagram.dot"
-        dot_path.write_text(dot)
-        layout_path = Path(temporary) / "layout.json"
-        positioned_path = Path(temporary) / "positioned.dot"
-        # Separate invocations avoid renderer-dependent coordinate mutations when
-        # Graphviz writes multiple formats from a single in-memory graph.
-        for format_name, destination in (
-            ("json", layout_path),
-            ("dot", positioned_path),
-        ):
-            layout = subprocess.run(
-                ["dot", f"-T{format_name}", "-o", str(destination), str(dot_path)],
-                capture_output=True,
-                text=True,
-            )
-            if layout.returncode:
-                raise RuntimeError(f"Graphviz failed: {layout.stderr.strip()}")
-        pinned = (
-            position_readout_fan_in(diagram, json.loads(layout_path.read_text()), dot)
-            if height_to_width_ratio is None
-            else None
+        positioned_path = position_diagram(
+            diagram, dot, Path(temporary), pin=height_to_width_ratio is None
         )
-        if pinned is not None:
-            dot_path.write_text(pinned)
-            for format_name, destination in (
-                ("json", layout_path),
-                ("dot", positioned_path),
-            ):
-                layout = subprocess.run(
-                    [
-                        "neato",
-                        "-n",
-                        f"-T{format_name}",
-                        "-o",
-                        str(destination),
-                        str(dot_path),
-                    ],
-                    capture_output=True,
-                    text=True,
-                )
-                if layout.returncode:
-                    raise RuntimeError(f"Graphviz failed: {layout.stderr.strip()}")
-        layout_data, positioned_dot = route_feedback_lanes(
-            json.loads(layout_path.read_text()), positioned_path.read_text()
-        )
-        layout_data, positioned_dot = expose_arrowheads(layout_data, positioned_dot)
-        positioned_path.write_text(position_wire_labels(layout_data, positioned_dot))
         if canvas_size is not None:
             natural_layout = subprocess.run(
                 ["neato", "-n2", "-Tplain"],
@@ -152,3 +126,20 @@ def render_diagram(
     if suffix == ".svg":
         _finish_svg(output, assets, canvas_size)
     return output
+
+
+def _render_with_layout(diagram, path, scale, theme, layout, ratio, canvas_size):
+    from .resolved import resolve_diagram
+    from .scene_render import render_resolved
+
+    if ratio is not None or canvas_size is not None:
+        raise ValueError(
+            "use layout.canvas instead of legacy canvas/ratio options with DiagramLayout"
+        )
+    if isinstance(diagram, ResolvedDiagram):
+        if layout is not None or theme != _DEFAULT_THEME and theme != diagram.theme:
+            raise ValueError("a resolved diagram already owns its layout and theme")
+        resolved = diagram
+    else:
+        resolved = resolve_diagram(diagram, layout=layout, theme=theme)
+    return render_resolved(resolved, path, scale=scale)

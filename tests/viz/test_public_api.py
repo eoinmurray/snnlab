@@ -33,7 +33,9 @@ v = snn.viz
 assert 'numpy' not in sys.modules
 assert 'matplotlib' not in sys.modules
 for name in ('Diagram', 'DiagramEdge', 'DiagramGroup', 'DiagramNode',
-             'DiagramTheme', 'diagram_to_dot', 'render_diagram'):
+             'DiagramTheme', 'DiagramLayout', 'CanvasLayout', 'LayoutDefaults',
+             'NodeLayout', 'GroupLayout', 'EdgeLayout', 'DiagramLabel',
+             'LayoutConstraint', 'ResolvedDiagram', 'diagram_to_dot', 'render_diagram'):
     getattr(v, name)
 assert 'numpy' not in sys.modules
 for name in ('Recording', 'RecordingError', 'FigureRect', 'FigureRegion',
@@ -69,6 +71,17 @@ for name in ('animation', 'contracts', 'figure_grid', 'layouts', 'scene', 'style
         "DiagramEdge",
         "DiagramGroup",
         "DiagramTheme",
+        "DiagramLayout",
+        "CanvasLayout",
+        "LayoutDefaults",
+        "NodeLayout",
+        "GroupLayout",
+        "EdgeLayout",
+        "DiagramLabel",
+        "LayoutConstraint",
+        "ResolvedDiagram",
+        "resolve_diagram",
+        "export_excalidraw",
         "FigureRect",
         "FigureRegion",
         "FigureGrid",

@@ -16,6 +16,8 @@ from snnlab.lang.compilation.graph_validation import validate_graph
 from snnlab.lang.compilation.reports import text_report
 from snnlab.lang.compilation.serialization import digest
 from snnlab.lang.compilation.training_validation import validate_training
+from snnlab.viz.diagrams.model import DiagramTheme
+from snnlab.viz.diagrams.spec import DiagramLayout
 
 BUNDLE_SCHEMA = "snnlang.bundle/v1"
 
@@ -69,14 +71,48 @@ class Bundle:
         view: str = "circuit",
         scale: int = 1,
         connection_labels: Mapping[str, str] | None = None,
+        layout: DiagramLayout | dict | None = None,
+        theme: DiagramTheme | None = None,
     ) -> Path:
         from snnlab.lang.diagrams import diagram
         from snnlab.viz import render_diagram
+        from snnlab.viz.diagrams.spec import check_legacy_labels
+
+        layout = check_legacy_labels(layout, connection_labels)
 
         return render_diagram(
             diagram(self, view=view, connection_labels=connection_labels),
             Path(path),
             scale=scale,
+            layout=layout,
+            **({"theme": theme} if theme is not None else {}),
+        )
+
+    def excalidraw_export(
+        self,
+        path: str | Path,
+        *,
+        view: str = "circuit",
+        connection_labels: Mapping[str, str] | None = None,
+        overwrite: bool = False,
+        layout: DiagramLayout | dict | None = None,
+        theme: DiagramTheme | None = None,
+    ) -> Path:
+        """Export an editable drawing without changing the bundle or running it."""
+        from snnlab.lang.diagrams import diagram
+        from snnlab.viz.diagrams.excalidraw import export_excalidraw
+        from snnlab.viz.diagrams.spec import check_legacy_labels
+
+        layout = check_legacy_labels(layout, connection_labels)
+
+        visual = diagram(self, view=view, connection_labels=connection_labels)
+        return export_excalidraw(
+            visual,
+            path,
+            graph_digest=self.manifest["graph_digest"],
+            overwrite=overwrite,
+            layout=layout,
+            **({"theme": theme} if theme is not None else {}),
         )
 
 
