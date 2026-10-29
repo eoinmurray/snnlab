@@ -12,7 +12,6 @@
     "../hodgkin-huxley",
     "../meanfield",
     "../pytorch-integration",
-    "../animated-neuron",
-    "../excalidraw"
+    "../animated-neuron"
   ]
 }

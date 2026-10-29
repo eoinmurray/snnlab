@@ -1,4 +1,4 @@
-"""Public placement contracts across static and editable diagram outputs."""
+"""Public placement contracts across static diagram outputs."""
 
 import copy
 import json
@@ -35,7 +35,7 @@ def diagram():
     )
 
 
-def test_exact_pins_routes_and_static_editable_geometry_agree(diagram, tmp_path):
+def test_exact_pins_routes_and_static_geometry_agree(diagram, tmp_path):
     original = copy.deepcopy(diagram)
     layout = viz.DiagramLayout(
         positions={"a": (200, 250), "b": (600, 250), "c": (1000, 250)},
@@ -49,26 +49,20 @@ def test_exact_pins_routes_and_static_editable_geometry_agree(diagram, tmp_path)
     assert diagram == original
     for key, center in layout.positions.items():
         assert scene.nodes[key].center == pytest.approx(center)
-    scene.write(tmp_path / "geometry.json")
+    geometry = scene.write(tmp_path / "geometry.json")
+    assert json.loads(geometry.read_text()) == json.loads(json.dumps(scene.to_dict()))
     svg = viz.render_diagram(scene, tmp_path / "scene.svg")
-    drawing = viz.export_excalidraw(scene, tmp_path / "scene.excalidraw")
-    payload = json.loads(drawing.read_text())
-    assert payload["snnlabGeometry"] == json.loads(
-        scene.write(tmp_path / "again.json").read_text()
-    )
     root = ET.parse(svg).getroot()
-    for element in payload["elements"]:
+    for element in scene.scene["elements"]:
         if element["type"] == "rectangle":
             native = next(x for x in root.iter() if x.get("id") == element["id"])
             assert [
                 float(native.get(k)) for k in ("x", "y", "width", "height")
             ] == pytest.approx([element[k] for k in ("x", "y", "width", "height")])
-    assert payload["files"]
+    assert scene.scene["files"]
     assert "snnlab-layout-" not in svg.read_text()
     ids = [x.get("id") for x in root.iter() if x.get("id")]
     assert len(ids) == len(set(ids))
-    with pytest.raises(FileExistsError):
-        viz.export_excalidraw(scene, drawing)
 
 
 @pytest.mark.parametrize("suffix", ["png", "jpg", "jpeg", "pdf"])
@@ -240,7 +234,7 @@ def test_routing_modes_lanes_and_arrow_semantics(diagram, routing, tmp_path):
     arrow = next(
         e
         for e in scene.scene["elements"]
-        if e["type"] == "arrow" and e["customData"]["snnlab"]["id"] == "bc"
+        if e["type"] == "arrow" and e["data"]["id"] == "bc"
     )
     assert arrow["endArrowhead"] == "bar"
     assert arrow["strokeStyle"] == "dashed"
@@ -272,9 +266,7 @@ def test_annotations_plain_math_hide_default_and_json_roundtrip(diagram, tmp_pat
     assert restored.to_dict() == layout.to_dict()
     scene = viz.resolve_diagram(diagram, layout=restored.to_dict())
     assert scene.scene["files"]
-    sources = [
-        e["customData"]["snnlab"].get("math_source") for e in scene.scene["elements"]
-    ]
+    sources = [e["data"].get("math_source") for e in scene.scene["elements"]]
     assert r"$\alpha$" in sources and r"$\tau$" in sources
     assert "edge:ab" not in scene.labels
     default = viz.resolve_diagram(diagram, layout=viz.DiagramLayout())
@@ -361,7 +353,7 @@ def test_bad_specifications_rejected(factory):
         factory()
 
 
-def test_bundle_integration_conflicts_provenance_and_invalid_math(tmp_path):
+def test_bundle_integration_conflicts_and_invalid_math(tmp_path):
     net = lang.Network("layout")
     source = net.input("drive", shape=("time", "batch", 2), signal_type="spikes")
     e = net.population("E", size=2, neuron=lang.COBA_LIF())
@@ -376,13 +368,8 @@ def test_bundle_integration_conflicts_provenance_and_invalid_math(tmp_path):
     bundle = lang.compile(net)
     before = copy.deepcopy((bundle.graph, bundle.manifest))
     layout = viz.DiagramLayout(edges={"drive_to_E": viz.EdgeLayout(label=r"$J$")})
-    bundle.visualise(tmp_path / "network.png", layout=layout)
-    path = bundle.excalidraw_export(tmp_path / "network.excalidraw", layout=layout)
-    payload = json.loads(path.read_text())
-    assert all(
-        e["customData"]["snnlab"]["graph_digest"] == bundle.manifest["graph_digest"]
-        for e in payload["elements"]
-    )
+    path = bundle.visualise(tmp_path / "network.png", layout=layout)
+    assert path.stat().st_size > 100
     assert before == (bundle.graph, bundle.manifest)
     with pytest.raises(ValueError, match="conflicting connection_labels"):
         bundle.visualise(
@@ -395,7 +382,7 @@ def test_bundle_integration_conflicts_provenance_and_invalid_math(tmp_path):
     )
     old = path.read_bytes()
     with pytest.raises(ValueError, match="invalid connection label"):
-        bundle.excalidraw_export(path, layout=invalid, overwrite=True)
+        bundle.visualise(path, layout=invalid)
     assert path.read_bytes() == old
 
 
@@ -435,10 +422,10 @@ def test_parallel_edges_self_loop_and_semantic_styles(diagram):
     edge = next(
         e
         for e in scene.scene["elements"]
-        if e["type"] == "arrow" and e["customData"]["snnlab"]["id"] == "cc"
+        if e["type"] == "arrow" and e["data"]["id"] == "cc"
     )
     assert edge["strokeStyle"] == "dashed"
-    assert edge["customData"]["snnlab"]["frozen"] is True
+    assert edge["data"]["frozen"] is True
 
 
 def test_preferences_weights_and_canvas_origin(diagram):
@@ -505,8 +492,8 @@ def test_legacy_canvas_and_resolved_overrides_fail_explicitly(diagram, tmp_path)
     with pytest.raises(ValueError, match="already owns"):
         viz.render_diagram(scene, tmp_path / "x.png", layout=viz.DiagramLayout())
     with pytest.raises(ValueError, match="already owns"):
-        viz.export_excalidraw(
-            scene, tmp_path / "x.excalidraw", theme=viz.DiagramTheme(ink="#000000")
+        viz.render_diagram(
+            scene, tmp_path / "x.png", theme=viz.DiagramTheme(ink="#000000")
         )
     with pytest.raises(ValueError, match="resolved diagram output"):
         viz.render_diagram(scene, tmp_path / "x.dot")
@@ -583,28 +570,3 @@ def test_annotation_ids_do_not_collide_with_colon_node_ids(diagram):
     )
     identifiers = [e["id"] for e in scene.scene["elements"]]
     assert len(identifiers) == len(set(identifiers))
-
-
-@pytest.mark.integration
-def test_cli_honours_saved_canvas_fit_and_preserves_source(diagram, tmp_path):
-    if not shutil.which("excalidraw"):
-        pytest.skip("Installed Excalidraw CLI/browser required")
-    scene = viz.resolve_diagram(
-        diagram,
-        layout=viz.DiagramLayout(
-            canvas=viz.CanvasLayout(size=(300, 200), fit="contain"),
-        ),
-    )
-    drawing = viz.export_excalidraw(scene, tmp_path / "fixed.excalidraw")
-    before = drawing.read_bytes()
-    image = viz.render_excalidraw(drawing, tmp_path / "fixed.png", scale=2)
-    with Image.open(image) as pixels:
-        assert pixels.size == pytest.approx((600, 400), abs=1)
-    assert drawing.read_bytes() == before
-    data = json.loads(before)
-    data["elements"] = [e for e in data["elements"] if e["type"] != "frame"]
-    drawing.write_text(json.dumps(data))
-    previous_image = image.read_bytes()
-    with pytest.raises(ValueError, match="canvas frame is missing"):
-        viz.render_excalidraw(drawing, image)
-    assert image.read_bytes() == previous_image

@@ -41,7 +41,7 @@ class Box:
 
 @dataclass(frozen=True)
 class ResolvedDiagram:
-    """Inspectable geometry and a native scene; positions use top-left canvas axes."""
+    """Inspectable geometry and a rendering scene; positions use top-left canvas axes."""
 
     diagram: Diagram
     layout: DiagramLayout

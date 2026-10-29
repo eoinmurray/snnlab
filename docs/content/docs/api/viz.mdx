@@ -13,8 +13,7 @@ Import plotting tools with `from snnlab import viz`. Use `plot_raster` and `plot
 | `Scene`, `FrameTimeline`, `save_animation` | Compose and export animations. |
 | `exponential_trace`, `projection_activity`, `representative_frame` | Prepare arrays for plotting. |
 | `render_diagram`, `diagram_to_dot` | Render or export a network diagram. |
-| `DiagramLayout`, `resolve_diagram`, `export_excalidraw` | Control placement and annotations; inspect or export shared geometry. |
-| `render_excalidraw` | Render a saved editable Excalidraw document to PNG. |
+| `DiagramLayout`, `resolve_diagram` | Control placement and annotations; inspect shared geometry. |
 
 Figures use Matplotlib; diagrams require Graphviz when rendering through `dot`.
 
@@ -522,8 +521,7 @@ Colour roles resolve against `DiagramTheme`. Use roles such as `signal`, `inhibi
 ### DiagramLayout
 
 `DiagramLayout` is a presentation specification shared by
-`bundle.visualise(..., layout=...)`, `bundle.excalidraw_export(..., layout=...)`
-and `viz.render_diagram(..., layout=...)`. It does not change the compiled graph,
+`bundle.visualise(..., layout=...)` and `viz.render_diagram(..., layout=...)`. It does not change the compiled graph,
 weights or simulation. Import every class below from `snnlab.viz`.
 
 ```python
@@ -552,8 +550,7 @@ Here `J` annotates the E-to-I coupling. Mathematical expressions use
 [Matplotlib MathText](https://matplotlib.org/stable/users/explain/text/mathtext.html),
 not a full TeX installation. Plain strings abbreviate `DiagramLabel(text=...)`.
 Newlines allow mixed text/math rows. `None` inherits the diagram's label;
-`""` hides it. Equations become self-contained images in Excalidraw and vector
-paths in SVG; PNG/JPEG/PDF use high-resolution equation images.
+`""` hides it. Equations become vector paths in SVG; PNG/JPEG/PDF use high-resolution equation images.
 
 #### Coordinates and overrides
 
@@ -670,7 +667,6 @@ scene = viz.resolve_diagram(
 scene.write("geometry.json")
 adjusted = scene.move("I", (400, 700))
 viz.render_diagram(adjusted, "network.png")
-viz.export_excalidraw(adjusted, "network.excalidraw")
 adjusted.layout.write("adjusted-layout.json")
 ```
 
@@ -683,7 +679,7 @@ resolver; named connection IDs are preferable for persistent sidecars.
 
 `resolve_diagram` returns `ResolvedDiagram`, exposing `nodes`/`groups` as boxes
 with `x`, `y`, `width`, `height` and `.center`, plus `ports`, `edges` (routes and
-attachments), `labels`, `canvas`, `viewport`, `diagnostics`, and the native `scene`.
+attachments), `labels`, `canvas`, `viewport`, `diagnostics`, and the rendering `scene`.
 `to_dict()` and `write()` export inspectable geometry. Font availability can
 change measurements across machines.
 
@@ -694,38 +690,11 @@ Edit those relationships in the layout specification when intentionally changing
 them. A resolved scene owns its theme and layout: resolve again to change either.
 
 Explicit/resolved layouts support PNG, JPEG, SVG and PDF. They use one shared
-geometry model and preserve positions across static and editable exports;
-typography may differ between viewers. DOT remains available through the legacy
+geometry model and preserve positions across output formats; typography may
+differ between viewers. DOT remains available through the legacy
 automatic path, without a layout specification. Do not combine `layout` with the
 legacy `canvas_size` or `height_to_width_ratio` arguments; use `layout.canvas`.
 Existing automatic PNG/SVG/PDF/DOT rendering is preserved when layout is omitted.
-
-Excalidraw exports include the layout sidecar and resolved geometry as additional
-JSON metadata, plus a native Canvas frame. `render_excalidraw` uses that saved
-frame and its recorded view scale so canvas padding, bounds and `contain` fitting
-apply to CLI renders too. Manual edits outside the frame are clipped; resize the
-frame when enlarging the drawing. Removing the frame requires removing
-`snnlabExport` metadata to return to whole-scene rendering. Editing the scene in Excalidraw does not update that metadata or a
-saved sidecar. To preserve manual edits, render the saved `.excalidraw` file with
-`render_excalidraw`; re-exporting does not merge browser/MCP edits.
-
-### export_excalidraw
-
-```python
-viz.export_excalidraw(
-    diagram_or_resolved_scene,
-    "network.excalidraw",
-    layout=None,
-    theme=viz.DiagramTheme(),
-    graph_digest=None,
-    overwrite=False,
-)
-```
-
-Returns the saved drawing's `Path`. `bundle.excalidraw_export` supplies its graph
-digest automatically. With the low-level helper, `graph_digest` optionally adds
-provenance to every native element. Existing files are protected unless
-`overwrite=True`. No Excalidraw CLI is needed for export.
 
 ### diagram_to_dot
 
@@ -757,42 +726,6 @@ def render_diagram(
 ```
 
 Returns the output `Path` and creates its parent directories. The suffix selects `.svg`, `.png`, `.pdf` or `.dot`. DOT exports with mathematical labels also write PNG assets in a sibling `<stem>.labels/` directory; the DOT references these files by path. Other formats use Graphviz for layout and export after wire and label clearance. SVG embeds mathematical labels as self-contained vector paths; PNG and PDF embed high-resolution images. PNG rendering uses 144 DPI multiplied by `scale`; scale must be a positive integer. When `canvas_size` is supplied, SVG intrinsic dimensions match PNG dimensions; PNG `scale` multiplies the canvas dimensions. A canvas smaller than the natural layout raises `ValueError` before export, preventing clipping. A failed Graphviz command raises `RuntimeError`; a missing executable fails at process launch.
-
-### render_excalidraw
-
-```python
-def render_excalidraw(
-    source: str | Path,
-    path: str | Path,
-    *,
-    scale: int = 1,
-) -> Path: ...
-```
-
-Renders an existing `.excalidraw` file to `.png` using the installed official
-`excalidraw` CLI. Returns the PNG `Path` and creates parent directories. It reads
-the saved document directly, preserving user and agent edits without modifying
-the source or requiring a bundle or Graphviz. Generate the initial document with
-[`bundle.excalidraw_export`](/api/lang#bundleexcalidraw_export).
-
-Install the CLI separately, for example with `bun install -g @excalidraw/cli`,
-and put `excalidraw` on `PATH`. The CLI also needs an installed Chrome, Chromium,
-Edge or Firefox browser; use its `EXCALIDRAW_BROWSER_PATH` environment variable
-for a nonstandard location. Local rendering needs no account, API key or paid
-subscription. SNNLab does not install or update dependencies.
-
-`scale` must be an integer between 1 and 16. The CLI caps output at 16384 pixels
-per side and 64 megapixels. Optional font downloads are disabled; CJK text can
-fall back to installed system fonts. Images must be embedded in the scene's
-`files` mapping; the CLI does not load external image URLs or live embeds.
-Mathematical connection labels generated by `bundle.excalidraw_export` already
-contain their typeset images in this mapping. Rendering needs neither Matplotlib
-nor a TeX installation to display them; the CLI does not interpret LaTeX source.
-Unsupported suffixes and invalid scale raise `ValueError`; missing source files
-and executables raise `FileNotFoundError` with instructions. Browser or CLI
-failures, missing PNG output and a 60-second process timeout raise `RuntimeError`.
-Rendering replaces the destination image only after success, retaining any
-previous PNG on failure.
 
 ### DiagramTheme
 

@@ -81,7 +81,6 @@ for name in ('animation', 'contracts', 'figure_grid', 'layouts', 'scene', 'style
         "LayoutConstraint",
         "ResolvedDiagram",
         "resolve_diagram",
-        "export_excalidraw",
         "FigureRect",
         "FigureRegion",
         "FigureGrid",

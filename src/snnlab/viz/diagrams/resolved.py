@@ -1,4 +1,4 @@
-"""Resolve one measured presentation scene for static and editable exports."""
+"""Resolve measured presentation geometry for static diagram rendering."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from .geometry import Box, ResolvedDiagram
 from .labels import _render_math
 from .layout import graphviz, position_diagram
 from .model import Diagram, DiagramTheme
-from .native import _binding, _element, _id
 from .paths import SIDES, along, route, union
 from .placement import ancestors, group_specs, node_specs, overlaps, place
+from .scene import _element, _id
 from .spec import DiagramLabel, DiagramLayout, EdgeLayout, merged
 
 _DEFAULT_THEME = DiagramTheme()
@@ -59,12 +59,8 @@ class _Labels:
                     png = asset.png.read_bytes()
                     file_id = hashlib.sha256(png).hexdigest()
                     self.files[file_id] = {
-                        "id": file_id,
-                        "mimeType": "image/png",
                         "dataURL": "data:image/png;base64,"
                         + base64.b64encode(png).decode("ascii"),
-                        "created": 1,
-                        "lastRetrieved": 1,
                     }
                     self.vectors[file_id] = asset.svg
                     result.append(
@@ -117,21 +113,11 @@ class _Labels:
             extra = (
                 {
                     "fileId": row["file_id"],
-                    "status": "saved",
-                    "scale": [1, 1],
-                    "crop": None,
                 }
                 if "file_id" in row
                 else {
                     "text": row["text"],
-                    "originalText": row["text"],
                     "fontSize": row["size"],
-                    "fontFamily": 2,
-                    "lineHeight": 1.3,
-                    "textAlign": "left",
-                    "verticalAlign": "top",
-                    "containerId": None,
-                    "autoResize": True,
                 }
             )
             metadata = dict(data or {})
@@ -407,7 +393,7 @@ def _resolve(diagram, spec, theme, directory):
             )
         )
     node_elements, annotations = [], []
-    native_boxes, ports = {}, {}
+    node_boxes, ports = {}, {}
     for node in diagram.nodes:
         k, box, settings = node.id, boxes[node.id], nodes[node.id]
         fill, border = _box_colours(node, theme)
@@ -425,7 +411,7 @@ def _resolve(diagram, spec, theme, directory):
             "badge": node.badge,
             "classes": list(node.classes),
         }
-        native_boxes[k] = _element(
+        node_boxes[k] = _element(
             "rectangle",
             _id("node", k),
             **asdict(box),
@@ -543,17 +529,11 @@ def _resolve(diagram, spec, theme, directory):
             strokeColor=_edge_style(edge, theme)[0],
             strokeWidth=edge.pen_width * 2,
             strokeStyle=_edge_style(edge, theme)[1],
-            startArrowhead=None,
             endArrowhead={"inhibitory": "bar", "modulatory": "diamond"}.get(
                 edge.role, "arrow"
             ),
-            startBinding=_binding(native_boxes[edge.source], points[0]),
-            endBinding=_binding(native_boxes[edge.target], points[-1]),
-            elbowed=False,
             roundness={"type": 2} if settings.routing == "curved" else None,
         )
-        for k in {edge.source, edge.target}:
-            native_boxes[k]["boundElements"].append({"id": identifier, "type": "arrow"})
         edge_elements.append(element)
         edge_geometry[key] = {
             "source": edge.source,
@@ -588,8 +568,8 @@ def _resolve(diagram, spec, theme, directory):
                 rows,
                 bounds,
                 f"edge:{key}",
-                groups=element["groupIds"],
-                data=element["customData"]["snnlab"],
+                groups=element["groups"],
+                data=element["data"],
             )
         )
     title = diagram.title or diagram.name.replace("_", " ")
@@ -613,29 +593,14 @@ def _resolve(diagram, spec, theme, directory):
         label_bounds["title"] = bounds
         content = union([content, bounds])
     canvas, viewport = _canvas(spec.canvas, content)
-    frame_id = _id("frame", "canvas")
     drawing_elements = [
         *elements,
         *edge_elements,
-        *native_boxes.values(),
+        *node_boxes.values(),
         *node_elements,
         *annotations,
     ]
-    frame = _canvas_frame(drawing_elements, viewport, provenance, frame_id)
-    scene = {
-        "type": "excalidraw",
-        "version": 2,
-        "source": "https://github.com/eoinmurray/snnlab",
-        "elements": [frame, *drawing_elements],
-        "appState": {
-            "viewBackgroundColor": theme.background,
-            "gridSize": None,
-            "exportBackground": True,
-        },
-        "files": labels.files,
-        "snnlabLayout": spec.to_dict(),
-        "snnlabExport": {"frame_id": frame_id, "scale": canvas.width / viewport.width},
-    }
+    scene = {"elements": drawing_elements, "files": labels.files}
     return ResolvedDiagram(
         diagram,
         spec,
@@ -685,17 +650,3 @@ def _validate_ids(diagram, spec):
     if unknown := spec.edges.keys() - set(keys):
         raise ValueError(f"unknown layout connection IDs: {sorted(unknown)}")
     return known, keys
-
-
-def _canvas_frame(drawing_elements, viewport, provenance, frame_id):
-    for element in drawing_elements:
-        element["frameId"] = frame_id
-    return _element(
-        "frame",
-        frame_id,
-        **asdict(viewport),
-        data={**provenance, "kind": "canvas", "id": "canvas"},
-        name="Canvas",
-        strokeColor="transparent",
-        backgroundColor="transparent",
-    )

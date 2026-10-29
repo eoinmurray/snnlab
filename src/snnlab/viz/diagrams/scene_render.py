@@ -1,4 +1,4 @@
-"""Static outputs from the same native scene used by editable exports."""
+"""Render resolved diagram scenes to static image formats."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def _svg(resolved, path):
     for element in resolved.scene["elements"]:
         attributes = {
             "id": element["id"],
-            "data-snnlab-id": str(element["customData"]["snnlab"].get("id", "")),
+            "data-snnlab-id": str(element["data"].get("id", "")),
         }
         kind = element["type"]
         if kind == "rectangle":
