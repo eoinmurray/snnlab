@@ -7,7 +7,6 @@ import hashlib
 import math
 import time
 from collections.abc import Mapping
-from contextlib import nullcontext
 from dataclasses import replace
 from numbers import Integral
 from typing import Any
@@ -69,6 +68,10 @@ from snnlab.sim.training.policies import (
 )
 from snnlab.sim.training.replay import TrainingReplay
 from snnlab.sim.training.selection import CheckpointSelection, SelectionMetric
+from snnlab.sim.training.training_loop import (
+    TrainingUpdateContext,
+    run_training_update,
+)
 
 
 def _host_metrics(values):
@@ -672,7 +675,6 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
         )
     from snnlab.sim.graph.precision import (
         automatic_fused_optimizer,
-        execution_precision,
     )
 
     optimizer_spec = training.get("optimizer", {})
@@ -1431,21 +1433,28 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
 
     replay = TrainingReplay(spec, model, training, scheduled, tracing=trace is not None)
 
-    def numerical_step(batch_inputs, batch_targets):
-        forward, signals = model._forward(
-            batch_inputs,
-            diagnostics=spec.diagnostics,
-            required_signals=required_signals,
-            retain_parameters=False,
-            retain_final_state=False,
-            retain_runtime_state=False,
-        )
-        loss, components = compute_loss(
-            forward, signals, batch_targets, resolved_inputs.protocol
-        )
-        with execution_precision(spec.precision, next(model.parameters(), None)):
-            loss.backward()
-        return forward, signals, loss, components
+    update_context = TrainingUpdateContext(
+        model=model,
+        optimizer=optimizer,
+        replay=replay,
+        compute_loss=compute_loss,
+        trace=trace,
+        parameter_map=parameter_map,
+        optimizer_groups=tuple(optimizer.param_groups),
+        training=training,
+        training_recipe=training,
+        metric_policy=metric_policy,
+        observation_spec=observation_spec,
+        gradient_measurements=lambda: gradient_measurements,
+        input_protocol=resolved_inputs.protocol,
+        output_ids=output_ids,
+        required_signals=required_signals,
+        device=device,
+        diagnostics=spec.diagnostics,
+        precision=spec.precision,
+        targets=resolved_targets,
+        dataset_inputs=resolved_inputs,
+    )
 
     snapshots = SnapshotSession(
         spec,
@@ -1474,113 +1483,33 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
         iter_batches(resolved_inputs, requests, prefetch=spec.dataset_prefetch)
     )
     for update in range(len(scheduled)):
-        if trace is not None:
-            trace.begin_update(
-                update,
-                scheduled[update][0] + 1,
-                scheduled[update][1] + 1,
-                parameter_map,
-            )
-        with trace.region("batch_prepare_wait") if trace is not None else nullcontext():
-            _, batch_inputs, encoding_metadata = next(batches)
-        if trace is not None:
-            trace.observe_inputs(batch_inputs)
-        epoch, batch, sample_indices = scheduled[update]
-        batch_targets = {
-            name: value.index_select(0, sample_indices.to(value.device))
-            for name, value in resolved_targets.items()
-        }
-        replayed = replay.run(batch_inputs, batch_targets, numerical_step)
-        if replayed is not None:
-            forward, signal_values, loss, components = replayed
-        else:
-            optimizer.zero_grad(set_to_none=True)
-            with trace.region("forward") if trace is not None else nullcontext():
-                forward, signal_values = model._forward(
-                    batch_inputs,
-                    diagnostics=spec.diagnostics,
-                    required_signals=required_signals,
-                    retain_parameters=False,
-                    retain_final_state=False,
-                    retain_runtime_state=False,
-                )
-            with trace.region("loss") if trace is not None else nullcontext():
-                loss, components = compute_loss(
-                    forward, signal_values, batch_targets, resolved_inputs.protocol
-                )
-        if metric_policy.train == "online":
-            count = len(sample_indices)
-            values = {
-                "loss": loss.detach() * count,
-                **{
-                    f"component/{name}": value.detach() * count
-                    for name, value in components.items()
-                },
-            }
-            with torch.no_grad():
-                for index, objective in enumerate(training.get("objectives", [])):
-                    if X.classification(objective):
-                        prediction = forward.outputs[
-                            output_ids[objective["prediction"]]
-                        ].detach()
-                        target = batch_targets[objective["target"]].long()
-                        values[f"ce/objective[{index}]"] = (
-                            torch.nn.functional.cross_entropy(
-                                prediction, target, reduction="sum"
-                            )
-                        )
-                        values[f"correct/objective[{index}]"] = (
-                            prediction.argmax(-1) == target
-                        ).sum()
-                for name, value in values.items():
-                    value = value.to(
-                        dtype=torch.float64
-                        if torch.device(device).type != "mps"
-                        else torch.float32
-                    )
-                    if name not in online_sums:
-                        online_sums[name] = torch.zeros_like(value)
-                    online_sums[name].add_(value)
-            online_count += count
-        with trace.region("backward") if trace is not None else nullcontext():
-            if replayed is None:
-                with execution_precision(
-                    spec.precision, next(model.parameters(), None)
-                ):
-                    loss.backward()
-        if trace is not None:
-            trace.observe_gradients(parameter_map)
-        gradient_names = (
-            set(parameter_map)
-            if update == len(scheduled) - 1
-            else set(observation_spec.gradient_norms)
-            if observation_spec is not None
-            else set()
+        outcome = run_training_update(
+            update_context,
+            update=update,
+            update_count=len(scheduled),
+            scheduled=scheduled[update],
+            batches=batches,
         )
-        before_clip = {
-            name: parameter.grad.detach().clone()
-            for name, parameter in parameter_map.items()
-            if name in gradient_names and parameter.grad is not None
-        }
+        epoch, batch, sample_indices = (
+            outcome.epoch,
+            outcome.batch,
+            outcome.sample_indices,
+        )
+        forward, loss, components = (
+            outcome.forward,
+            outcome.loss,
+            outcome.loss_components,
+        )
+        encoding_metadata = outcome.encoding_metadata
+        if metric_policy.train == "online":
+            for name, value in outcome.online_metrics.items():
+                if name not in online_sums:
+                    online_sums[name] = value.clone()
+                else:
+                    online_sums[name].add_(value)
+            online_count += outcome.online_count
         if update == len(scheduled) - 1:
-            last_gradients = before_clip
-        clip = training.get("gradient_clip")
-        if clip is not None:
-            torch.nn.utils.clip_grad_norm_(
-                [parameter for group in groups for parameter in group["params"]],
-                float(clip),
-            )
-        if observation_spec is not None:
-            gradient_measurements.add(before_clip, parameter_map)
-        with (
-            trace.region("optimizer_constraints")
-            if trace is not None
-            else nullcontext()
-        ):
-            optimizer.step()
-            model.enforce_constraints()
-        if trace is not None:
-            trace.end_update(parameter_map, last=update + 1 == len(scheduled))
+            last_gradients = outcome.before_clip_gradients
         executed_updates = update + 1
         examples_consumed += len(sample_indices)
         epoch_examples += len(sample_indices)
