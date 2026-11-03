@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -13,7 +14,7 @@ from snnlab._shared import neurons as N
 from snnlab._shared.gains import sample as sample_gain
 from snnlab._shared.spatial import convolution_drive, pool_tensor, signal_spatial_shape
 from snnlab.sim.artifacts.inference import retention_identity
-from snnlab.sim.diagnostics.tracing import current_trace
+from snnlab.sim.diagnostics.tracing import TraceSession, current_trace
 from snnlab.sim.graph import dynamics as M
 from snnlab.sim.graph import extensions as X
 from snnlab.sim.graph.blocks import network_block
@@ -23,7 +24,11 @@ from snnlab.sim.graph.kernels import (
 )
 from snnlab.sim.graph.plan import _signal_axes
 from snnlab.sim.requests.result import ExecutionResult
-from snnlab.sim.runtime.interventions import Intervention, prepare_interventions
+from snnlab.sim.runtime.interventions import (
+    Intervention,
+    PreparedIntervention,
+    prepare_interventions,
+)
 from snnlab.sim.runtime.recording import (
     MeasurementWindow,
     OnlineReductions,
@@ -75,7 +80,91 @@ class DelayBuffer:
         return result
 
 
-def run_forward_pass(  # noqa: C901
+@dataclass(frozen=True, slots=True)
+class _ForwardOptions:
+    """Requested behavior, shared unchanged across the forward phases."""
+
+    diagnostics: bool
+    runtime_state: GraphRuntimeState | None
+    interventions: Sequence[Intervention]
+    resets: Sequence[ResetVoltage]
+    decisions: DecisionSegments | None
+    measurement: MeasurementWindow | None
+    recording: RecordingSpec | None
+    retain_outputs: bool
+    batch_offset: int
+    automatic_reductions: bool
+    required_signals: Sequence[str]
+    observation_populations: Sequence[str]
+    retain_parameters: bool
+    retain_final_state: bool
+    retain_runtime_state: bool
+
+
+@dataclass(slots=True)
+class _ForwardContext:
+    """Per-call metadata and collaborators, populated in execution order."""
+
+    options: _ForwardOptions
+    executor: GraphExecutor
+    inputs: Mapping[str, torch.Tensor]
+    probe: Any = field(init=False)
+    trace: TraceSession | None = field(init=False)
+    batch: int = field(init=False)
+    steps: int = field(init=False)
+    device: torch.device = field(init=False)
+    parameter_dtype: torch.dtype = field(init=False)
+    populations: dict[str, Any] = field(init=False)
+    prepared: dict[str, Any] | None = field(init=False)
+    expected_compatibility: dict[str, Any] = field(init=False)
+    expected_signature: str = field(init=False)
+    segments: SegmentAccumulator = field(init=False)
+    prepared_interventions: list[PreparedIntervention] = field(init=False)
+    intervention_request: dict[str, Any] = field(init=False)
+    resolved_interventions: list[dict[str, Any]] = field(init=False)
+    projection_rows: dict[str, Any] = field(init=False)
+    projection_ports: dict[str, str] = field(init=False)
+    continuous_delays: dict[str, int] = field(init=False)
+    signal_axes: dict[str, Any] = field(init=False)
+    recorder: Recorder = field(init=False)
+    online: OnlineReductions = field(init=False)
+    inference_only: bool = field(init=False)
+    streamed_outputs: dict[str, str] = field(init=False)
+    external_signals: set[str] = field(init=False)
+    history_operations: list[dict[str, Any]] = field(init=False)
+    needed_signals: set[str] = field(init=False)
+    capture_steps: bool = field(init=False)
+    effective_weights: dict[str, torch.Tensor] = field(init=False)
+    projection_gains: dict[str, tuple[float, ...]] = field(init=False)
+    spatial_operations: dict[str, Any] = field(init=False)
+    block_reasons: list[str] = field(init=False)
+    compiler_fallback: str | None = field(init=False)
+
+
+@dataclass(slots=True)
+class _ForwardState:
+    """Mutable neural state and retained samples owned by this invocation."""
+
+    voltage: dict[str, torch.Tensor] = field(init=False)
+    refractory: dict[str, torch.Tensor] = field(init=False)
+    conductance: dict[tuple[str, str], torch.Tensor] = field(init=False)
+    histories: dict[str, DelayBuffer] = field(init=False)
+    input_histories: dict[str, torch.Tensor] = field(init=False)
+    completed_steps: int = field(init=False)
+    neuron_states: dict[str, dict[str, torch.Tensor]] = field(init=False)
+    synapse_states: dict[str, dict[str, torch.Tensor]] = field(init=False)
+    custom_state: dict[str, torch.Tensor] = field(init=False)
+    continuous_histories: dict[str, list[torch.Tensor]] = field(init=False)
+    observation_counts: dict[str, torch.Tensor] = field(init=False)
+    integrator_sum: dict[str, torch.Tensor] = field(init=False)
+    state_traces: dict[str, list[torch.Tensor]] = field(init=False)
+    spike_traces: dict[str, list[torch.Tensor]] = field(init=False)
+    voltage_traces: dict[str, list[torch.Tensor]] = field(init=False)
+    pre_reset_voltage_traces: dict[str, list[torch.Tensor]] = field(init=False)
+    conductance_traces: dict[str, list[torch.Tensor]] = field(init=False)
+
+
+def run_forward_pass(
     executor: GraphExecutor,
     inputs: Mapping[str, torch.Tensor],
     *,
@@ -95,164 +184,222 @@ def run_forward_pass(  # noqa: C901
     retain_final_state: bool = True,
     retain_runtime_state: bool = True,
 ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
-    probe = getattr(executor, "_stream_probe", None)
+    """Execute one graph trajectory through ordered private phases."""
+    options = _ForwardOptions(
+        diagnostics=diagnostics,
+        runtime_state=runtime_state,
+        interventions=interventions,
+        resets=resets,
+        decisions=decisions,
+        measurement=measurement,
+        recording=recording,
+        retain_outputs=retain_outputs,
+        batch_offset=batch_offset,
+        automatic_reductions=automatic_reductions,
+        required_signals=required_signals,
+        observation_populations=observation_populations,
+        retain_parameters=retain_parameters,
+        retain_final_state=retain_final_state,
+        retain_runtime_state=retain_runtime_state,
+    )
+    forward = _ForwardContext(options=options, executor=executor, inputs=inputs)
+    runtime = _ForwardState()
+    _validate_forward_inputs(forward, runtime)
+    _restore_runtime_state(forward, runtime)
+    _prepare_forward_context(forward, runtime)
+    _select_execution_path(forward, runtime)
+    if not forward.block_reasons:
+        _run_compiled_blocks(forward, runtime)
+    else:
+        _run_eager_steps(forward, runtime)
+    return _assemble_forward_result(forward, runtime)
+
+
+def _validate_forward_inputs(forward: _ForwardContext, runtime: _ForwardState) -> None:
+    forward.probe = getattr(forward.executor, "_stream_probe", None)
     # This state machine coordinates causal updates, continuation and output ownership.
-    trace = current_trace()
-    if trace is not None and not trace.active:
-        trace = None
-    if not isinstance(diagnostics, bool):
+    forward.trace = current_trace()
+    if forward.trace is not None and not forward.trace.active:
+        forward.trace = None
+    if not isinstance(forward.options.diagnostics, bool):
         raise TypeError("diagnostics must be boolean")
     for name, value in (
-        ("retain_parameters", retain_parameters),
-        ("retain_final_state", retain_final_state),
-        ("retain_runtime_state", retain_runtime_state),
+        ("retain_parameters", forward.options.retain_parameters),
+        ("retain_final_state", forward.options.retain_final_state),
+        ("retain_runtime_state", forward.options.retain_runtime_state),
     ):
         if not isinstance(value, bool):
             raise TypeError(f"{name} must be boolean")
-    if not inputs:
+    if not forward.inputs:
         raise ValueError("graph execution requires at least one input tensor")
-    first = next(iter(inputs.values()))
-    steps, batch = first.shape[:2]
-    device = first.device
-    parameter_dtype = (
-        next(iter(executor.weights.values())).dtype if executor.weights else first.dtype
+    first = next(iter(forward.inputs.values()))
+    forward.steps, forward.batch = first.shape[:2]
+    forward.device = first.device
+    forward.parameter_dtype = (
+        next(iter(forward.executor.weights.values())).dtype
+        if forward.executor.weights
+        else first.dtype
     )
-    if (executor.weights or executor.plan.populations) and parameter_dtype not in {
+    if (
+        forward.executor.weights or forward.executor.plan.populations
+    ) and forward.parameter_dtype not in {
         torch.float16,
         torch.bfloat16,
         torch.float32,
         torch.float64,
     }:
         raise ValueError(
-            f"graph execution requires a floating dtype, got {parameter_dtype}"
+            f"graph execution requires a floating dtype, got {forward.parameter_dtype}"
         )
-    if device.type == "mps" and parameter_dtype == torch.float64:
+    if forward.device.type == "mps" and forward.parameter_dtype == torch.float64:
         raise ValueError("MPS graph execution does not support torch.float64")
-    for name, parameter in executor.parameter_map().items():
-        if parameter.device != device or parameter.dtype != parameter_dtype:
+    for name, parameter in forward.executor.parameter_map().items():
+        if (
+            parameter.device != forward.device
+            or parameter.dtype != forward.parameter_dtype
+        ):
             raise ValueError(
-                f"parameter {name} must use execution device {device} and dtype {parameter_dtype}"
+                f"parameter {name} must use execution device {forward.device} and dtype {forward.parameter_dtype}"
             )
-    input_specs = {row["id"]: row for row in executor.plan.graph.get("inputs", [])}
-    for name, value in inputs.items():
-        if value.shape[:2] != (steps, batch):
+    input_specs = {
+        row["id"]: row for row in forward.executor.plan.graph.get("inputs", [])
+    }
+    for name, value in forward.inputs.items():
+        if value.shape[:2] != (forward.steps, forward.batch):
             raise ValueError(
-                f"input {name} leading shape expected {(steps, batch)}, got {tuple(value.shape[:2])}"
+                f"input {name} leading shape expected {(forward.steps, forward.batch)}, got {tuple(value.shape[:2])}"
             )
-        if value.device != device:
+        if value.device != forward.device:
             raise ValueError(
-                f"input {name} device expected {device}, got {value.device}"
+                f"input {name} device expected {forward.device}, got {value.device}"
             )
         is_mask = input_specs.get(name, {}).get("signal_type") == "mask"
-        if value.dtype != parameter_dtype and not (
+        if value.dtype != forward.parameter_dtype and not (
             is_mask and value.dtype == torch.bool
         ):
             raise ValueError(
-                f"input {name} dtype expected {parameter_dtype}, got {value.dtype}"
+                f"input {name} dtype expected {forward.parameter_dtype}, got {value.dtype}"
             )
-    populations = {p["id"]: p for p in executor.plan.populations}
+
+
+def _restore_runtime_state(forward: _ForwardContext, runtime: _ForwardState) -> None:  # noqa: C901
+    forward.populations = {p["id"]: p for p in forward.executor.plan.populations}
     # Zero-delay edges use current-step spikes, but continuation still needs
     # the last spike tensor for every population.
     population_history_lengths = {
         name: max(
             (
                 p.delay_steps
-                for p in executor.plan.projections
+                for p in forward.executor.plan.projections
                 if p.root_source.startswith(name + ".") and p.delay_steps > 0
             ),
             default=1,
         )
-        for name in populations
+        for name in forward.populations
     }
     input_history_lengths = {
         row["id"]: max(
             (
                 p.delay_steps
-                for p in executor.plan.projections
+                for p in forward.executor.plan.projections
                 if p.root_source.partition(".")[0] == row["id"]
             ),
             default=0,
         )
-        for row in executor.plan.graph.get("inputs", [])
+        for row in forward.executor.plan.graph.get("inputs", [])
     }
-    prepared = getattr(executor, "_stream_metadata", None)
-    if prepared is None:
-        expected_compatibility = runtime_state_compatibility(
-            executor.plan,
-            projection_mode=executor.projection_mode,
-            threshold_inclusive=executor.surrogate_threshold_inclusive
-            if executor.surrogate is None
+    forward.prepared = getattr(forward.executor, "_stream_metadata", None)
+    if forward.prepared is None:
+        forward.expected_compatibility = runtime_state_compatibility(
+            forward.executor.plan,
+            projection_mode=forward.executor.projection_mode,
+            threshold_inclusive=forward.executor.surrogate_threshold_inclusive
+            if forward.executor.surrogate is None
             else True,
         )
-        expected_signature = runtime_state_signature(
-            executor.plan,
-            projection_mode=executor.projection_mode,
-            threshold_inclusive=executor.surrogate_threshold_inclusive
-            if executor.surrogate is None
+        forward.expected_signature = runtime_state_signature(
+            forward.executor.plan,
+            projection_mode=forward.executor.projection_mode,
+            threshold_inclusive=forward.executor.surrogate_threshold_inclusive
+            if forward.executor.surrogate is None
             else True,
         )
     else:
-        expected_compatibility = prepared["compatibility"]
-        expected_signature = prepared["signature"]
-    if probe is not None:
-        probe.mark("State restore / init")
-    if runtime_state is None:
-        voltage = {
+        forward.expected_compatibility = forward.prepared["compatibility"]
+        forward.expected_signature = forward.prepared["signature"]
+    if forward.probe is not None:
+        forward.probe.mark("State restore / init")
+    if forward.options.runtime_state is None:
+        runtime.voltage = {
             name: (
-                torch.zeros((batch, p["size"]), device=device, dtype=parameter_dtype)
+                torch.zeros(
+                    (forward.batch, p["size"]),
+                    device=forward.device,
+                    dtype=forward.parameter_dtype,
+                )
                 if p["neuron"]["kind"] == "leaky_integrator"
                 else torch.full(
-                    (batch, p["size"]),
+                    (forward.batch, p["size"]),
                     float(p["neuron"].get("initial_voltage_mv", M.E_L))
                     if p["neuron"]["kind"] == "cuba_lif"
                     or p["neuron"]["kind"] in N.ADAPTIVE_KINDS
                     else M.E_L,
-                    device=device,
-                    dtype=parameter_dtype,
+                    device=forward.device,
+                    dtype=forward.parameter_dtype,
                 )
             )
-            for name, p in populations.items()
+            for name, p in forward.populations.items()
         }
-        refractory = {
-            name: torch.zeros((batch, p["size"]), dtype=torch.long, device=device)
-            for name, p in populations.items()
+        runtime.refractory = {
+            name: torch.zeros(
+                (forward.batch, p["size"]), dtype=torch.long, device=forward.device
+            )
+            for name, p in forward.populations.items()
         }
         spikes = {
-            name: torch.zeros((batch, p["size"]), device=device, dtype=parameter_dtype)
-            for name, p in populations.items()
-        }
-        conductance = {
-            (p.id, p.polarity): torch.zeros(
-                (batch, populations[p.target.partition(".")[0]]["size"]),
-                device=device,
-                dtype=parameter_dtype,
+            name: torch.zeros(
+                (forward.batch, p["size"]),
+                device=forward.device,
+                dtype=forward.parameter_dtype,
             )
-            for p in executor.plan.projections
+            for name, p in forward.populations.items()
         }
-        histories = {
+        runtime.conductance = {
+            (p.id, p.polarity): torch.zeros(
+                (
+                    forward.batch,
+                    forward.populations[p.target.partition(".")[0]]["size"],
+                ),
+                device=forward.device,
+                dtype=forward.parameter_dtype,
+            )
+            for p in forward.executor.plan.projections
+        }
+        runtime.histories = {
             name: DelayBuffer(population_history_lengths[name], value)
             for name, value in spikes.items()
         }
-        input_histories = {
+        runtime.input_histories = {
             name: torch.zeros(
-                (length, *inputs[name].shape[1:]),
-                device=device,
-                dtype=inputs[name].dtype,
+                (length, *forward.inputs[name].shape[1:]),
+                device=forward.device,
+                dtype=forward.inputs[name].dtype,
             )
             for name, length in input_history_lengths.items()
             if length > 0
         }
-        completed_steps = 0
+        runtime.completed_steps = 0
     else:
-        if runtime_state.signature != expected_signature:
+        if forward.options.runtime_state.signature != forward.expected_signature:
             detail = _compatibility_mismatch(
-                expected_compatibility, runtime_state.compatibility
+                forward.expected_compatibility,
+                forward.options.runtime_state.compatibility,
             )
             raise ValueError(
                 "runtime state is incompatible with graph plan: "
                 + (
                     detail
-                    or f"signature expected {expected_signature}, got {runtime_state.signature}"
+                    or f"signature expected {forward.expected_signature}, got {forward.options.runtime_state.signature}"
                 )
             )
 
@@ -272,132 +419,161 @@ def run_forward_pass(  # noqa: C901
                     raise ValueError(
                         f"runtime state {label}.{name} shape expected {expected_shape}, got {tuple(value.shape)}"
                     )
-                restored[name] = value.detach().to(device).clone()
+                restored[name] = value.detach().to(forward.device).clone()
             return restored
 
         pop_shapes = {
-            name: (batch, int(row["size"])) for name, row in populations.items()
+            name: (forward.batch, int(row["size"]))
+            for name, row in forward.populations.items()
         }
-        voltage = restore_group("voltages", runtime_state.voltages, pop_shapes)
-        for name, value in voltage.items():
-            if value.dtype != parameter_dtype:
+        runtime.voltage = restore_group(
+            "voltages", forward.options.runtime_state.voltages, pop_shapes
+        )
+        for name, value in runtime.voltage.items():
+            if value.dtype != forward.parameter_dtype:
                 raise ValueError(
-                    f"runtime state voltages.{name} dtype expected {parameter_dtype}, got {value.dtype}"
+                    f"runtime state voltages.{name} dtype expected {forward.parameter_dtype}, got {value.dtype}"
                 )
-        refractory = restore_group("refractory", runtime_state.refractory, pop_shapes)
-        for name, value in refractory.items():
+        runtime.refractory = restore_group(
+            "refractory", forward.options.runtime_state.refractory, pop_shapes
+        )
+        for name, value in runtime.refractory.items():
             if value.dtype != torch.long:
                 raise ValueError(
                     f"runtime state refractory.{name} dtype expected torch.int64, got {value.dtype}"
                 )
-        by_projection = {row["id"]: row for row in executor.plan.graph["projections"]}
+        by_projection = {
+            row["id"]: row for row in forward.executor.plan.graph["projections"]
+        }
         conductance_by_id = {}
         for group_name, values, unit in (
-            ("conductances", runtime_state.conductances, "uS"),
-            ("currents", runtime_state.currents, "nA"),
+            ("conductances", forward.options.runtime_state.conductances, "uS"),
+            ("currents", forward.options.runtime_state.currents, "nA"),
         ):
             restored = restore_group(
                 group_name,
                 values,
                 {
                     p.id: (
-                        batch,
-                        int(populations[p.target.partition(".")[0]]["size"]),
+                        forward.batch,
+                        int(forward.populations[p.target.partition(".")[0]]["size"]),
                     )
-                    for p in executor.plan.projections
+                    for p in forward.executor.plan.projections
                     if E.synapse_unit(by_projection[p.id]["synapse"]) == unit
                 },
             )
             conductance_by_id.update(restored)
-        conductance = {
+        runtime.conductance = {
             (p.id, p.polarity): conductance_by_id[p.id]
-            for p in executor.plan.projections
+            for p in forward.executor.plan.projections
         }
         for name, value in conductance_by_id.items():
-            if value.dtype != parameter_dtype:
+            if value.dtype != forward.parameter_dtype:
                 raise ValueError(
-                    f"runtime state conductances.{name} dtype expected {parameter_dtype}, got {value.dtype}"
+                    f"runtime state conductances.{name} dtype expected {forward.parameter_dtype}, got {value.dtype}"
                 )
         population_history_values = restore_group(
             "population_histories",
-            runtime_state.population_histories,
+            forward.options.runtime_state.population_histories,
             {
-                name: (population_history_lengths[name], batch, int(row["size"]))
-                for name, row in populations.items()
+                name: (
+                    population_history_lengths[name],
+                    forward.batch,
+                    int(row["size"]),
+                )
+                for name, row in forward.populations.items()
             },
         )
-        histories = {
+        runtime.histories = {
             name: DelayBuffer.restore(value)
             for name, value in population_history_values.items()
         }
         for name, value in population_history_values.items():
-            if value.dtype != parameter_dtype:
+            if value.dtype != forward.parameter_dtype:
                 raise ValueError(
-                    f"runtime state population_histories.{name} dtype expected {parameter_dtype}, got {value.dtype}"
+                    f"runtime state population_histories.{name} dtype expected {forward.parameter_dtype}, got {value.dtype}"
                 )
-        spikes = {name: histories[name]._values[-1].clone() for name in populations}
-        input_histories = restore_group(
+        spikes = {
+            name: runtime.histories[name]._values[-1].clone()
+            for name in forward.populations
+        }
+        runtime.input_histories = restore_group(
             "input_histories",
-            runtime_state.input_histories,
+            forward.options.runtime_state.input_histories,
             {
-                name: (length, *inputs[name].shape[1:])
+                name: (length, *forward.inputs[name].shape[1:])
                 for name, length in input_history_lengths.items()
                 if length > 0
             },
         )
-        for name, value in input_histories.items():
-            if value.dtype != inputs[name].dtype:
+        for name, value in runtime.input_histories.items():
+            if value.dtype != forward.inputs[name].dtype:
                 raise ValueError(
-                    f"runtime state input_histories.{name} dtype expected {inputs[name].dtype}, got {value.dtype}"
+                    f"runtime state input_histories.{name} dtype expected {forward.inputs[name].dtype}, got {value.dtype}"
                 )
-        completed_steps = int(runtime_state.completed_steps)
-    if probe is not None:
-        probe.mark("Execution setup / metadata")
-    segments = SegmentAccumulator(
+        runtime.completed_steps = int(forward.options.runtime_state.completed_steps)
+
+
+def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -> None:  # noqa: C901
+    if forward.probe is not None:
+        forward.probe.mark("Execution setup / metadata")
+    forward.segments = SegmentAccumulator(
         segment_identity(
-            resets, decisions, graph=executor.plan.graph, batch_size=batch
+            forward.options.resets,
+            forward.options.decisions,
+            graph=forward.executor.plan.graph,
+            batch_size=forward.batch,
         ),
-        populations,
-        batch,
-        device,
-        runtime_state.segment_state if runtime_state is not None else {},
-        runtime_state.segment_counts if runtime_state is not None else {},
-        completed_steps,
+        forward.populations,
+        forward.batch,
+        forward.device,
+        forward.options.runtime_state.segment_state
+        if forward.options.runtime_state is not None
+        else {},
+        forward.options.runtime_state.segment_counts
+        if forward.options.runtime_state is not None
+        else {},
+        runtime.completed_steps,
     )
-    prepared_interventions, intervention_request = prepare_interventions(
-        interventions,
-        graph=executor.plan.graph,
-        seed=executor.seed,
-        start_step=completed_steps,
-        steps_count=steps,
-        batch_size=batch,
+    forward.prepared_interventions, forward.intervention_request = (
+        prepare_interventions(
+            forward.options.interventions,
+            graph=forward.executor.plan.graph,
+            seed=forward.executor.seed,
+            start_step=runtime.completed_steps,
+            steps_count=forward.steps,
+            batch_size=forward.batch,
+        )
     )
-    resolved_interventions = [item.metadata for item in prepared_interventions]
-    for item in prepared_interventions:
+    forward.resolved_interventions = [
+        item.metadata for item in forward.prepared_interventions
+    ]
+    for item in forward.prepared_interventions:
         item.stage(
-            device=device,
-            dtype=parameter_dtype,
-            start_step=completed_steps,
-            steps_count=steps,
+            device=forward.device,
+            dtype=forward.parameter_dtype,
+            start_step=runtime.completed_steps,
+            steps_count=forward.steps,
         )
 
-    def intervene(name, emitted, absolute_step):
-        for index, item in enumerate(prepared_interventions):
-            if item.metadata["population_id"] == name:
-                emitted = item.apply(emitted, absolute_step, index)
-        return emitted
-
-    neuron_states = {}
-    synapse_states = {}
-    custom_state = {}
-    projection_rows = {row["id"]: row for row in executor.plan.graph["projections"]}
-    projection_ports = {
-        name: E.projection_port(row["synapse"]) for name, row in projection_rows.items()
+    runtime.neuron_states = {}
+    runtime.synapse_states = {}
+    runtime.custom_state = {}
+    forward.projection_rows = {
+        row["id"]: row for row in forward.executor.plan.graph["projections"]
     }
-    saved_custom = runtime_state.custom_state if runtime_state is not None else {}
+    forward.projection_ports = {
+        name: E.projection_port(row["synapse"])
+        for name, row in forward.projection_rows.items()
+    }
+    saved_custom = (
+        forward.options.runtime_state.custom_state
+        if forward.options.runtime_state is not None
+        else {}
+    )
     for category, rows in (
-        ("neuron", executor.plan.populations),
-        ("synapse", executor.plan.graph["projections"]),
+        ("neuron", forward.executor.plan.populations),
+        ("synapse", forward.executor.plan.graph["projections"]),
     ):
         for row in rows:
             spec = row[category]
@@ -406,7 +582,7 @@ def run_forward_pass(  # noqa: C901
                 continue
             owner = row["id"]
             target = owner if category == "neuron" else row["target"].partition(".")[0]
-            shape = (batch, populations[target]["size"])
+            shape = (forward.batch, forward.populations[target]["size"])
             if adaptive:
                 label = spec["kind"]
                 initial_key = (
@@ -415,33 +591,33 @@ def run_forward_pass(  # noqa: C901
                     else "initial_adaptation_na"
                 )
                 state = {
-                    "voltage": voltage[owner],
-                    "refractory": refractory[owner],
+                    "voltage": runtime.voltage[owner],
+                    "refractory": runtime.refractory[owner],
                     "adaptation": torch.full(
                         shape,
                         float(spec[initial_key]),
-                        device=device,
-                        dtype=parameter_dtype,
+                        device=forward.device,
+                        dtype=forward.parameter_dtype,
                     ),
                 }
             else:
                 definition = (
-                    executor._neuron_definitions
+                    forward.executor._neuron_definitions
                     if category == "neuron"
-                    else executor._synapse_definitions
+                    else forward.executor._synapse_definitions
                 )[owner]
                 label = definition.name
                 context = E.StateContext(
                     shape,
-                    device,
-                    parameter_dtype,
-                    executor.plan.dt_ms,
+                    forward.device,
+                    forward.parameter_dtype,
+                    forward.executor.plan.dt_ms,
                     spec.get("config", {}),
                 )
                 if definition.initialize is None:
                     state = {
                         "value": torch.zeros(
-                            shape, device=device, dtype=parameter_dtype
+                            shape, device=forward.device, dtype=forward.parameter_dtype
                         )
                     }
                 else:
@@ -454,7 +630,7 @@ def run_forward_pass(  # noqa: C901
             if category == "neuron":
                 state.setdefault(
                     "refractory",
-                    torch.zeros(shape, device=device, dtype=torch.long),
+                    torch.zeros(shape, device=forward.device, dtype=torch.long),
                 )
             for key in (
                 ("voltage", "refractory") if category == "neuron" else ("value",)
@@ -462,243 +638,267 @@ def run_forward_pass(  # noqa: C901
                 X.checked_tensor(
                     state[key],
                     shape=shape,
-                    device=device,
-                    dtype=torch.long if key == "refractory" else parameter_dtype,
+                    device=forward.device,
+                    dtype=torch.long
+                    if key == "refractory"
+                    else forward.parameter_dtype,
                     name=f"{label}.{key}",
                 )
             for key, value in state.items():
-                if value.device != torch.device(device):
+                if value.device != torch.device(forward.device):
                     raise ValueError(
-                        f"{label}.{key}: state must use execution device {device}"
+                        f"{label}.{key}: state must use execution device {forward.device}"
                     )
-            for port in executor._state_ports[category][owner]:
+            for port in forward.executor._state_ports[category][owner]:
                 if port not in state:
                     raise ValueError(f"{label}: declared state port {port} missing")
                 X.checked_tensor(
                     state[port],
                     shape=shape,
-                    device=device,
-                    dtype=parameter_dtype,
+                    device=forward.device,
+                    dtype=forward.parameter_dtype,
                     name=f"{label}.{port}",
                 )
             for key, value in state.items():
                 state_key = f"{category}/{owner}/{key}"
-                custom_state[state_key] = value
-                if runtime_state is not None:
+                runtime.custom_state[state_key] = value
+                if forward.options.runtime_state is not None:
                     if state_key not in saved_custom:
                         raise ValueError(f"runtime state missing {state_key}")
-                    restored = saved_custom[state_key].to(device)
+                    restored = saved_custom[state_key].to(forward.device)
                     X.checked_tensor(
                         restored,
                         shape=value.shape,
-                        device=device,
+                        device=forward.device,
                         dtype=value.dtype,
                         name=state_key,
                     )
                     if category == "neuron" and key in {"voltage", "refractory"}:
                         standard = (
-                            voltage[owner] if key == "voltage" else refractory[owner]
+                            runtime.voltage[owner]
+                            if key == "voltage"
+                            else runtime.refractory[owner]
                         )
                         if not torch.equal(restored, standard):
                             raise ValueError(
                                 f"runtime state {state_key} disagrees with standard neuron state"
                             )
                     elif category == "synapse" and key == "value":
-                        standard = conductance[(owner, row["polarity"])]
+                        standard = runtime.conductance[(owner, row["polarity"])]
                         if not torch.equal(restored, standard):
                             raise ValueError(
                                 f"runtime state {state_key} disagrees with synapse output state"
                             )
                     state[key] = restored.detach().clone()
             if category == "neuron":
-                neuron_states[owner] = state
-                voltage[owner] = state["voltage"]
-                refractory[owner] = state["refractory"]
+                runtime.neuron_states[owner] = state
+                runtime.voltage[owner] = state["voltage"]
+                runtime.refractory[owner] = state["refractory"]
             else:
-                synapse_states[owner] = state
-    continuous_delays = {}
-    for projection in executor.plan.projections:
+                runtime.synapse_states[owner] = state
+    forward.continuous_delays = {}
+    for projection in forward.executor.plan.projections:
         if projection.continuous:
-            continuous_delays[projection.source] = max(
-                continuous_delays.get(projection.source, 0), projection.delay_steps
+            forward.continuous_delays[projection.source] = max(
+                forward.continuous_delays.get(projection.source, 0),
+                projection.delay_steps,
             )
 
-    def continuous_value(signal):
-        owner, _, port = signal.partition(".")
-        return voltage[owner] if port == "voltage" else neuron_states[owner][port]
-
-    continuous_histories = {}
-    for signal, length in continuous_delays.items():
+    runtime.continuous_histories = {}
+    for signal, length in forward.continuous_delays.items():
         if not length:
             continue
         state_key = f"continuous_history/{signal}"
-        initial = continuous_value(signal)
-        if runtime_state is None:
+        initial = _continuous_value(runtime, signal)
+        if forward.options.runtime_state is None:
             values = initial.unsqueeze(0).expand(length, *initial.shape).clone()
         else:
             if state_key not in saved_custom:
                 raise ValueError(f"runtime state missing {state_key}")
-            values = saved_custom[state_key].to(device)
+            values = saved_custom[state_key].to(forward.device)
             X.checked_tensor(
                 values,
                 shape=(length, *initial.shape),
-                device=device,
-                dtype=parameter_dtype,
+                device=forward.device,
+                dtype=forward.parameter_dtype,
                 name=state_key,
             )
-        continuous_histories[signal] = list(values.unbind(0))
-        custom_state[state_key] = values
-    if set(saved_custom) - set(custom_state):
+        runtime.continuous_histories[signal] = list(values.unbind(0))
+        runtime.custom_state[state_key] = values
+    if set(saved_custom) - set(runtime.custom_state):
         raise ValueError("runtime state has unexpected custom state tensors")
-    state_traces = {}
-    if not isinstance(retain_outputs, bool):
+    runtime.state_traces = {}
+    if not isinstance(forward.options.retain_outputs, bool):
         raise TypeError("retain_outputs must be boolean")
-    if type(batch_offset) is not int or batch_offset < 0:
+    if (
+        type(forward.options.batch_offset) is not int
+        or forward.options.batch_offset < 0
+    ):
         raise ValueError("batch_offset must be a non-negative integer")
-    signal_axes = (
-        prepared["axes"] if prepared is not None else _signal_axes(executor.plan.graph)
+    forward.signal_axes = (
+        forward.prepared["axes"]
+        if forward.prepared is not None
+        else _signal_axes(forward.executor.plan.graph)
     )
-    recorder = Recorder(
-        recording,
-        axes=signal_axes,
-        start=completed_steps,
-        steps=steps,
-        dt_ms=executor.plan.dt_ms,
-        batch_offset=batch_offset,
-        graph=executor.plan.graph,
-        dtype=parameter_dtype,
-        device=device,
+    forward.recorder = Recorder(
+        forward.options.recording,
+        axes=forward.signal_axes,
+        start=runtime.completed_steps,
+        steps=forward.steps,
+        dt_ms=forward.executor.plan.dt_ms,
+        batch_offset=forward.options.batch_offset,
+        graph=forward.executor.plan.graph,
+        dtype=forward.parameter_dtype,
+        device=forward.device,
     )
-    inference_only = not (
+    forward.inference_only = not (
         torch.is_grad_enabled()
         and any(
             value.requires_grad
-            for value in (*inputs.values(), *executor.weights.values())
+            for value in (*forward.inputs.values(), *forward.executor.weights.values())
         )
     )
-    streamed_outputs = {
+    forward.streamed_outputs = {
         row["id"]: row["signal"]
-        for row in executor.plan.outputs
-        if not retain_outputs and signal_axes[row["signal"]][0] == "time"
+        for row in forward.executor.plan.outputs
+        if not forward.options.retain_outputs
+        and forward.signal_axes[row["signal"]][0] == "time"
     }
-    online = OnlineReductions(
-        executor.plan.graph,
-        signal_axes,
-        executor.parameter_map(),
-        enabled=automatic_reductions and inference_only,
-        window=measurement,
-        start=completed_steps,
-        steps=steps,
-        saved=runtime_state.reduction_state if runtime_state is not None else {},
-        tensors=runtime_state.reduction_tensors if runtime_state is not None else {},
-        recording_signals=(*recorder.rows, *streamed_outputs.values()),
-        dtype=parameter_dtype,
-        device=device,
+    forward.online = OnlineReductions(
+        forward.executor.plan.graph,
+        forward.signal_axes,
+        forward.executor.parameter_map(),
+        enabled=forward.options.automatic_reductions and forward.inference_only,
+        window=forward.options.measurement,
+        start=runtime.completed_steps,
+        steps=forward.steps,
+        saved=forward.options.runtime_state.reduction_state
+        if forward.options.runtime_state is not None
+        else {},
+        tensors=forward.options.runtime_state.reduction_tensors
+        if forward.options.runtime_state is not None
+        else {},
+        recording_signals=(*forward.recorder.rows, *forward.streamed_outputs.values()),
+        dtype=forward.parameter_dtype,
+        device=forward.device,
     )
-    external_signals = set(required_signals)
-    external_signals.update(
+    forward.external_signals = set(forward.options.required_signals)
+    forward.external_signals.update(
         row["signal"]
-        for row in executor.plan.outputs
-        if row["id"] not in streamed_outputs
+        for row in forward.executor.plan.outputs
+        if row["id"] not in forward.streamed_outputs
     )
-    if diagnostics:
-        external_signals.update(row["signal"] for row in executor.plan.observables)
-    history_operations = online.history_operations(external_signals)
-    needed_signals = set(external_signals)
-    for operation in history_operations:
-        needed_signals.update(operation["sources"])
-    capture_steps = bool(
-        online.reductions
-        or online.points
-        or online.duration_masks
-        or recorder.rows
-        or streamed_outputs
+    if forward.options.diagnostics:
+        forward.external_signals.update(
+            row["signal"] for row in forward.executor.plan.observables
+        )
+    forward.history_operations = forward.online.history_operations(
+        forward.external_signals
     )
-    observation_counts = {
-        name: torch.zeros_like(voltage[name], dtype=torch.int64)
-        for name in observation_populations
+    forward.needed_signals = set(forward.external_signals)
+    for operation in forward.history_operations:
+        forward.needed_signals.update(operation["sources"])
+    forward.capture_steps = bool(
+        forward.online.reductions
+        or forward.online.points
+        or forward.online.duration_masks
+        or forward.recorder.rows
+        or forward.streamed_outputs
+    )
+    runtime.observation_counts = {
+        name: torch.zeros_like(runtime.voltage[name], dtype=torch.int64)
+        for name in forward.options.observation_populations
     }
-    integrator_sum: dict[str, torch.Tensor] = {}
-    spike_traces: dict[str, list[torch.Tensor]] = {
-        name: [] for name in populations if f"{name}.spikes" in needed_signals
-    }
-    voltage_traces: dict[str, list[torch.Tensor]] = {
-        name: [] for name in populations if f"{name}.voltage" in needed_signals
-    }
-    pre_reset_voltage_traces: dict[str, list[torch.Tensor]] = {
+    runtime.integrator_sum: dict[str, torch.Tensor] = {}
+    runtime.spike_traces: dict[str, list[torch.Tensor]] = {
         name: []
-        for name, pop in populations.items()
+        for name in forward.populations
+        if f"{name}.spikes" in forward.needed_signals
+    }
+    runtime.voltage_traces: dict[str, list[torch.Tensor]] = {
+        name: []
+        for name in forward.populations
+        if f"{name}.voltage" in forward.needed_signals
+    }
+    runtime.pre_reset_voltage_traces: dict[str, list[torch.Tensor]] = {
+        name: []
+        for name, pop in forward.populations.items()
         if pop["neuron"]["kind"] == "leaky_integrator"
-        and f"{name}.pre_reset_voltage" in needed_signals
+        and f"{name}.pre_reset_voltage" in forward.needed_signals
     }
-    conductance_traces: dict[str, list[torch.Tensor]] = {
+    runtime.conductance_traces: dict[str, list[torch.Tensor]] = {
         p.id: []
-        for p in executor.plan.projections
-        if f"{p.id}.{projection_ports[p.id]}" in needed_signals
+        for p in forward.executor.plan.projections
+        if f"{p.id}.{forward.projection_ports[p.id]}" in forward.needed_signals
     }
-    effective_weights = (
-        prepared["effective_weights"]
-        if prepared is not None
+    forward.effective_weights = (
+        forward.prepared["effective_weights"]
+        if forward.prepared is not None
         else {
-            name: executor._mask_autapses(name, value)
-            for name, value in executor.parameter_map().items()
+            name: forward.executor._mask_autapses(name, value)
+            for name, value in forward.executor.parameter_map().items()
         }
     )
-    projection_gains = {
+    forward.projection_gains = {
         projection.id: sample_gain(
-            projection_rows[projection.id]["modulation"],
-            start_step=completed_steps,
-            steps=steps,
-            dt_ms=executor.plan.dt_ms,
+            forward.projection_rows[projection.id]["modulation"],
+            start_step=runtime.completed_steps,
+            steps=forward.steps,
+            dt_ms=forward.executor.plan.dt_ms,
         )
-        for projection in executor.plan.projections
-        if projection.enabled and "modulation" in projection_rows[projection.id]
+        for projection in forward.executor.plan.projections
+        if projection.enabled and "modulation" in forward.projection_rows[projection.id]
     }
-    spatial_operations = {
+    forward.spatial_operations = {
         f"{row['id']}.value": row
-        for row in executor.plan.graph.get("operations", [])
+        for row in forward.executor.plan.graph.get("operations", [])
         if row["kind"] == "pool2d"
     }
-    block_reasons = []
-    compiler_fallback = (
+
+
+def _select_execution_path(forward: _ForwardContext, runtime: _ForwardState) -> None:
+    forward.block_reasons = []
+    forward.compiler_fallback = (
         "PyTorch 2.10 reduced-precision CPU uses eager tensor graphs"
-        if executor.compile_mode is not None
-        and precision_fallback(device, parameter_dtype)
+        if forward.executor.compile_mode is not None
+        and precision_fallback(forward.device, forward.parameter_dtype)
         else None
     )
     block_trainable = {
         projection.parameter
-        for projection in executor.plan.projections
-        if projection.enabled and effective_weights[projection.parameter].requires_grad
+        for projection in forward.executor.plan.projections
+        if projection.enabled
+        and forward.effective_weights[projection.parameter].requires_grad
     }
-    partial_dependencies = not inference_only and any(
-        executor._signal_parameters.get(signal, set()) & block_trainable
+    partial_dependencies = not forward.inference_only and any(
+        forward.executor._signal_parameters.get(signal, set()) & block_trainable
         != block_trainable
-        for signal in external_signals
-        if signal in executor._signal_parameters
+        for signal in forward.external_signals
+        if signal in forward.executor._signal_parameters
     )
     for condition, reason in (
-        (executor.compile_block_steps == 1, "block execution not requested"),
-        (executor.compile_mode is None, "compilation disabled"),
-        (compiler_fallback is not None, compiler_fallback),
+        (forward.executor.compile_block_steps == 1, "block execution not requested"),
+        (forward.executor.compile_mode is None, "compilation disabled"),
+        (forward.compiler_fallback is not None, forward.compiler_fallback),
         (
-            device.type == "mps" and executor.compile_block_steps > 4,
+            forward.device.type == "mps" and forward.executor.compile_block_steps > 4,
             "MPS block size above validated limit (4)",
         ),
         (
             bool(
-                executor._neuron_definitions
-                or executor._synapse_definitions
-                or executor.surrogate
+                forward.executor._neuron_definitions
+                or forward.executor._synapse_definitions
+                or forward.executor.surrogate
             ),
             "registered neuron, synapse or surrogate",
         ),
-        (capture_steps, "online reductions or recording"),
-        (bool(prepared_interventions), "spike interventions"),
-        (bool(segments.identity), "voltage resets or decision segments"),
-        (trace is not None, "execution tracing"),
+        (forward.capture_steps, "online reductions or recording"),
+        (bool(forward.prepared_interventions), "spike interventions"),
+        (bool(forward.segments.identity), "voltage resets or decision segments"),
+        (forward.trace is not None, "execution tracing"),
         (
-            len(inputs) > 1 and any(value.requires_grad for value in inputs.values()),
+            len(forward.inputs) > 1
+            and any(value.requires_grad for value in forward.inputs.values()),
             "multiple inputs with input gradients",
         ),
         (
@@ -706,441 +906,455 @@ def run_forward_pass(  # noqa: C901
             "partial parameter dependencies in retained signals",
         ),
         (
-            not inference_only
-            and steps
+            not forward.inference_only
+            and forward.steps
             <= sum(
                 p.delay_steps
-                for p in executor.plan.projections
-                if p.enabled and p.root_source.partition(".")[0] in populations
+                for p in forward.executor.plan.projections
+                if p.enabled and p.root_source.partition(".")[0] in forward.populations
             ),
             "short delayed autograd trajectory",
         ),
     ):
         if condition:
-            block_reasons.append(reason)
-    if not block_reasons:
-        block_signals = tuple(
-            sorted(
-                {
-                    *(
-                        f"{name}.spikes"
-                        for name in (*spike_traces, *observation_counts)
-                    ),
-                    *(f"{name}.voltage" for name in voltage_traces),
-                    *(f"{name}.pre_reset_voltage" for name in pre_reset_voltage_traces),
-                    *(
-                        f"{name}.{projection_ports[name]}"
-                        for name in conductance_traces
-                    ),
-                    *(
-                        f"{name}.{port}"
-                        for name in neuron_states
-                        for port in executor._state_ports["neuron"][name]
-                        if f"{name}.{port}" in needed_signals
-                    ),
-                }
-            )
-        )
-        if block_signals not in executor._block_kernels:
-            executor._block_kernels[block_signals] = network_block(
-                executor.plan,
-                spike_function=executor._spike_function,
-                projection_mode=executor.projection_mode,
-                signals=block_signals,
-                compile_mode=executor.compile_mode,
-            )
-        kernel = executor._block_kernels[block_signals]
-        history_values = {name: history._values for name, history in histories.items()}
-        block_input_histories = input_histories
-        # Prepared sessions can reuse the exact functional block and its
-        # validated initial state without rebuilding a forward invocation.
-        # Operation/reduction graphs retain the general executor path.
-        if (
-            prepared is not None
-            and retain_outputs
-            and not executor.plan.graph.get("operations")
-        ):
-            executor._stream_block_context = {
-                "kernel": kernel,
-                "state": (
-                    voltage,
-                    refractory,
-                    neuron_states,
-                    conductance,
-                    history_values,
-                    block_input_histories,
+            forward.block_reasons.append(reason)
+
+
+def _run_compiled_blocks(forward: _ForwardContext, runtime: _ForwardState) -> None:  # noqa: C901
+    block_signals = tuple(
+        sorted(
+            {
+                *(
+                    f"{name}.spikes"
+                    for name in (*runtime.spike_traces, *runtime.observation_counts)
                 ),
-                "completed_steps": completed_steps,
-                "gain_specs": {
-                    p.id: projection_rows[p.id]["modulation"]
-                    for p in executor.plan.projections
-                    if p.enabled and "modulation" in projection_rows[p.id]
-                },
-                "ports": projection_ports,
+                *(f"{name}.voltage" for name in runtime.voltage_traces),
+                *(
+                    f"{name}.pre_reset_voltage"
+                    for name in runtime.pre_reset_voltage_traces
+                ),
+                *(
+                    f"{name}.{forward.projection_ports[name]}"
+                    for name in runtime.conductance_traces
+                ),
+                *(
+                    f"{name}.{port}"
+                    for name in runtime.neuron_states
+                    for port in forward.executor._state_ports["neuron"][name]
+                    if f"{name}.{port}" in forward.needed_signals
+                ),
             }
-        gain_tensors = {
-            name: torch.as_tensor(values, device=device, dtype=parameter_dtype)
-            for name, values in projection_gains.items()
+        )
+    )
+    if block_signals not in forward.executor._block_kernels:
+        forward.executor._block_kernels[block_signals] = network_block(
+            forward.executor.plan,
+            spike_function=forward.executor._spike_function,
+            projection_mode=forward.executor.projection_mode,
+            signals=block_signals,
+            compile_mode=forward.executor.compile_mode,
+        )
+    kernel = forward.executor._block_kernels[block_signals]
+    history_values = {
+        name: history._values for name, history in runtime.histories.items()
+    }
+    block_input_histories = runtime.input_histories
+    # Prepared sessions can reuse the exact functional block and its
+    # validated initial state without rebuilding a forward invocation.
+    # Operation/reduction graphs retain the general executor path.
+    if (
+        forward.prepared is not None
+        and forward.options.retain_outputs
+        and not forward.executor.plan.graph.get("operations")
+    ):
+        forward.executor._stream_block_context = {
+            "kernel": kernel,
+            "state": (
+                runtime.voltage,
+                runtime.refractory,
+                runtime.neuron_states,
+                runtime.conductance,
+                history_values,
+                block_input_histories,
+            ),
+            "completed_steps": runtime.completed_steps,
+            "gain_specs": {
+                p.id: forward.projection_rows[p.id]["modulation"]
+                for p in forward.executor.plan.projections
+                if p.enabled and "modulation" in forward.projection_rows[p.id]
+            },
+            "ports": forward.projection_ports,
         }
-        for begin in range(0, steps, executor.compile_block_steps):
-            end = min(begin + executor.compile_block_steps, steps)
-            if probe is not None:
-                probe.mark("Compiled numerical block")
-            (
-                voltage,
-                refractory,
-                neuron_states,
-                conductance,
-                history_values,
-                block_input_histories,
-                spikes,
-                integrator_sum,
-                samples,
-            ) = kernel(
-                {name: value[begin:end] for name, value in inputs.items()},
-                voltage,
-                refractory,
-                neuron_states,
-                conductance,
-                history_values,
-                block_input_histories,
-                effective_weights,
-                {name: value[begin:end] for name, value in gain_tensors.items()},
-                integrator_sum,
+    gain_tensors = {
+        name: torch.as_tensor(
+            values, device=forward.device, dtype=forward.parameter_dtype
+        )
+        for name, values in forward.projection_gains.items()
+    }
+    for begin in range(0, forward.steps, forward.executor.compile_block_steps):
+        end = min(begin + forward.executor.compile_block_steps, forward.steps)
+        if forward.probe is not None:
+            forward.probe.mark("Compiled numerical block")
+        (
+            runtime.voltage,
+            runtime.refractory,
+            runtime.neuron_states,
+            runtime.conductance,
+            history_values,
+            block_input_histories,
+            spikes,
+            runtime.integrator_sum,
+            samples,
+        ) = kernel(
+            {name: value[begin:end] for name, value in forward.inputs.items()},
+            runtime.voltage,
+            runtime.refractory,
+            runtime.neuron_states,
+            runtime.conductance,
+            history_values,
+            block_input_histories,
+            forward.effective_weights,
+            {name: value[begin:end] for name, value in gain_tensors.items()},
+            runtime.integrator_sum,
+        )
+        if forward.probe is not None:
+            forward.probe.mark("Output / history assembly")
+        for name in runtime.spike_traces:
+            runtime.spike_traces[name].extend(samples[f"{name}.spikes"].unbind())
+        for name in runtime.voltage_traces:
+            runtime.voltage_traces[name].extend(samples[f"{name}.voltage"].unbind())
+        for name in runtime.pre_reset_voltage_traces:
+            runtime.pre_reset_voltage_traces[name].extend(
+                samples[f"{name}.pre_reset_voltage"].unbind()
             )
-            if probe is not None:
-                probe.mark("Output / history assembly")
-            for name in spike_traces:
-                spike_traces[name].extend(samples[f"{name}.spikes"].unbind())
-            for name in voltage_traces:
-                voltage_traces[name].extend(samples[f"{name}.voltage"].unbind())
-            for name in pre_reset_voltage_traces:
-                pre_reset_voltage_traces[name].extend(
-                    samples[f"{name}.pre_reset_voltage"].unbind()
-                )
-            for name in conductance_traces:
-                conductance_traces[name].extend(
-                    samples[f"{name}.{projection_ports[name]}"].unbind()
-                )
-            for name in neuron_states:
-                for port in executor._state_ports["neuron"][name]:
-                    signal = f"{name}.{port}"
-                    if signal in samples:
-                        state_traces.setdefault(signal, []).extend(
-                            samples[signal].unbind()
-                        )
-            for name in observation_counts:
-                observation_counts[name] += (
-                    samples[f"{name}.spikes"].detach().to(torch.int64).sum(dim=0)
-                )
-        for name, values in history_values.items():
-            histories[name]._values = values
-        for name, state in neuron_states.items():
-            for key, value in state.items():
-                custom_state[f"neuron/{name}/{key}"] = value
-    else:
-        if probe is not None:
-            probe.mark("Eager simulation / histories")
-        for t in range(steps):
-            segments.boundary(completed_steps + t, executor.plan.dt_ms)
-            segments.reset(completed_steps + t, voltage)
-            step_pre_reset = {}
-            new_spikes: dict[str, torch.Tensor] = {}
-            source_cache = {}
-            # Freeze every continuous population source before any membrane
-            # update. Reciprocal edges therefore share the same time origin.
-            old_continuous = {
-                signal: continuous_value(signal).clone() for signal in continuous_delays
-            }
+        for name in runtime.conductance_traces:
+            runtime.conductance_traces[name].extend(
+                samples[f"{name}.{forward.projection_ports[name]}"].unbind()
+            )
+        for name in runtime.neuron_states:
+            for port in forward.executor._state_ports["neuron"][name]:
+                signal = f"{name}.{port}"
+                if signal in samples:
+                    runtime.state_traces.setdefault(signal, []).extend(
+                        samples[signal].unbind()
+                    )
+        for name in runtime.observation_counts:
+            runtime.observation_counts[name] += (
+                samples[f"{name}.spikes"].detach().to(torch.int64).sum(dim=0)
+            )
+    for name, values in history_values.items():
+        runtime.histories[name]._values = values
+    for name, state in runtime.neuron_states.items():
+        for key, value in state.items():
+            runtime.custom_state[f"neuron/{name}/{key}"] = value
 
-            def projection_source(
-                signal,
-                delay,
-                *,
-                source_cache=source_cache,
-                old_continuous=old_continuous,
-                new_spikes=new_spikes,
-                t=t,
-            ):
-                key = (signal, delay)
-                if key in source_cache:
-                    return source_cache[key]
-                pending = []
-                while signal in spatial_operations:
-                    operation = spatial_operations[signal]
-                    pending.append(operation)
-                    signal = operation["sources"][0]
-                owner, _, port = signal.partition(".")
-                if owner in populations:
-                    if port != "spikes":
-                        result = (
-                            old_continuous[signal]
-                            if delay == 0
-                            else continuous_histories[signal][-delay]
-                        )
-                    else:
-                        result = (
-                            new_spikes[owner]
-                            if delay == 0
-                            else histories[owner]._values[-delay]
-                        )
-                else:
-                    source_t = t - delay
+
+def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None:  # noqa: C901
+    if forward.probe is not None:
+        forward.probe.mark("Eager simulation / histories")
+    for t in range(forward.steps):
+        forward.segments.boundary(
+            runtime.completed_steps + t, forward.executor.plan.dt_ms
+        )
+        forward.segments.reset(runtime.completed_steps + t, runtime.voltage)
+        step_pre_reset = {}
+        new_spikes: dict[str, torch.Tensor] = {}
+        source_cache = {}
+        # Freeze every continuous population source before any membrane
+        # update. Reciprocal edges therefore share the same time origin.
+        old_continuous = {
+            signal: _continuous_value(runtime, signal).clone()
+            for signal in forward.continuous_delays
+        }
+
+        def projection_source(
+            signal,
+            delay,
+            *,
+            source_cache=source_cache,
+            old_continuous=old_continuous,
+            new_spikes=new_spikes,
+            t=t,
+        ):
+            key = (signal, delay)
+            if key in source_cache:
+                return source_cache[key]
+            pending = []
+            while signal in forward.spatial_operations:
+                operation = forward.spatial_operations[signal]
+                pending.append(operation)
+                signal = operation["sources"][0]
+            owner, _, port = signal.partition(".")
+            if owner in forward.populations:
+                if port != "spikes":
                     result = (
-                        inputs[owner][source_t]
-                        if source_t >= 0
-                        else input_histories[owner][source_t]
+                        old_continuous[signal]
+                        if delay == 0
+                        else runtime.continuous_histories[signal][-delay]
                     )
-                for operation in reversed(pending):
-                    result = pool_tensor(
-                        result,
-                        signal_spatial_shape(
-                            executor.plan.graph, operation["sources"][0]
-                        ),
-                        operation["config"],
+                else:
+                    result = (
+                        new_spikes[owner]
+                        if delay == 0
+                        else runtime.histories[owner]._values[-delay]
                     )
-                source_cache[key] = result
-                return result
+            else:
+                source_t = t - delay
+                result = (
+                    forward.inputs[owner][source_t]
+                    if source_t >= 0
+                    else runtime.input_histories[owner][source_t]
+                )
+            for operation in reversed(pending):
+                result = pool_tensor(
+                    result,
+                    signal_spatial_shape(
+                        forward.executor.plan.graph, operation["sources"][0]
+                    ),
+                    operation["config"],
+                )
+            source_cache[key] = result
+            return result
 
-            for pop in executor.plan.populations:
-                name = pop["id"]
-                incoming = {
-                    "excitatory": torch.zeros_like(voltage[name]),
-                    "inhibitory": torch.zeros_like(voltage[name]),
-                }
-                for projection in executor._incoming_projections[name]:
-                    key = (projection.id, projection.polarity)
-                    if not projection.enabled:
-                        conductance[key].zero_()
-                        continue
-                    source = projection_source(
-                        projection.source, projection.delay_steps
-                    )
+        for pop in forward.executor.plan.populations:
+            name = pop["id"]
+            incoming = {
+                "excitatory": torch.zeros_like(runtime.voltage[name]),
+                "inhibitory": torch.zeros_like(runtime.voltage[name]),
+            }
+            for projection in forward.executor._incoming_projections[name]:
+                key = (projection.id, projection.polarity)
+                if not projection.enabled:
+                    runtime.conductance[key].zero_()
+                    continue
+                source = projection_source(projection.source, projection.delay_steps)
 
-                    def project(*, projection=projection, source=source):
-                        config = projection_rows[projection.id].get("connectivity")
-                        if config is not None:
-                            return convolution_drive(
-                                source,
-                                effective_weights[projection.parameter],
-                                signal_spatial_shape(
-                                    executor.plan.graph, projection.source
-                                ),
-                                config,
-                            )
-                        return source @ effective_weights[projection.parameter]
+                def project(*, projection=projection, source=source):
+                    config = forward.projection_rows[projection.id].get("connectivity")
+                    if config is not None:
+                        return convolution_drive(
+                            source,
+                            forward.effective_weights[projection.parameter],
+                            signal_spatial_shape(
+                                forward.executor.plan.graph, projection.source
+                            ),
+                            config,
+                        )
+                    return source @ forward.effective_weights[projection.parameter]
 
-                    if trace is None:
+                if forward.trace is None:
+                    drive = project()
+                else:
+                    with forward.trace.detail(f"projection/{projection.id}"):
                         drive = project()
-                    else:
-                        with trace.detail(f"projection/{projection.id}"):
-                            drive = project()
-                    if projection.id in projection_gains:
-                        drive = drive * projection_gains[projection.id][t]
-                    spec = projection_rows[projection.id]["synapse"]
-                    if spec["kind"] == "custom_synapse":
-                        definition = executor._synapse_definitions[projection.id]
-                        previous = synapse_states[projection.id]
-                        state = X.checked_state(
-                            executor._synapse_steps[projection.id](previous, drive),
-                            previous,
-                            definition.name,
-                            check_values=executor._check_extension_values,
-                        )
-                        synapse_states[projection.id] = state
-                        conductance[key] = state["value"]
-                    else:
-                        conductance[key] = executor._synapse_steps[projection.id](
-                            conductance[key], drive
-                        )
-                    incoming[projection.polarity] += conductance[key]
-                neuron = pop["neuron"]
-                if neuron["kind"] == "custom_neuron":
-                    definition = executor._neuron_definitions[name]
-                    previous = neuron_states[name]
-                    response = executor._neuron_steps[name](
-                        previous,
-                        incoming["excitatory"],
-                        incoming["inhibitory"],
-                    )
-                    if not isinstance(response, tuple) or len(response) != 2:
-                        raise TypeError(
-                            f"{definition.name} must return (state, spikes)"
-                        )
-                    state, spike_values = response
+                if projection.id in forward.projection_gains:
+                    drive = drive * forward.projection_gains[projection.id][t]
+                spec = forward.projection_rows[projection.id]["synapse"]
+                if spec["kind"] == "custom_synapse":
+                    definition = forward.executor._synapse_definitions[projection.id]
+                    previous = runtime.synapse_states[projection.id]
                     state = X.checked_state(
-                        state,
+                        forward.executor._synapse_steps[projection.id](previous, drive),
                         previous,
                         definition.name,
-                        check_values=executor._check_extension_values,
+                        check_values=forward.executor._check_extension_values,
                     )
-                    X.checked_tensor(
-                        spike_values,
-                        shape=voltage[name].shape,
-                        device=device,
-                        dtype=parameter_dtype,
-                        name=f"{definition.name}.spikes",
-                        check_values=executor._check_extension_values,
-                    )
-                    if executor._check_extension_values and torch.any(
-                        (spike_values != 0) & (spike_values != 1)
-                    ):
-                        raise ValueError(f"{definition.name} spikes must be binary")
-                    neuron_states[name] = state
-                    voltage[name], refractory[name] = (
-                        state["voltage"],
-                        state["refractory"],
-                    )
-                    new_spikes[name] = (
-                        spike_values
-                        if pop["spiking"]
-                        else torch.zeros_like(spike_values)
-                    )
-                    new_spikes[name] = intervene(
-                        name, new_spikes[name], completed_steps + t
-                    )
-                    continue
-                if neuron["kind"] in N.ADAPTIVE_KINDS:
-                    state, spike_values = executor._neuron_steps[name](
-                        neuron_states[name],
-                        incoming["excitatory"],
-                        incoming["inhibitory"],
-                    )
-                    neuron_states[name] = state
-                    voltage[name], refractory[name] = (
-                        state["voltage"],
-                        state["refractory"],
-                    )
-                    new_spikes[name] = intervene(
-                        name,
-                        spike_values
-                        if pop["spiking"]
-                        else torch.zeros_like(spike_values),
-                        completed_steps + t,
-                    )
-                    continue
-                if neuron["kind"] == "cuba_lif":
-                    voltage[name], new_spikes[name], refractory[name] = (
-                        executor._neuron_steps[name](
-                            voltage[name],
-                            refractory[name],
-                            incoming["excitatory"],
-                            incoming["inhibitory"],
-                        )
-                    )
-                    new_spikes[name] = intervene(
-                        name, new_spikes[name], completed_steps + t
-                    )
-                    continue
-                if neuron["kind"] == "leaky_integrator":
-                    pre_reset, post_reset, new_spikes[name] = executor._neuron_steps[
-                        name
-                    ](voltage[name], incoming["excitatory"])
-                    if name in pre_reset_voltage_traces:
-                        pre_reset_voltage_traces[name].append(pre_reset)
-                    step_pre_reset[f"{name}.pre_reset_voltage"] = pre_reset
-                    integrator_sum[name] = (
-                        integrator_sum.get(name, torch.zeros_like(pre_reset))
-                        + pre_reset
-                    )
-                    voltage[name] = post_reset
-                    new_spikes[name] = intervene(
-                        name, new_spikes[name], completed_steps + t
-                    )
-                    continue
-                voltage[name], new_spikes[name], refractory[name] = (
-                    executor._neuron_steps[name](
-                        voltage[name],
-                        refractory[name],
+                    runtime.synapse_states[projection.id] = state
+                    runtime.conductance[key] = state["value"]
+                else:
+                    runtime.conductance[key] = forward.executor._synapse_steps[
+                        projection.id
+                    ](runtime.conductance[key], drive)
+                incoming[projection.polarity] += runtime.conductance[key]
+            neuron = pop["neuron"]
+            if neuron["kind"] == "custom_neuron":
+                definition = forward.executor._neuron_definitions[name]
+                previous = runtime.neuron_states[name]
+                response = forward.executor._neuron_steps[name](
+                    previous,
+                    incoming["excitatory"],
+                    incoming["inhibitory"],
+                )
+                if not isinstance(response, tuple) or len(response) != 2:
+                    raise TypeError(f"{definition.name} must return (state, spikes)")
+                state, spike_values = response
+                state = X.checked_state(
+                    state,
+                    previous,
+                    definition.name,
+                    check_values=forward.executor._check_extension_values,
+                )
+                X.checked_tensor(
+                    spike_values,
+                    shape=runtime.voltage[name].shape,
+                    device=forward.device,
+                    dtype=forward.parameter_dtype,
+                    name=f"{definition.name}.spikes",
+                    check_values=forward.executor._check_extension_values,
+                )
+                if forward.executor._check_extension_values and torch.any(
+                    (spike_values != 0) & (spike_values != 1)
+                ):
+                    raise ValueError(f"{definition.name} spikes must be binary")
+                runtime.neuron_states[name] = state
+                runtime.voltage[name], runtime.refractory[name] = (
+                    state["voltage"],
+                    state["refractory"],
+                )
+                new_spikes[name] = (
+                    spike_values if pop["spiking"] else torch.zeros_like(spike_values)
+                )
+                new_spikes[name] = _intervene(
+                    forward, name, new_spikes[name], runtime.completed_steps + t
+                )
+                continue
+            if neuron["kind"] in N.ADAPTIVE_KINDS:
+                state, spike_values = forward.executor._neuron_steps[name](
+                    runtime.neuron_states[name],
+                    incoming["excitatory"],
+                    incoming["inhibitory"],
+                )
+                runtime.neuron_states[name] = state
+                runtime.voltage[name], runtime.refractory[name] = (
+                    state["voltage"],
+                    state["refractory"],
+                )
+                new_spikes[name] = _intervene(
+                    forward,
+                    name,
+                    spike_values if pop["spiking"] else torch.zeros_like(spike_values),
+                    runtime.completed_steps + t,
+                )
+                continue
+            if neuron["kind"] == "cuba_lif":
+                runtime.voltage[name], new_spikes[name], runtime.refractory[name] = (
+                    forward.executor._neuron_steps[name](
+                        runtime.voltage[name],
+                        runtime.refractory[name],
                         incoming["excitatory"],
                         incoming["inhibitory"],
                     )
                 )
-                new_spikes[name] = intervene(
-                    name, new_spikes[name], completed_steps + t
+                new_spikes[name] = _intervene(
+                    forward, name, new_spikes[name], runtime.completed_steps + t
                 )
+                continue
+            if neuron["kind"] == "leaky_integrator":
+                pre_reset, post_reset, new_spikes[name] = (
+                    forward.executor._neuron_steps[name](
+                        runtime.voltage[name], incoming["excitatory"]
+                    )
+                )
+                if name in runtime.pre_reset_voltage_traces:
+                    runtime.pre_reset_voltage_traces[name].append(pre_reset)
+                step_pre_reset[f"{name}.pre_reset_voltage"] = pre_reset
+                runtime.integrator_sum[name] = (
+                    runtime.integrator_sum.get(name, torch.zeros_like(pre_reset))
+                    + pre_reset
+                )
+                runtime.voltage[name] = post_reset
+                new_spikes[name] = _intervene(
+                    forward, name, new_spikes[name], runtime.completed_steps + t
+                )
+                continue
+            runtime.voltage[name], new_spikes[name], runtime.refractory[name] = (
+                forward.executor._neuron_steps[name](
+                    runtime.voltage[name],
+                    runtime.refractory[name],
+                    incoming["excitatory"],
+                    incoming["inhibitory"],
+                )
+            )
+            new_spikes[name] = _intervene(
+                forward, name, new_spikes[name], runtime.completed_steps + t
+            )
+        for category, states in (
+            ("neuron", runtime.neuron_states),
+            ("synapse", runtime.synapse_states),
+        ):
+            for owner, state in states.items():
+                for key, value in state.items():
+                    runtime.custom_state[f"{category}/{owner}/{key}"] = value
+                for port in forward.executor._state_ports[category][owner]:
+                    signal = f"{owner}.{port}"
+                    if signal in forward.needed_signals:
+                        runtime.state_traces.setdefault(signal, []).append(state[port])
+        if forward.capture_steps:
+            step_signals = {
+                f"{name}.value": value[t] for name, value in forward.inputs.items()
+            }
+            step_signals.update(
+                {f"{name}.spikes": value for name, value in new_spikes.items()}
+            )
+            step_signals.update(
+                {f"{name}.voltage": value for name, value in runtime.voltage.items()}
+            )
+            step_signals.update(step_pre_reset)
+            step_signals.update(
+                {
+                    f"{p.id}.{forward.projection_ports[p.id]}": runtime.conductance[
+                        (p.id, p.polarity)
+                    ]
+                    for p in forward.executor.plan.projections
+                }
+            )
             for category, states in (
-                ("neuron", neuron_states),
-                ("synapse", synapse_states),
+                ("neuron", runtime.neuron_states),
+                ("synapse", runtime.synapse_states),
             ):
                 for owner, state in states.items():
-                    for key, value in state.items():
-                        custom_state[f"{category}/{owner}/{key}"] = value
-                    for port in executor._state_ports[category][owner]:
-                        signal = f"{owner}.{port}"
-                        if signal in needed_signals:
-                            state_traces.setdefault(signal, []).append(state[port])
-            if capture_steps:
-                step_signals = {
-                    f"{name}.value": value[t] for name, value in inputs.items()
-                }
-                step_signals.update(
-                    {f"{name}.spikes": value for name, value in new_spikes.items()}
+                    for port in forward.executor._state_ports[category][owner]:
+                        step_signals[f"{owner}.{port}"] = state[port]
+            step_signals = forward.online.samples(step_signals)
+            forward.online.observe(step_signals, runtime.completed_steps + t)
+            forward.recorder.observe(step_signals, runtime.completed_steps + t)
+            for output_id, signal in forward.streamed_outputs.items():
+                forward.recorder.output_step(
+                    output_id, step_signals[signal], runtime.completed_steps + t
                 )
-                step_signals.update(
-                    {f"{name}.voltage": value for name, value in voltage.items()}
-                )
-                step_signals.update(step_pre_reset)
-                step_signals.update(
-                    {
-                        f"{p.id}.{projection_ports[p.id]}": conductance[
-                            (p.id, p.polarity)
-                        ]
-                        for p in executor.plan.projections
-                    }
-                )
-                for category, states in (
-                    ("neuron", neuron_states),
-                    ("synapse", synapse_states),
-                ):
-                    for owner, state in states.items():
-                        for port in executor._state_ports[category][owner]:
-                            step_signals[f"{owner}.{port}"] = state[port]
-                step_signals = online.samples(step_signals)
-                online.observe(step_signals, completed_steps + t)
-                recorder.observe(step_signals, completed_steps + t)
-                for output_id, signal in streamed_outputs.items():
-                    recorder.output_step(
-                        output_id, step_signals[signal], completed_steps + t
-                    )
-            if trace is not None:
-                trace.observe_spikes(new_spikes)
-            spikes = new_spikes
-            segments.observe(spikes)
-            for name in observation_counts:
-                observation_counts[name] += spikes[name].detach().to(torch.int64)
-            for name in spike_traces:
-                spike_traces[name].append(spikes[name])
-            for name in voltage_traces:
-                voltage_traces[name].append(voltage[name])
-            for name in populations:
-                histories[name].push(spikes[name])
-            for signal, values in continuous_histories.items():
-                values.append(old_continuous[signal])
-                del values[0]
-                custom_state[f"continuous_history/{signal}"] = torch.stack(values)
-            for projection_id in conductance_traces:
-                projection = next(
-                    p for p in executor.plan.projections if p.id == projection_id
-                )
-                conductance_traces[projection_id].append(
-                    conductance[(projection.id, projection.polarity)]
-                )
-    if probe is not None:
-        probe.mark("Output / history assembly")
+        if forward.trace is not None:
+            forward.trace.observe_spikes(new_spikes)
+        spikes = new_spikes
+        forward.segments.observe(spikes)
+        for name in runtime.observation_counts:
+            runtime.observation_counts[name] += spikes[name].detach().to(torch.int64)
+        for name in runtime.spike_traces:
+            runtime.spike_traces[name].append(spikes[name])
+        for name in runtime.voltage_traces:
+            runtime.voltage_traces[name].append(runtime.voltage[name])
+        for name in forward.populations:
+            runtime.histories[name].push(spikes[name])
+        for signal, values in runtime.continuous_histories.items():
+            values.append(old_continuous[signal])
+            del values[0]
+            runtime.custom_state[f"continuous_history/{signal}"] = torch.stack(values)
+        for projection_id in runtime.conductance_traces:
+            projection = next(
+                p for p in forward.executor.plan.projections if p.id == projection_id
+            )
+            runtime.conductance_traces[projection_id].append(
+                runtime.conductance[(projection.id, projection.polarity)]
+            )
+
+
+def _assemble_forward_result(  # noqa: C901
+    forward: _ForwardContext, runtime: _ForwardState
+) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
+    if forward.probe is not None:
+        forward.probe.mark("Output / history assembly")
     outputs: dict[str, torch.Tensor] = {}
     signal_values: dict[str, torch.Tensor] = {
-        f"{name}.value": value for name, value in inputs.items()
+        f"{name}.value": value for name, value in forward.inputs.items()
     }
-    for name, values in spike_traces.items():
+    for name, values in runtime.spike_traces.items():
         signal_values[f"{name}.spikes"] = torch.stack(values)
-    for name, values in voltage_traces.items():
+    for name, values in runtime.voltage_traces.items():
         signal_values[f"{name}.voltage"] = torch.stack(values)
-    for name, values in pre_reset_voltage_traces.items():
+    for name, values in runtime.pre_reset_voltage_traces.items():
         signal_values[f"{name}.pre_reset_voltage"] = torch.stack(values)
-    for name, values in conductance_traces.items():
-        signal_values[f"{name}.{projection_ports[name]}"] = torch.stack(values)
-    for signal, values in state_traces.items():
+    for name, values in runtime.conductance_traces.items():
+        signal_values[f"{name}.{forward.projection_ports[name]}"] = torch.stack(values)
+    for signal, values in runtime.state_traces.items():
         signal_values[signal] = torch.stack(values)
 
     def time_mask(
@@ -1197,8 +1411,8 @@ def run_forward_pass(  # noqa: C901
             )
         return numerator / counts
 
-    signal_values.update(online.finish(completed_steps + steps))
-    remaining_ops = list(history_operations)
+    signal_values.update(forward.online.finish(runtime.completed_steps + forward.steps))
+    remaining_ops = list(forward.history_operations)
     while remaining_ops:
         ready_index = next(
             (
@@ -1222,12 +1436,12 @@ def run_forward_pass(  # noqa: C901
         if kind == "linear":
             parameter = op["parameters"][0].replace(".", "__")
             signal_values[f"{op['id']}.value"] = (
-                sources[0] @ executor.weights[parameter]
+                sources[0] @ forward.executor.weights[parameter]
             )
         elif kind == "pool2d":
             signal_values[f"{op['id']}.value"] = pool_tensor(
                 sources[0],
-                signal_spatial_shape(executor.plan.graph, op["sources"][0]),
+                signal_spatial_shape(forward.executor.plan.graph, op["sources"][0]),
                 op["config"],
             )
         elif kind in {"reduce_mean", "reduce_sum"}:
@@ -1236,13 +1450,15 @@ def run_forward_pass(  # noqa: C901
             source_id = op["sources"][0]
             owner, _, port = source_id.partition(".")
             if (
-                "voltage_sampling" not in executor.plan.graph
+                "voltage_sampling" not in forward.executor.plan.graph
                 and kind == "reduce_mean"
                 and mask is None
                 and port == "voltage"
-                and owner in integrator_sum
+                and owner in runtime.integrator_sum
             ):
-                signal_values[f"{op['id']}.value"] = integrator_sum[owner] / steps
+                signal_values[f"{op['id']}.value"] = (
+                    runtime.integrator_sum[owner] / forward.steps
+                )
             else:
                 signal_values[f"{op['id']}.value"] = reduce_time(
                     sources[0],
@@ -1263,20 +1479,21 @@ def run_forward_pass(  # noqa: C901
                         f"{op['id']}: valid-time mask must have shape [time, batch]"
                     )
                 duration_key = f"{op['id']}.value/duration"
-                if duration_key in online.tensors:
-                    mask_seconds = online.tensors[duration_key].to(sources[0].dtype) * (
-                        executor.plan.dt_ms / 1000.0
-                    )
+                if duration_key in forward.online.tensors:
+                    mask_seconds = forward.online.tensors[duration_key].to(
+                        sources[0].dtype
+                    ) * (forward.executor.plan.dt_ms / 1000.0)
                 else:
                     mask_seconds = mask.to(
                         device=sources[0].device, dtype=sources[0].dtype
-                    ).sum(dim=0) * (executor.plan.dt_ms / 1000.0)
+                    ).sum(dim=0) * (forward.executor.plan.dt_ms / 1000.0)
                 mask_seconds = mask_seconds.reshape(
                     mask_seconds.shape[0], *([1] * (sources[0].ndim - 1))
                 )
                 if torch.any(mask_seconds <= 0) and (
-                    measurement is None
-                    or completed_steps + steps >= measurement.end_step
+                    forward.options.measurement is None
+                    or runtime.completed_steps + forward.steps
+                    >= forward.options.measurement.end_step
                 ):
                     raise ValueError(
                         f"{op['id']}: valid-time mask contains zero valid duration"
@@ -1294,192 +1511,234 @@ def run_forward_pass(  # noqa: C901
         elif kind == "divide":
             signal_values[f"{op['id']}.value"] = sources[0] / sources[1]
         elif kind == "custom_operation":
-            definition, update = executor._operation_steps[op["id"]]
+            definition, update = forward.executor._operation_steps[op["id"]]
             parameters = {
-                name: executor.parameter_map()[name]
+                name: forward.executor.parameter_map()[name]
                 for name in op.get("parameters", [])
             }
             value = update(tuple(sources), parameters)
             shape = tuple(
-                steps if d == "time" else batch if d == "batch" else d
+                forward.steps if d == "time" else forward.batch if d == "batch" else d
                 for d in op["shape"]
             )
             signal_values[f"{op['id']}.value"] = X.checked_tensor(
                 value,
                 shape=shape,
-                device=device,
-                dtype=parameter_dtype,
+                device=forward.device,
+                dtype=forward.parameter_dtype,
                 name=definition.name,
             )
         elif kind == "cumulative_sum":
             signal_values[f"{op['id']}.value"] = sources[0].cumsum(dim=0)
         else:
             raise ValueError(f"{op['id']}: unsupported operation {kind}")
-    for output in executor.plan.outputs:
-        if output["id"] in streamed_outputs:
+    for output in forward.executor.plan.outputs:
+        if output["id"] in forward.streamed_outputs:
             continue
         value = signal_values[output["signal"]]
-        recorder.output(output["id"], value, measurement)
-        if retain_outputs:
+        forward.recorder.output(output["id"], value, forward.options.measurement)
+        if forward.options.retain_outputs:
             outputs[output["id"]] = value
     packed = (
         {
             row["id"]: signal_values[row["signal"]].detach().clone()
-            for row in executor.plan.observables
+            for row in forward.executor.plan.observables
         }
-        if diagnostics
+        if forward.options.diagnostics
         else {}
     )
-    segments.boundary(completed_steps + steps, executor.plan.dt_ms)
-    segments.finish_records()
-    if probe is not None:
-        probe.mark("Runtime-state snapshot")
+    forward.segments.boundary(
+        runtime.completed_steps + forward.steps, forward.executor.plan.dt_ms
+    )
+    forward.segments.finish_records()
+    if forward.probe is not None:
+        forward.probe.mark("Runtime-state snapshot")
     next_runtime_state = None
-    if retain_runtime_state:
+    if forward.options.retain_runtime_state:
         next_input_histories = {
             name: (
-                inputs[name][-history.shape[0] :]
-                if inputs[name].shape[0] >= history.shape[0]
-                else torch.cat((history, inputs[name]), dim=0)[-history.shape[0] :]
+                forward.inputs[name][-history.shape[0] :]
+                if forward.inputs[name].shape[0] >= history.shape[0]
+                else torch.cat((history, forward.inputs[name]), dim=0)[
+                    -history.shape[0] :
+                ]
             )
             .detach()
             .clone()
-            for name, history in input_histories.items()
+            for name, history in runtime.input_histories.items()
         }
         next_runtime_state = GraphRuntimeState(
-            signature=expected_signature,
-            compatibility=expected_compatibility,
-            completed_steps=completed_steps + steps,
-            voltages={name: value.detach().clone() for name, value in voltage.items()},
+            signature=forward.expected_signature,
+            compatibility=forward.expected_compatibility,
+            completed_steps=runtime.completed_steps + forward.steps,
+            voltages={
+                name: value.detach().clone() for name, value in runtime.voltage.items()
+            },
             refractory={
-                name: value.detach().clone() for name, value in refractory.items()
+                name: value.detach().clone()
+                for name, value in runtime.refractory.items()
             },
             conductances={
-                p.id: conductance[(p.id, p.polarity)].detach().clone()
-                for p in executor.plan.projections
-                if projection_ports[p.id] == "conductance"
+                p.id: runtime.conductance[(p.id, p.polarity)].detach().clone()
+                for p in forward.executor.plan.projections
+                if forward.projection_ports[p.id] == "conductance"
             },
             currents={
-                p.id: conductance[(p.id, p.polarity)].detach().clone()
-                for p in executor.plan.projections
-                if projection_ports[p.id] == "current"
+                p.id: runtime.conductance[(p.id, p.polarity)].detach().clone()
+                for p in forward.executor.plan.projections
+                if forward.projection_ports[p.id] == "current"
             },
             population_histories={
-                name: history.export() for name, history in histories.items()
+                name: history.export() for name, history in runtime.histories.items()
             },
             input_histories=next_input_histories,
             custom_state={
-                key: value.detach().clone() for key, value in custom_state.items()
+                key: value.detach().clone()
+                for key, value in runtime.custom_state.items()
             },
-            segment_state=segments.state(),
-            segment_counts=segments.counts,
-            reduction_state=online.state(completed_steps + steps),
+            segment_state=forward.segments.state(),
+            segment_counts=forward.segments.counts,
+            reduction_state=forward.online.state(
+                runtime.completed_steps + forward.steps
+            ),
             reduction_tensors={
-                name: value.detach().clone() for name, value in online.tensors.items()
+                name: value.detach().clone()
+                for name, value in forward.online.tensors.items()
             }
-            if measurement is not None
+            if forward.options.measurement is not None
             else {},
         )
-    if probe is not None:
-        probe.mark("Executor result / metadata")
+    if forward.probe is not None:
+        forward.probe.mark("Executor result / metadata")
     result = ExecutionResult(
         executor="graph",
         outputs=outputs,
         diagnostics=packed,
-        parameters={k: v.detach().clone() for k, v in effective_weights.items()}
-        if retain_parameters
+        parameters={k: v.detach().clone() for k, v in forward.effective_weights.items()}
+        if forward.options.retain_parameters
         else {},
-        final_state={f"{k}.voltage": v.detach().clone() for k, v in voltage.items()}
-        if retain_final_state
+        final_state={
+            f"{k}.voltage": v.detach().clone() for k, v in runtime.voltage.items()
+        }
+        if forward.options.retain_final_state
         else {},
         runtime_state=next_runtime_state,
         metrics={
             "recording_units": {
-                name: recorder.units.get(name) for name in recorder.rows
+                name: forward.recorder.units.get(name) for name in forward.recorder.rows
             },
-            "online_reductions": list(online.reductions),
+            "online_reductions": list(forward.online.reductions),
             "retained_signal_samples": {
                 name: len(values)
                 for name, values in (
-                    *spike_traces.items(),
-                    *voltage_traces.items(),
-                    *pre_reset_voltage_traces.items(),
-                    *conductance_traces.items(),
-                    *state_traces.items(),
+                    *runtime.spike_traces.items(),
+                    *runtime.voltage_traces.items(),
+                    *runtime.pre_reset_voltage_traces.items(),
+                    *runtime.conductance_traces.items(),
+                    *runtime.state_traces.items(),
                 )
             },
-            "measurement_complete": measurement is None
-            or completed_steps + steps >= measurement.end_step,
+            "measurement_complete": forward.options.measurement is None
+            or runtime.completed_steps + forward.steps
+            >= forward.options.measurement.end_step,
             "inference_retention": retention_identity(
-                graph=executor.plan.graph,
-                start_step=completed_steps,
-                steps_count=steps,
-                batch_size=batch,
-                batch_offset=batch_offset,
-                diagnostics=diagnostics,
-                retain_outputs=retain_outputs,
-                retain_parameters=retain_parameters,
-                retain_final_state=retain_final_state,
-                retain_runtime_state=retain_runtime_state,
-                projection_mode=executor.projection_mode,
-                measurement=measurement,
-                recording=recording,
+                graph=forward.executor.plan.graph,
+                start_step=runtime.completed_steps,
+                steps_count=forward.steps,
+                batch_size=forward.batch,
+                batch_offset=forward.options.batch_offset,
+                diagnostics=forward.options.diagnostics,
+                retain_outputs=forward.options.retain_outputs,
+                retain_parameters=forward.options.retain_parameters,
+                retain_final_state=forward.options.retain_final_state,
+                retain_runtime_state=forward.options.retain_runtime_state,
+                projection_mode=forward.executor.projection_mode,
+                measurement=forward.options.measurement,
+                recording=forward.options.recording,
             ),
-            "segment_policy": segments.identity,
-            "segment_window": {"start_step": completed_steps, "steps_count": steps}
-            if segments.identity
+            "segment_policy": forward.segments.identity,
+            "segment_window": {
+                "start_step": runtime.completed_steps,
+                "steps_count": forward.steps,
+            }
+            if forward.segments.identity
             else None,
-            "decisions": segments.records,
-            "resolved_interventions": resolved_interventions,
-            "refractory": dict(executor.plan.refractory),
-            "autapses": executor.autapse_metadata,
-            "extension_validation": executor.extension_validation,
-            "projection_mode": executor.projection_mode,
-            "compile_mode": executor.compile_mode,
+            "decisions": forward.segments.records,
+            "resolved_interventions": forward.resolved_interventions,
+            "refractory": dict(forward.executor.plan.refractory),
+            "autapses": forward.executor.autapse_metadata,
+            "extension_validation": forward.executor.extension_validation,
+            "projection_mode": forward.executor.projection_mode,
+            "compile_mode": forward.executor.compile_mode,
             "compiler_wrapper": compiler_wrapper_policy(
-                device, parameter_dtype, executor.compile_mode
+                forward.device, forward.parameter_dtype, forward.executor.compile_mode
             ),
             "compiler_precision_policy": "snnlab.eager-precision-casts/v1"
-            if executor.compile_mode is not None
+            if forward.executor.compile_mode is not None
             else None,
-            "compiler_fallback": compiler_fallback,
+            "compiler_fallback": forward.compiler_fallback,
             "execution_path": {
                 "schema": "snnlab.network-blocks/v1",
-                "selected": "kernel_loop" if block_reasons else "compiled_blocks",
-                "requested_block_steps": executor.requested_block_steps,
-                "block_steps": 1 if block_reasons else executor.compile_block_steps,
-                "fallback_reasons": block_reasons,
+                "selected": "kernel_loop"
+                if forward.block_reasons
+                else "compiled_blocks",
+                "requested_block_steps": forward.executor.requested_block_steps,
+                "block_steps": 1
+                if forward.block_reasons
+                else forward.executor.compile_block_steps,
+                "fallback_reasons": forward.block_reasons,
             },
-            "surrogate": copy.deepcopy(executor.surrogate_config),
+            "surrogate": copy.deepcopy(forward.executor.surrogate_config),
             "result_snapshots": {
-                "parameters": retain_parameters,
-                "final_state": retain_final_state,
-                "runtime_state": retain_runtime_state,
+                "parameters": forward.options.retain_parameters,
+                "final_state": forward.options.retain_final_state,
+                "runtime_state": forward.options.retain_runtime_state,
             },
-            "inference_interventions": intervention_request if interventions else None,
+            "inference_interventions": forward.intervention_request
+            if forward.options.interventions
+            else None,
             **(
-                {"population_observations": observation_counts}
-                if observation_counts
+                {"population_observations": runtime.observation_counts}
+                if runtime.observation_counts
                 else {}
             ),
         },
-        decisions=segments.records,
-        recorded_signals=recorder.finish(batch),
-        _recording_info=recorder.information(batch),
+        decisions=forward.segments.records,
+        recorded_signals=forward.recorder.finish(forward.batch),
+        _recording_info=forward.recorder.information(forward.batch),
         _output_axes={
-            row["id"]: signal_axes[row["signal"]] for row in executor.plan.outputs
+            row["id"]: forward.signal_axes[row["signal"]]
+            for row in forward.executor.plan.outputs
         },
         _diagnostic_axes={
-            row["id"]: signal_axes[row["signal"]]
-            for row in executor.plan.observables
-            if diagnostics
+            row["id"]: forward.signal_axes[row["signal"]]
+            for row in forward.executor.plan.observables
+            if forward.options.diagnostics
         },
-        _timebase=(executor.plan.dt_ms, completed_steps, steps),
-        _batch_size=batch,
-        model=executor,
+        _timebase=(forward.executor.plan.dt_ms, runtime.completed_steps, forward.steps),
+        _batch_size=forward.batch,
+        model=forward.executor,
     )
-    if result.metrics["execution_path"] not in executor._execution_paths:
-        executor._execution_paths.append(
+    if result.metrics["execution_path"] not in forward.executor._execution_paths:
+        forward.executor._execution_paths.append(
             copy.deepcopy(result.metrics["execution_path"])
         )
     return result, signal_values
+
+
+def _intervene(
+    forward: _ForwardContext, name: str, emitted: torch.Tensor, absolute_step: int
+) -> torch.Tensor:
+    for index, item in enumerate(forward.prepared_interventions):
+        if item.metadata["population_id"] == name:
+            emitted = item.apply(emitted, absolute_step, index)
+    return emitted
+
+
+def _continuous_value(runtime: _ForwardState, signal: str) -> torch.Tensor:
+    owner, _, port = signal.partition(".")
+    return (
+        runtime.voltage[owner]
+        if port == "voltage"
+        else runtime.neuron_states[owner][port]
+    )
