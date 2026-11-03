@@ -64,24 +64,10 @@ class TrainingUpdateOutcome:
     online_count: int = 0
 
 
-def run_training_update(
-    context: TrainingUpdateContext,
-    *,
-    update: int,
-    update_count: int,
-    scheduled: tuple[int, int, torch.Tensor],
-    batches: iter_batches,
-) -> TrainingUpdateOutcome:
-    """Run one update while preserving the trainer's numerical boundaries."""
-    model = context.model
-    trace = context.trace
+def _prepare_batch(context, update, scheduled, batches, trace):
+    """Fetch one scheduled batch and bind its targets."""
     if trace is not None:
-        trace.begin_update(
-            update,
-            scheduled[0],
-            scheduled[1],
-            context.parameter_map,
-        )
+        trace.begin_update(update, scheduled[0], scheduled[1], context.parameter_map)
     with trace.region("batch_prepare_wait") if trace is not None else nullcontext():
         _, batch_inputs, encoding_metadata = next(batches)
     if trace is not None:
@@ -91,6 +77,12 @@ def run_training_update(
         name: value.index_select(0, sample_indices.to(value.device))
         for name, value in context.targets.items()
     }
+    return batch_inputs, encoding_metadata, epoch, batch, sample_indices, batch_targets
+
+
+def _forward_and_loss(context, batch_inputs, batch_targets, trace):
+    """Run forward/loss directly, or return a captured replay result."""
+    model = context.model
 
     def numerical_step(batch_inputs, batch_targets):
         forward, signals = model._forward(
@@ -110,67 +102,80 @@ def run_training_update(
 
     replayed = context.replay.run(batch_inputs, batch_targets, numerical_step)
     if replayed is not None:
-        forward, signal_values, loss, components = replayed
-    else:
-        context.optimizer.zero_grad(set_to_none=True)
-        with trace.region("forward") if trace is not None else nullcontext():
-            forward, signal_values = model._forward(
-                batch_inputs,
-                diagnostics=context.diagnostics,
-                required_signals=context.required_signals,
-                retain_parameters=False,
-                retain_final_state=False,
-                retain_runtime_state=False,
-            )
-        with trace.region("loss") if trace is not None else nullcontext():
-            loss, components = context.compute_loss(
-                forward, signal_values, batch_targets, context.input_protocol
-            )
+        return replayed, True
+    context.optimizer.zero_grad(set_to_none=True)
+    with trace.region("forward") if trace is not None else nullcontext():
+        forward, signal_values = model._forward(
+            batch_inputs,
+            diagnostics=context.diagnostics,
+            required_signals=context.required_signals,
+            retain_parameters=False,
+            retain_final_state=False,
+            retain_runtime_state=False,
+        )
+    with trace.region("loss") if trace is not None else nullcontext():
+        loss, components = context.compute_loss(
+            forward, signal_values, batch_targets, context.input_protocol
+        )
+    return (forward, signal_values, loss, components), False
 
+
+def _accumulate_online_metrics(
+    context, forward, loss, components, batch_targets, sample_indices
+):
+    """Collect pre-update online metrics without another forward pass."""
+    if context.metric_policy.train != "online":
+        return {}, 0
+    count = len(sample_indices)
+    values = {
+        "loss": loss.detach() * count,
+        **{
+            f"component/{name}": value.detach() * count
+            for name, value in components.items()
+        },
+    }
     online_sums = {}
-    online_count = 0
-    if context.metric_policy.train == "online":
-        count = len(sample_indices)
-        values = {
-            "loss": loss.detach() * count,
-            **{
-                f"component/{name}": value.detach() * count
-                for name, value in components.items()
-            },
-        }
-        with torch.no_grad():
-            for index, objective in enumerate(
-                context.training_recipe.get("objectives", [])
-            ):
-                if X.classification(objective):
-                    prediction = forward.outputs[
-                        context.output_ids[objective["prediction"]]
-                    ].detach()
-                    target = batch_targets[objective["target"]].long()
-                    values[f"ce/objective[{index}]"] = (
-                        torch.nn.functional.cross_entropy(
-                            prediction, target, reduction="sum"
-                        )
-                    )
-                    values[f"correct/objective[{index}]"] = (
-                        prediction.argmax(-1) == target
-                    ).sum()
-            for name, value in values.items():
-                value = value.to(
-                    dtype=torch.float64
-                    if torch.device(context.device).type != "mps"
-                    else torch.float32,
+    with torch.no_grad():
+        for index, objective in enumerate(
+            context.training_recipe.get("objectives", [])
+        ):
+            if X.classification(objective):
+                prediction = forward.outputs[
+                    context.output_ids[objective["prediction"]]
+                ].detach()
+                target = batch_targets[objective["target"]].long()
+                values[f"ce/objective[{index}]"] = torch.nn.functional.cross_entropy(
+                    prediction, target, reduction="sum"
                 )
-                if name not in online_sums:
-                    online_sums[name] = torch.zeros_like(value)
-                online_sums[name].add_(value)
-        online_count += count
+                values[f"correct/objective[{index}]"] = (
+                    prediction.argmax(-1) == target
+                ).sum()
+        for name, value in values.items():
+            value = value.to(
+                dtype=torch.float64
+                if torch.device(context.device).type != "mps"
+                else torch.float32,
+            )
+            if name not in online_sums:
+                online_sums[name] = torch.zeros_like(value)
+            online_sums[name].add_(value)
+    return online_sums, count
+
+
+def _backward(context, loss, trace, replayed):
+    """Backpropagate normal updates; replay already owns gradients."""
     with trace.region("backward") if trace is not None else nullcontext():
-        if replayed is None:
-            with execution_precision(context.precision, next(model.parameters(), None)):
+        if not replayed:
+            with execution_precision(
+                context.precision, next(context.model.parameters(), None)
+            ):
                 loss.backward()
     if trace is not None:
         trace.observe_gradients(context.parameter_map)
+
+
+def _capture_and_clip_gradients(context, update, update_count):
+    """Capture pre-clip gradients, then clip and record observations."""
     gradient_names = (
         set(context.parameter_map)
         if update == update_count - 1
@@ -195,11 +200,46 @@ def run_training_update(
         )
     if context.observation_spec is not None:
         context.gradient_measurements().add(before_clip, context.parameter_map)
+    return before_clip
+
+
+def _optimizer_step_and_constraints(context, trace, update, update_count):
+    """Apply the optimizer update and graph constraints as one boundary."""
     with trace.region("optimizer_constraints") if trace is not None else nullcontext():
         context.optimizer.step()
-        model.enforce_constraints()
+        enforce_constraints = getattr(context.model, "enforce_constraints", None)
+        if enforce_constraints is not None:
+            enforce_constraints()
     if trace is not None:
         trace.end_update(context.parameter_map, last=update + 1 == update_count)
+
+
+def run_training_update(
+    context: TrainingUpdateContext,
+    *,
+    update: int,
+    update_count: int,
+    scheduled: tuple[int, int, torch.Tensor],
+    batches: iter_batches,
+) -> TrainingUpdateOutcome:
+    """Run one update while preserving the trainer's numerical boundaries."""
+    (
+        batch_inputs,
+        encoding_metadata,
+        epoch,
+        batch,
+        sample_indices,
+        batch_targets,
+    ) = _prepare_batch(context, update, scheduled, batches, context.trace)
+    (forward, signal_values, loss, components), replayed = _forward_and_loss(
+        context, batch_inputs, batch_targets, context.trace
+    )
+    online_sums, online_count = _accumulate_online_metrics(
+        context, forward, loss, components, batch_targets, sample_indices
+    )
+    _backward(context, loss, context.trace, replayed)
+    before_clip = _capture_and_clip_gradients(context, update, update_count)
+    _optimizer_step_and_constraints(context, context.trace, update, update_count)
     return TrainingUpdateOutcome(
         forward=forward,
         signals=signal_values,
