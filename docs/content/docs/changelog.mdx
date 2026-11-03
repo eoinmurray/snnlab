@@ -9,6 +9,17 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-11-03
+
+### Changed
+
+1. Extract native training updates into a private training-loop module with named preparation, forward/loss, backward, gradient and optimizer phases. Scheduling, checkpointing and reporting remain in the trainer.
+2. Extract the shared training/simulation forward implementation into `snnlab.sim.graph.forward_pass`, with private phases and per-call request, metadata and runtime-state dataclasses. Preserve the executor wrapper, `DelayBuffer` import compatibility, public APIs and persisted formats.
+
+### Added
+
+1. Training-update order and forward-delegation regression tests, a pre-extraction CPU reference covering outputs, diagnostics, runtime state, metadata and gradients, and resumed recurrent execution checks.
+
 ## [0.31.0] - 2026-10-29
 
 ### Removed
