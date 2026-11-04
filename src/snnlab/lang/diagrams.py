@@ -81,6 +81,8 @@ def _add_graph_nodes(
                     "cuba_lif": "CUBA-LIF",
                     "cuba_alif": "CUBA-ALIF",
                     "coba_alif": "COBA-ALIF",
+                    "cuba_mqif": "CUBA-MQIF",
+                    "coba_mqif": "COBA-MQIF",
                     "cuba_adex": "CUBA-AdEx",
                     "coba_adex": "COBA-AdEx",
                     "lif": "LIF",

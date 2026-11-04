@@ -141,6 +141,61 @@ def COBA_ADEX(
     )
 
 
+def MQIF(**values: Any) -> Spec:
+    """Current-based two-timescale multi-quadratic integrate-and-fire neuron."""
+    return CUBA_MQIF(**values)
+
+
+def CUBA_MQIF(
+    *,
+    capacitance_nf=1.0,
+    fast_coefficient_na_per_mv2=0.001,
+    slow_coefficient_na_per_mv2=0.002,
+    fast_center_mv=-40.0,
+    slow_center_mv=-45.0,
+    tau_slow=100 * ms,
+    spike_mv=20.0,
+    reset_mv=-65.0,
+    slow_reset_mv=-65.0,
+    initial_voltage_mv=-65.0,
+    initial_slow_voltage_mv=-65.0,
+    refractory=0 * ms,
+    voltage_grad_dampen=1.0,
+) -> Spec:
+    """Two quadratic currents; coefficients have units nA/mV² (µS/mV)."""
+    return Spec(
+        "cuba_mqif",
+        dict(
+            capacitance_nf=capacitance_nf,
+            fast_coefficient_na_per_mv2=fast_coefficient_na_per_mv2,
+            slow_coefficient_na_per_mv2=slow_coefficient_na_per_mv2,
+            fast_center_mv=fast_center_mv,
+            slow_center_mv=slow_center_mv,
+            tau_slow=tau_slow,
+            spike_mv=spike_mv,
+            reset_mv=reset_mv,
+            slow_reset_mv=slow_reset_mv,
+            initial_voltage_mv=initial_voltage_mv,
+            initial_slow_voltage_mv=initial_slow_voltage_mv,
+            refractory=refractory,
+            voltage_grad_dampen=voltage_grad_dampen,
+        ),
+    )
+
+
+def COBA_MQIF(
+    *, excitatory_reversal_mv=0.0, inhibitory_reversal_mv=-80.0, **values: Any
+) -> Spec:
+    return Spec(
+        "coba_mqif",
+        dict(
+            CUBA_MQIF(**values).values,
+            excitatory_reversal_mv=excitatory_reversal_mv,
+            inhibitory_reversal_mv=inhibitory_reversal_mv,
+        ),
+    )
+
+
 def CustomNeuron(definition: str, **config: Any) -> Spec:
     return _custom("neuron", definition, config)
 

@@ -342,7 +342,7 @@ def _restore_runtime_state(forward: _ForwardContext, runtime: _ForwardState) -> 
                     (forward.batch, p["size"]),
                     float(p["neuron"].get("initial_voltage_mv", M.E_L))
                     if p["neuron"]["kind"] == "cuba_lif"
-                    or p["neuron"]["kind"] in N.ADAPTIVE_KINDS
+                    or p["neuron"]["kind"] in N.STATEFUL_KINDS
                     else M.E_L,
                     device=forward.device,
                     dtype=forward.parameter_dtype,
@@ -577,7 +577,7 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
     ):
         for row in rows:
             spec = row[category]
-            adaptive = category == "neuron" and spec["kind"] in N.ADAPTIVE_KINDS
+            adaptive = category == "neuron" and spec["kind"] in N.STATEFUL_KINDS
             if not adaptive and spec["kind"] != f"custom_{category}":
                 continue
             owner = row["id"]
@@ -585,15 +585,20 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
             shape = (forward.batch, forward.populations[target]["size"])
             if adaptive:
                 label = spec["kind"]
+                state_key = (
+                    "slow_voltage" if spec["kind"] in N.MQIF_KINDS else "adaptation"
+                )
                 initial_key = (
-                    "initial_adaptation_mv"
+                    "initial_slow_voltage_mv"
+                    if spec["kind"] in N.MQIF_KINDS
+                    else "initial_adaptation_mv"
                     if spec["kind"].endswith("alif")
                     else "initial_adaptation_na"
                 )
                 state = {
                     "voltage": runtime.voltage[owner],
                     "refractory": runtime.refractory[owner],
-                    "adaptation": torch.full(
+                    state_key: torch.full(
                         shape,
                         float(spec[initial_key]),
                         device=forward.device,
@@ -1208,7 +1213,7 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
                     forward, name, new_spikes[name], runtime.completed_steps + t
                 )
                 continue
-            if neuron["kind"] in N.ADAPTIVE_KINDS:
+            if neuron["kind"] in N.STATEFUL_KINDS:
                 state, spike_values = forward.executor._neuron_steps[name](
                     runtime.neuron_states[name],
                     incoming["excitatory"],

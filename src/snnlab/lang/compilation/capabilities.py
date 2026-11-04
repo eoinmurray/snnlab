@@ -32,7 +32,7 @@ def capability_report(graph: Mapping[str, Any], target: str | None) -> list[Diag
         "cuba_lif",
         "leaky_integrator",
         "custom_neuron",
-    } | N.ADAPTIVE_KINDS
+    } | N.STATEFUL_KINDS
     synapse_support = {
         "ampa",
         "gaba",

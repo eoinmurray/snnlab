@@ -18,7 +18,13 @@ def signal_parameters(plan):
     dependencies = {}
     populations = {pop["id"]: pop for pop in plan.populations}
     for pop in plan.populations:
-        for port in ("voltage", "spikes", "pre_reset_voltage", "adaptation"):
+        for port in (
+            "voltage",
+            "spikes",
+            "pre_reset_voltage",
+            "adaptation",
+            "slow_voltage",
+        ):
             dependencies[f"{pop['id']}.{port}"] = set()
     for projection in plan.projections:
         dependencies[projection.source] = set()
@@ -37,7 +43,13 @@ def signal_parameters(plan):
                 dependencies[key].update(parameters)
                 changed |= before != dependencies[key]
             target = projection.target.partition(".")[0]
-            for port in ("voltage", "spikes", "pre_reset_voltage", "adaptation"):
+            for port in (
+                "voltage",
+                "spikes",
+                "pre_reset_voltage",
+                "adaptation",
+                "slow_voltage",
+            ):
                 if (
                     populations[target]["neuron"]["kind"] == "leaky_integrator"
                     and projection.polarity == "inhibitory"
@@ -47,7 +59,7 @@ def signal_parameters(plan):
                     port == "spikes"
                     and not populations[target]["spiking"]
                     and populations[target]["neuron"]["kind"]
-                    in {*N.ADAPTIVE_KINDS, "leaky_integrator"}
+                    in {*N.STATEFUL_KINDS, "leaky_integrator"}
                 ):
                     continue
                 key = f"{target}.{port}"
@@ -343,7 +355,7 @@ def network_block(plan, *, spike_function, projection_mode, signals, compile_mod
                         else:
                             inhibition = inhibition + conductance[key]
                     kind = pop["neuron"]["kind"]
-                    if kind in N.ADAPTIVE_KINDS:
+                    if kind in N.STATEFUL_KINDS:
                         state, emitted = neurons[name](
                             adaptive[name], excitation, inhibition
                         )
@@ -355,7 +367,8 @@ def network_block(plan, *, spike_function, projection_mode, signals, compile_mod
                         spikes[name] = (
                             emitted if pop["spiking"] else torch.zeros_like(emitted)
                         )
-                        values[f"{name}.adaptation"] = state["adaptation"]
+                        for port in N.state_units(pop["neuron"]):
+                            values[f"{name}.{port}"] = state[port]
                     elif kind == "leaky_integrator":
                         pre, voltage[name], spikes[name] = neurons[name](
                             voltage[name], excitation

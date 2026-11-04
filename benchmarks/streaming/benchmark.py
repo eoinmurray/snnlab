@@ -82,7 +82,12 @@ class Config:
         return round(self.window_ms / self.dt_ms)
 
 
-def circuit(cfg):
+def circuit(cfg, *, neuron_factory=None):
+    if neuron_factory is None:
+
+        def neuron_factory():
+            return lang.COBA_LIF(tau_mem=20 * lang.ms, refractory=2 * lang.ms)
+
     net = lang.Network("streaming-random", dt=cfg.dt_ms * lang.ms)
     events = net.input(
         "events",
@@ -93,12 +98,12 @@ def circuit(cfg):
     hidden = net.population(
         "hidden",
         size=cfg.hidden,
-        neuron=lang.COBA_LIF(tau_mem=20 * lang.ms, refractory=2 * lang.ms),
+        neuron=neuron_factory(),
     )
     readout = net.population(
         "readout",
         size=cfg.readouts,
-        neuron=lang.COBA_LIF(tau_mem=20 * lang.ms, refractory=2 * lang.ms),
+        neuron=neuron_factory(),
     )
     for name, source, target, strength, recurrent in (
         ("input_hidden", events, hidden, 0.08, False),
@@ -520,11 +525,11 @@ def measure_deadlines(cfg, model):
 
 
 @torch.inference_mode()
-def run(cfg):
+def run(cfg, *, circuit_builder=circuit):
     cfg.validate()
     torch.set_num_threads(cfg.threads)
     torch.set_float32_matmul_precision("highest")
-    plan = plan_graph(circuit(cfg))
+    plan = plan_graph(circuit_builder(cfg))
     with stream(cfg, plan) as model:
         validation = warm_and_validate(cfg, model, plan)
         deadlines = measure_deadlines(cfg, model)
@@ -844,7 +849,11 @@ def plot_report(report_path, output=None):
         ax.set_axisbelow(True)
         ax.spines[["top", "right"]].set_visible(False)
     cfg = cases[0]["config"]
-    fig.suptitle("Streaming performance as network size increases", fontsize=17, y=0.98)
+    fig.suptitle(
+        report.get("title", "Streaming performance as network size increases"),
+        fontsize=17,
+        y=0.98,
+    )
     sample_text = "; ".join(
         f"{size}: {s['windows']:,} callbacks / {s['seeds']} seeds"
         for size, s in zip(sizes, summaries, strict=True)
@@ -1092,7 +1101,7 @@ def plot_detailed_report(report_path, output=None):
     return output
 
 
-def main():
+def main(*, run_case=None, output_dir=None, metadata=None):
     wall_started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1146,7 +1155,7 @@ def main():
         print(plot(report_path))
         return
     if output is None:
-        output = Path(__file__).resolve().parent / "results"
+        output = output_dir or Path(__file__).resolve().parent / "results"
     sizes = args.pop("hidden_sizes")
     seeds = args.pop("seeds")
     seeds = list(range(args["seed"], args["seed"] + 5)) if seeds is None else seeds
@@ -1197,6 +1206,8 @@ def main():
         ],
     }
     report_path = output / "report.json"
+    report.update(metadata or {})
+    run_case = run if run_case is None else run_case
     for seed_index, seed in enumerate(seeds):
         # Rotate size order to reduce a fixed size/time-of-run confound.
         order = list(range(len(configs)))
@@ -1209,7 +1220,7 @@ def main():
                 flush=True,
             )
             case = report["cases"][index]
-            case["runs"].append(run(cfg))
+            case["runs"].append(run_case(cfg))
             case["summary"] = summarize_seeds(case["runs"])
             report["execution_order"].append({"seed": seed, "hidden": cfg.hidden})
             report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
