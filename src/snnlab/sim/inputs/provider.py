@@ -23,6 +23,7 @@ from snnlab.sim.inputs.encoders import (
     encoder_device_policy,
     poisson_device_policy,
 )
+from snnlab.sim.inputs.preparation import BatchContext, BatchInputs
 from snnlab.sim.training.observations import evaluation_rng
 
 SCHEMA = "snnlab.batch-encoding/v1"
@@ -136,11 +137,17 @@ class DatasetProvider:
             _indices=self.selected[:1],
             _validated=True,
             _event_index=self.event_index,
+            _context=BatchContext(
+                tuple(map(int, self.selected[:1])),
+                tuple(self.sample_ids[:1]),
+                root_seed=binding.encoder.seed,
+            ),
         )
         self.steps_count = next(iter(first.tensors.values())).shape[0]
         self.protocol = copy.deepcopy(first.protocol)
         self.protocol["dataset"].update(sample_cap=cap, batch_size=min(32, cap))
-        self.protocol["inputs"][0]["shape"][1] = cap
+        for row in self.protocol["inputs"]:
+            row["shape"][1] = cap
         self.protocol["dataset_binding"]["selected_indices"] = self.selected.tolist()
         if binding.sample_ids_key is not None:
             self.protocol["dataset_binding"]["sample_ids"] = self.sample_ids
@@ -176,6 +183,7 @@ class DatasetProvider:
             "epoch_order_derivation": "execution_seed + epoch",
             "seed_derivation": "sha256(root,domain,phase,epoch,absolute_sample_indices,draw_seed)",
         }
+        self._preparation_protocol(first)
         self._merge_dataset_protocol(protocol=protocol)
 
         self.targets = (
@@ -193,6 +201,25 @@ class DatasetProvider:
             else ()
         )
 
+    def _preparation_protocol(self, first):
+        binding = self.binding
+        if binding.encoder.rng_policy == "sample_v1":
+            self.protocol["batch_encoding"].update(
+                schema="snnlab.batch-encoding/v2",
+                rng_policy="sample_v1",
+                seed_derivation="sha256(snnlab.sample-rng/v1,root,sample_id,stream,phase,epoch,draw)",
+            )
+        if getattr(first.tensors, "initial_state", None) is not None:
+            state = first.tensors.initial_state
+            self.protocol["presentation_initialization"] = {
+                "schema": "snnlab.presentation-initialization/v1",
+                "signature": state.signature,
+                "provider": binding.encoder.definition,
+                "policy": "fresh_neurons_time_and_reductions_selected_synapses_only",
+                "provenance": dict(state.provenance),
+                "rng": self.protocol["batch_encoding"],
+            }
+
     def batch(self, indices, *, phase="evaluation", epoch=0, draw_seed=None):
         result, metadata = self._batch(
             indices, phase=phase, epoch=epoch, draw_seed=draw_seed
@@ -209,12 +236,51 @@ class DatasetProvider:
         absolute = self.selected[local]
         draw = self.draw_seeds[0] if draw_seed is None else draw_seed
         epoch = epoch if phase == "train" else 0
+        context = BatchContext(
+            tuple(map(int, absolute)),
+            tuple(self.sample_ids[int(i)] for i in local),
+            phase,
+            int(epoch),
+            int(draw),
+            int(self.binding.encoder.seed),
+        )
         spike_seed = stream_seed(
             self.binding.encoder.seed, "spike_encoding", phase, epoch, absolute, draw
         )
         rate_seed = stream_seed(
             self.binding.encoder.seed, "rate_selection", phase, epoch, absolute, draw
         )
+        if self.binding.encoder.rng_policy == "sample_v1":
+            spike_seed = context.seed(context.sample_ids[0], "spike_encoding")
+            rate_seed = context.seed(
+                context.sample_ids[0], "rate_selection", policy="fixed"
+            )
+            if self.binding.encoder.kind != "custom" and len(local) > 1:
+                parts = [
+                    self._batch(
+                        [i], phase=phase, epoch=epoch, draw_seed=draw, device=device
+                    )
+                    for i in local
+                ]
+                first = parts[0][0]
+                return type(first)(
+                    BatchInputs(
+                        {
+                            name: torch.cat(
+                                [part[0].tensors[name] for part in parts], dim=1
+                            )
+                            for name in first.tensors
+                        }
+                    ),
+                    first.protocol,
+                ), {
+                    "phase": phase,
+                    "epoch": epoch,
+                    "draw_seed": int(draw),
+                    "sample_indices": absolute.tolist(),
+                    "sample_ids": list(context.sample_ids),
+                    "rng_policy": "sample_v1",
+                }
         with (
             evaluation_rng(spike_seed)
             if self.binding.encoder.kind == "custom"
@@ -231,6 +297,7 @@ class DatasetProvider:
                 _rate_seed=rate_seed,
                 _validated=True,
                 _event_index=self.event_index,
+                _context=context,
             )
         if next(iter(resolved.tensors.values())).shape[0] != self.steps_count:
             raise ValueError(
@@ -243,7 +310,22 @@ class DatasetProvider:
             "draw_seed": int(draw),
             "rate_selection_seed": rate_seed,
             "spike_encoding_seed": spike_seed,
+            **(
+                {"rng_streams": list(context.rng_streams)}
+                if context.rng_streams
+                else {}
+            ),
             "encoder": resolved.protocol["dataset_binding"]["encoder"],
+            **(
+                {
+                    "initial_state": {
+                        "signature": resolved.tensors.initial_state.signature,
+                        "provenance": dict(resolved.tensors.initial_state.provenance),
+                    }
+                }
+                if getattr(resolved.tensors, "initial_state", None) is not None
+                else {}
+            ),
         }
         if self.binding.sample_ids_key is not None:
             metadata["sample_ids"] = self.snapshot[0][self.binding.sample_ids_key][
@@ -372,7 +454,10 @@ def _batch_preparer(*, inputs, device, device_encoding, stream):
         )
         tensors = resolved.tensors
         if stream is not None and not device_encoding:
-            tensors = {name: value.pin_memory() for name, value in tensors.items()}
+            tensors = BatchInputs(
+                {name: value.pin_memory() for name, value in tensors.items()},
+                getattr(tensors, "initial_state", None),
+            )
         return tensors, metadata
 
     return prepare
@@ -384,14 +469,11 @@ def _batch_stager(*, pending, staged, stream, device, submit):
         host, metadata = future.result()
         if stream is not None:
             with torch.cuda.stream(stream):
-                tensors = {
-                    name: value.to(device, non_blocking=True)
-                    for name, value in host.items()
-                }
+                tensors = host.moved(device, non_blocking=True)
                 event = torch.cuda.Event()
                 event.record(stream)
         else:
-            tensors = {name: value.to(device) for name, value in host.items()}
+            tensors = host.moved(device)
             event = None
         staged.append((request, tensors, metadata, host, event))
         submit(pool)
@@ -473,7 +555,7 @@ def iter_batches(inputs, requests, *, prefetch=0):
                 if event is not None:
                     current = torch.cuda.current_stream(device)
                     current.wait_event(event)
-                    for tensor in tensors.values():
+                    for tensor in (*tensors.values(), *tensors.state_tensors()):
                         tensor.record_stream(current)
                 yield request, tensors, metadata
                 # Pinned source lifetime must extend through the asynchronous copy.
@@ -585,6 +667,11 @@ def simulate_dataset(
             active_recording = replace(recording, sink=dataset_sink)
         result = model(
             encoded,
+            **(
+                {"initial_state": encoded.initial_state}
+                if getattr(encoded, "initial_state", None) is not None
+                else {}
+            ),
             diagnostics=diagnostics,
             interventions=tuple(active),
             runtime_state=runtime_state,

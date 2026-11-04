@@ -12,7 +12,7 @@ export const contentTasks = [
     'current-lif', 'customisation', 'hodgkin-huxley', 'meanfield', 'animated-neuron',
   ].map(name => ({
     script: `sync-${name}.ts`,
-    examples: name === 'training' ? [name, 'native-training'] : [name],
+    examples: name === 'training' ? [name, 'native-training', 'native-finetuning'] : [name],
   })),
   {
     script: 'sync-benchmarks.ts',

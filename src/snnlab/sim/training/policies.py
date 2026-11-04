@@ -47,8 +47,13 @@ class Batching:
     stratify_by: str | None = None
     remainder: Literal["keep", "drop", "merge_small"] = "keep"
     min_batch_size: int | None = None
+    microbatch_size: int | None = None
 
     def __post_init__(self):
+        if self.microbatch_size is not None and (
+            type(self.microbatch_size) is not int or self.microbatch_size < 1
+        ):
+            raise ValueError("microbatch_size must be a positive integer")
         if self.order not in {"sequential", "shuffle", "stratified"}:
             raise ValueError("batching order must be sequential, shuffle or stratified")
         if self.remainder not in {"keep", "drop", "merge_small"}:
@@ -65,7 +70,10 @@ class Batching:
             raise ValueError("min_batch_size requires merge_small")
 
     def to_dict(self):
-        return asdict(self)
+        values = asdict(self)
+        if self.microbatch_size is None:
+            values.pop("microbatch_size")
+        return values
 
     def sizes(self, count, batch_size):
         if self.min_batch_size is not None and self.min_batch_size > batch_size:
@@ -169,3 +177,4 @@ class EpochReport:
     validation: FrozenValues | None
     observations: FrozenValues | None
     timing: FrozenValues | None
+    microbatches: int = 0

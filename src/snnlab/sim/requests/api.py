@@ -30,6 +30,7 @@ from snnlab.sim.runtime.interventions import Intervention
 from snnlab.sim.runtime.recording import MeasurementWindow, RecordingSpec
 from snnlab.sim.runtime.resets_decisions import DecisionSegments, ResetVoltage
 from snnlab.sim.runtime.state import GraphRuntimeState
+from snnlab.sim.training.initialization import WeightInitialization
 from snnlab.sim.training.observations import EpochObservations
 from snnlab.sim.training.policies import Batching, EpochReport, TrainingMetrics
 from snnlab.sim.training.selection import CheckpointSelection
@@ -177,6 +178,7 @@ def train(
     device: str = "auto",
     diagnostics: bool = True,
     checkpoint: Path | None = None,
+    weights: WeightInitialization | None = None,
     observations: EpochObservations | None = None,
     checkpoint_selection: CheckpointSelection | None = None,
     retain_parameters: bool = True,
@@ -196,7 +198,13 @@ def train(
     tracing: TraceSpec | None = None,
     snapshot: str | Path | SnapshotSpec | None = None,
 ) -> ExecutionResult:
-    """Run native training with optional validation, testing and checkpoint resume."""
+    """Train natively, optionally transferring weights or resuming a checkpoint.
+
+    ``batch_size`` is the effective optimizer batch. Set
+    ``Batching(microbatch_size=...)`` to bound physical forward/backward batches.
+    Registered dataset encoders may return ``PreparedBatch`` for multiple named
+    inputs and fresh per-presentation synaptic initialization.
+    """
     from snnlab.sim.training.trainer import train as run_training
 
     policy = _resolve_performance(
@@ -234,6 +242,7 @@ def train(
         device=device,
         diagnostics=diagnostics,
         checkpoint=checkpoint,
+        weights=weights,
         observations=observations,
         checkpoint_selection=checkpoint_selection,
         retain_parameters=retain_parameters,

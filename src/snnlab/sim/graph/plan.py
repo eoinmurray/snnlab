@@ -75,7 +75,7 @@ class CapabilityIssue:
 
 GRAPH_CAPABILITIES_V1 = {
     "schema": "tools/snnsim.capabilities/v1",
-    "connectivity": {"dense", "conv2d"},
+    "connectivity": {"dense", "conv2d", "one_to_one"},
     "neurons": {"coba_lif", "cuba_lif", "leaky_integrator", "custom_neuron"}
     | N.STATEFUL_KINDS,
     "synapses": {

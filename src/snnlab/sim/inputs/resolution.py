@@ -7,7 +7,7 @@ import json
 import math
 from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from numbers import Integral
 from pathlib import Path
 from typing import Any
@@ -1127,6 +1127,7 @@ def _encode_custom_dataset(
     _spike_seed,
     device,
     cap,
+    context=None,
 ):
     spec_row = {"definition": encoder.definition, "config": dict(encoder.config)}
     definition = E.resolve("encoder", spec_row)
@@ -1141,6 +1142,15 @@ def _encode_custom_dataset(
                 "labels": labels,
                 "sample_ids": arrays[binding.sample_ids_key],
             }
+        import inspect
+
+        if (
+            encoder.rng_policy == "sample_v1"
+            and "context" not in inspect.signature(definition.function).parameters
+        ):
+            raise ValueError(
+                "sample_v1 custom encoders require an explicit context keyword"
+            )
         spikes = definition.function(
             callback_arrays,
             selected,
@@ -1149,8 +1159,15 @@ def _encode_custom_dataset(
             config=encoder.config,
             seed=encoder.seed if _spike_seed is None else _spike_seed,
             **({"device": torch.device(device)} if device_aware else {}),
+            **(
+                {"context": context}
+                if "context" in inspect.signature(definition.function).parameters
+                else {}
+            ),
         )
-    if (
+    from snnlab.sim.inputs.preparation import PreparedBatch
+
+    if not isinstance(spikes, (Mapping, PreparedBatch)) and (
         not isinstance(spikes, torch.Tensor)
         or spikes.ndim != 3
         or spikes.shape[1:] != (cap, channels)
@@ -1165,7 +1182,80 @@ def _encode_custom_dataset(
         "seed": encoder.seed,
         **(encoder_device_policy(device) if device_aware else {}),
     }
+    if context is not None and context.rng_streams:
+        encoder_row["rng_domains"] = [
+            {"domain": domain, "policy": policy}
+            for domain, policy in sorted(
+                {(row["domain"], row["policy"]) for row in context.rng_streams}
+            )
+        ]
     return spikes, encoder_row
+
+
+def _dataset_batch_values(spikes, *, binding, cap):
+    from snnlab.sim.inputs.preparation import PreparedBatch
+
+    initial_state = None
+    coordinated = isinstance(spikes, (Mapping, PreparedBatch))
+    if isinstance(spikes, PreparedBatch):
+        initial_state = spikes.initial_state
+        spikes = spikes.inputs
+    tensors = (
+        dict(spikes) if isinstance(spikes, Mapping) else {binding.input_id: spikes}
+    )
+    if any(not isinstance(name, str) or not name for name in tensors):
+        raise ValueError("dataset encoder input names must be nonempty strings")
+    if any(
+        not isinstance(value, torch.Tensor) or value.ndim != 3 or value.shape[1] != cap
+        for value in tensors.values()
+    ):
+        raise ValueError("dataset encoder tensors must align with selected samples")
+    if coordinated and any(
+        value.dtype not in {torch.float32, torch.bool} for value in tensors.values()
+    ):
+        raise ValueError("custom dataset tensors require float32 or bool dtype")
+    return tensors, initial_state
+
+
+def _presentation_provenance(state, context):
+    from snnlab.sim.runtime.presentation import PresentationState
+
+    if not isinstance(state, PresentationState):
+        raise TypeError("PreparedBatch.initial_state must be PresentationState")
+    return replace(
+        state,
+        provenance={
+            **state.provenance,
+            "preparation": {
+                "phase": context.phase,
+                "epoch": context.epoch,
+                "draw_seed": context.draw_seed,
+                "sample_ids": list(context.sample_ids),
+                "sample_indices": list(context.sample_indices),
+                "root_seed": context.root_seed,
+                "rng_streams": list(context.rng_streams),
+            },
+        },
+    )
+
+
+def _dataset_anchor(graph, binding):
+    specs = {row["id"]: row for row in graph.get("inputs", [])}
+    if binding.input_id not in specs or (
+        binding.encoder.kind != "custom" and set(specs) != {binding.input_id}
+    ):
+        raise ValueError(
+            "dataset snapshot binding requires exactly its one named graph input"
+        )
+    spec = specs[binding.input_id]
+    declared = spec.get("shape", [])
+    if declared[:2] != ["time", "batch"] or len(declared) != 3:
+        raise ValueError(
+            "dataset snapshot binding requires graph input shape ['time', 'batch', channels]"
+        )
+    if binding.encoder.kind != "custom" and spec.get("signal_type") != "spikes":
+        raise ValueError("dataset snapshot binding requires a spike graph input")
+    return declared
 
 
 def resolve_dataset_snapshot_binding(
@@ -1181,21 +1271,24 @@ def resolve_dataset_snapshot_binding(
     _rate_seed=None,
     _validated=False,
     _event_index=None,
+    _context=None,
 ) -> tuple[ResolvedDenseInputs, tuple[TargetArrayBinding, ...]]:
     """Load, select, and encode one immutable MNIST/SHD-style NPZ snapshot."""
-    specs = {row["id"]: row for row in graph.get("inputs", [])}
-    if set(specs) != {binding.input_id}:
-        raise ValueError(
-            "dataset snapshot binding requires exactly its one named graph input"
+    if _snapshot is None and binding.encoder.rng_policy == "sample_v1":
+        from snnlab.sim.inputs.provider import DatasetProvider
+
+        provider = DatasetProvider(
+            graph,
+            binding,
+            device=device,
+            execution_seed=execution_seed,
+            protocol=protocol,
         )
-    spec = specs[binding.input_id]
-    declared = spec.get("shape", [])
-    if declared[:2] != ["time", "batch"] or len(declared) != 3:
-        raise ValueError(
-            "dataset snapshot binding requires graph input shape ['time', 'batch', channels]"
-        )
-    if spec.get("signal_type") != "spikes":
-        raise ValueError("dataset snapshot binding requires a spike graph input")
+        resolved = provider.batch(range(provider.sample_count))
+        return ResolvedDenseInputs(
+            resolved.tensors, provider.protocol
+        ), provider.targets
+    declared = _dataset_anchor(graph, binding)
     (
         source_path,
         source_digest,
@@ -1210,6 +1303,14 @@ def resolve_dataset_snapshot_binding(
         binding=binding, _snapshot=_snapshot, _indices=_indices, _validated=_validated
     )
 
+    if _context is None:
+        from snnlab.sim.inputs.preparation import BatchContext
+
+        _context = BatchContext(
+            tuple(map(int, selected)),
+            tuple(sample_ids or selected.tolist()),
+            root_seed=binding.encoder.seed,
+        )
     encoder = binding.encoder
     dt_ms = float(graph["timebase"]["dt"]["value"])
     channels = int(declared[2])
@@ -1283,6 +1384,7 @@ def resolve_dataset_snapshot_binding(
             _spike_seed=_spike_seed,
             device=device,
             cap=cap,
+            context=_context,
         )
 
     else:
@@ -1304,9 +1406,14 @@ def resolve_dataset_snapshot_binding(
             ),
         },
     }
+    tensors, initial_state = _dataset_batch_values(spikes, binding=binding, cap=cap)
+    if initial_state is not None:
+        initial_state = _presentation_provenance(initial_state, _context)
     resolved = resolve_dense_array_bindings(
         graph,
-        bindings=(DenseArrayBinding(binding.input_id, spikes, source),),
+        bindings=tuple(
+            DenseArrayBinding(name, value, source) for name, value in tensors.items()
+        ),
         device=device,
         seed=execution_seed,
         _validated=encoder.kind != "custom",
@@ -1380,4 +1487,12 @@ def resolve_dataset_snapshot_binding(
         if binding.target_id
         else ()
     )
-    return ResolvedDenseInputs(resolved.tensors, protocol), targets
+    from snnlab.sim.inputs.preparation import BatchInputs
+
+    return ResolvedDenseInputs(
+        BatchInputs(
+            resolved.tensors,
+            initial_state.to(device) if initial_state is not None else None,
+        ),
+        protocol,
+    ), targets

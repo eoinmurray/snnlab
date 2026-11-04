@@ -9,7 +9,7 @@ from __future__ import annotations
 import torch
 
 from snnlab._shared import neurons as N
-from snnlab._shared.spatial import convolution_drive, pool_tensor, signal_spatial_shape
+from snnlab._shared.spatial import pool_tensor, signal_spatial_shape, structured_drive
 from snnlab.sim.graph.kernels import neuron_kernel, prepare_kernel, synapse_kernel
 
 
@@ -161,7 +161,7 @@ def _projection_drive(
         source = pool_tensor(source, shape, config)
     if projection.id in spatial:
         shape, config = spatial[projection.id]
-        drive = convolution_drive(source, weights[projection.parameter], shape, config)
+        drive = structured_drive(source, weights[projection.parameter], shape, config)
     else:
         drive = source @ weights[projection.parameter]
     return drive
@@ -182,7 +182,9 @@ def _block_projection_sources(plan, pools, projection_rows):
         config = projection_rows[projection.id].get("connectivity")
         if config is not None:
             spatial[projection.id] = (
-                signal_spatial_shape(plan.graph, projection.source),
+                signal_spatial_shape(plan.graph, projection.source)
+                if config["kind"] == "conv2d"
+                else None,
                 config,
             )
     return sources, spatial

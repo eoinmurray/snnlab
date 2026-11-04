@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import math
+import platform
 import time
 from collections.abc import Mapping
 from dataclasses import replace
@@ -117,6 +118,8 @@ class _TrainingTiming:
         self.epoch = None
         self.started = None
         if self.enabled:
+            if self.device.startswith("cuda"):
+                torch.cuda.reset_peak_memory_stats(self.device)
             self.switch("setup")
 
     def switch(self, phase, epoch=None):
@@ -146,7 +149,26 @@ class _TrainingTiming:
         )
         return {
             "mode": self.mode,
-            "scope": "complete train call after argument validation; excludes caller preparation and persistence unless save_*_checkpoint is requested",
+            "environment": {
+                "python": platform.python_version(),
+                "torch": str(torch.__version__),
+                "cuda": torch.version.cuda,
+                "cudnn": torch.backends.cudnn.version(),
+                "device": self.device,
+                "device_name": torch.cuda.get_device_name(self.device)
+                if self.device.startswith("cuda")
+                else platform.processor(),
+            },
+            "device_memory": {
+                "scope": "process allocator peaks reset at native train setup; includes existing live tensors",
+                "peak_allocated_bytes": torch.cuda.max_memory_allocated(self.device)
+                if self.device.startswith("cuda")
+                else None,
+                "peak_reserved_bytes": torch.cuda.max_memory_reserved(self.device)
+                if self.device.startswith("cuda")
+                else None,
+            },
+            "scope": "native phases after argument validation through result assembly; includes requested save_*_checkpoint persistence; excludes caller preparation and final performance-report/end-snapshot assembly",
             "training_scope": "minibatch preparation, forward/loss/backward, optimizer/constraints, update bookkeeping and in-loop checkpoint selection; excludes epoch evaluations",
             "total_s": sum(self.totals.values()),
             **{f"{phase}_s": self.totals.get(phase, 0.0) for phase in phases},
@@ -210,6 +232,7 @@ def _emit_epoch_report(
             split_snapshot("validation"),
             FrozenValues(row["observations"]) if "observations" in row else None,
             FrozenValues(epoch_timing) if epoch_timing is not None else None,
+            microbatches=row.get("microbatches", completed_updates + executed_updates),
         )
         with evaluation_rng():
             spec.on_epoch_end(report)
@@ -233,6 +256,13 @@ def _record_online_metrics(row, online_sums, online_count):
     row.update({f"train_{key}": value for key, value in online.items()})
     row["train_measurement"] = "online_pre_update"
     row["train_examples"] = online_count
+
+
+def _microbatch_counts(epoch, batching, batch_sizes):
+    if batching.microbatch_size is None:
+        return {}
+    count = sum(math.ceil(size / batching.microbatch_size) for size in batch_sizes)
+    return {"microbatches": epoch * count, "epoch_microbatches": count if epoch else 0}
 
 
 def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
@@ -356,6 +386,12 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
     if trace is not None:
         trace.bind(model)
     graph = model.plan.graph
+    if spec.weights is not None:
+        from snnlab.sim.training.initialization import initialize_weights
+
+        provenance = initialize_weights(model, spec.weights)
+        model.initialization_metadata["weights_only"] = provenance
+        built.metrics["initialization"] = copy.deepcopy(model.initialization_metadata)
     training = spec.training
     if training is None and spec.bundle is not None:
         manifest, _ = load_graph_bundle(spec.bundle)
@@ -1009,6 +1045,21 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
                 "examples": examples_consumed,
                 "epoch_examples": epoch_examples,
                 "epoch_updates": epoch_updates,
+                **(
+                    {
+                        "microbatches": sum(
+                            math.ceil(size / batching.microbatch_size)
+                            for size in batch_sizes
+                        )
+                        * next_data_state.get("epoch", 0)
+                        + sum(
+                            math.ceil(size / batching.microbatch_size)
+                            for size in batch_sizes[: next_data_state.get("batch", 0)]
+                        )
+                    }
+                    if batching.microbatch_size is not None
+                    else {}
+                ),
             }
             if persist_reporting
             else None,
@@ -1124,6 +1175,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
     def evaluate_split(inputs, targets, *, probe_name=None, test=False):
         sample_count = dataset_sample_count(inputs)
         draws = inputs.draw_seeds if isinstance(inputs, DatasetProvider) else (None,)
+        evaluation_batch_size = (
+            spec.batching.microbatch_size if spec.batching is not None else None
+        ) or batch_size
         presentation_count = sample_count * len(draws)
         phase = (
             "test"
@@ -1168,12 +1222,14 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
                 for draw_seed in draws:
                     requests = (
                         (
-                            torch.arange(start, min(start + batch_size, sample_count)),
+                            torch.arange(
+                                start, min(start + evaluation_batch_size, sample_count)
+                            ),
                             phase,
                             0,
                             draw_seed,
                         )
-                        for start in range(0, sample_count, batch_size)
+                        for start in range(0, sample_count, evaluation_batch_size)
                     )
                     for request, evaluation_inputs, _ in iter_batches(
                         inputs, requests, prefetch=spec.dataset_prefetch
@@ -1185,6 +1241,12 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
                         }
                         forward, signals = model._forward(
                             evaluation_inputs,
+                            **(
+                                {"initial_state": evaluation_inputs.initial_state}
+                                if getattr(evaluation_inputs, "initial_state", None)
+                                is not None
+                                else {}
+                            ),
                             diagnostics=False,
                             required_signals=required_signals
                             if probe_name is None
@@ -1289,6 +1351,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
             return
         timing.switch("reporting", epoch)
         row = {"epoch": epoch}
+        row.update(_microbatch_counts(epoch, batching, batch_sizes))
         observations = {}
         selection_metrics = None
         splits = {}
@@ -1433,6 +1496,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
 
     replay = TrainingReplay(spec, model, training, scheduled, tracing=trace is not None)
 
+    if batching.microbatch_size is not None:
+        replay.reasons.append("microbatch gradient accumulation")
+
     update_context = TrainingUpdateContext(
         model=model,
         optimizer=optimizer,
@@ -1454,6 +1520,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
         precision=spec.precision,
         targets=resolved_targets,
         dataset_inputs=resolved_inputs,
+        microbatch_size=batching.microbatch_size,
     )
 
     snapshots = SnapshotSession(
@@ -1477,7 +1544,12 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
     timing.switch("training", scheduled[0][0] + 1 if dataset_mode else None)
     requests = (
         (indices, "train", epoch if dataset_mode else completed_updates + index, None)
-        for index, (epoch, _, indices) in enumerate(scheduled)
+        for index, (epoch, _, effective_indices) in enumerate(scheduled)
+        for indices in (
+            effective_indices.split(batching.microbatch_size)
+            if batching.microbatch_size is not None
+            else (effective_indices,)
+        )
     )
     batches = iter(
         iter_batches(resolved_inputs, requests, prefetch=spec.dataset_prefetch)
@@ -1716,6 +1788,17 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
             "checkpoint_selection": selection_contract,
             "selection_record": final_checkpoint.selection_record,
             "resumed_from_update": completed_updates,
+            "batch_counts": {
+                "effective_batch_size": batch_size,
+                "microbatch_size": batching.microbatch_size or batch_size,
+                "optimizer_updates": completed_this_call,
+                "examples": sum(len(indices) for _, _, indices in scheduled),
+                "microbatches": sum(
+                    math.ceil(len(indices) / (batching.microbatch_size or len(indices)))
+                    for _, _, indices in scheduled
+                ),
+                "checkpoint_boundary": "effective_batch",
+            },
         },
     )
 

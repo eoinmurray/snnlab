@@ -331,3 +331,18 @@ and external state. Strict extension validation retains normal execution.
 Use `cuda_graphs="off"` to disable capture. Startup costs can outweigh replay in
 short runs. CUDA Adam/AdamW also select fused execution when no explicit
 fused/foreach choice was supplied; `fused_optimizer="off"` disables selection.
+
+Native fine-tuning uses `train(weights=WeightInitialization(...))` for effective
+weight transfer with a fresh optimizer, and `checkpoint=` for strict resume.
+`batch_size` sets the effective optimizer batch; `Batching(microbatch_size=...)`
+bounds each preparation/forward/backward batch. Sample-weighted accumulation
+clips and updates only at effective-batch boundaries.
+
+Registered dataset encoders may return a complete named-input mapping or
+`PreparedBatch(inputs, PresentationState(...))`. The latter carries selected
+synaptic state and pending input events into an otherwise fresh presentation.
+`BatchContext` supplies identities and phase/epoch/draw coordinates;
+`DatasetEncoder(rng_policy="sample_v1")` opts into per-image named RNG streams.
+See `examples/native-finetuning/example.py`, the sim API reference and
+`benchmarks/native-finetuning/` for the complete workflow and explicit compilation/
+CUDA replay fallbacks.

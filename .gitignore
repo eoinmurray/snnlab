@@ -24,3 +24,7 @@ examples/customisation/results/network.bundle/
 
 /examples/native-training/results/*
 !/examples/native-training/results/network.png
+
+examples/native-finetuning/results/*
+!/examples/native-finetuning/results/network.png
+benchmarks/native-finetuning/results/

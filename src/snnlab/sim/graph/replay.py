@@ -58,6 +58,7 @@ def _replay_fallback_reason(model, inputs, kwargs):
         kwargs.get(name)
         for name in (
             "runtime_state",
+            "initial_state",
             "recording",
             "interventions",
             "resets",

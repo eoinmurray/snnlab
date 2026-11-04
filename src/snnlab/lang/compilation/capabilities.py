@@ -102,7 +102,11 @@ def capability_requirements(graph: Mapping[str, Any]) -> dict[str, Any]:
             {
                 "element": projection["id"],
                 "features": [
-                    *(["connectivity:conv2d"] if "connectivity" in projection else []),
+                    *(
+                        [f"connectivity:{projection['connectivity']['kind']}"]
+                        if "connectivity" in projection
+                        else []
+                    ),
                     f"synapse:{projection['synapse']['kind']}",
                     f"connection:{projection['connection']}",
                     "delay:none" if delay is None else "delay:explicit",
