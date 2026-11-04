@@ -103,10 +103,11 @@ def neuron_kernel(
                 ref_steps=ref_steps,
                 spike_function=spike_function,
             )
-    elif kind in N.ADAPTIVE_KINDS:
+    elif kind in N.STATEFUL_KINDS:
 
         def step(state, excitatory, inhibitory):
-            return X.adaptive_neuron(
+            function = X.mqif_neuron if kind in N.MQIF_KINDS else X.adaptive_neuron
+            return function(
                 state,
                 excitatory,
                 inhibitory,

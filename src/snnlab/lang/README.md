@@ -64,12 +64,60 @@ checkpoint paths deliberately do not belong in the graph.
 Conductance projection weights use `uS` (microsiemens), matching the graph
 executor and its `leak_us` neuron parameters. Current projection weights use
 `nA` (nanoamperes) with `CUBA_LIF`/`LIF`, `CUBA_ALIF`/`ALIF`,
-`CUBA_ADEX`/`ADEX` and `ExponentialCurrent`. `COBA_ALIF` and `COBA_ADEX`
+`CUBA_ADEX`/`ADEX`, `CUBA_MQIF`/`MQIF` and `ExponentialCurrent`.
+`COBA_ALIF`, `COBA_ADEX` and `COBA_MQIF`
 accept conductance synapses. Adaptive populations expose `.state("adaptation")`
 in mV for ALIF and nA for AdEx. Authoring and
 execution validate the synapse/neuron family and parameter units; values are
 never silently converted between physical units. Bundles produced before SNNLang 0.2.0 may carry an
 incorrect legacy `nS` label even though their values were executed as `uS`.
+
+### MQIF neurons
+
+`MQIF()` aliases `CUBA_MQIF()`; `COBA_MQIF()` accepts conductances.
+The intrinsic equations follow the two-timescale MQIF form described in
+[Van Pottelbergh, Drion and Sepulchre, *Robust Modulation of Integrate-and-Fire Models*](https://doi.org/10.1162/neco_a_01065).
+The conductance coupling and discrete-time conventions below are SNNLab choices.
+These are two-timescale multi-quadratic integrate-and-fire neurons, with
+fast regenerative and slow restorative quadratic currents:
+
+```text
+C dV/dt = gf (V - Vf)^2 - gs (Vs - Vsc)^2 + I_syn
+tau_s dVs/dt = V - Vs
+```
+
+Here `V` is membrane voltage (`initial_voltage_mv` initially), `Vs` is slow
+voltage (`initial_slow_voltage_mv`), `C` is `capacitance_nf` in nF,
+`gf` and `gs` are `fast_coefficient_na_per_mv2` and
+`slow_coefficient_na_per_mv2` in nA/mV², `Vf` and `Vsc` are
+`fast_center_mv` and `slow_center_mv` in mV, and `tau_s` is `tau_slow`
+in ms. Time is measured in ms and `I_syn` in nA. For CUBA,
+`I_syn = I_e - I_i`, where `I_e` and `I_i` are incoming excitatory and
+inhibitory currents. For COBA,
+`I_syn = g_e (E_e - V) + g_i (E_i - V)`, where `g_e` and `g_i` are incoming
+conductances in µS and `E_e`/`E_i` are `excitatory_reversal_mv` (0) and
+`inhibitory_reversal_mv` (-80) in mV.
+
+Voltage uses forward Euler; the slow filter uses its exact exponential decay
+with the previous voltage held constant. At a candidate voltage greater than
+or equal to `spike_mv`, a spike is emitted, `V` becomes `reset_mv` and `Vs`
+becomes `slow_reset_mv`. During `refractory` time, voltage stays at reset,
+spiking is suppressed, and slow voltage continues to relax toward reset.
+The usual surrogate and `voltage_grad_dampen` apply. The slow state is
+available as `cells.state("slow_voltage")` in mV, including recordings and
+saved-state continuation.
+
+Defaults are `C=1`, `gf=0.001`, `gs=0.002`, `Vf=-40`, `Vsc=-45`,
+`tau_s=100 * ms`, `spike_mv=20`, both reset voltages and both initial
+voltages -65, zero refractory time and gradient dampening 1. These are
+illustrative parameters, not a fitted biological cell. As with other explicit
+nonlinear solvers, check timestep convergence for your chosen parameters.
+This initial built-in supports two timescales; it has no ultraslow state.
+
+```python
+cells = net.population("mqif", size=64, neuron=snn.MQIF(tau_slow=100 * snn.ms))
+net.output("slow_voltage", cells.state("slow_voltage"))
+```
 
 `snnlab.lang` owns the semantic projection of a bundle through `lang.diagram(...)`;
 the resulting renderer-neutral diagram is rendered by `viz.render_diagram(...)`,

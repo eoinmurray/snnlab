@@ -77,7 +77,7 @@ GRAPH_CAPABILITIES_V1 = {
     "schema": "tools/snnsim.capabilities/v1",
     "connectivity": {"dense", "conv2d"},
     "neurons": {"coba_lif", "cuba_lif", "leaky_integrator", "custom_neuron"}
-    | N.ADAPTIVE_KINDS,
+    | N.STATEFUL_KINDS,
     "synapses": {
         "ampa",
         "gaba",
@@ -118,7 +118,7 @@ def graph_capability_issues(graph: Mapping[str, Any]) -> list[CapabilityIssue]:
         "cuba_lif",
         "leaky_integrator",
         "custom_neuron",
-    } | N.ADAPTIVE_KINDS
+    } | N.STATEFUL_KINDS
     synapse_capabilities: set[str] = {
         "ampa",
         "gaba",

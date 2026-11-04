@@ -270,3 +270,52 @@ def classification(objective):
         objective.get("kind") == "custom_objective"
         and E.resolve("objective", objective).classification
     )
+
+
+def mqif_neuron(
+    state, excitatory, inhibitory, *, dt_ms, config, spike_function, ref_steps=None
+):
+    """Two-timescale MQIF: forward Euler voltage, frozen-voltage exact slow filter.
+
+    Both currents use left-endpoint state. During refractory steps voltage is
+    held at reset while slow voltage continues to relax. Spikes reset both
+    voltage states. No artificial leak term is added to the quadratic model.
+    """
+    if ref_steps is None:
+        ref_steps = N.resolve_refractory(config, dt_ms)["refractory_steps"]
+    voltage, slow = state["voltage"], state["slow_voltage"]
+    refractory = state["refractory"]
+    drive = excitatory - inhibitory
+    if config["kind"].startswith("coba_"):
+        drive = excitatory * (
+            float(config["excitatory_reversal_mv"]) - voltage
+        ) + inhibitory * (float(config["inhibitory_reversal_mv"]) - voltage)
+    current = (
+        float(config["fast_coefficient_na_per_mv2"])
+        * (voltage - float(config["fast_center_mv"])).square()
+        - float(config["slow_coefficient_na_per_mv2"])
+        * (slow - float(config["slow_center_mv"])).square()
+        + drive
+    )
+    update = dt_ms / float(config["capacitance_nf"]) * current
+    dampen = float(config["voltage_grad_dampen"])
+    update = update.detach() + (update - update.detach()) / dampen
+    active = refractory == 0
+    reset = torch.full_like(voltage, float(config["reset_mv"]))
+    candidate = torch.where(active, voltage + update, reset)
+    spikes = spike_function(candidate - float(config["spike_mv"])) * active.to(
+        voltage.dtype
+    )
+    rho = math.exp(-dt_ms / float(config["tau_slow"]["value"]))
+    next_slow = rho * slow + (1 - rho) * voltage
+    # Arithmetic reset retains surrogate gradients through the slow state.
+    next_slow = next_slow + (float(config["slow_reset_mv"]) - next_slow) * spikes
+    return {
+        "voltage": torch.where(spikes.bool(), reset, candidate),
+        "refractory": torch.where(
+            spikes.bool(),
+            torch.full_like(refractory, ref_steps),
+            (refractory - 1).clamp(min=0),
+        ),
+        "slow_voltage": next_slow,
+    }, spikes

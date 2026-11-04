@@ -20,7 +20,9 @@ compiler authenticates the selected schedule and any training recipe together.
 See [Compilation](../../../docs/content/docs/api/lang/compilation.mdx) for exact
 duration, counter/held-step and checkpoint compatibility rules.
 
-Built-in spiking models include current and conductance LIF, ALIF and AdEx.
+Built-in spiking models include current and conductance LIF, ALIF, AdEx and MQIF.
+MQIF has fast and slow quadratic currents and a recordable slow-voltage state;
+see [MQIF equations and numerical conventions](../lang/README.md#mqif-neurons).
 ALIF uses a spike-triggered threshold offset; AdEx uses an exponential voltage
 term and adaptation current. Their per-cell adaptation is differentiable and
 included in saved runtime state and recordings. See the

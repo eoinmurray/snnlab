@@ -8,8 +8,10 @@ import math
 from snnlab._shared.timing import refractory_steps
 
 ADAPTIVE_KINDS = frozenset({"cuba_alif", "coba_alif", "cuba_adex", "coba_adex"})
-CURRENT_KINDS = frozenset({"cuba_lif", "lif", "cuba_alif", "cuba_adex"})
-SPIKING_KINDS = ADAPTIVE_KINDS | {"cuba_lif", "coba_lif"}
+MQIF_KINDS = frozenset({"cuba_mqif", "coba_mqif"})
+STATEFUL_KINDS = ADAPTIVE_KINDS | MQIF_KINDS
+CURRENT_KINDS = frozenset({"cuba_lif", "lif", "cuba_alif", "cuba_adex", "cuba_mqif"})
+SPIKING_KINDS = STATEFUL_KINDS | {"cuba_lif", "coba_lif"}
 REFRACTORY_TIMING = "following_steps"
 LEGACY_REFRACTORY_TIMING = "legacy_coba"
 
@@ -92,6 +94,8 @@ def migrate_refractory(graph):
 
 def state_units(spec):
     kind = spec.get("kind")
+    if kind in MQIF_KINDS:
+        return {"slow_voltage": "mV"}
     if kind in ADAPTIVE_KINDS:
         return {"adaptation": "mV" if kind.endswith("alif") else "nA"}
     return {}
@@ -148,6 +152,10 @@ def validate(spec, *, legacy=False):
 
     number = _number_validator(spec=spec, label=label)
 
+    if kind in MQIF_KINDS:
+        _validate_mqif(spec, label)
+        return
+
     _validate_time_constants(spec=spec, kind=kind, label=label)
 
     for key in ("capacitance_nf", "voltage_grad_dampen"):
@@ -169,5 +177,41 @@ def validate(spec, *, legacy=False):
             number("adaptation_increment_mv", nonnegative=True)
             number("initial_adaptation_mv", nonnegative=True)
     if kind.startswith("coba_"):
+        number("excitatory_reversal_mv")
+        number("inhibitory_reversal_mv")
+
+
+def _validate_mqif(spec, label):
+    number = _number_validator(spec=spec, label=label)
+    slow = spec.get("tau_slow", {})
+    if (
+        not isinstance(slow, dict)
+        or slow.get("unit") != "ms"
+        or isinstance(slow.get("value"), bool)
+        or not isinstance(slow.get("value"), (int, float))
+        or not math.isfinite(slow["value"])
+        or slow["value"] <= 0
+    ):
+        raise ValueError(f"{label} tau_slow must be positive finite ms")
+    for key in (
+        "capacitance_nf",
+        "voltage_grad_dampen",
+        "fast_coefficient_na_per_mv2",
+    ):
+        number(key, positive=True)
+    number("slow_coefficient_na_per_mv2", nonnegative=True)
+    for key in (
+        "fast_center_mv",
+        "slow_center_mv",
+        "spike_mv",
+        "reset_mv",
+        "slow_reset_mv",
+        "initial_voltage_mv",
+        "initial_slow_voltage_mv",
+    ):
+        number(key)
+    if spec["reset_mv"] >= spec["spike_mv"]:
+        raise ValueError(f"{label} reset_mv must be below spike_mv")
+    if spec["kind"].startswith("coba_"):
         number("excitatory_reversal_mv")
         number("inhibitory_reversal_mv")
