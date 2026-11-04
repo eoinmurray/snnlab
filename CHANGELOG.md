@@ -10,6 +10,12 @@ separate compatibility contracts.
 
 1. Built-in two-timescale `MQIF`/`CUBA_MQIF` and `COBA_MQIF` neurons, with slow-voltage recording, surrogate gradients, compiled execution and portable runtime state. Independent ODE convergence, hybrid reset, validation and integration tests cover both variants.
 
+2. Coordinated custom dataset encoders can return multiple named input tensors and `PreparedBatch` with batch-local `PresentationState`: selected synaptic conductance/current and pending delayed input events, fresh neuron/time/readout state, portable representative-state persistence and initialization provenance.
+3. `BatchContext` provides sample identities, phase/epoch/draw coordinates and independent named generators. Opt-in `DatasetEncoder(rng_policy="sample_v1")` supports partition-invariant sensory and inhibitory preparation; default batch RNG behavior remains unchanged.
+4. `Batching(microbatch_size=...)` accumulates sample-weighted physical batches into each effective optimizer batch, including unequal remainders. Clip, AdamW and constraints run once; checkpoints resume at effective-batch boundaries. Native metrics/callbacks distinguish physical batches, examples and updates; unsupported CUDA replay reports a precise fallback.
+5. `train(weights=WeightInitialization(...))` transfers effective named weights from tensors, native checkpoints or network snapshots with explicit mappings/new-parameter policies and source provenance, independently of optimizer resume.
+6. `lang.OneToOne()` provides compact matching-channel projections with delays, GABA filtering, trainable/frozen weights and compiled blocks. Added synthetic native fine-tuning example, numerical/gradient/checkpoint conformance tests and an opt-in complete-work CPU/CUDA benchmark with timing, memory and execution-path reporting.
+
 ## [0.31.1] - 2026-11-03
 
 ### Changed

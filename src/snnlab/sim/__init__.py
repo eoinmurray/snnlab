@@ -9,6 +9,10 @@ from importlib import import_module
 from ._version import __version__
 
 _EXPORTS = {
+    "WeightInitialization": "training.initialization",
+    "PresentationState": "runtime.presentation",
+    "PreparedBatch": "inputs.preparation",
+    "BatchContext": "inputs.preparation",
     "TrainingHistory": "training.history",
     "HistoryEpoch": "training.history",
     "MetricCurve": "training.history",

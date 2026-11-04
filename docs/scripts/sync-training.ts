@@ -14,6 +14,7 @@ function section(start: string, end: string, indent = true) {
 }
 const replacements: Record<string, string> = {
   SCRIPT: script.trimEnd(),
+  FINETUNING: readFileSync(new URL("../../examples/native-finetuning/example.mdx", import.meta.url), "utf8").trimEnd(),
   PROGRESS_SCRIPT: readFileSync(new URL("../../examples/native-training/example.py", import.meta.url), "utf8").trimEnd(),
   DATASET: section('def make_dataset', '\ndef main', false),
   SETUP: section('net = lang.Network(', 'inputs = net.input('),
@@ -39,4 +40,10 @@ const progressDir = new URL("../public/native-training/", import.meta.url);
 mkdirSync(progressDir, { recursive: true });
 for (const name of ["example.py", "network.png"]) {
   copyFileSync(new URL(`../../examples/native-training/${name.endsWith(".py") ? name : `results/${name}`}`, import.meta.url), new URL(name, progressDir));
+}
+
+const fineDir = new URL("../public/native-finetuning/", import.meta.url);
+mkdirSync(fineDir, { recursive: true });
+for (const name of ["example.py", "network.png"]) {
+  copyFileSync(new URL(`../../examples/native-finetuning/${name.endsWith(".py") ? name : `results/${name}`}`, import.meta.url), new URL(name, fineDir));
 }

@@ -45,6 +45,7 @@ class TrainingUpdateContext:
     precision: str
     targets: Mapping[str, torch.Tensor]
     dataset_inputs: Any
+    microbatch_size: int | None = None
 
 
 @dataclass
@@ -80,13 +81,20 @@ def _prepare_batch(context, update, scheduled, batches, trace):
     return batch_inputs, encoding_metadata, epoch, batch, sample_indices, batch_targets
 
 
-def _forward_and_loss(context, batch_inputs, batch_targets, trace):
+def _forward_and_loss(
+    context, batch_inputs, batch_targets, trace, *, accumulating=False
+):
     """Run forward/loss directly, or return a captured replay result."""
     model = context.model
 
     def numerical_step(batch_inputs, batch_targets):
         forward, signals = model._forward(
             batch_inputs,
+            **(
+                {"initial_state": batch_inputs.initial_state}
+                if getattr(batch_inputs, "initial_state", None) is not None
+                else {}
+            ),
             diagnostics=context.diagnostics,
             required_signals=context.required_signals,
             retain_parameters=False,
@@ -100,13 +108,24 @@ def _forward_and_loss(context, batch_inputs, batch_targets, trace):
             loss.backward()
         return forward, signals, loss, components
 
+    if (
+        getattr(batch_inputs, "initial_state", None) is not None
+        and "per-presentation initial state" not in context.replay.reasons
+    ):
+        context.replay.reasons.append("per-presentation initial state")
     replayed = context.replay.run(batch_inputs, batch_targets, numerical_step)
     if replayed is not None:
         return replayed, True
-    context.optimizer.zero_grad(set_to_none=True)
+    if not accumulating:
+        context.optimizer.zero_grad(set_to_none=True)
     with trace.region("forward") if trace is not None else nullcontext():
         forward, signal_values = model._forward(
             batch_inputs,
+            **(
+                {"initial_state": batch_inputs.initial_state}
+                if getattr(batch_inputs, "initial_state", None) is not None
+                else {}
+            ),
             diagnostics=context.diagnostics,
             required_signals=context.required_signals,
             retain_parameters=False,
@@ -197,7 +216,13 @@ def _capture_and_clip_gradients(context, update, update_count):
                 for parameter in group["params"]
             ],
             float(clip),
+            error_if_nonfinite=True,
         )
+    elif any(
+        parameter.grad is not None and not torch.isfinite(parameter.grad).all()
+        for parameter in context.parameter_map.values()
+    ):
+        raise RuntimeError("nonfinite combined gradient")
     if context.observation_spec is not None:
         context.gradient_measurements().add(before_clip, context.parameter_map)
     return before_clip
@@ -223,6 +248,14 @@ def run_training_update(
     batches: iter_batches,
 ) -> TrainingUpdateOutcome:
     """Run one update while preserving the trainer's numerical boundaries."""
+    if context.microbatch_size is not None:
+        return _run_accumulated_update(
+            context,
+            update=update,
+            update_count=update_count,
+            scheduled=scheduled,
+            batches=batches,
+        )
     (
         batch_inputs,
         encoding_metadata,
@@ -252,4 +285,69 @@ def run_training_update(
         batch=batch,
         online_metrics=online_sums,
         online_count=online_count,
+    )
+
+
+def _run_accumulated_update(context, *, update, update_count, scheduled, batches):
+    """Weight each physical mean by its actual share of the effective batch."""
+    epoch, batch, indices = scheduled
+    context.optimizer.zero_grad(set_to_none=True)
+    loss_total, components_total, online_sums = None, {}, {}
+    encodings = []
+    if context.trace is not None:
+        context.trace.begin_update(update, epoch, batch, context.parameter_map)
+    for local in indices.split(context.microbatch_size):
+        with (
+            context.trace.region("batch_prepare_wait")
+            if context.trace is not None
+            else nullcontext()
+        ):
+            _, inputs, metadata = next(batches)
+        if context.trace is not None:
+            context.trace.observe_inputs(inputs)
+        targets = {
+            name: value.index_select(0, local.to(value.device))
+            for name, value in context.targets.items()
+        }
+        (forward, signals, loss, components), replayed = _forward_and_loss(
+            context, inputs, targets, context.trace, accumulating=True
+        )
+        weight = len(local) / len(indices)
+        with (
+            context.trace.region("backward")
+            if context.trace is not None
+            else nullcontext()
+        ):
+            _backward(context, loss * weight, None, replayed)
+        values, _ = _accumulate_online_metrics(
+            context, forward, loss, components, targets, local
+        )
+        for name, value in values.items():
+            online_sums[name] = online_sums.get(name, 0) + value
+        loss_total = (
+            loss.detach() * weight
+            if loss_total is None
+            else loss_total + loss.detach() * weight
+        )
+        for name, value in components.items():
+            components_total[name] = (
+                components_total.get(name, 0) + value.detach() * weight
+            )
+        encodings.append(metadata)
+    if context.trace is not None:
+        context.trace.observe_gradients(context.parameter_map)
+    before_clip = _capture_and_clip_gradients(context, update, update_count)
+    _optimizer_step_and_constraints(context, context.trace, update, update_count)
+    return TrainingUpdateOutcome(
+        forward,
+        signals,
+        loss_total,
+        components_total,
+        before_clip,
+        {"microbatches": encodings},
+        indices,
+        epoch,
+        batch,
+        online_sums,
+        len(indices) if context.metric_policy.train == "online" else 0,
     )

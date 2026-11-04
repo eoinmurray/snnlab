@@ -1,0 +1,15 @@
+## Native fine-tuning with private inputs
+
+The [synthetic fine-tuning script](/native-finetuning/example.py) keeps sensory
+spikes fixed per image while refreshing private inhibitory events and
+inhibition-only prehistory each training epoch. Validation reuses three fixed
+draws at epoch zero and completed epochs. It uses `PreparedBatch`,
+`PresentationState`, `WeightInitialization` and native microbatch accumulation,
+and saves final/selected checkpoints plus a representative initial state.
+
+![Synthetic fine-tuning network](/native-finetuning/network.png)
+
+See the [API contracts](/api/sim#coordinated-inputs-and-presentation-state) for
+RNG invariance, state units and queue semantics, accumulation boundaries,
+weights-only initialization and performance fallbacks. Run the script directly;
+it generates only local synthetic data and does not download MNIST.

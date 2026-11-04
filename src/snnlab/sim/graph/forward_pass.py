@@ -12,7 +12,7 @@ import torch
 from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.gains import sample as sample_gain
-from snnlab._shared.spatial import convolution_drive, pool_tensor, signal_spatial_shape
+from snnlab._shared.spatial import pool_tensor, signal_spatial_shape, structured_drive
 from snnlab.sim.artifacts.inference import retention_identity
 from snnlab.sim.diagnostics.tracing import TraceSession, current_trace
 from snnlab.sim.graph import dynamics as M
@@ -86,6 +86,7 @@ class _ForwardOptions:
 
     diagnostics: bool
     runtime_state: GraphRuntimeState | None
+    initial_state: Any
     interventions: Sequence[Intervention]
     resets: Sequence[ResetVoltage]
     decisions: DecisionSegments | None
@@ -170,6 +171,7 @@ def run_forward_pass(
     *,
     diagnostics: bool = True,
     runtime_state: GraphRuntimeState | None = None,
+    initial_state=None,
     interventions: Sequence[Intervention] = (),
     resets: Sequence[ResetVoltage] = (),
     decisions: DecisionSegments | None = None,
@@ -188,6 +190,7 @@ def run_forward_pass(
     options = _ForwardOptions(
         diagnostics=diagnostics,
         runtime_state=runtime_state,
+        initial_state=initial_state,
         interventions=interventions,
         resets=resets,
         decisions=decisions,
@@ -206,6 +209,10 @@ def run_forward_pass(
     runtime = _ForwardState()
     _validate_forward_inputs(forward, runtime)
     _restore_runtime_state(forward, runtime)
+    if initial_state is not None:
+        from snnlab.sim.runtime.presentation import apply_presentation_state
+
+        apply_presentation_state(forward, runtime, initial_state)
     _prepare_forward_context(forward, runtime)
     _select_execution_path(forward, runtime)
     if not forward.block_reasons:
@@ -1137,12 +1144,14 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
                 def project(*, projection=projection, source=source):
                     config = forward.projection_rows[projection.id].get("connectivity")
                     if config is not None:
-                        return convolution_drive(
+                        return structured_drive(
                             source,
                             forward.effective_weights[projection.parameter],
                             signal_spatial_shape(
                                 forward.executor.plan.graph, projection.source
-                            ),
+                            )
+                            if config["kind"] == "conv2d"
+                            else None,
                             config,
                         )
                     return source @ forward.effective_weights[projection.parameter]

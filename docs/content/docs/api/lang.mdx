@@ -152,13 +152,30 @@ net.connect(
 | `delay` | `Quantity` or `None`, default `None` | Additional transmission delay, expressed using `lang.ms`. |
 | `enabled` | `bool = True` | Whether this projection participates in execution. |
 | `modulation` | Gain specification, importable callable or `None` | Optional nonnegative scalar schedule applied to new arriving drive. See [Weight modulation](/api/lang#modulation). |
-| `connectivity` | `lang.Conv2d(...)` or `None` | Shared-kernel spatial projection, or the existing dense projection when omitted. |
+| `connectivity` | `lang.Conv2d(...)`, `lang.OneToOne()` or `None` | Shared-kernel spatial, matching-channel, or dense projection. |
 | `allow_autapses` | `bool = False` | Permit a neuron to feed its own output back to itself. Exclusion applies to same-population identity regardless of routing label; different populations retain matching-index connections. |
 | `initialization_scaling` | `str` or `None`, default `None` | `"direct"` or `"fan_in_normalized"`. Omission normalizes new weights or inherits an existing parameter policy; conflicting shared-parameter settings fail. See [Initialization scaling](/api/lang#initialization-scaling). |
 
 The connection kind describes graph routing; the target port determines excitatory, inhibitory or modulatory polarity. Feedback requires an explicit positive delay. Graph execution requires delays to be integer multiples of the network timestep. Recurrent and feedback connections from populations use at least one timestep of causal delay.
 
 Newly authored projections always serialize `allow_autapses`. The returned object exposes `projection.allow_autapses`. Exclusion is structural: forbidden diagonal entries remain ineffective during execution and are cleared after optimization and checkpoint restoration. Initially zero non-self entries remain trainable. Shared parameters requiring different exclusion masks fail compilation/planning. Historical graphs without the field retain permissive behaviour.
+
+#### One-to-one connectivity
+
+`lang.OneToOne()` connects matching source/target channels using one weight per
+channel. Pass `connectivity=lang.OneToOne()` to `connect`; source and target
+sizes must match. Graph parameter shape is `(channels, 1)`; runtime tensor shape
+is `(1, channels)`. The default fan-in normalization divides by one. This is an
+explicit compact representation, not automatic sparsification. To transfer a
+dense diagonal runtime matrix, explicitly use `dense.diagonal().reshape(1, -1)`.
+Projection IDs, units, delay, synaptic decay, constraints and training policy
+remain explicit. Built-in eager and compiled block paths multiply channels
+elementwise; GABA filtering and pending input queues retain their physical delay
+semantics. Same-population one-to-one connections require autapses. Runtime
+state signatures authenticate this connectivity. Dense and compact parameter
+shapes are distinct in checkpoints; use explicit weights-only conversion.
+Performance depends on workload/device; use complete-work measurements before
+claiming a speedup.
 
 #### Convolutional connectivity
 

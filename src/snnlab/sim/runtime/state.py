@@ -104,6 +104,20 @@ def runtime_state_compatibility(
         "dt_ms": plan.dt_ms,
         **(
             {
+                "structured_connectivity": {
+                    row["id"]: row["connectivity"]
+                    for row in plan.graph.get("projections", [])
+                    if row.get("connectivity", {}).get("kind") == "one_to_one"
+                }
+            }
+            if any(
+                row.get("connectivity", {}).get("kind") == "one_to_one"
+                for row in plan.graph.get("projections", [])
+            )
+            else {}
+        ),
+        **(
+            {
                 "spatial": {
                     "shapes": {
                         row["id"]: row["spatial_shape"]

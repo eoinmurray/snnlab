@@ -92,6 +92,7 @@ def train(
     device: str = "auto",
     diagnostics: bool = True,
     checkpoint: Path | None = None,
+    weights: WeightInitialization | None = None,
     observations: EpochObservations | None = None,
     checkpoint_selection: CheckpointSelection | None = None,
     retain_parameters: bool = True,
@@ -436,6 +437,94 @@ The resolver computes the source file digest, selects samples with the cap/order
 A dataset snapshot must be the only element of `input_bindings`. During training it is also exclusive with explicit targets/target bindings; use its `target_id` to bind integer labels to the recipe's target. Simulation resolves the input and does not use its labels as training targets.
 
 
+#### Coordinated inputs and presentation state
+
+One registered custom encoder can supply **all named graph inputs** by returning
+`{input_id: tensor}`. `DatasetSnapshotBinding.input_id` identifies the anchor input
+whose channel count is passed to the callback. Return `PreparedBatch(inputs,
+initial_state)` to additionally initialize selected synaptic state. This remains
+one dataset binding with one coordinated sample selection and label vector.
+Each tensor must have `(time, selected_samples, input_channels)` shape, a common
+duration and sample axis, float32 or bool dtype, and values appropriate to its
+graph signal/unit. Missing or unknown input names, nonfinite values and nonbinary
+spike inputs fail validation. Use a continuous dimensionless input for
+amplitude-scaled events; spike inputs retain their binary contract. Old
+single-tensor encoders and single-input bindings still work.
+
+```python
+from snnlab.sim import PreparedBatch, PresentationState
+
+# Inside a registered encoder with an explicit context keyword:
+initial = PresentationState(
+    signature=config["signature"],
+    conductances={"private": initial_g},  # (samples, target cells), µS
+    input_histories={"artificial": pending},  # (delay, samples, channels)
+    provenance={"policy": "inhibition_only", "prehistory_ms": 60},
+)
+return PreparedBatch(
+    inputs={"drive": sensory_spikes, "artificial": inhibitory_events},
+    initial_state=initial,
+)
+```
+
+`PresentationState(signature, conductances={}, currents={}, input_histories={},
+provenance={})` uses a signature from `runtime_state_signature(plan,
+projection_mode=..., threshold_inclusive=...)` matching the executor's numerical
+policy. Conductances use µS, currents nA. Pending input queues are chronological,
+oldest first, with exactly the graph's maximum delay for that input. Each state
+is batch-local: selected tensors can differ for every sample. Unspecified
+synapses, neuron voltages, refractory state, sensory/readout state and reductions
+use normal fresh initialization; scored time and completed steps start at zero.
+External histories are detached and copied, so training never differentiates
+through them. Shape, dtype, device, finite values, units/projection names and graph
+signature are checked. Custom synapse initialization is rejected explicitly;
+additional custom state is not part of this partial-state API. State cannot be
+combined with runtime continuation.
+
+For a one-step inhibitory input, the first scored conductance is
+$g_0=r g_{-1}+q s_{-1}$, where $g$ is conductance in µS, $r=\exp(-\Delta t/\tau)$,
+$\Delta t$ is the timestep in ms, $\tau$ is synaptic decay in ms, $q$ is event
+increment in µS and $s$ is the dimensionless pending event. The queue delivers
+that event exactly once. This initializes synapses before the first scored
+update; it does not add burn-in steps or crop the scored trial.
+
+State preparation works in native training and all validation draws, including
+epoch zero. The provider's `presentation_initialization` protocol records the
+policy, graph signature, representative provenance and RNG policy; requested
+update history retains batch coordinates. Retain a representative state with
+`initial.save(path)` and reload it using `PresentationState.load(path,
+device="cpu")`. This authenticated JSON/NPZ artifact contains partial synaptic
+state, not a continuation checkpoint. Compiled blocks accept the initialized
+tensors; CUDA replay currently reports `per-presentation initial state` and
+runs the normal path. Do not infer capture from compilation being requested.
+
+#### Identity-based preparation RNG
+
+`DatasetEncoder.rng_policy="batch_v1"` preserves the historical batch-dependent
+seed scheme. Opt into `"sample_v1"` for identity-based built-in rate encoding or
+custom encoders using an explicit `context` keyword. `BatchContext` provides
+`sample_indices`, `sample_ids`, `phase`, `epoch`, `draw_seed` and `root_seed`.
+Evaluation uses epoch zero; training supplies its zero-based epoch. Optional
+sample IDs come from the snapshot's unique integer/Unicode identity array;
+otherwise identities are absolute source-row indices.
+
+Use `context.generator(sample_id, "sensory", policy="fixed", device=device)`
+for fixed image encoding, and `context.generator(sample_id, "inhibition",
+policy="presentation", device=device)` for fresh training inhibition and fixed
+evaluation draws. `context.seed(...)` supplies the same seed for other local
+RNG libraries. Named domains are independent; choosing separate names for
+calibration, sensory and inhibition prevents accidental interference. Dataset
+selection and epoch shuffling retain their independent order seeds. The
+`snnlab.sample-rng/v1` SHA-256 derivation includes root seed, original sample
+identity, domain and policy coordinates. Fixed streams ignore phase, epoch and
+draw; presentation streams include them. For custom encoders, generate each
+sample from its own named generator and keep preparation sample-separable;
+using the legacy batch seed or process-global RNG does not implement this
+policy. Under this contract, reordering, microbatch partitioning and prefetch
+scheduling preserve each sample's draws. Evaluation restores global RNG state.
+CPU and device RNG implementations are distinct: equal seeds across devices do
+not imply equal inputs. Compare materialized inputs for numerical conformance.
+
 #### Automatic batch encoding
 
 Dataset bindings resolve content identity, sample selection, labels and ordering without constructing the whole time-by-sample spike tensor. The provider verifies source-file stability while extracting arrays once into private temporary NPY files, then uses read-only memory mappings. Built-in rate encoders transfer compact features/rates and generate the current batch on the selected device. Event snapshots are validated/indexed by sample once, then vectorized binary binning visits only the selected samples and transfers compact bin coordinates to the execution device. Prebinned tensors retain CPU preparation and transfer. Custom encoders retain their registered backend/configuration and can opt into a device keyword. Temporary mappings live with the provider; they are not a dataset registry. Dataset download and split construction remain caller responsibilities.
@@ -761,6 +850,93 @@ With explicit batching, `shuffle=False` is neutral; `shuffle=True` is allowed on
 `min_batch_size` is required only for `merge_small`, and must be a positive integer no larger than `batch_size`. It is a tail threshold, not a class quota. For 200 examples, batch size 64 and threshold 20, batch sizes are 64/64/72. A merged final batch may exceed the nominal size. The policy does not impose any objective weighting.
 
 Resolved schedule metadata lives at `result.metrics["execution_protocol"]["training_iteration"]["batching"]`, including algorithm, label digest, actual batch sizes, examples/batches per epoch and dropped examples. Epoch rows record actual `epoch_examples`, `epoch_updates`, `dropped_examples`, cumulative `examples` and absolute `update`. Encoding requests use the actual ordered indices and batch sizes. Checkpoint coordinates, update limits and epoch boundaries use the resolved schedule.
+
+#### Microbatch accumulation
+
+`batch_size` is the **effective optimizer batch**. Set
+`Batching(microbatch_size=64)` with `batch_size=256` to prepare and execute at
+most 64 samples at once. Native evaluation also uses this physical size. The
+trainer shuffles once per dataset epoch, divides each effective batch into
+physical batches, and weights each mean loss by its sample count divided by
+the effective batch's actual size. Custom objectives and regularizers must
+respect this sample-mean contract; batch-coupled losses are not equivalent to
+unsplit execution.
+
+Clipping, one optimizer step, weight decay and constraints happen once after
+all physical batches. Nonfinite combined gradients fail before the optimizer
+step. Unequal physical batches and kept/merged effective remainders use their
+actual denominators. For 6,300 examples, effective batch 256 gives 24 full
+updates plus a 156-example update: 25 per epoch and 500 over 20 epochs.
+`updates` and checkpoint coordinates always count effective optimizer updates.
+Saves occur only at these boundaries; no partial gradients are silently saved
+or discarded. Resume authenticates the batching policy and next effective
+batch. Re-supplying the same policy is required.
+
+Replay counters count physical forward/backward batches; optimizer counts are
+reported separately. `metrics["batch_counts"]` separates physical `microbatches`, effective
+`optimizer_updates`, and `examples` executed in this call. Epoch rows and
+`EpochReport.microbatches` record cumulative physical batches when accumulation
+is enabled. Online losses and accuracy aggregate all contributing samples;
+the returned forward tensors describe the final physical batch. Last-gradient
+snapshots are the combined pre-clipping gradients. CUDA replay reports
+`microbatch gradient accumulation` and falls back; bounded compiled numerical
+blocks remain independently eligible.
+
+#### Weights-only initialization
+
+```python
+from snnlab.sim import WeightInitialization
+
+# source may be named tensors, a TrainingCheckpoint, its directory, or a
+# NetworkSnapshot. Mapping is destination name -> source name.
+weights = WeightInitialization(
+    source=source_checkpoint,
+    mapping={"sensory.weight": "old_sensory.weight"},
+    new_parameters=("private.weight",),
+    unused="ignore",
+)
+result = train(
+    bundle=bundle,
+    weights=weights,
+    input_bindings=(binding,),
+    epochs=20,
+    batch_size=256,
+    batching=Batching(microbatch_size=64),
+)
+```
+
+Unmapped parameters transfer by identical name. Missing sources, unknown
+mapping destinations, duplicate/ambiguous mapping sources, mismatched runtime
+`(fan_in, target)` shape, dtype, nonfinite values and constraint violations
+fail. `new_parameters` explicitly retains the graph's fresh initialization;
+extra source weights require `unused="ignore"` (default `"error"`). Effective
+weights copy directly, without randomization or fan-in scaling a second time.
+Source tensor SHA-256 identities, mapping and orientation are recorded in
+`initialization["weights_only"]`, checkpoints and run snapshots.
+
+With `weights=` and no `checkpoint=`, optimizer moments, scheduler/update/epoch
+coordinates and training RNG start fresh. `checkpoint=` retains strict resume
+semantics. To resume a fine-tuning run, also supply the same weights policy so
+its source identity can be authenticated; the checkpoint then restores the
+fine-tuning parameters and optimizer. A source checkpoint supplied only through
+`weights=` never resumes its optimizer or counters.
+
+The executable [native fine-tuning example](/native-finetuning/example.py)
+uses two input pools, inhibition-only prehistory, three fixed validation draws,
+accumulation, rate observations, and selected/final checkpoints. Its scored
+trial is a short synthetic correctness fixture, not a classifier benchmark.
+See the repository's `benchmarks/native-finetuning/` for an opt-in complete-work
+CPU/CUDA timing harness. Requested/resolved compilation, precision, block paths,
+replay/capture counts and fallback reasons appear in `metrics["performance"]`.
+Use `training_timing=True` for setup, complete training, validation and reporting
+wall phases, device/library versions and CUDA peak allocated/reserved bytes
+(CPU memory peaks are null). CUDA allocator peaks reset at native setup and
+include existing live process tensors. Ordinary measurements use reductions/compact rates where already
+supported; online reductions, recording and partial dependencies can still
+force kernel-loop execution and are reported. Named RNG domains and realized per-sample seeds are retained in requested update
+encoding metadata and representative-state provenance. No new GPU speed claim follows
+from these APIs. Cold compilation and the first epoch must be separated from
+warmed epochs when reporting performance.
 
 #### on_epoch_end
 

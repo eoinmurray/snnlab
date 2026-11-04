@@ -64,6 +64,11 @@ class DatasetEncoder:
     definition: str | None = None
     config: Mapping[str, Any] = field(default_factory=dict)
     rates_hz: Sequence[float] | None = None
+    rng_policy: Literal["batch_v1", "sample_v1"] = "batch_v1"
+
+    def __post_init__(self):
+        if self.rng_policy not in {"batch_v1", "sample_v1"}:
+            raise ValueError("dataset rng_policy must be batch_v1 or sample_v1")
 
 
 @dataclass(frozen=True)

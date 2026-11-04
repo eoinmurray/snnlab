@@ -208,6 +208,7 @@ class TrainingReplay:
         return {
             "schema": "snnlab.training-cuda-graphs/v1",
             "policy": self.policy,
+            "count_unit": "physical_forward_backward_batch",
             "selected": "cuda_graphs" if self.replays else "normal",
             "scope": "forward, loss and backward; optimizer, clipping, constraints and reporting stay outside capture",
             "captures": len(self.entries),

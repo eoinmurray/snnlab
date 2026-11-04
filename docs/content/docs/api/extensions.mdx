@@ -592,6 +592,18 @@ Callback: `function(arrays, selected, *, dt_ms, channels, config, seed) -> Tenso
 
 Encoders can opt into device preparation by adding an explicit optional keyword, `device="cpu"`, to that signature. The resolver passes the execution device; generate tensors and local seeded `torch.Generator(device=device)` draws there when supported. Legacy callbacks receive their original arguments. Accelerator preparation records `snnlab.encoder-device/v1`, backend and PyTorch version in encoder provenance; CPU identities remain unchanged. use a new versioned definition if the random stream changes. Encoders still run on the caller thread, including prefetched lookahead, so scoped global RNG restoration cannot race training. CPU encoder outputs use bounded pinned/asynchronous transfer queues on CUDA.
 
+An encoder with an explicit `context` keyword receives `sim.BatchContext`,
+including original sample identities, phase, zero-based epoch and evaluation
+draw. It may return a complete mapping of graph input names to aligned float32
+or bool tensors, or `sim.PreparedBatch(inputs, initial_state)` for selected
+synaptic prehistory. Each named tensor follows its declared signal and unit;
+continuous inputs support amplitude-scaled events. Labels remain bound from
+the selected immutable snapshot. Use `rng_policy="sample_v1"` with the
+context's per-image named generators for partition-invariant preparation.
+Return one state with a batch axis, not one shared history broadcast across
+images. See [coordinated inputs](/api/sim#coordinated-inputs-and-presentation-state)
+for contracts, validation and fallback notes. Preparation stays outside capture.
+
 Dataset encoders belong to external execution bindings, so the network bundle does not carry their definitions. Register the encoder's import reference when constructing that binding in each process.
 
 For arbitrary generators, temporal patterns or preprocessing, a normal Python function can instead produce a tensor supplied through [DenseArrayBinding](/api/sim#densearraybinding). This also supports non-spike continuous inputs. No new generator interface is necessary.

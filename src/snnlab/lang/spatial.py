@@ -9,6 +9,11 @@ from snnlab.lang._specs import Spec
 from snnlab.lang.network import Signal
 
 
+def OneToOne() -> Spec:
+    """One independent weight per matching source/target channel; no dense matrix."""
+    return Spec("one_to_one", {})
+
+
 def Conv2d(*, kernel_size, stride=1, padding=0) -> Spec:
     """Cross-correlation connectivity, independent of synaptic dynamics."""
     return Spec(

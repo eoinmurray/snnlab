@@ -86,6 +86,23 @@ def projection_shape(graph, row):
         source = signal_row(graph, row["source"])
         size = source.get("size", source.get("shape", [None])[-1])
         return [target["size"], size]
+    if config.get("kind") == "one_to_one":
+        target = next(
+            p
+            for p in graph["populations"]
+            if p["id"] == row["target"].partition(".")[0]
+        )
+        source = signal_row(graph, row["source"])
+        size = source.get("size", source.get("shape", [None])[-1])
+        if size != target["size"]:
+            raise ValueError(
+                "one-to-one connectivity requires equal source and target sizes"
+            )
+        if source_root(graph, row["source"]).partition(".")[0] == target[
+            "id"
+        ] and not row.get("allow_autapses", True):
+            raise ValueError("one-to-one recurrent connectivity requires autapses")
+        return [size, 1]
     if config.get("kind") != "conv2d":
         raise ValueError("unsupported projection connectivity")
     source_shape = signal_spatial_shape(graph, row["source"])
@@ -118,7 +135,9 @@ def pool_tensor(value, shape, config):
     return result.reshape(*leading, -1)
 
 
-def convolution_drive(source, weight, shape, config):
+def structured_drive(source, weight, shape, config):
+    if config.get("kind") == "one_to_one":
+        return source * weight.reshape(-1)
     import torch.nn.functional as F
 
     _, kernel, stride, padding = geometry(shape, config)

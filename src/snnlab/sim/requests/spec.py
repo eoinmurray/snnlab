@@ -18,6 +18,7 @@ from snnlab.sim.runtime.interventions import Intervention
 from snnlab.sim.runtime.recording import MeasurementWindow, RecordingSpec
 from snnlab.sim.runtime.resets_decisions import DecisionSegments, ResetVoltage
 from snnlab.sim.runtime.state import GraphRuntimeState
+from snnlab.sim.training.initialization import WeightInitialization
 from snnlab.sim.training.observations import EpochObservations
 from snnlab.sim.training.policies import Batching, EpochReport, TrainingMetrics
 from snnlab.sim.training.selection import CheckpointSelection
@@ -71,6 +72,7 @@ class ExecutionSpec:
     device: str = "auto"
     diagnostics: bool = True
     checkpoint: Path | None = None
+    weights: WeightInitialization | None = None
     runtime_state: GraphRuntimeState | None = None
     options: Mapping[str, Any] = field(default_factory=dict)
     observations: EpochObservations | None = None
@@ -102,6 +104,8 @@ class ExecutionSpec:
     def __post_init__(self):
         _performance_from_spec(self)
         self._validate_capture_requests()
+        if self.weights is not None and self.kind != "train":
+            raise ValueError("weights initialization requires train")
 
         for name in ("retain_parameters", "retain_final_state", "retain_runtime_state"):
             if not isinstance(getattr(self, name), bool):
