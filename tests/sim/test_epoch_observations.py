@@ -363,3 +363,60 @@ def test_history_logical_coordinates_are_checked(tmp_path):
     save_training_checkpoint(tmp_path / "checkpoint", first.training_checkpoint)
     with pytest.raises(ValueError, match="not contiguous"):
         train(replace(spec, checkpoint=tmp_path / "checkpoint"))
+
+
+@pytest.mark.parametrize("train_mode", ["none", "online"])
+def test_validation_only_activity_uses_no_training_evaluation(train_mode, monkeypatch):
+    spec = replace(
+        request(),
+        compile_mode=None,
+        training_timing=True,
+        metrics=TrainingMetrics(train=train_mode, initial=("validation",)),
+        observations=EpochObservations(
+            population_rates=("out",), output_activity=("out",)
+        ),
+    )
+    evaluations = []
+    original = GraphExecutor._forward
+
+    def track(model, inputs, **kwargs):
+        if not torch.is_grad_enabled():
+            evaluations.append(inputs["events"].shape[1])
+        return original(model, inputs, **kwargs)
+
+    monkeypatch.setattr(GraphExecutor, "_forward", track)
+    measured = train(spec)
+    assert evaluations == [2, 2, 1] * 3
+    assert measured.metrics["training_timing"]["train_evaluation_s"] == 0
+    rows = measured.metrics["epochs"]
+    assert [row["epoch"] for row in rows] == [0, 1, 2]
+    for row in rows:
+        assert "train" not in row["observations"]
+        activity = row["observations"]["validation"]
+        assert activity["sample_count"] == 5
+        assert np.isfinite(activity["population_rates_hz"]["out"])
+        assert "out" in activity["output_activity"]
+        if train_mode == "none":
+            assert "train_loss" not in row
+    expected = train(replace(spec, observations=None))
+    for name in measured.parameters:
+        torch.testing.assert_close(
+            measured.parameters[name], expected.parameters[name], rtol=0, atol=0
+        )
+    assert measured.metrics["selection_record"] == expected.metrics["selection_record"]
+
+
+def test_training_only_activity_allows_disabled_validation_metrics():
+    spec = replace(
+        request(),
+        compile_mode=None,
+        metrics=TrainingMetrics(
+            train="evaluate", validation="none", initial=("train",)
+        ),
+        observations=EpochObservations(population_rates=("out",)),
+        checkpoint_selection=None,
+    )
+    measured = train(spec)
+    for row in measured.metrics["epochs"]:
+        assert "train" in row["observations"]
+        assert "validation" not in row["observations"]

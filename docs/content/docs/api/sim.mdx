@@ -740,6 +740,13 @@ Set `TrainingMetrics(test="none")` to skip test evaluation. This field requires 
 
 **Type:** `EpochObservations | None`. **Default:** `None`. Requires graph `train` with positive `epochs`.
 
+Split activity observations apply only to splits enabled for fixed-weight evaluation.
+With `TrainingMetrics(train="none", validation="epoch")`, validation rates/activity
+are recorded at the requested initial evaluation and completed epochs, without a
+training-set evaluation. Online training metrics can likewise coexist with
+validation-only activity. At least one evaluated split is required; use explicit
+`ObservationProbe` inputs when neither split is evaluated.
+
 Import `EpochObservations` and `ObservationProbe` from `snnlab.sim`. Select exact graph IDs; all selections default to empty tuples and `probes` to an independent empty mapping. Unknown IDs, duplicate IDs, non-spiking population selections and non-trainable gradient selections are rejected.
 
 ```python

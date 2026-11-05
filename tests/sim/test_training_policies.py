@@ -406,7 +406,8 @@ def test_incompatible_policies_and_checkpoint_authentication(tmp_path):
         train(
             replace(
                 observation_request(),
-                metrics=TrainingMetrics(train="online", initial=("validation",)),
+                validation=None,
+                metrics=TrainingMetrics(train="online", validation="none", initial=()),
                 observations=EpochObservations(population_rates=("out",)),
             )
         )

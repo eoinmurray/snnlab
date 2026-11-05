@@ -512,10 +512,10 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
         and (spec.observations.population_rates or spec.observations.output_activity)
     ) and (
         metric_policy.train != "evaluate"
-        or (validation_data is not None and metric_policy.validation != "epoch")
+        and (validation_data is None or metric_policy.validation != "epoch")
     ):
         raise ValueError(
-            "split activity observations require enabled split evaluation; use separate probes for online training"
+            "split activity observations require at least one enabled split evaluation; use separate probes for online training"
         )
     batch_size = (
         spec.batch_size
