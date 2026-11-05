@@ -9,6 +9,12 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-11-05
+
+### Fixed
+
+1. Split activity observations follow the enabled fixed-weight evaluation splits independently. Validation-only population rates and output activity now work with disabled or online training metrics, without an extra training-set evaluation. Training-only observations likewise allow validation metrics to be disabled. Calls with no evaluated split still fail explicitly. Added evaluation-count, epoch-zero, parameter and checkpoint-selection regression checks.
+
 ## [0.32.1] - 2026-11-05
 
 ### Added
