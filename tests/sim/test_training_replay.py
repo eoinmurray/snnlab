@@ -282,3 +282,169 @@ def test_custom_dynamics_are_rejected_before_warmup():
         [(0, 0, torch.arange(2))] * 2,
     )
     assert "custom objective or regularizer" in replay.reasons
+
+
+def test_presentation_capture_buffers_are_private_and_structure_keys_are_complete():
+    from dataclasses import replace
+
+    from snnlab.sim.inputs.preparation import BatchInputs
+    from snnlab.sim.training.replay import _static_inputs
+
+    state = sim.PresentationState(
+        "graph-a",
+        conductances={"gaba": torch.ones(2, 3)},
+        currents={"current": torch.zeros(2, 3)},
+        input_histories={"events": torch.ones(1, 2, 3)},
+    )
+    inputs = BatchInputs({"events": torch.zeros(4, 2, 3)}, state)
+    static = _static_inputs(inputs)
+    key = TrainingReplay._key(inputs, {})
+    assert TrainingReplay._key(static, {}) == key
+    for group in ("conductances", "currents", "input_histories"):
+        source = next(iter(getattr(state, group).values()))
+        buffer = next(iter(getattr(static.initial_state, group).values()))
+        assert source.data_ptr() != buffer.data_ptr()
+        source.add_(2)
+        assert not torch.equal(source, buffer)
+    assert TrainingReplay._key(inputs, {}) == key  # Values are refreshed, not keyed.
+    for changed in (
+        None,
+        replace(state, signature="graph-b"),
+        replace(state, conductances={}),
+        replace(state, conductances={"other": torch.ones(2, 3)}),
+        replace(state, conductances={"gaba": torch.ones(1, 3)}),
+        replace(state, conductances={"gaba": torch.ones(2, 3).double()}),
+        replace(state, conductances={"gaba": torch.ones(3, 2).T}),
+        replace(state, input_histories={"events": torch.ones(2, 2, 3)}),
+    ):
+        assert TrainingReplay._key(BatchInputs(inputs, changed), {}) != key
+
+
+@pytest.mark.parametrize(
+    "bad,pattern",
+    [("current", "finite"), ("queue", "physically valid"), ("binary", "binary spikes")],
+)
+def test_presentation_value_checks_are_deferred_for_capture(bad, pattern):
+    from dataclasses import replace
+
+    from snnlab.sim.graph.validation import deferred_validation, validate_pending
+
+    net = lang.Network("state-checks", dt=1 * lang.ms)
+    events = net.input(
+        "events", shape=("time", "batch", 1), signal_type="spikes", unit="spike"
+    )
+    cells = net.population("cells", size=1, neuron=lang.CUBA_LIF())
+    projection = net.connect(
+        events,
+        cells.excitatory,
+        name="drive",
+        synapse=lang.ExponentialCurrent(tau=3 * lang.ms),
+        weight=lang.Constant(0.1),
+        delay=1 * lang.ms,
+    )
+    net.output("current", projection.current)
+    model = sim.GraphExecutor(
+        sim.plan_graph(lang.compile(net).graph), compile_mode=None
+    )
+    state = sim.PresentationState(
+        sim.runtime_state_signature(model.plan),
+        currents={"drive": torch.ones(1, 1)},
+        input_histories={"events": torch.ones(1, 1, 1)},
+    )
+    if bad == "current":
+        state = replace(state, currents={"drive": torch.full((1, 1), float("nan"))})
+    else:
+        state = replace(
+            state,
+            input_histories={
+                "events": torch.full((1, 1, 1), -1.0 if bad == "queue" else 0.5)
+            },
+        )
+    with deferred_validation() as checks:
+        model._forward({"events": torch.zeros(2, 1, 1)}, initial_state=state)
+    with pytest.raises(ValueError, match=pattern):
+        validate_pending(checks)
+
+
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=CUDA)])
+def test_presentation_replay_supports_signed_currents_and_longer_spike_queues(device):
+    import math
+
+    from snnlab.sim.inputs.preparation import BatchInputs
+
+    net = lang.Network("current-history", dt=1 * lang.ms)
+    events = net.input(
+        "events", shape=("time", "batch", 1), signal_type="spikes", unit="spike"
+    )
+    cells = net.population("cells", size=1, neuron=lang.CUBA_LIF())
+    projection = net.connect(
+        events,
+        cells.excitatory,
+        name="drive",
+        synapse=lang.ExponentialCurrent(tau=3 * lang.ms),
+        weight=lang.Constant(0.1),
+        initialization_scaling="direct",
+        delay=2 * lang.ms,
+    )
+    net.output("current", projection.current)
+    plan = sim.plan_graph(lang.compile(net).graph)
+    models = [
+        sim.GraphExecutor(
+            plan,
+            trainable_parameters=("drive.weight",),
+            compile_mode="default" if device == "cuda" else None,
+            precision="highest",
+        ).to(device)
+        for _ in range(2)
+    ]
+    replay = TrainingReplay(
+        ExecutionSpec(kind="train"), models[1], {}, [(0, 0, torch.arange(2))] * 3
+    )
+
+    def step(model, inputs, targets):
+        forward, _ = model._forward(
+            inputs, initial_state=inputs.initial_state, retain_runtime_state=False
+        )
+        loss = forward.outputs["current"].square().sum()
+        loss.backward()
+        return forward, loss
+
+    for index in range(3):
+        initial = sim.PresentationState(
+            sim.runtime_state_signature(plan),
+            currents={"drive": torch.full((2, 1), -0.1 * index, device=device)},
+            input_histories={
+                "events": torch.tensor([index % 2, (index + 1) % 2], device=device)
+                .float()
+                .view(2, 1, 1)
+                .expand(-1, 2, -1)
+                .clone()
+            },
+        )
+        inputs = BatchInputs({"events": torch.zeros(4, 2, 1, device=device)}, initial)
+        models[0].zero_grad(set_to_none=True)
+        expected, expected_loss = step(models[0], inputs, {})
+        result = replay.run(inputs, {}, lambda x, y: step(models[1], x, y))
+        if result is None:
+            models[1].zero_grad(set_to_none=True)
+            result = step(models[1], inputs, {})
+        actual, loss = result
+        torch.testing.assert_close(
+            actual.outputs["current"], expected.outputs["current"], atol=1e-6, rtol=1e-5
+        )
+        torch.testing.assert_close(loss, expected_loss, atol=1e-6, rtol=1e-5)
+        torch.testing.assert_close(
+            models[1].parameter_map()["drive.weight"].grad,
+            models[0].parameter_map()["drive.weight"].grad,
+            atol=1e-6,
+            rtol=1e-5,
+        )
+        current = initial.currents["drive"]
+        for t in range(4):
+            current = current * math.exp(-1 / 3)
+            if t < 2:
+                current = current + 0.1 * initial.input_histories["events"][t]
+            torch.testing.assert_close(
+                actual.outputs["current"][t], current, atol=1e-6, rtol=1e-5
+            )
+    assert replay.replays == (3 if device == "cuda" else 0)

@@ -27,7 +27,7 @@ def synchronize(device):
         torch.cuda.synchronize(device)
 
 
-def run_case(path, *, diagonal, microbatch, device, compile_mode, epochs):
+def run_case(path, *, diagonal, microbatch, device, compile_mode, epochs, cuda_graphs):
     bundle = example.circuit(diagonal=diagonal)
     reference = sim.build(
         bundle=bundle, device="cpu", performance=sim.Performance(compile_mode=None)
@@ -58,6 +58,33 @@ def run_case(path, *, diagonal, microbatch, device, compile_mode, epochs):
         torch.cuda.reset_peak_memory_stats(device)
     synchronize(device)
     started = time.perf_counter()
+    boundary = started
+    intervals = []
+
+    def observe_epoch(report):
+        nonlocal boundary
+        synchronize(device)
+        now = time.perf_counter()
+        intervals.append(
+            {
+                "epoch": report.epoch,
+                "scope": "cold setup plus initial evaluation and first complete epoch"
+                if report.epoch == 1
+                else "warmed complete epoch including preparation, transfers and evaluation",
+                "seconds": now - boundary,
+                "training_examples_per_s": 7 / report.timing["training_s"],
+                "peak_allocated_bytes": torch.cuda.max_memory_allocated(device)
+                if device.startswith("cuda")
+                else None,
+                "peak_reserved_bytes": torch.cuda.max_memory_reserved(device)
+                if device.startswith("cuda")
+                else None,
+            }
+        )
+        if device.startswith("cuda"):
+            torch.cuda.reset_peak_memory_stats(device)
+        boundary = time.perf_counter()
+
     result = sim.train(
         bundle=bundle,
         weights=sim.WeightInitialization(parameters),
@@ -73,9 +100,14 @@ def run_case(path, *, diagonal, microbatch, device, compile_mode, epochs):
         seed=7,
         device=device,
         performance=sim.Performance(
-            compile_mode=compile_mode, compile_block_steps=4, precision="highest"
+            compile_mode=compile_mode,
+            compile_block_steps=4,
+            precision="highest",
+            cuda_graphs=cuda_graphs,
         ),
         training_timing=True,
+        timing_mode="synchronized",
+        on_epoch_end=observe_epoch,
     )
     synchronize(device)
     seconds = time.perf_counter() - started
@@ -85,16 +117,24 @@ def run_case(path, *, diagonal, microbatch, device, compile_mode, epochs):
         "input_shape": [20, 7, 2],
         "effective_batch_sizes": [4, 3],
         "whole_train_call_s": seconds,
+        "epoch_intervals": intervals,
+        "cuda_graphs": result.metrics["cuda_graphs"],
         "timing": result.metrics["training_timing"],
         "performance": result.metrics["performance"],
         "epochs": result.metrics["epochs"],
         "parameter_bytes": sum(
             value.numel() * value.element_size() for value in result.parameters.values()
         ),
-        "peak_allocated_bytes": torch.cuda.max_memory_allocated(device)
+        "peak_allocated_bytes": max(
+            [row["peak_allocated_bytes"] for row in intervals]
+            + [torch.cuda.max_memory_allocated(device)]
+        )
         if device.startswith("cuda")
         else None,
-        "peak_reserved_bytes": torch.cuda.max_memory_reserved(device)
+        "peak_reserved_bytes": max(
+            [row["peak_reserved_bytes"] for row in intervals]
+            + [torch.cuda.max_memory_reserved(device)]
+        )
         if device.startswith("cuda")
         else None,
     }
@@ -105,6 +145,7 @@ def main():
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--cuda-graphs", choices=("auto", "off"), default="auto")
     parser.add_argument(
         "--output", type=Path, default=Path(__file__).resolve().parent / "results"
     )
@@ -119,7 +160,7 @@ def main():
         ids=np.arange(10),
     )
     report = {
-        "schema": "snnlab.native-finetuning-benchmark/v1",
+        "schema": "snnlab.native-finetuning-benchmark/v2",
         "environment": {
             "python": sys.version,
             "platform": platform.platform(),
@@ -141,6 +182,7 @@ def main():
                 device=args.device,
                 compile_mode="default" if args.compile else None,
                 epochs=args.epochs,
+                cuda_graphs=args.cuda_graphs,
             )
             for diagonal in (False, True)
             for microbatch in (None, 2)

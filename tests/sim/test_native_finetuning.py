@@ -334,7 +334,7 @@ def test_public_two_input_training_initial_validation_draws_and_accumulation(tmp
         == binding.encoder.config["signature"]
     )
     assert (
-        "per-presentation initial state"
+        "microbatch gradient accumulation"
         in result.metrics["cuda_graphs"]["fallback_reasons"]
     )
     assert sim.load_training_checkpoint(tmp_path / "selected").completed_updates <= 4
@@ -682,3 +682,264 @@ def test_coordinated_resume_preserves_rng_and_initial_state_identity(tmp_path):
         "rate_selection",
     }
     assert encoding["initial_state"]["provenance"]["preparation"]["sample_ids"]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+@pytest.mark.parametrize("precision,tolerance", [("highest", 3e-4), ("auto", 3e-2)])
+def test_native_presentation_replay_matches_full_updates(
+    tmp_path, precision, tolerance
+):
+    """Changing epoch histories, frozen weights and repeated 4/3 remainder batches."""
+    bundle, binding = data(tmp_path)
+    binding = replace(binding, sample_indices=tuple(range(7)))
+    kwargs = dict(
+        bundle=bundle,
+        input_bindings=[binding],
+        epochs=3,
+        batch_size=4,
+        seed=7,
+        device="cuda",
+        diagnostics=True,
+    )
+    results = [
+        sim.train(
+            **kwargs,
+            performance=sim.Performance(
+                compile_mode="default",
+                compile_block_steps=4,
+                precision=precision,
+                cuda_graphs=policy,
+            ),
+        )
+        for policy in ("off", "auto")
+    ]
+    expected, actual = results
+    for group in ("outputs", "diagnostics", "parameters", "gradients"):
+        left, right = getattr(actual, group), getattr(expected, group)
+        assert left.keys() == right.keys()
+        for name, value in right.items():
+            torch.testing.assert_close(
+                left[name], value, atol=tolerance, rtol=tolerance
+            )
+    for name, state in expected.optimizer_state.items():
+        for key, value in state.items():
+            torch.testing.assert_close(
+                actual.optimizer_state[name][key], value, atol=tolerance, rtol=tolerance
+            )
+    for left, right in zip(
+        actual.metrics["epochs"], expected.metrics["epochs"], strict=True
+    ):
+        assert left["train_loss"] == pytest.approx(
+            right["train_loss"], abs=tolerance, rel=tolerance
+        )
+    assert actual.metrics["cuda_graphs"]["captures"] == 2
+    assert actual.metrics["cuda_graphs"]["replayed_updates"] == 6
+    assert not actual.metrics["cuda_graphs"]["fallback_reasons"]
+    torch.testing.assert_close(
+        actual.parameters["private.weight"], torch.full((2,), 0.02), atol=0, rtol=0
+    )
+    assert "private.weight" not in actual.gradients
+    assert actual.optimizer_state.get("private.weight", {}) == {}
+
+
+def _compare_replay_optimizer_update(models, optimizers):
+    for name, parameter in models[0].parameter_map().items():
+        other = models[1].parameter_map()[name]
+        if parameter.grad is None:
+            assert other.grad is None
+        else:
+            torch.testing.assert_close(other.grad, parameter.grad, atol=3e-4, rtol=3e-4)
+    for optimizer, model in zip(optimizers, models, strict=True):
+        torch.nn.utils.clip_grad_norm_(
+            [p for p in model.parameters() if p.requires_grad], 0.001
+        )
+        optimizer.step()
+    for name, parameter in models[0].parameter_map().items():
+        other = models[1].parameter_map()[name]
+        torch.testing.assert_close(other, parameter, atol=3e-4, rtol=3e-4)
+        if parameter.grad is not None:
+            torch.testing.assert_close(other.grad, parameter.grad, atol=3e-4, rtol=3e-4)
+        if parameter.requires_grad:
+            for key, value in optimizers[0].state[parameter].items():
+                torch.testing.assert_close(
+                    optimizers[1].state[other][key], value, atol=3e-4, rtol=3e-4
+                )
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_materialized_presentation_replay_refreshes_history_and_checks_each_batch(
+    device,
+):
+    from snnlab.sim.inputs.preparation import BatchInputs
+    from snnlab.sim.requests.spec import ExecutionSpec
+    from snnlab.sim.training.replay import TrainingReplay
+
+    bundle = example.circuit()
+    models = [
+        sim.build(
+            bundle=bundle,
+            training=bundle.training,
+            device=device,
+            performance=sim.Performance(
+                compile_mode="default" if device == "cuda" else None,
+                compile_block_steps=4,
+                precision="highest",
+            ),
+        ).model
+        for _ in range(2)
+    ]
+    for model in models:
+        model.parameter_map()["private.weight"].requires_grad_(False)
+    optimizers = [
+        torch.optim.AdamW(
+            [p for p in model.parameters() if p.requires_grad],
+            lr=0.0004,
+            weight_decay=0.01,
+        )
+        for model in models
+    ]
+    sizes = (2, 2, 1, 2, 1)
+    replay = TrainingReplay(
+        ExecutionSpec(kind="train"),
+        models[1],
+        bundle.training,
+        [(0, i, torch.arange(n)) for i, n in enumerate(sizes)],
+    )
+
+    def step(model, inputs, targets):
+        forward, signals = model._forward(
+            inputs,
+            initial_state=inputs.initial_state,
+            required_signals=("private.conductance", "E.voltage"),
+            retain_parameters=False,
+        )
+        loss = torch.nn.functional.cross_entropy(
+            forward.outputs["class_scores"], targets["label"]
+        )
+        loss.backward()
+        return forward, signals, loss
+
+    for index, n in enumerate(sizes):
+        initial = sim.PresentationState(
+            sim.runtime_state_signature(models[0].plan),
+            conductances={"private": torch.full((n, 2), 0.01 * index, device=device)},
+            input_histories={
+                "artificial": torch.full((1, n, 2), float(index % 2), device=device)
+            },
+        )
+        inputs = BatchInputs(
+            {
+                "drive": torch.ones(20, n, 2, device=device),
+                "artificial": torch.zeros(20, n, 2, device=device),
+            },
+            initial,
+        )
+        targets = {"label": torch.arange(n, device=device) % 2}
+        optimizers[0].zero_grad(set_to_none=True)
+        expected, expected_signals, expected_loss = step(models[0], inputs, targets)
+        result = replay.run(inputs, targets, lambda x, y: step(models[1], x, y))
+        if result is None:
+            optimizers[1].zero_grad(set_to_none=True)
+            result = step(models[1], inputs, targets)
+        actual, signals, loss = result
+        torch.testing.assert_close(loss, expected_loss, atol=3e-4, rtol=3e-4)
+        for name in ("private.conductance", "E.voltage"):
+            torch.testing.assert_close(
+                signals[name], expected_signals[name], atol=3e-4, rtol=3e-4
+            )
+        for name in expected.outputs:
+            torch.testing.assert_close(
+                actual.outputs[name], expected.outputs[name], atol=3e-4, rtol=3e-4
+            )
+        g0 = (
+            math.exp(-0.1 / 6) * initial.conductances["private"]
+            + 0.02 * initial.input_histories["artificial"][0]
+        )
+        torch.testing.assert_close(
+            signals["private.conductance"][0], g0, atol=1e-7, rtol=2e-6
+        )
+        torch.testing.assert_close(
+            signals["private.conductance"][-1],
+            g0 * math.exp(-0.1 / 6) ** 19,
+            atol=1e-7,
+            rtol=2e-6,
+        )
+        assert actual.runtime_state.completed_steps == 20
+        assert actual._timebase == (0.1, 0, 20)
+        assert not actual.runtime_state.input_histories["artificial"].any()
+        _compare_replay_optimizer_update(models, optimizers)
+        # Replay must never mutate the caller's history while delivering its queue.
+        assert initial.input_histories["artificial"].eq(float(index % 2)).all()
+        assert initial.conductances["private"].eq(0.01 * index).all()
+
+    assert replay.summary()["captures"] == (2 if device == "cuda" else 0)
+    assert replay.replays == (5 if device == "cuda" else 0)
+    # Same-key invalid values must still be checked on every cached replay.
+    for invalid in (float("nan"), -1.0):
+        initial.conductances["private"].fill_(invalid)
+        with pytest.raises(ValueError, match="finite and physically valid"):
+            result = replay.run(inputs, targets, lambda x, y: step(models[1], x, y))
+            if result is None:
+                step(models[1], inputs, targets)
+    initial.conductances["private"].zero_()
+    for changed, pattern in (
+        (replace(initial, signature="wrong"), "signature"),
+        (
+            replace(
+                initial, conductances={"unknown": torch.zeros(1, 2, device=device)}
+            ),
+            "unknown",
+        ),
+        (
+            replace(
+                initial, conductances={"private": torch.zeros(2, 2, device=device)}
+            ),
+            "shape/dtype/device",
+        ),
+        (
+            replace(
+                initial,
+                conductances={
+                    "private": torch.zeros(1, 2, device=device, dtype=torch.float64)
+                },
+            ),
+            "shape/dtype/device",
+        ),
+        (
+            replace(
+                initial,
+                input_histories={"artificial": torch.zeros(2, 1, 2, device=device)},
+            ),
+            "shape/dtype/device",
+        ),
+    ):
+        incompatible = BatchInputs(inputs, changed)
+        with pytest.raises(ValueError, match=pattern):
+            result = replay.run(
+                incompatible, targets, lambda x, y: step(models[1], x, y)
+            )
+            if result is None:
+                step(models[1], incompatible, targets)
+    # A third, valid structure falls back without evicting either captured shape.
+    empty = BatchInputs(inputs, replace(initial, conductances={}, input_histories={}))
+    assert replay.run(empty, targets, lambda x, y: step(models[1], x, y)) is None
+    models[1].zero_grad(set_to_none=True)
+    fallback, _, _ = step(models[1], empty, targets)
+    assert fallback.runtime_state.conductances["private"].eq(0).all()
+    if device == "cuda":
+        assert "capture cache limit (2 shapes)" in replay.summary()["fallback_reasons"]
+        # Returning to an existing structure still uses refreshed, valid buffers.
+        assert (
+            replay.run(inputs, targets, lambda x, y: step(models[1], x, y)) is not None
+        )

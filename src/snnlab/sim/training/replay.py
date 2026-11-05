@@ -13,7 +13,57 @@ import torch
 
 from snnlab import extensions as E
 from snnlab.sim.graph.validation import deferred_validation, validate_pending
+from snnlab.sim.inputs.preparation import BatchInputs
+from snnlab.sim.runtime.presentation import PresentationState
 from snnlab.sim.training.observations import evaluation_rng
+
+_STATE_GROUPS = ("conductances", "currents", "input_histories")
+
+
+def _state(inputs):
+    state = getattr(inputs, "initial_state", None)
+    if state is not None and not isinstance(state, PresentationState):
+        raise TypeError("initial_state must be PresentationState")
+    return state
+
+
+def _state_items(state):
+    if state is not None:
+        for group in _STATE_GROUPS:
+            yield from (
+                (group, name, value)
+                for name, value in sorted(getattr(state, group).items())
+            )
+
+
+def _static_inputs(inputs):
+    state = _state(inputs)
+    return BatchInputs(
+        {name: value.clone() for name, value in inputs.items()},
+        PresentationState(
+            state.signature,
+            **{
+                group: {
+                    name: value.detach().clone()
+                    for name, value in getattr(state, group).items()
+                }
+                for group in _STATE_GROUPS
+            },
+        )
+        if state is not None
+        else None,
+    )
+
+
+def _state_fallback(inputs):
+    values = tuple(value for _, _, value in _state_items(_state(inputs)))
+    if any(not isinstance(value, torch.Tensor) for value in values):
+        raise ValueError("presentation state values must be tensors")
+    if any(value.requires_grad for value in values):
+        return "presentation state gradients"
+    if any(value.device.type != "cuda" for value in values):
+        return "presentation state must use CUDA tensors"
+    return None
 
 
 @dataclass
@@ -86,10 +136,26 @@ class TrainingReplay:
 
     @staticmethod
     def _key(inputs, targets):
-        return tuple(
+        state = _state(inputs)
+        tensors = tuple(
             (group, name, tuple(value.shape), value.dtype, value.device, value.stride())
             for group, values in (("input", inputs), ("target", targets))
             for name, value in sorted(values.items())
+        )
+        return (
+            tensors,
+            None if state is None else state.signature,
+            tuple(
+                (
+                    group,
+                    name,
+                    tuple(value.shape),
+                    value.dtype,
+                    value.device,
+                    value.stride(),
+                )
+                for group, name, value in _state_items(state)
+            ),
         )
 
     def _fallback(self, reasons):
@@ -103,6 +169,9 @@ class TrainingReplay:
             return self._fallback(self.reasons)
         if not torch.is_grad_enabled():
             return self._fallback(["autograd disabled"])
+        state_reason = _state_fallback(inputs)
+        if state_reason:
+            return self._fallback([state_reason])
         values = (*inputs.values(), *targets.values())
         if any(value.requires_grad for value in values):
             return self._fallback(["input or target gradients"])
@@ -126,6 +195,9 @@ class TrainingReplay:
             entry.inputs[name].copy_(value)
         for name, value in targets.items():
             entry.targets[name].copy_(value)
+        static_state = _state(entry.inputs)
+        for group, name, value in _state_items(_state(inputs)):
+            getattr(static_state, group)[name].copy_(value)
         for parameter, gradient in zip(self.parameters, entry.gradients, strict=True):
             parameter.grad = gradient
         entry.graph.replay()
@@ -139,7 +211,7 @@ class TrainingReplay:
         graph = None
         captured = False
         try:
-            static_inputs = {name: value.clone() for name, value in inputs.items()}
+            static_inputs = _static_inputs(inputs)
             static_targets = {name: value.clone() for name, value in targets.items()}
             device = next(iter(inputs.values())).device
             if self.stream is None:

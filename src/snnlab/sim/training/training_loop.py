@@ -108,11 +108,6 @@ def _forward_and_loss(
             loss.backward()
         return forward, signals, loss, components
 
-    if (
-        getattr(batch_inputs, "initial_state", None) is not None
-        and "per-presentation initial state" not in context.replay.reasons
-    ):
-        context.replay.reasons.append("per-presentation initial state")
     replayed = context.replay.run(batch_inputs, batch_targets, numerical_step)
     if replayed is not None:
         return replayed, True
