@@ -2,7 +2,9 @@
 
 Run `uv run python benchmarks/native-finetuning/benchmark.py` for the tiny CPU
 fixture. Opt into local CUDA with `--device cuda --compile`. No remote or paid
-jobs are launched. Use `--epochs 4` to retain additional warmed epochs.
+jobs are launched. Use `--epochs 4` to retain additional warmed epochs. Compare
+`--cuda-graphs auto` against `--cuda-graphs off` in fresh processes with distinct
+`--output` directories.
 
 The four cases compare dense identity/explicit one-to-one inhibitory weights
 and unsplit/accumulated effective batches, with identical fixed sensory and
@@ -27,8 +29,17 @@ can also warm kernels and is reported separately from training. PyTorch and
 device caches remain shared across cases; this is not independent cold-process
 benchmarking. Use fresh processes for cold-start comparisons.
 
-Results make no general speed claim. In particular, accumulation and
-per-presentation initial state currently fall back from CUDA replay; compiled
+New reports use schema v2 and retain actual capture/replay/fallback counters.
+Synchronized callback intervals separate cold setup plus initial evaluation and
+the first complete epoch from warmed complete epochs. Each records allocator
+peaks reset at the previous boundary and training examples/second from the native
+complete-update timing. Reserved memory includes retained compiler/capture pools;
+it is not incremental allocation. Whole-call peaks are the maximum across those
+intervals and final result assembly. The checked-in v1 report is historical CPU
+evidence from 0.32.0, not validation of presentation-state CUDA replay.
+
+Results make no general speed claim. Accumulation still falls back from CUDA
+replay; unsplit batches can replay changing presentation state. Compiled
 blocks and online-reduction fallbacks are reported independently. Float32
 highest-precision reference tests compare identical materialized inputs, not
 merely equal seeds across different device RNG implementations.

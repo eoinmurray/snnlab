@@ -494,9 +494,23 @@ policy, graph signature, representative provenance and RNG policy; requested
 update history retains batch coordinates. Retain a representative state with
 `initial.save(path)` and reload it using `PresentationState.load(path,
 device="cpu")`. This authenticated JSON/NPZ artifact contains partial synaptic
-state, not a continuation checkpoint. Compiled blocks accept the initialized
-tensors; CUDA replay currently reports `per-presentation initial state` and
-runs the normal path. Do not infer capture from compilation being requested.
+state, not a continuation checkpoint. Native training CUDA replay supports the
+same built-in `conductances`, `currents` and chronological `input_histories`,
+including one-step and longer supported input delay queues. Capture owns private
+buffers and refreshes every supplied tensor before each replay; each forward
+still starts with fresh neuron, refractory, readout, reduction and scored-time
+state. Graph signature, field names, shapes, dtype, device and strides participate
+in capture compatibility. Values are checked on every replay, including finite
+and nonnegative conductance/queue values and binary spike queues.
+
+The existing two-entry capture cache is shared by input/target shapes and state
+structures; changing structure may create another capture or report the cache
+limit and use ordinary execution. State tensors requesting gradients and non-CUDA
+state tensors use the normal path (which retains ordinary validation and detached
+state semantics). Custom synapse initialization remains unsupported. Runtime
+continuation and gradient accumulation still disable training replay. Inspect
+`metrics["cuda_graphs"]` for actual captures, replayed batches and specific
+fallback reasons. Compilation or replay eligibility alone does not imply a speedup.
 
 #### Identity-based preparation RNG
 

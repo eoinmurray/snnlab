@@ -8,6 +8,7 @@ from pathlib import Path
 
 import torch
 
+from snnlab.sim.graph.validation import check_condition
 from snnlab.sim.runtime.state import (
     GraphRuntimeState,
     load_runtime_state,
@@ -124,11 +125,11 @@ def apply_presentation_state(forward, runtime, state):
     _validate_values(updates)
     input_rows = {row["id"]: row for row in forward.executor.plan.graph["inputs"]}
     for name, value in state.input_histories.items():
-        if (
-            input_rows[name].get("signal_type") == "spikes"
-            and not ((value == 0) | (value == 1)).all()
-        ):
-            raise ValueError(f"presentation input queue {name} requires binary spikes")
+        if input_rows[name].get("signal_type") == "spikes":
+            check_condition(
+                ((value == 0) | (value == 1)).all(),
+                f"presentation input queue {name} requires binary spikes",
+            )
     for destination, key, value, _, _ in updates:
         destination[key] = value.detach().clone()
 
@@ -142,7 +143,9 @@ def _validate_values(updates):
             or value.device != prototype.device
         ):
             raise ValueError(f"presentation state {key} shape/dtype/device mismatch")
-        if not torch.isfinite(value).all() or (nonnegative and (value < 0).any()):
-            raise ValueError(
-                f"presentation state {key} must be finite and physically valid"
-            )
+        valid = torch.isfinite(value).all()
+        if nonnegative:
+            valid = valid & (value >= 0).all()
+        check_condition(
+            valid, f"presentation state {key} must be finite and physically valid"
+        )
