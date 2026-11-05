@@ -6,6 +6,8 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-11-05
+
 ### Added
 
 1. Native training CUDA graph replay preserves and refreshes batch-local presentation conductance/current and pending input queues, with state-aware capture compatibility and per-replay value validation. Runtime continuation and gradient accumulation retain explicit fallbacks. Added materialized-history and native-update conformance tests plus separate synchronized cold/warmed benchmark intervals and memory reporting; CUDA results require a CUDA host.
