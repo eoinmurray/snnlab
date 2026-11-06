@@ -871,7 +871,7 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
 def _select_execution_path(forward: _ForwardContext, runtime: _ForwardState) -> None:
     forward.block_reasons = []
     forward.compiler_fallback = (
-        "PyTorch 2.10 reduced-precision CPU uses eager tensor graphs"
+        f"PyTorch {'.'.join(torch.__version__.split('.')[:2])} reduced-precision CPU uses eager tensor graphs"
         if forward.executor.compile_mode is not None
         and precision_fallback(forward.device, forward.parameter_dtype)
         else None

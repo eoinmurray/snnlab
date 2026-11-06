@@ -10,6 +10,7 @@ import torch
 
 from snnlab.sim import (
     DenseArrayBinding,
+    TrainingMetrics,
     capture_training_rng_state,
     load_training_checkpoint,
     restore_training_rng_state,
@@ -34,6 +35,7 @@ def test_training_checkpoint_round_trip_and_resume_are_exact(tmp_path):
     inputs[:, 1, 1] = 1
     common = dict(
         kind="train",
+        metrics=TrainingMetrics(update_history=True),
         executor="graph",
         graph=bundle.graph,
         training=bundle.training,
@@ -41,10 +43,11 @@ def test_training_checkpoint_round_trip_and_resume_are_exact(tmp_path):
         targets={"label": torch.tensor([0, 1])},
         seed=17,
     )
-    uninterrupted = train(ExecutionSpec(**common, updates=4))
+    uninterrupted = train(ExecutionSpec(device="cpu", **common, updates=4))
     checkpoint_dir = tmp_path / "checkpoint"
     first_half = train(
         ExecutionSpec(
+            device="cpu",
             **common,
             updates=2,
             save_final_checkpoint=checkpoint_dir,
@@ -57,6 +60,7 @@ def test_training_checkpoint_round_trip_and_resume_are_exact(tmp_path):
     assert (tmp_path / "selected" / "manifest.json").is_file()
     resumed = train(
         ExecutionSpec(
+            device="cpu",
             **common,
             checkpoint=checkpoint_dir,
             updates=2,
@@ -135,7 +139,9 @@ def test_accelerator_rng_checkpoint_round_trip_and_topology_restore(
     bundle = _direct_train_bundle()
     trained = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -193,7 +199,9 @@ def test_v1_cpu_checkpoint_remains_loadable(tmp_path):
     bundle = _direct_train_bundle()
     trained = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -218,7 +226,9 @@ def test_training_checkpoint_rejects_partial_parameter_mapping(tmp_path):
     inputs = torch.zeros(3, 2, 2)
     result = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -233,7 +243,9 @@ def test_training_checkpoint_rejects_partial_parameter_mapping(tmp_path):
     with pytest.raises(ValueError, match="parameter names mismatch"):
         train(
             ExecutionSpec(
+                device="cpu",
                 kind="train",
+                metrics=TrainingMetrics(update_history=True),
                 executor="graph",
                 graph=bundle.graph,
                 training=bundle.training,
@@ -252,7 +264,9 @@ def test_graph_inference_loads_portable_selected_checkpoint_with_provenance(tmp_
     selected_path = tmp_path / "selected"
     trained = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -266,6 +280,7 @@ def test_graph_inference_loads_portable_selected_checkpoint_with_provenance(tmp_
     selected = load_training_checkpoint(selected_path)
     inferred = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=bundle.graph,
@@ -293,6 +308,7 @@ def test_graph_inference_loads_portable_selected_checkpoint_with_provenance(tmp_
     with pytest.raises(ValueError, match="inference checkpoint graph digest"):
         simulate(
             ExecutionSpec(
+                device="cpu",
                 kind="simulate",
                 executor="graph",
                 graph=incompatible,
@@ -309,6 +325,7 @@ def test_dataset_training_resume_preserves_shuffle_and_batch_position(tmp_path):
         inputs[:, sample, sample % 2] = 1
     common = dict(
         kind="train",
+        metrics=TrainingMetrics(update_history=True),
         executor="graph",
         graph=bundle.graph,
         training=bundle.training,
@@ -317,10 +334,11 @@ def test_dataset_training_resume_preserves_shuffle_and_batch_position(tmp_path):
         seed=23,
     )
     trajectory = {"epochs": 2, "batch_size": 2, "shuffle": True}
-    uninterrupted = train(ExecutionSpec(**common, **trajectory))
+    uninterrupted = train(ExecutionSpec(device="cpu", **common, **trajectory))
     checkpoint_dir = tmp_path / "dataset-checkpoint"
     first = train(
         ExecutionSpec(
+            device="cpu",
             **common,
             **trajectory,
             updates=1,
@@ -331,6 +349,7 @@ def test_dataset_training_resume_preserves_shuffle_and_batch_position(tmp_path):
     assert first.training_checkpoint.data_state == {"epoch": 0, "batch": 1}
     resumed = train(
         ExecutionSpec(
+            device="cpu",
             **common,
             checkpoint=checkpoint_dir,
             **trajectory,

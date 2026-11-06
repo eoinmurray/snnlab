@@ -364,15 +364,18 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
         raise ValueError("shuffle=True conflicts with batching order")
     if spec.on_epoch_end is not None and not callable(spec.on_epoch_end):
         raise TypeError("on_epoch_end must be callable")
+    epoch_metrics_requested = spec.metrics is not None and (
+        replace(metric_policy, update_history=False) != TrainingMetrics()
+    )
     if spec.epochs <= 0 and (
-        spec.metrics is not None
+        epoch_metrics_requested
         or spec.batching is not None
         or spec.on_epoch_end is not None
     ):
         raise ValueError(
             "training policies and epoch callbacks require positive epochs"
         )
-    persist_reporting = (
+    persist_reporting = spec.epochs > 0 and (
         spec.metrics is not None
         or spec.batching is not None
         or spec.on_epoch_end is not None
@@ -787,7 +790,7 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
     if reporting_saved is not None:
         epoch_history = copy.deepcopy(reporting_saved["history"])
         persist_reporting = True
-    elif resumed is not None and spec.metrics is not None:
+    elif resumed is not None and persist_reporting:
         raise ValueError("checkpoint has no reporting state for requested metrics")
     online_sums = {
         name: torch.as_tensor(

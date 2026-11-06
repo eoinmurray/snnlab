@@ -103,9 +103,9 @@ authenticated historical contents.
 Use `zip(..., strict=True)` for required alignment, `itertools.pairwise()` for
 adjacent samples, and `strict=False` for intentional truncation.
 
-The full Python test suite runs nightly on `main` at 03:17 Europe/London time.
-Pushes and pull requests do not trigger package tests; release checks run lint
-and build the package without running the tests.
+The full Python test suite runs nightly on `main` at 03:17 Europe/London time
+and as a required release check, alongside lint, formatting and package builds.
+Ordinary pushes and pull requests do not trigger package tests.
 
 For failure emails, enable Email and Only notify for failed workflows under
 System → Actions in [GitHub notification settings](https://github.com/settings/notifications).

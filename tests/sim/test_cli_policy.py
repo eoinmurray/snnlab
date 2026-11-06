@@ -107,4 +107,5 @@ def test_training_uses_recipe_epochs_and_honors_explicit_zero(tmp_path, epochs):
     assert main(args) == 0
     metrics = json.loads((output / "metrics.json").read_text())
     expected_epochs = bundle.training["epochs"] if epochs is None else epochs
-    assert len(metrics["updates"]) == max(1, expected_epochs)
+    assert metrics["batch_counts"]["optimizer_updates"] == max(1, expected_epochs)
+    assert metrics["updates"] == []

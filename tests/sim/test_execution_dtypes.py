@@ -60,7 +60,10 @@ def test_recurrent_state_gradients_and_split_continuation(constructor, dtype, de
         pytest.skip("MPS does not support float64 tensors")
     graph, parameter = circuit(constructor)
     model = GraphExecutor(
-        plan_graph(graph), compile_mode=None, trainable_parameters=(parameter,)
+        plan_graph(graph),
+        compile_mode=None,
+        precision="highest",
+        trainable_parameters=(parameter,),
     ).to(device=device, dtype=dtype)
     values = torch.ones(41, 2, 2, device=device, dtype=dtype)
     result = model({"events": values}, diagnostics=False)

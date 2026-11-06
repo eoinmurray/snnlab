@@ -123,10 +123,12 @@ full_precision = Performance(precision="highest")
 ```
 
 When compilation is enabled, CPU/CUDA kernels and network blocks use Inductor's
-native C++ dispatch wrapper, preserving precision-cast emulation. MPS retains
+native C++ dispatch wrapper, preserving precision-cast emulation. PyTorch 2.11
+CUDA uses Python dispatch around compiled kernels because its C++ backward
+wrapper can fail with `CudaKernelParamCache not populated`. MPS retains
 compiled Metal kernels with Python dispatch because native wrapper generation
-currently fails on missing `get_mps_lib_*_handle` symbols. The existing PyTorch
-2.10 reduced-precision CPU fallback is preserved. `metrics["compiler_wrapper"]`
+currently fails on missing `get_mps_lib_*_handle` symbols. PyTorch 2.10/2.11
+reduced-precision CPU execution uses eager tensor graphs. `metrics["compiler_wrapper"]`
 and `stream.info["compiler_wrapper"]` record the selected policy and reason;
 execution reports also include it under `performance.resolved.compiler_wrapper`.
 Native dispatch adds compilation cost and does not guarantee an end-to-end gain.

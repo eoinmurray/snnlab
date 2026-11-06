@@ -69,7 +69,11 @@ def test_unified_input_bindings_reject_invalid_combinations(case, error, message
         ),
     }[case]
     with pytest.raises(error, match=message):
-        simulate(ExecutionSpec(kind="simulate", graph=graph, input_bindings=bindings))
+        simulate(
+            ExecutionSpec(
+                device="cpu", kind="simulate", graph=graph, input_bindings=bindings
+            )
+        )
 
 
 def _standard_readout_graph(
@@ -119,6 +123,7 @@ def test_dense_array_bindings_match_hand_calculation_and_record_protocol():
     valid = torch.tensor([[True, True], [False, True], [True, False]])
     result = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,

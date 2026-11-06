@@ -143,7 +143,9 @@ def test_outputs_snapshots_and_source_model_are_independent(stream_policy):
     source_weights = {
         name: value.detach().clone() for name, value in source.parameter_map().items()
     }
-    with prepare_stream(source, window_steps=5, performance=stream_policy) as stream:
+    with prepare_stream(
+        source, device="cpu", window_steps=5, performance=stream_policy
+    ) as stream:
         assert source.training
         assert source.parameter_map()["drive.weight"].requires_grad
         first = stream.advance({"events": torch.ones(5, 1, 3)})
@@ -172,7 +174,9 @@ def test_outputs_snapshots_and_source_model_are_independent(stream_policy):
 
 
 def test_invalid_windows_and_restore_leave_progress_unchanged(stream_policy):
-    with prepare_stream(circuit(), window_steps=5, performance=stream_policy) as stream:
+    with prepare_stream(
+        circuit(), device="cpu", window_steps=5, performance=stream_policy
+    ) as stream:
         stream.advance({"events": torch.ones(5, 1, 3)})
         for inputs in (
             {},
@@ -198,7 +202,7 @@ def test_invalid_windows_and_restore_leave_progress_unchanged(stream_policy):
 def test_retention_and_frozen_graph_metadata():
     graph = lang.compile(circuit()).graph
     with prepare_stream(
-        graph, window_steps=5, performance=eager(), retain_outputs=False
+        graph, device="cpu", window_steps=5, performance=eager(), retain_outputs=False
     ) as stream:
         graph["populations"][0]["size"] = 999
         result = stream.advance({"events": torch.ones(5, 1, 3)})
@@ -221,7 +225,7 @@ def test_retention_and_frozen_graph_metadata():
 )
 def test_invalid_preparation(kwargs):
     with pytest.raises((TypeError, ValueError)):
-        prepare_stream(circuit(), performance=eager(), **kwargs)
+        prepare_stream(circuit(), device="cpu", performance=eager(), **kwargs)
 
 
 def test_parameterless_stream_owns_passthrough_buffers(stream_policy):
@@ -230,7 +234,9 @@ def test_parameterless_stream_owns_passthrough_buffers(stream_policy):
         "events", shape=("time", "batch", 3), signal_type="spikes", unit="spike"
     )
     net.output("echo", events)
-    with prepare_stream(net, window_steps=5, performance=stream_policy) as stream:
+    with prepare_stream(
+        net, device="cpu", window_steps=5, performance=stream_policy
+    ) as stream:
         result = stream.advance({"events": torch.ones(5, 1, 3)})
         stream.advance({"events": torch.zeros(5, 1, 3)})
         assert result.outputs["echo"].sum() == 15
@@ -246,6 +252,7 @@ def test_bundle_path_and_float64_state_roundtrip(tmp_path):
     bundle.write(tmp_path / "network.bundle")
     with prepare_stream(
         tmp_path / "network.bundle",
+        device="cpu",
         window_steps=5,
         dtype=torch.float64,
         performance=eager(),
@@ -324,10 +331,10 @@ def test_persistent_blocks_match_executor_with_long_delays_gains_and_restore(
         net.output("adaptation", cells.state("adaptation"))
     policy = Performance(compile_block_steps=block_steps, precision="highest")
     fast = prepare_stream(
-        net, window_steps=7, batch_size=2, dtype=dtype, performance=policy
+        net, device="cpu", window_steps=7, batch_size=2, dtype=dtype, performance=policy
     )
     regular = prepare_stream(
-        net, window_steps=7, batch_size=2, dtype=dtype, performance=policy
+        net, device="cpu", window_steps=7, batch_size=2, dtype=dtype, performance=policy
     )
     assert fast.info["persistent_state"]
     # A/B against the original, independently initialized compiled executor.
@@ -393,6 +400,7 @@ def test_failed_persistent_window_does_not_commit_partial_state(monkeypatch):
     monkeypatch.setattr(torch, "compile", lambda fn, **kw: fn)
     stream = prepare_stream(
         circuit(),
+        device="cpu",
         window_steps=7,
         performance=Performance(compile_block_steps=3, precision="highest"),
     )
@@ -441,6 +449,7 @@ def test_persistent_trace_fallback_preserves_progress(monkeypatch):
     monkeypatch.setattr(torch, "compile", lambda fn, **kw: fn)
     stream = prepare_stream(
         circuit(),
+        device="cpu",
         window_steps=5,
         performance=Performance(compile_block_steps=3, precision="highest"),
     )

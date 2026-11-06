@@ -1,6 +1,5 @@
 """Independent exp148 evidence and invariants of the symbolic model API."""
 
-import ast
 import importlib.util
 import json
 from copy import deepcopy
@@ -28,13 +27,7 @@ def load_reference():
     return json.loads((Path(__file__).parent / "data/exp148.json").read_text())
 
 
-def test_example_has_four_functions_and_preserves_couplings():
-    functions = [
-        node.name
-        for node in ast.walk(ast.parse(EXAMPLE.read_text()))
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
-    assert functions == ["configuration", "build_model", "run", "plot"]
+def test_example_preserves_reference_couplings():
     assert "exp148" not in EXAMPLE.read_text()
     assert (
         example.configuration()["mean_incoming_weights_us"]

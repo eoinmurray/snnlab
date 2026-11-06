@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from snnlab import lang as snn
-from snnlab.sim import DenseArrayBinding
+from snnlab.sim import DenseArrayBinding, TrainingMetrics
 from snnlab.sim.requests.handlers import execute_request
 from snnlab.sim.requests.spec import ExecutionSpec
 from snnlab.sim.training.trainer import train
@@ -57,7 +57,7 @@ def test_typed_request_defaults_to_graph_and_graph_training_requires_recipe():
     assert result.model is not None
     assert result.parameters
     with pytest.raises(ValueError, match="only the graph executor"):
-        ExecutionSpec(kind="build", executor="legacy")
+        ExecutionSpec(device="cpu", kind="build", executor="legacy")
     try:
         train(ExecutionSpec(kind="train", graph=_coupled_graph(), device="cpu"))
     except ValueError as exc:
@@ -98,7 +98,9 @@ def test_graph_training_updates_named_parameters_and_optimizer_state_determinist
     inputs[:, 0, 0] = 1
     inputs[:, 1, 1] = 1
     spec = ExecutionSpec(
+        device="cpu",
         kind="train",
+        metrics=TrainingMetrics(update_history=True),
         executor="graph",
         graph=bundle.graph,
         training=bundle.training,
@@ -132,7 +134,9 @@ def test_graph_one_step_matches_direct_pytorch_gradient_weight_and_adamw_state()
     labels = torch.tensor([0, 1])
     result = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -170,7 +174,9 @@ def test_graph_training_authenticates_recipe_from_bundle(tmp_path):
     inputs[:, 1, 1] = 1
     result = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             bundle=root,
             input_bindings=(DenseArrayBinding("events", inputs),),
@@ -214,7 +220,9 @@ def test_graph_training_backpropagates_through_recurrence_and_spike_budget():
     bundle = snn.compile(net, training=recipe, target=None)
     result = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -234,7 +242,9 @@ def test_graph_training_backpropagates_through_recurrence_and_spike_budget():
 
     disabled = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             graph=bundle.graph,
             training=bundle.training,
             input_bindings=(DenseArrayBinding("events", torch.ones(30, 2, 2)),),
@@ -268,6 +278,7 @@ def test_opt_in_training_timings_partition_epochs_without_changing_updates(
     labels = torch.arange(5) % 2
     spec = ExecutionSpec(
         kind="train",
+        metrics=TrainingMetrics(update_history=True),
         graph=bundle.graph,
         training=bundle.training,
         input_bindings=(DenseArrayBinding("events", inputs),),
@@ -339,6 +350,7 @@ def test_training_timing_single_batch_and_field_validation():
     result = train(
         ExecutionSpec(
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             graph=bundle.graph,
             training=bundle.training,
             input_bindings=(DenseArrayBinding("events", inputs),),
@@ -353,6 +365,6 @@ def test_training_timing_single_batch_and_field_validation():
     assert timing["epochs"] == []
     assert timing["train_evaluation_s"] == timing["validation_s"] == 0
     with pytest.raises(TypeError, match="training_timing must be boolean"):
-        ExecutionSpec(kind="train", training_timing=1)
+        ExecutionSpec(device="cpu", kind="train", training_timing=1)
     with pytest.raises(ValueError, match="training_timing requires"):
-        ExecutionSpec(kind="simulate", training_timing=True)
+        ExecutionSpec(device="cpu", kind="simulate", training_timing=True)

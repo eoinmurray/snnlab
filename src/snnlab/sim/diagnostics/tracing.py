@@ -165,6 +165,7 @@ class TraceSession:
         self.memory = []
         self.profiler = None
         self.profiler_started = False
+        self.profiler_warmup_s = 0.0
         self.window_wall_s = 0.0
         self.cpu_s = 0.0
         self.capture_started = None
@@ -210,6 +211,52 @@ class TraceSession:
         elif self.device.type == "mps":
             torch.mps.synchronize()
 
+    def _start_profiler(self):
+        activities = [torch.profiler.ProfilerActivity.CPU]
+        options = {}
+        if self.device.type == "cuda":
+            activities.append(torch.profiler.ProfilerActivity.CUDA)
+            options["schedule"] = torch.profiler.schedule(
+                wait=0, warmup=1, active=1, repeat=1
+            )
+        self.profiler = torch.profiler.profile(
+            activities=activities,
+            record_shapes=self.spec.record_shapes,
+            profile_memory=self.spec.profile_memory,
+            with_stack=self.spec.with_stack,
+            with_flops=True,
+            **options,
+        )
+        try:
+            self.profiler.start()
+            self.profiler_started = True
+            if self.device.type == "cuda":
+                self._warmup_cuda_profiler()
+        except BaseException:
+            try:
+                if self.profiler_started:
+                    self.profiler.stop()
+            finally:
+                self.profiler_started = False
+                self.profiler = None
+            raise
+
+    def _warmup_cuda_profiler(self):
+        # Older CUPTI timestamp callbacks can discard early kernel records after
+        # GPU idle periods. Calibrate in the profiler's discarded warmup phase,
+        # using independent storage and no random draws or model execution.
+        started = time.perf_counter()
+        with torch.no_grad(), torch.cuda.device(self.device):
+            marker = torch.empty(1, device=self.device)
+            deadline = time.perf_counter() + 0.025
+            with torch.profiler.record_function("snnlab::profiler_warmup"):
+                while time.perf_counter() < deadline:
+                    marker.zero_()
+                    self._sync()
+            del marker
+        self.profiler.step()
+        self.profiler_warmup_s = time.perf_counter() - started
+
     def begin_update(self, index, epoch, batch, parameters):
         self.active = (
             self.spec.skip_updates
@@ -220,21 +267,10 @@ class TraceSession:
             return
         if self.capture_started is None:
             self._sync()
+            if self.profile:
+                self._start_profiler()
             if self.device.type == "cuda" and self.monitor:
                 torch.cuda.reset_peak_memory_stats(self.device)
-            if self.profile:
-                activities = [torch.profiler.ProfilerActivity.CPU]
-                if self.device.type == "cuda":
-                    activities.append(torch.profiler.ProfilerActivity.CUDA)
-                self.profiler = torch.profiler.profile(
-                    activities=activities,
-                    record_shapes=self.spec.record_shapes,
-                    profile_memory=self.spec.profile_memory,
-                    with_stack=self.spec.with_stack,
-                    with_flops=True,
-                )
-                self.profiler.start()
-                self.profiler_started = True
             self.capture_started = time.perf_counter()
             self.capture_cpu_started = time.process_time()
             if self.monitor:
@@ -528,6 +564,7 @@ class TraceSession:
             "captured_updates": self.captured,
             "scope": "contiguous call window spanning selected training updates; intervening evaluation is included in profile/wall time; activity statistics cover training only; all timings are instrumented",
             "window_wall_s": self.window_wall_s,
+            "profiler_warmup_s": self.profiler_warmup_s,
             "captured_examples": sum(row.get("examples", 0) for row in self.captured),
             "instrumented_examples_per_s": sum(
                 row.get("examples", 0) for row in self.captured

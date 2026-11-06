@@ -15,7 +15,7 @@ from snnlab.sim.graph import extensions as X
 
 def precision_fallback(device, dtype):
     return (
-        torch.__version__.split("+")[0].startswith("2.10.")
+        torch.__version__.split("+")[0].startswith(("2.10.", "2.11."))
         and device.type == "cpu"
         and dtype in {torch.float16, torch.bfloat16}
     )
@@ -28,7 +28,13 @@ def compiler_wrapper_policy(device, dtype, compile_mode):
         return {
             "requested": "native",
             "selected": "eager_tensor_graph",
-            "reason": "PyTorch 2.10 reduced-precision CPU fallback",
+            "reason": f"PyTorch {'.'.join(torch.__version__.split('.')[:2])} reduced-precision CPU fallback",
+        }
+    if device.type == "cuda" and torch.__version__.split("+")[0].startswith("2.11."):
+        return {
+            "requested": "native",
+            "selected": "python",
+            "reason": "PyTorch 2.11 CUDA C++ backward wrapper can fail with CudaKernelParamCache not populated; CUDA kernels remain compiled",
         }
     if device.type == "mps":
         return {
@@ -48,16 +54,22 @@ def prepare_kernel(step, compile_mode, *, fullgraph=True):
         def backend(graph, examples):
             tensors = [value for value in examples if isinstance(value, torch.Tensor)]
             if any(precision_fallback(value.device, value.dtype) for value in tensors):
-                # Preserve the existing PyTorch 2.10 CPU precision fallback.
+                # Keep affected CPU backends on precision-preserving eager graphs.
                 return graph.forward
-            # Device is known at compilation, after model/input movement. MPS
-            # currently has broken C++ wrapper codegen, so keep its Metal kernels
-            # compiled with Python dispatch. Other devices use native dispatch.
+            # Use the same compatibility decision for code generation and reports.
+            # A Python wrapper still executes compiled accelerator kernels and
+            # remains compatible with outer CUDA graph capture.
             # Keep eager rounding at intermediate casts; omitting these casts
             # previously changed recurrent BF16 gradients substantially.
             options = {
                 "emulate_precision_casts": True,
-                "cpp_wrapper": not any(value.device.type == "mps" for value in tensors),
+                "cpp_wrapper": all(
+                    compiler_wrapper_policy(value.device, value.dtype, compile_mode)[
+                        "selected"
+                    ]
+                    == "cpp"
+                    for value in tensors
+                ),
             }
             return torch._inductor.compile(graph, examples, options=options)
 

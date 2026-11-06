@@ -54,7 +54,9 @@ def test_default_learns_and_checkpoint_reproduces_final_accuracy(tmp_path):
 
     checkpoint = load_training_checkpoint(output / "final.checkpoint")
     initial = build(
-        ExecutionSpec(kind="build", bundle=output / "network.bundle", seed=cfg.seed)
+        ExecutionSpec(
+            kind="build", device="cpu", bundle=output / "network.bundle", seed=cfg.seed
+        )
     )
     for name, value in checkpoint.parameters.items():
         assert torch.isfinite(value).all()

@@ -1,6 +1,7 @@
 """Tracing is bounded, honest about scope and numerically non-interfering."""
 
 import json
+import time
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -232,6 +233,93 @@ def test_cuda_stream_timing_and_profiler_activity(tmp_path):
     assert summary["timeline"]["kernel_count"] > 0
     assert any(row.get("cuda_stream_elapsed_s", 0) > 0 for row in summary["phases"])
     assert summary["memory"][-1]["cuda_peak_allocated_bytes"] > 0
+    assert summary["profiler_warmup_s"] > 0
+    events = json.loads((tmp_path / "cuda/trace.json").read_text())["traceEvents"]
+    assert not any(event.get("name") == "snnlab::profiler_warmup" for event in events)
+
+
+@pytest.mark.accelerator
+@pytest.mark.slow
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_cuda_profile_retains_every_region_after_idle(tmp_path):
+    values = torch.ones(256, 256, device="cuda", dtype=torch.float16)
+    for _ in range(10):
+        values @ values
+    torch.cuda.synchronize()
+    for index in range(2):
+        if index:
+            # Exercise a new profiler session after the GPU has been idle.
+            time.sleep(15)
+        output = tmp_path / str(index)
+        with TraceSession(
+            TraceSpec(output, mode="profile", skip_updates=0, active_updates=1),
+            "cuda:0",
+        ) as session:
+            session.begin_update(0, 0, 0, {})
+            for _ in range(50):
+                with torch.profiler.record_function("measured_matmul"):
+                    values @ values
+                torch.cuda.synchronize()
+            session.end_update({}, last=True)
+        events = json.loads((output / "trace.json").read_text())["traceEvents"]
+        regions = [
+            event
+            for event in events
+            if event.get("name") == "measured_matmul"
+            and event.get("cat") == "gpu_user_annotation"
+            and event.get("ph") == "X"
+        ]
+        assert len(regions) == 50
+        assert not any(
+            event.get("name") == "snnlab::profiler_warmup" for event in events
+        )
+
+
+@pytest.mark.accelerator
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_cuda_profile_warmup_preserves_training_rng_and_window(tmp_path):
+    spec = replace(
+        request(),
+        device="cuda:0",
+        compile_mode=None,
+        precision="highest",
+        cuda_graphs="off",
+        fused_optimizer="off",
+    )
+    baseline = train(spec)
+    traced = train(
+        replace(
+            spec,
+            tracing=TraceSpec(
+                tmp_path / "warmup",
+                mode="both",
+                skip_updates=1,
+                active_updates=1,
+            ),
+        )
+    )
+    assert traced.metrics["epochs"] == baseline.metrics["epochs"]
+    for name, expected in baseline.parameters.items():
+        torch.testing.assert_close(traced.parameters[name], expected, atol=0, rtol=0)
+    for name, expected in baseline.gradients.items():
+        torch.testing.assert_close(traced.gradients[name], expected, atol=0, rtol=0)
+    for name, values in baseline.optimizer_state.items():
+        for key, expected in values.items():
+            torch.testing.assert_close(
+                traced.optimizer_state[name][key],
+                expected,
+                atol=0,
+                rtol=0,
+            )
+    left, right = traced.training_checkpoint, baseline.training_checkpoint
+    torch.testing.assert_close(left.rng_state, right.rng_state, atol=0, rtol=0)
+    for name, expected in right.accelerator_rng_states.items():
+        torch.testing.assert_close(
+            left.accelerator_rng_states[name], expected, atol=0, rtol=0
+        )
+    assert [
+        row["update_index"] for row in traced.metrics["tracing"]["captured_updates"]
+    ] == [1]
 
 
 def test_tracing_does_not_enter_resume_identity(tmp_path):

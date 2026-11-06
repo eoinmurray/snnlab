@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import sys
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -86,6 +87,15 @@ def test_float32_spiking_training_matches_for_forty_clipped_adam_updates(
             with monkeypatch.context() as patch:
                 patch.setattr(
                     X, "make_spike", lambda **kwargs: snn.surrogate.fast_sigmoid(25)
+                )
+                # The retained oracle compares eager float32 arithmetic exactly.
+                # Compiled kernels have separate numerical conformance gates.
+                patch.setattr(
+                    benchmark,
+                    "GraphExecutor",
+                    partial(
+                        benchmark.GraphExecutor, compile_mode=None, precision="highest"
+                    ),
                 )
                 candidate = benchmark.GraphModel(weights, mode, False).to(device)
             models = [reference, candidate]

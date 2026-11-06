@@ -61,7 +61,8 @@ def weighted_objective(scores, targets, config):
 def test_online_reuses_forwards_and_matches_manual_unequal_batches(
     monkeypatch, custom, device
 ):
-    spec = online_spec(device=device, shuffle=False)
+    monkeypatch.setattr(extensions, "_REGISTRY", {})
+    spec = online_spec(device=device, shuffle=False, cuda_graphs="off")
     if custom:
         extensions.register_objective(
             "tests.weighted-online/v1", weighted_objective, classification=True
@@ -561,3 +562,17 @@ def test_default_metrics_match_explicit_policy_and_resume(tmp_path):
     saved = save_training_checkpoint(tmp_path / "default", partial.training_checkpoint)
     resumed = train(replace(spec, checkpoint=saved))
     assert resumed.metrics["epochs"] == implicit.metrics["epochs"]
+
+
+def test_full_batch_update_history_is_optional_and_preserves_training():
+    spec = replace(request(), validation=None, epochs=0, updates=3)
+    compact = train(spec)
+    detailed = train(replace(spec, metrics=TrainingMetrics(update_history=True)))
+    assert compact.metrics["updates"] == []
+    assert [row["update"] for row in detailed.metrics["updates"]] == [1, 2, 3]
+    assert compact.metrics["epochs"] == detailed.metrics["epochs"] == []
+    assert detailed.selected_checkpoint is not None
+    for name, expected in compact.parameters.items():
+        torch.testing.assert_close(detailed.parameters[name], expected, atol=0, rtol=0)
+    with pytest.raises(ValueError, match="positive epochs"):
+        train(replace(spec, metrics=TrainingMetrics(train="evaluate")))

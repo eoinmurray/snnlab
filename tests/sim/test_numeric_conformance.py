@@ -11,7 +11,7 @@ import torch
 
 from snnlab import lang as snn
 from snnlab.lang.compilation.serialization import digest
-from snnlab.sim import DenseArrayBinding, GraphExecutor
+from snnlab.sim import DenseArrayBinding, GraphExecutor, TrainingMetrics
 from snnlab.sim.diagnostics.conformance import (
     CONFORMANCE_REPORT_SCHEMA,
     ComparisonPolicy,
@@ -167,6 +167,7 @@ def test_ping_forward_matches_preserved_pre_removal_reference(
                 projection["delay"]["value"] = dt_ms
     built = build(
         ExecutionSpec(
+            device="cpu",
             kind="build",
             executor="graph",
             graph=expose_graph_diagnostics(bundle.graph),
@@ -271,6 +272,7 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
     bundle.training["graph_digest"] = digest(bundle.graph)
     initial = build(
         ExecutionSpec(
+            device="cpu",
             kind="build",
             executor="graph",
             graph=bundle.graph,
@@ -286,7 +288,9 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
     update_count = 4
     graph = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -299,7 +303,9 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
     checkpoint_path = tmp_path / "trajectory-checkpoint"
     first_half = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -312,7 +318,9 @@ def test_four_update_trajectory_matches_preserved_reference_and_resumes_exactly(
     )
     resumed = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -391,7 +399,9 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
     batch_size = 2
     graph = train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -405,6 +415,7 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
     )
     initial = build(
         ExecutionSpec(
+            device="cpu",
             kind="build",
             executor="graph",
             graph=bundle.graph,
@@ -476,7 +487,9 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
     checkpoint = tmp_path / "mid-epoch"
     train(
         ExecutionSpec(
+            device="cpu",
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
@@ -493,7 +506,9 @@ def test_shuffled_dataset_trajectory_matches_independent_pytorch_loop(tmp_path):
     with pytest.raises(ValueError, match="execution protocol does not match"):
         train(
             ExecutionSpec(
+                device="cpu",
                 kind="train",
+                metrics=TrainingMetrics(update_history=True),
                 executor="graph",
                 graph=bundle.graph,
                 training=bundle.training,

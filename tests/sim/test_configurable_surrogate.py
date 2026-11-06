@@ -138,6 +138,7 @@ def test_custom_eager_builtin_eager_compiled(constructor, device, monkeypatch):
             trainable_parameters=(parameter,),
             surrogate=surrogate,
             compile_mode=mode,
+            precision="highest",
         ).to(device)
         full = model({"events": values}, diagnostics=False)
         (full.outputs["spikes"].sum() + full.outputs["voltage"].sum()).backward()
