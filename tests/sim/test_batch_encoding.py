@@ -355,7 +355,7 @@ def test_changed_encoder_draws_and_old_protocol_cannot_resume(tmp_path):
     )
     with pytest.raises(ValueError, match="execution protocol"):
         train(replace(changed, checkpoint=tmp_path / "checkpoint"))
-    with pytest.raises(ValueError, match="selection policy or evaluation identity"):
+    with pytest.raises(ValueError, match="checkpoint reporting metric/data identity"):
         train(
             replace(
                 spec,
@@ -488,5 +488,6 @@ def test_cli_dataset_encoding_is_automatic_and_categorical_rates_are_recorded(tm
         0.0,
         1000.0,
     ]
-    assert len(metrics["updates"]) == 6
-    assert len(metrics["updates"][-1]["encoding"]["sample_indices"]) == 1
+    assert metrics["updates"] == []
+    assert metrics["batch_counts"]["optimizer_updates"] == 6
+    assert metrics["batch_counts"]["examples"] == 14

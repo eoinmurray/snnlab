@@ -366,14 +366,24 @@ def test_actual_inductor_block_forward_backward(device):
             compile_block_steps=size,
             compile_mode=None if size == 1 else "default",
             trainable_parameters=(parameter,),
+            precision="highest",
         ).to(device)
         result = model(
             {"events": torch.ones(13, 2, 2, device=device)}, diagnostics=False
         )
         wrapper = result.metrics["compiler_wrapper"]
+        cuda_workaround = device == "cuda" and torch.__version__.split("+")[
+            0
+        ].startswith("2.11.")
         assert wrapper["selected"] == (
-            "eager" if size == 1 else "python" if device == "mps" else "cpp"
+            "eager"
+            if size == 1
+            else "python"
+            if device == "mps" or cuda_workaround
+            else "cpp"
         )
+        if size > 1 and cuda_workaround:
+            assert "CudaKernelParamCache" in wrapper["reason"]
         if size > 1 and device == "mps":
             assert "get_mps_lib" in wrapper["reason"]
         result.outputs["voltage"].sum().backward()
@@ -544,6 +554,7 @@ def test_actual_inductor_batched_readout_forward_backward(device):
         model = GraphExecutor(
             plan_graph(graph),
             compile_mode="default" if steps > 1 else None,
+            precision="highest",
             compile_block_steps=steps,
             trainable_parameters=tuple(
                 p["id"] for p in graph["parameters"] if p["id"] != "to_other.weight"

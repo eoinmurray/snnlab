@@ -729,14 +729,19 @@ def test_native_presentation_replay_matches_full_updates(
     for left, right in zip(
         actual.metrics["epochs"], expected.metrics["epochs"], strict=True
     ):
-        assert left["train_loss"] == pytest.approx(
-            right["train_loss"], abs=tolerance, rel=tolerance
-        )
+        assert ("train_loss" in left) == ("train_loss" in right)
+        if "train_loss" in left:
+            assert left["train_loss"] == pytest.approx(
+                right["train_loss"], abs=tolerance, rel=tolerance
+            )
     assert actual.metrics["cuda_graphs"]["captures"] == 2
     assert actual.metrics["cuda_graphs"]["replayed_updates"] == 6
     assert not actual.metrics["cuda_graphs"]["fallback_reasons"]
     torch.testing.assert_close(
-        actual.parameters["private.weight"], torch.full((2,), 0.02), atol=0, rtol=0
+        actual.parameters["private.weight"],
+        torch.full((1, 2), 0.02, device="cuda"),
+        atol=0,
+        rtol=0,
     )
     assert "private.weight" not in actual.gradients
     assert actual.optimizer_state.get("private.weight", {}) == {}

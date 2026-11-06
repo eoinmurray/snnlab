@@ -435,6 +435,7 @@ def test_scheduled_execution_and_gradients_on_accelerator(device):
         pytest.skip(f"{device} unavailable")
     net, projection = network(lang.SineGain())
     model = executor(net, projection).to(device)
+    model.precision = "highest"
     result = model({"events": torch.ones(5, 1, 1, device=device)})
     result.outputs["drive"].sum().backward()
     reference = executor(net, projection)

@@ -216,10 +216,5 @@ def test_input_delay_pulse_arrives_on_exact_timestep_and_handles_boundary():
 
 
 def test_non_integral_delay_is_rejected_before_execution():
-    graph = _coupled_graph(delay_ms=0.15)
-    try:
-        plan_graph(graph)
-    except ValueError as exc:
-        assert "integer number" in str(exc)
-    else:
-        raise AssertionError("fractional-step delay must fail planning")
+    with pytest.raises(ValueError, match="integer number"):
+        plan_graph(_coupled_graph(delay_ms=0.15))

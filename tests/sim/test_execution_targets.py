@@ -75,7 +75,8 @@ def test_graph_training_cli_loads_targets_and_writes_resume_checkpoint(tmp_path)
         == 0
     )
     metrics = json.loads((out_dir / "metrics.json").read_text())
-    assert len(metrics["updates"]) == 2
+    assert metrics["batch_counts"]["optimizer_updates"] == 2
+    assert load_training_checkpoint(checkpoint).completed_updates == 2
     assert metrics["execution_protocol"]["targets"][0]["source"]["digest"].startswith(
         "sha256:"
     )

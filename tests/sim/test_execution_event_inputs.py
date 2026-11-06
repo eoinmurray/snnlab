@@ -41,6 +41,7 @@ def test_event_stream_binding_matches_hand_calculated_spike_count():
     )
     result = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,
@@ -154,6 +155,7 @@ def test_event_stream_spikes_can_share_a_request_with_dense_valid_time_mask():
     )
     result = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,

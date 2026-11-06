@@ -9,6 +9,20 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.32.3] - 2026-11-06
+
+### Fixed
+
+1. PyTorch 2.11 CUDA compilation uses the Python wrapper around compiled kernels, avoiding C++ backward code generation failures reporting `CudaKernelParamCache not populated`. CUDA graph capture remains enabled independently. Performance reports and kernel compilation use the same version/device compatibility decision; CPU native wrappers and existing MPS behavior are preserved. Added dampened COBA surrogate backward and wrapper-policy regressions.
+2. PyTorch 2.11 reduced-precision CPU execution uses the existing eager tensor-graph fallback after the restored 128-step BF16 gate exposed recurrent gradient errors in single-step compilation. CUDA and newer CPU backend policies are unchanged.
+3. Full-batch update training accepts explicit per-update history without requiring epoch training. Compact defaults remain unchanged; checkpoint resume and retained numerical trajectories cover the opt-in path.
+4. Mean-field examples replace their own result directories consistently with the other examples, preserving sibling files and symlink targets.
+5. Regression tests own their recurrent precision and custom streaming fixtures instead of importing removed benchmarks. CPU reference tests bind CPU explicitly, strict accelerator comparisons request full precision, and the retained snnTorch report includes its PDF figure.
+
+### Validation
+
+1. Package checks run the full test suite for releases as well as nightly builds.
+
 ## [0.32.2] - 2026-11-05
 
 ### Fixed

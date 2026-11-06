@@ -5,6 +5,7 @@ Run: uv run python examples/meanfield-delays/example.py
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import matplotlib
@@ -18,6 +19,16 @@ from snnlab import meanfield as mf
 from snnlab.meanfield import closures
 
 HERE = Path(__file__).resolve().parent
+OUTPUT_DIR = HERE / "results"
+
+
+def prepare_results(out_dir=None):
+    path = OUTPUT_DIR if out_dir is None else Path(out_dir)
+    if path.is_symlink():
+        path.unlink()
+    elif path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
 
 
 def build_model(*, delays="explicit"):
@@ -83,9 +94,9 @@ def build_model(*, delays="explicit"):
     return model, bundle
 
 
-def run(out_dir=HERE / "results"):
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+def run(out_dir=None):
+    out_dir = OUTPUT_DIR if out_dir is None else Path(out_dir)
+    prepare_results(out_dir)
     model, bundle = build_model()
     bundle.visualise(out_dir / "network.png")
     initial = dict.fromkeys(model.states, 0.0)

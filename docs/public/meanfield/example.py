@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import matplotlib
@@ -21,6 +22,16 @@ from snnlab import meanfield as mf
 from snnlab.meanfield import closures
 
 HERE = Path(__file__).resolve().parent
+OUTPUT_DIR = HERE / "results"
+
+
+def prepare_results(out_dir=None):
+    path = OUTPUT_DIR if out_dir is None else Path(out_dir)
+    if path.is_symlink():
+        path.unlink()
+    elif path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
 
 
 def configuration():
@@ -146,13 +157,10 @@ def build_model(
     return model, control
 
 
-def run(out_dir=HERE / "results"):
+def run(out_dir=None):
     cfg = configuration()
-    out_dir = Path(out_dir)
-    out_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    out_dir = OUTPUT_DIR if out_dir is None else Path(out_dir)
+    prepare_results(out_dir)
     model, control = build_model(
         cfg,
         diagram_path=out_dir / "network.png",

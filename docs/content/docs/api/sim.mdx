@@ -184,7 +184,14 @@ SHD retains its official train/test split and returns an object array whose entr
 ## Inputs and execution settings
 
 
-### Performance
+### CUDA wrapper compatibility
+
+On PyTorch 2.11, CUDA kernels remain compiled but use Python wrappers to avoid
+`CudaKernelParamCache not populated` failures in C++ backward code generation.
+This does not disable CUDA graph capture/replay. The resolved compiler-wrapper
+policy and its compatibility reason are recorded in performance metadata.
+
+## Performance
 
 `performance: Performance | None = None` groups execution optimizations for
 `build`, `simulate` and `train`. Import `Performance` from `snnlab.sim`.
@@ -273,7 +280,7 @@ measurements, and BF16 changed the final accuracy; see the retained
 Compiled CPU/CUDA execution uses a native C++ dispatch wrapper while preserving
 precision-cast emulation. MPS uses compiled Metal kernels with Python dispatch:
 native-wrapper generation currently fails on undeclared `get_mps_lib_*_handle`
-symbols. The PyTorch 2.10 reduced-precision CPU eager-tensor fallback is unchanged.
+symbols. PyTorch 2.10 and 2.11 reduced-precision CPU execution uses eager tensor graphs to preserve recurrent gradients.
 `result.metrics["compiler_wrapper"]`,
 `result.metrics["performance"]["resolved"]["compiler_wrapper"]`, and
 `stream.info["compiler_wrapper"]` report the selection and reason. A native wrapper
@@ -1103,7 +1110,7 @@ In dataset iteration mode (`epochs > 0`), `train` reuses pre-update minibatch sc
 
 Each evaluation uses fixed weights and minibatches bounded by `batch_size`. The final smaller batch is weighted by its actual sample count. Training samples are not shuffled during evaluation. `result.metrics["updates"]` is empty by default; set `TrainingMetrics(update_history=True)` to retain per-update losses.
 
-Default online reporting restores completed history and adds newly completed epochs on resume. Explicit fixed-weight reporting without retained history evaluates the starting epoch boundary and subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. Default online reporting retains completed history and partial epoch sums in the checkpoint. With observations enabled, history is retained and resumed as described below. Full-batch update mode without positive epochs returns an empty epoch history.
+Default online reporting restores completed history and adds newly completed epochs on resume. Explicit fixed-weight reporting without retained history evaluates the starting epoch boundary and subsequent completed epochs. An `updates` limit that stops partway through an epoch adds no partial-epoch measurement. Default online reporting retains completed history and partial epoch sums in the checkpoint. With observations enabled, history is retained and resumed as described below. Full-batch update mode without positive epochs returns an empty epoch history. It accepts `TrainingMetrics(update_history=True)` to retain update losses; epoch evaluation policies, batching policies and epoch callbacks still require positive epochs.
 
 Epoch evaluations do not replace the final update's returned outputs or diagnostics. With validation enabled, the default checkpoint selection chooses the lowest total validation loss; explicit `checkpoint_selection` overrides it. Validation does not perform early stopping. Epoch evaluation adds forward passes over the splits; training itself remains inside one `train` call.
 
@@ -2153,7 +2160,7 @@ GraphExecutor(
 
 `compile_block_steps="auto"` selects CUDA 16, MPS 4 and CPU 1; explicit integers from 1 to 64 override it. Forward metrics report `execution_path` with the selected block size and fallback reasons. `precision="auto"` selects supported CUDA BF16 autocast and TF32; `"highest"` opts out. `cuda_graphs="auto"` replays compatible repeated forward-only CUDA calls with bounded caches and independent result tensors. See [GPU performance controls](/api/sim#inputs-and-execution-settings).
 
-Compiled kernels preserve intermediate dtype casts. Forward metrics record `compiler_precision_policy="snnlab.eager-precision-casts/v1"`; eager execution records `None`. This keeps reduced-dtype rounding consistent with the reference equations without changing model or runtime-state dtype. PyTorch 2.10 reduced-precision CPU execution uses eager tensor graphs because its CPU backend cannot preserve these casts; `compiler_fallback` and `execution_path.fallback_reasons` record this limit.
+Compiled kernels preserve intermediate dtype casts. Forward metrics record `compiler_precision_policy="snnlab.eager-precision-casts/v1"`; eager execution records `None`. This keeps reduced-dtype rounding consistent with the reference equations without changing model or runtime-state dtype. PyTorch 2.10 and 2.11 reduced-precision CPU execution uses eager tensor graphs because these CPU backends do not preserve the required recurrent gradients; `compiler_fallback` and `execution_path.fallback_reasons` record this limit.
 
 `extension_validation` accepts `"structural"` (default) or `"strict"`. Opt into strict mode while developing custom callbacks or investigating numerical failures. Structural mode skips custom neuron/synapse step value checks and surrogate derivative finite checks while retaining tensor contracts; initialization and restored state stay strict. Invalid values may propagate silently. See [validation policy](/api/sim#custom-dynamics-validation) for details. Surrogate dispatch is cached per executor; reconstruct the executor after changing its surrogate configuration. Resolved surrogate settings and `compile_mode` appear in build and forward metrics. Non-default built-in threshold conventions bind runtime-state compatibility; changing between inclusive and exclusive built-in thresholds rejects continuation. Default and registered-callback state identities retain their historical convention.
 

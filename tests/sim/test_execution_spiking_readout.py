@@ -14,11 +14,12 @@ from tests.sim._execution_builders import direct_train_bundle
 
 def test_native_pytorch_checkpoint_restores_parameters_and_rejects_old_keys(tmp_path):
     bundle = direct_train_bundle()
-    built = build(ExecutionSpec(kind="build", graph=bundle.graph, seed=7))
+    built = build(ExecutionSpec(device="cpu", kind="build", graph=bundle.graph, seed=7))
     checkpoint = tmp_path / "parameters.pt"
     torch.save(built.model.state_dict(), checkpoint)
     result = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             graph=bundle.graph,
             seed=99,
@@ -33,6 +34,7 @@ def test_native_pytorch_checkpoint_restores_parameters_and_rejects_old_keys(tmp_
     with pytest.raises(RuntimeError, match="state_dict"):
         simulate(
             ExecutionSpec(
+                device="cpu",
                 kind="simulate",
                 graph=bundle.graph,
                 checkpoint=checkpoint,
@@ -66,6 +68,7 @@ def test_soft_reset_integrator_records_spikes_only_when_declared(spiking):
     graph = snn.compile(net).graph
     result = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,

@@ -32,7 +32,6 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - name: Run tests
-        if: github.event_name == 'schedule'
         run: uv run pytest -q
         env:
           OMP_NUM_THREADS: "1"

@@ -57,6 +57,7 @@ def test_graph_standard_readouts_match_hand_calculated_fixtures():
 
     final = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("final"),
@@ -69,6 +70,7 @@ def test_graph_standard_readouts_match_hand_calculated_fixtures():
 
     count = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("count"),
@@ -81,6 +83,7 @@ def test_graph_standard_readouts_match_hand_calculated_fixtures():
 
     rate = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("rate", duration=0.3),
@@ -93,6 +96,7 @@ def test_graph_standard_readouts_match_hand_calculated_fixtures():
 
     cumulative = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("cumulative"),
@@ -124,6 +128,7 @@ def test_graph_masked_spike_rate_uses_valid_duration_in_spikes_per_second():
     expected_seconds = valid.sum(dim=0).to(projected.dtype)[:, None] * 0.1
     result = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=_standard_readout_graph("rate", mask=True),

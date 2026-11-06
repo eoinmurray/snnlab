@@ -66,6 +66,7 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
     graph, inputs = _continuation_case()
     whole = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,
@@ -90,6 +91,7 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
     split_step = int(spike_steps[(spike_steps - 500).abs().argmin()]) + 1
     first = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,
@@ -117,6 +119,7 @@ def test_split_run_exactly_preserves_spikes_voltages_conductances_and_dynamic_st
     assert any(torch.count_nonzero(x) for x in first.runtime_state.refractory.values())
     second = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,
@@ -145,6 +148,7 @@ def test_runtime_state_portable_round_trip_preserves_dtype_and_values(tmp_path):
     graph, inputs = _continuation_case()
     result = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,
@@ -171,6 +175,7 @@ def test_runtime_state_allows_weight_branch_but_rejects_structural_changes():
     zero_parameter["initializer"] = {"kind": "constant", "value": 0.0}
     first = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,
@@ -192,6 +197,7 @@ def test_runtime_state_allows_weight_branch_but_rejects_structural_changes():
     assert runtime_state_signature(plan_graph(branch)) == first.runtime_state.signature
     simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=branch,
@@ -244,6 +250,7 @@ def test_runtime_state_allows_weight_branch_but_rejects_structural_changes():
         try:
             simulate(
                 ExecutionSpec(
+                    device="cpu",
                     kind="simulate",
                     executor="graph",
                     graph=incompatible,
@@ -268,6 +275,7 @@ def test_runtime_state_validates_batch_shape_and_dtype():
     graph, inputs = _continuation_case()
     first = simulate(
         ExecutionSpec(
+            device="cpu",
             kind="simulate",
             executor="graph",
             graph=graph,
@@ -285,6 +293,7 @@ def test_runtime_state_validates_batch_shape_and_dtype():
     try:
         simulate(
             ExecutionSpec(
+                device="cpu",
                 kind="simulate",
                 executor="graph",
                 graph=graph,
@@ -305,6 +314,7 @@ def test_runtime_state_validates_batch_shape_and_dtype():
     try:
         simulate(
             ExecutionSpec(
+                device="cpu",
                 kind="simulate",
                 executor="graph",
                 graph=graph,
@@ -441,4 +451,4 @@ def test_disabling_diagnostics_preserves_outputs_and_branch_state():
 )
 def test_removed_recording_arguments_are_rejected(field, value):
     with pytest.raises(TypeError, match=field):
-        ExecutionSpec(kind="simulate", **{field: value})
+        ExecutionSpec(device="cpu", kind="simulate", **{field: value})

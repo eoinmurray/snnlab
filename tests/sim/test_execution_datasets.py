@@ -14,6 +14,7 @@ from snnlab.sim import (
     DatasetEncoder,
     DatasetSnapshotBinding,
     PoissonInputBinding,
+    TrainingMetrics,
     resolve_dataset_snapshot_binding,
     resolve_poisson_input_bindings,
 )
@@ -99,6 +100,7 @@ def test_prebinned_dataset_snapshot_trains_with_bound_labels(tmp_path):
     result = train(
         ExecutionSpec(
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,

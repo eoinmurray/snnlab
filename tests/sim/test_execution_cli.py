@@ -9,6 +9,7 @@ from snnlab.sim import (
     DenseArrayBinding,
     GraphRuntimeState,
     PoissonInputBinding,
+    TrainingMetrics,
     graph_capability_issues,
     resolve_device,
 )
@@ -91,6 +92,10 @@ def test_graph_cli_resolves_explicit_device_and_diagnostics(tmp_path, monkeypatc
     assert resolve_device("cpu") == "cpu"
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setenv("SNNLAB_DEVICE", "cpu")
+    assert resolve_device("auto") == "cpu"
+    monkeypatch.delenv("SNNLAB_DEVICE")
+    assert resolve_device("auto") == "cuda"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     assert resolve_device("auto") == "cpu"
 
 
@@ -211,6 +216,7 @@ def test_production_shaped_deep_shd_recipe_trains_all_recurrent_layers():
     result = train(
         ExecutionSpec(
             kind="train",
+            metrics=TrainingMetrics(update_history=True),
             executor="graph",
             graph=bundle.graph,
             training=bundle.training,
