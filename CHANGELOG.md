@@ -15,6 +15,7 @@ separate compatibility contracts.
 3. Full-batch update training accepts explicit per-update history without requiring epoch training. Compact defaults remain unchanged; checkpoint resume and retained numerical trajectories cover the opt-in path.
 4. Mean-field examples replace their own result directories consistently with the other examples, preserving sibling files and symlink targets.
 5. Regression tests own their recurrent precision and custom streaming fixtures instead of importing removed benchmarks. CPU reference tests bind CPU explicitly, strict accelerator comparisons request full precision, and the retained snnTorch report includes its PDF figure.
+6. CUDA profiling warms the collector outside the selected measurement window, preventing early kernel-record loss from older CUPTI timestamp callbacks after GPU idle periods. Warmup uses independent storage without model updates or random draws, and reports its duration separately. Added complete-region capture after idle and exact training/RNG non-interference regressions.
 
 ### Validation
 

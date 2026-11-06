@@ -1690,6 +1690,27 @@ Tie-break metrics are compared in order after exact ties; an exact tie retains t
 
 Disabled and legacy modes reject extra epoch-metric settings. Resume authenticates selection/evaluation contracts and retains the best candidate across calls. See [request selection rules](/api/sim#inputs-and-execution-settings) and [selection results](/api/sim#checkpoint-selection).
 
+## Bounded training traces
+
+Pass `tracing=TraceSpec(output, mode="both", skip_updates=1, active_updates=3)`
+to `train` to monitor and profile a contiguous window of updates. Modes are
+`"off"`, `"monitor"`, `"profile"` and `"both"`. Trace artifacts include the
+summary, phase timings, activity and sparsity tables, and, when profiling is
+enabled, the exported PyTorch timeline and operator table.
+
+CUDA profiling first warms the collector with independent, non-random GPU work
+outside the selected window. This avoids early kernel-record loss from older
+CUPTI timestamp callbacks after GPU idle periods. The discarded warmup executes
+no model updates and draws no random numbers. Its duration is reported separately
+as `profiler_warmup_s`; `window_wall_s` and CUDA allocator peaks start after
+warmup. CPU profiling and monitor-only calls do not perform this warmup.
+
+All timings include instrumentation overhead. Kernel coverage is derived from
+exported GPU intervals and remains unavailable when the backend exports none;
+CUDA stream elapsed times are reported independently. See the
+[CUPTI timestamp fix in CUDA 13.1](https://docs.nvidia.com/cupti/release-notes/release-notes.html#updates-in-cuda-13-1)
+for the upstream limitation addressed by the warmup.
+
 ## Prepared streaming sessions
 
 Use `prepare_stream` to run a fixed network repeatedly on consecutive input
