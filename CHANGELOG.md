@@ -8,7 +8,7 @@ separate compatibility contracts.
 
 ### Validation
 
-1. Added acceptance tests for the planned `stdp_simple` plasticity rule: pair-based, additive STDP with hard bounds (T01–T31). They are skipped until `snnlab.sim.plasticity.stdp_simple` and `lang.STDPSimple` exist.
+1. Added acceptance tests for the planned `stdp_simple` plasticity rule: pair-based, additive STDP with hard bounds (T01–T32). They are skipped until `snnlab.sim.plasticity.stdp_simple` and `lang.STDPSimple` exist.
 
 ## [0.32.3] - 2026-11-06
 

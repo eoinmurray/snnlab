@@ -7,8 +7,9 @@ tests/lang/test_snnlang.py.
 Layers:
 - T01-T20 drive the update step alone, on fixed spike trains.
 - T21 compares the update step with an independent Brian2 model.
-- T23-T31 run the rule inside snnlab, with the update step as their reference.
+- T23-T32 run the rule inside snnlab, with the update step as their reference.
   Post spikes are imposed with ReplaySpikes, so neuron dynamics play no part.
+  T32 checks that transmission uses the learned weights.
 
 Conventions: weights use the runtime layout (batch, source, target). Sizes are
 non-square (3 sources, 2 targets), so a transposed layout fails. Defaults use
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import importlib
 import math
 
 import numpy as np
@@ -28,13 +30,18 @@ import torch
 from snnlab import lang as snn
 from snnlab import sim
 
-try:  # PROVISIONAL: location of the update step
-    from snnlab.sim.plasticity import stdp_simple as kernel
-except ImportError:
+KERNEL_MODULE = "snnlab.sim.plasticity.stdp_simple"  # PROVISIONAL: location
+try:
+    kernel = importlib.import_module(KERNEL_MODULE)
+except ModuleNotFoundError as error:
+    # Skip only while the module itself is absent. A missing dependency or a
+    # broken import inside an existing module must fail collection.
+    if error.name not in {"snnlab.sim.plasticity", KERNEL_MODULE}:
+        raise
     kernel = None
 
 pytestmark = pytest.mark.skipif(
-    kernel is None, reason="snnlab.sim.plasticity.stdp_simple is not implemented yet"
+    kernel is None, reason=f"{KERNEL_MODULE} is not implemented yet"
 )
 requires_lang = pytest.mark.skipif(
     not hasattr(snn, "STDPSimple"), reason="lang.STDPSimple is not implemented yet"
@@ -955,3 +962,43 @@ def test_t31_a_disabled_projection_keeps_its_weights_and_its_traces_track_spikes
         rtol=1e-5,
         atol=1e-6,
     )
+
+
+@requires_lang
+@pytest.mark.parametrize("connectivity", ["dense", "one_to_one"])
+def test_t32_transmission_uses_the_learned_weights_from_the_previous_step(
+    connectivity,
+):
+    # A learning synapse and a control synapse share the synapse model, so the
+    # ratio of their current peaks after a probe pre spike equals the ratio of
+    # their weights, whatever the synapse kernel. Probes are far apart (97.5 ms,
+    # synapse tau 2 ms), so earlier currents have decayed away.
+    dense = connectivity == "dense"
+    n_source, n_target = (N_SOURCE, N_TARGET) if dense else (2, 2)
+    sizes = {"n_source": n_source, "n_target": n_target}
+    extra = {} if dense else {"connectivity": snn.OneToOne()}
+    # Dense: pre 0 drives target 1 (learns) and target 0 (control).
+    # OneToOne: pre 0 -> target 0 learns; pre 1 -> target 1 is the control.
+    learner, control = (1, 0) if dense else (0, 1)
+    pairing_step, post_step, probes = 5, 15, (200, 400)
+    pre = torch.zeros(450, 1, n_source)
+    post = torch.zeros(450, 1, n_target)
+    for j in (0,) if dense else (0, 1):
+        pre[[pairing_step, *probes], 0, j] = 1
+    post[post_step, 0, learner] = 1
+    params = {"a_plus": 0.2, "a_minus": 0.2}
+    rule = make_rule(**params)
+    model = model_for(network(lang_rule(**params), **sizes, **extra))
+    recording = sim.RecordingSpec(signals=(sim.SignalRecording("syn.current"),))
+    result = model({"pre": pre}, interventions=replay(post), recording=recording)
+    current = result.recorded_signals["syn.current"][:, 0].abs()  # (time, target)
+
+    w0 = 0.5
+    # Learned at step 15 from the pair 5 -> 15.
+    potentiated = w0 + ltp(rule, post_step - pairing_step)
+    # The probe at step 200 also depresses, but only after it has transmitted.
+    depressed = potentiated - ltd(rule, probes[0] - post_step)
+    for probe, weight in zip(probes, (potentiated, depressed), strict=True):
+        window = current[probe : probe + 40]
+        ratio = float(window[:, learner].max() / window[:, control].max())
+        assert ratio == pytest.approx(weight / w0, rel=1e-5)
