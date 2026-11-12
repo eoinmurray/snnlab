@@ -623,3 +623,148 @@ def test_spike_count_parameters_can_define_its_training_group():
     assert bundle.training["resolved_parameters"]["trainable"] == [
         "scores_projection.weight"
     ]
+
+
+# stdp_simple acceptance tests (T22, T25). Skipped until lang.STDPSimple exists.
+# Lines marked PROVISIONAL follow the issue draft and may change in review.
+requires_stdp_simple = pytest.mark.skipif(
+    not hasattr(snn, "STDPSimple"), reason="lang.STDPSimple is not implemented yet"
+)
+
+
+def _stdp_simple(**overrides):
+    values = {
+        "a_plus": 0.01,
+        "a_minus": 0.0105,
+        "tau_plus": 16.8 * snn.ms,
+        "tau_minus": 33.7 * snn.ms,
+        "w_max": 1.0,
+        **overrides,
+    }
+    return snn.STDPSimple(**values)  # PROVISIONAL: name and arguments
+
+
+def _stdp_network(
+    plasticity=None,
+    *,
+    port="excitatory",
+    source_signal="spikes",
+    spiking_target=True,
+    **connect,
+):
+    net = snn.Network("stdp_simple")
+    if source_signal == "spikes":
+        source = net.input(
+            "pre", shape=("time", "batch", 3), signal_type="spikes", unit="spike"
+        )
+    else:
+        source = net.input(
+            "pre", shape=("time", "batch", 3), signal_type="current", unit="nA"
+        )
+    if spiking_target:
+        post = net.population("post", size=2, neuron=snn.CUBA_LIF())
+        synapse = snn.ExponentialCurrent(tau=2 * snn.ms)
+        signal = post.spikes
+    else:
+        post = net.population(
+            "post", size=2, neuron=snn.LeakyIntegrator(tau=2 * snn.ms), spiking=False
+        )
+        synapse = snn.AMPA(tau=2 * snn.ms)
+        signal = post.voltage
+    if plasticity is not None:
+        connect["plasticity"] = plasticity  # PROVISIONAL: keyword on Network.connect
+    net.connect(
+        source,
+        getattr(post, port),
+        name="syn",
+        synapse=synapse,
+        weight=snn.Constant(0.5),
+        initialization_scaling="direct",
+        **connect,
+    )
+    net.output("post_signal", signal)
+    return net
+
+
+def _stdp_shared_weight_network():
+    net = snn.Network("stdp_shared")
+    pre = net.input(
+        "pre", shape=("time", "batch", 3), signal_type="spikes", unit="spike"
+    )
+    post = net.population("post", size=2, neuron=snn.CUBA_LIF())
+    shared = net.parameter(
+        "shared", shape=(2, 3), initializer=snn.Constant(0.5), unit="nA"
+    )
+    for name, extra in (("a", {"plasticity": _stdp_simple()}), ("b", {})):
+        net.connect(
+            pre,
+            post.excitatory,
+            name=name,
+            synapse=snn.ExponentialCurrent(tau=2 * snn.ms),
+            weight=shared,
+            **extra,
+        )
+    net.output("post_spikes", post.spikes)
+    return net
+
+
+def _stdp_conv2d_network():
+    net = snn.Network("stdp_conv")
+    source = net.input(
+        "pre",
+        shape=("time", "batch", 40),
+        spatial_shape=(2, 4, 5),
+        signal_type="spikes",
+        unit="spike",
+    )
+    cells = net.population("post", spatial_shape=(3, 2, 3), neuron=snn.CUBA_LIF())
+    net.connect(
+        source,
+        cells.excitatory,
+        name="syn",
+        connectivity=snn.Conv2d(kernel_size=(2, 3), stride=(2, 1), padding=(0, 0)),
+        synapse=snn.ExponentialCurrent(tau=2 * snn.ms),
+        weight=snn.Constant(0.1),
+        initialization_scaling="direct",
+        plasticity=_stdp_simple(),
+    )
+    net.output("post_spikes", cells.spikes)
+    return net
+
+
+@requires_stdp_simple
+def test_t22_stdp_simple_spec_states_its_rule_and_is_opt_in():
+    spec = _stdp_simple().json()
+    assert spec["kind"] == "stdp_simple"
+    assert (spec["update"], spec["bounds"]) == ("additive", "hard")
+    assert (spec["pairing"], spec["w_min"], spec["w_max"]) == ("nearest", 0.0, 1.0)
+    plastic = snn.compile(_stdp_network(_stdp_simple()), target=None).graph
+    static = snn.compile(_stdp_network(), target=None).graph
+    row = next(r for r in plastic["projections"] if r["id"] == "syn")
+    assert row["plasticity"] == spec  # PROVISIONAL: key in the projection row
+    static_row = next(r for r in static["projections"] if r["id"] == "syn")
+    assert "plasticity" not in static_row
+
+
+_STDP_REJECTED = {
+    "inhibitory_receptor": lambda: _stdp_network(_stdp_simple(), port="inhibitory"),
+    "modulatory_receptor": lambda: _stdp_network(_stdp_simple(), port="modulatory"),
+    "weight_modulation": lambda: _stdp_network(
+        _stdp_simple(), modulation=snn.ConstantGain(0.5)
+    ),
+    "shared_weight": _stdp_shared_weight_network,
+    "conv2d_kernel": _stdp_conv2d_network,
+    "non_spiking_source": lambda: _stdp_network(
+        _stdp_simple(), source_signal="current"
+    ),
+    "non_spiking_target": lambda: _stdp_network(_stdp_simple(), spiking_target=False),
+}
+
+
+@requires_stdp_simple
+@pytest.mark.parametrize("case", sorted(_STDP_REJECTED))
+def test_t25_stdp_simple_rejects_unsupported_projections(case):
+    # stdp_simple is a per-projection rule for projections onto an excitatory
+    # receptor, from a spiking source to a spiking target, with its own weights.
+    with pytest.raises(ValueError, match="stdp_simple|plastic"):
+        snn.compile(_STDP_REJECTED[case](), target=None)
