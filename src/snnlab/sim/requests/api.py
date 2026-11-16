@@ -108,8 +108,15 @@ def simulate(
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
     snapshot: str | Path | SnapshotSpec | None = None,
     inference_overrides: Mapping[str, Any] | None = None,
+    learning: bool = True,
 ) -> ExecutionResult:
-    """Simulate a graph, optionally loading learned weights for inference."""
+    """Simulate a graph, optionally loading learned weights for inference.
+
+    ``learning=False`` runs plastic projections with their current weights,
+    taken from ``runtime_state`` when given, without updating them; their
+    traces keep tracking spikes. Use it for probe runs between learning phases.
+    It has no effect on networks without plastic projections.
+    """
     policy = _resolve_performance(
         performance,
         projection_mode=projection_mode,
@@ -145,11 +152,14 @@ def simulate(
         extension_validation=extension_validation,
         timing_mode=timing_mode,
         snapshot=snapshot,
-        options=(
-            {"inference_overrides": dict(inference_overrides)}
-            if inference_overrides is not None
-            else {}
-        ),
+        options={
+            **(
+                {"inference_overrides": dict(inference_overrides)}
+                if inference_overrides is not None
+                else {}
+            ),
+            **({"learning": learning} if learning is not True else {}),
+        },
     )
     return handlers.simulate(spec)
 

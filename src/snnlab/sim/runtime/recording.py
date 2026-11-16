@@ -46,9 +46,37 @@ class MeasurementWindow:
 
 @dataclass(frozen=True)
 class SignalRecording:
+    """One recorded signal.
+
+    ``every_steps=N`` keeps the values after global steps N-1, 2N-1, ...,
+    counted from the start of the run, so chunked runs join exactly. Weight
+    matrices of plastic projections (``<projection>.weight``) record as
+    (time, batch, source, target); their time axis lists the recorded steps.
+    """
+
     signal: str
     cells: tuple[int, ...] | None = None
     kind: str = "dense"
+    every_steps: int = 1
+
+
+def _is_matrix(shape) -> bool:
+    """A (time, batch, source, target) signal, such as a plastic weight matrix."""
+    return (
+        len(shape) == 4
+        and tuple(shape[:2]) == ("time", "batch")
+        and all(type(size) is int for size in shape[2:])
+    )
+
+
+def _axis_names(shape) -> tuple[str, ...]:
+    if _is_matrix(shape):
+        return ("time", "batch", "source", "target")
+    return tuple("cell" if isinstance(axis, int) else axis for axis in shape)
+
+
+def _scheduled(step: int, every_steps: int) -> bool:
+    return (step + 1) % every_steps == 0
 
 
 @dataclass(frozen=True)
@@ -130,6 +158,30 @@ class RecordingSpec:
         )
 
 
+def _validate_signal_row(row, shape):
+    if type(row.every_steps) is not int or row.every_steps < 1:
+        raise ValueError("recording every_steps must be a positive integer")
+    if row.every_steps != 1 and row.kind != "dense":
+        raise ValueError("every_steps applies to dense recordings only")
+    if _is_matrix(shape):
+        if row.cells is not None or row.kind != "dense":
+            raise ValueError(f"weight matrices record whole and dense: {row.signal}")
+        return
+    if len(shape) != 3 or shape[:2] != ("time", "batch") or type(shape[2]) is not int:
+        raise ValueError(f"recording requires a time/batch/cell signal: {row.signal}")
+    if row.kind not in {"dense", "spike_events"} or (
+        row.kind == "spike_events" and not row.signal.endswith(".spikes")
+    ):
+        raise ValueError("spike_events recordings require population spikes")
+    if row.cells is not None:
+        if not row.cells or len(set(row.cells)) != len(row.cells):
+            raise ValueError("recording cells must be non-empty and unique")
+        for cell in row.cells:
+            _step(cell, "cell index")
+            if cell >= shape[2]:
+                raise ValueError("recording cell index exceeds signal size")
+
+
 def recording_identity(recording, *, axes):
     if recording is None:
         return None
@@ -152,32 +204,14 @@ def recording_identity(recording, *, axes):
         if row.signal in seen:
             raise ValueError("recording signals must be unique")
         seen.add(row.signal)
-        shape = axes.get(row.signal, ())
-        if (
-            len(shape) != 3
-            or shape[:2] != ("time", "batch")
-            or type(shape[2]) is not int
-        ):
-            raise ValueError(
-                f"recording requires a time/batch/cell signal: {row.signal}"
-            )
-        if row.kind not in {"dense", "spike_events"} or (
-            row.kind == "spike_events" and not row.signal.endswith(".spikes")
-        ):
-            raise ValueError("spike_events recordings require population spikes")
-        if row.cells is not None:
-            if not row.cells or len(set(row.cells)) != len(row.cells):
-                raise ValueError("recording cells must be non-empty and unique")
-            for cell in row.cells:
-                _step(cell, "cell index")
-                if cell >= shape[2]:
-                    raise ValueError("recording cell index exceeds signal size")
+        _validate_signal_row(row, axes.get(row.signal, ()))
     return {
         "signals": [
             {
                 "signal": row.signal,
                 "cells": list(row.cells) if row.cells is not None else None,
                 "kind": row.kind,
+                **({"every_steps": row.every_steps} if row.every_steps != 1 else {}),
             }
             for row in recording.signals
         ],
@@ -247,6 +281,13 @@ class Recorder:
                     for row in graph.get("outputs", ())
                 }
             )
+            self.units.update(
+                {
+                    row["id"]: row.get("unit")
+                    for row in graph.get("parameters", ())
+                    if row["id"] in axes
+                }
+            )
         self.identity = recording_identity(spec, axes=axes)
         self.start, self.end, self.dt_ms = start, start + steps, dt_ms
         self.batch_offset = batch_offset
@@ -260,7 +301,9 @@ class Recorder:
         if spec:
             self.rows = {row.signal: row for row in spec.signals}
             self.selected_cells = {
-                row.signal: tuple(range(axes[row.signal][2]))
+                row.signal: None
+                if _is_matrix(axes[row.signal])
+                else tuple(range(axes[row.signal][2]))
                 if row.cells is None
                 else tuple(row.cells)
                 for row in spec.signals
@@ -283,7 +326,7 @@ class Recorder:
                 raise ValueError(
                     f"recording axis metadata is missing for {block.signal!r}"
                 )
-            axes = tuple("cell" if isinstance(axis, int) else axis for axis in axes)
+            axes = _axis_names(axes)
             size = block.values.shape[axes.index("batch")] if "batch" in axes else None
             block = replace(
                 block,
@@ -308,6 +351,8 @@ class Recorder:
         ):
             return
         for name, row in self.rows.items():
+            if not _scheduled(step, row.every_steps):
+                continue
             value = samples[name].detach()
             cells = self.selected_cells[name]
             if row.cells is not None:
@@ -329,6 +374,7 @@ class Recorder:
             return
         start, _, kind, cells = rows[0]
         end = rows[-1][0] + 1
+        steps = tuple(step for step, _, _, _ in rows)
         source = torch.stack([value for _, value, _, _ in rows])
         event = None
         if source.device.type == "cuda":
@@ -343,14 +389,18 @@ class Recorder:
                 event.record(self.transfer_stream)
         else:
             host = source.cpu()
-        self.transfers.append((name, kind, host, start, end, cells, event, source))
+        self.transfers.append(
+            (name, kind, host, start, end, cells, event, source, steps)
+        )
         # At most two in-flight host blocks; deliver completed older work while
         # the next chunk is copied. Sinks still run on the caller thread.
         if len(self.transfers) >= 2 or event is None:
             self.deliver()
 
     def deliver(self):
-        name, kind, host, start, end, cells, event, source = self.transfers.popleft()
+        name, kind, host, start, end, cells, event, source, steps = (
+            self.transfers.popleft()
+        )
         if event is not None:
             event.synchronize()
         if kind == "spike_events":
@@ -367,6 +417,10 @@ class Recorder:
         else:
             payload = host
         if self.spec.sink:
+            row = self.rows.get(name)
+            sparse = row is not None and (
+                row.every_steps != 1 or _is_matrix(self.axes[name])
+            )
             self.send(
                 RecordingBlock(
                     name,
@@ -378,6 +432,9 @@ class Recorder:
                     self.batch_offset,
                     cells,
                     self.units.get(name),
+                    # Thinned and matrix blocks name their own coordinates.
+                    axes=_axis_names(self.axes[name]) if sparse else None,
+                    step_indices=steps if sparse else None,
                     batch_size=self.batch_offset + host.shape[1],
                     sample_ids=tuple(
                         range(self.batch_offset, self.batch_offset + host.shape[1])
@@ -427,7 +484,9 @@ class Recorder:
                 else torch.empty((0, 3), dtype=torch.int64)
                 if row.kind == "spike_events"
                 else torch.empty(
-                    (
+                    (0, batch_size, *self.axes[name][2:])
+                    if _is_matrix(self.axes[name])
+                    else (
                         0,
                         batch_size,
                         len(row.cells) if row.cells is not None else self.axes[name][2],
@@ -457,17 +516,18 @@ class Recorder:
             name: SignalInfo(
                 axes=("event", "coordinate")
                 if row.kind == "spike_events"
-                else tuple(
-                    "cell" if isinstance(axis, int) else axis
-                    for axis in self.axes[name]
-                ),
+                else _axis_names(self.axes[name]),
                 kind=row.kind,
                 unit=self.units.get(name),
                 cell_ids=self.selected_cells[name],
                 sample_ids=tuple(range(batch_size)),
                 step_indices=None
                 if row.kind == "spike_events"
-                else tuple(range(start, end)),
+                else tuple(
+                    step
+                    for step in range(start, end)
+                    if _scheduled(step, row.every_steps)
+                ),
                 dt_ms=self.dt_ms,
                 start_step=start,
                 end_step=end,

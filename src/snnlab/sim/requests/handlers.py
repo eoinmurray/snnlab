@@ -496,6 +496,7 @@ def simulate(
             retain_final_state=spec.retain_final_state,
             retain_runtime_state=spec.retain_runtime_state,
             transmission_scales=transmission_scales or None,
+            learning=spec.options.get("learning", True),
         )
     if spec.timing_mode == "synchronized":
         _synchronize_device(device)

@@ -3,16 +3,15 @@
 Stage 1 delivered the update step and the lang contract (T01-T21, T33). Stage 2
 applies the rule inside the simulator (T23-T28, T31, T32, T35-T37). Stage 3 keeps
 plasticity off in training and its evaluation passes, and makes projection
-scales act on transmission only (T29, T38-T41). T30 (weight snapshots in
-recordings) waits for stage 4 and is a strict expected failure, so it fails
-loudly once its stage lands. Lines marked PROVISIONAL follow the issue draft
-and may change in a later stage. The lang-side tests (T22, T25, T34) live in
+scales act on transmission only (T29, T38-T41). Stage 4 records weights, saves
+and checks plastic state, and adds learning frozen (T30, T42-T46). Lines marked
+PROVISIONAL follow the issue draft and may change in a later stage. The lang-side tests (T22, T25, T34) live in
 tests/lang/test_snnlang.py.
 
 Layers:
 - T01-T20 and T33 drive the update step alone, on fixed spike trains.
 - T21 compares the update step with an independent Brian2 model.
-- T23-T32 and T35-T41 run the rule inside snnlab, with the update step as their
+- T23-T32 and T35-T46 run the rule inside snnlab, with the update step as their
   reference. Post spikes are imposed with ReplaySpikes, so neuron dynamics play
   no part. T32 checks that transmission uses the learned weights.
 
@@ -34,15 +33,6 @@ import torch
 from snnlab import lang as snn
 from snnlab import sim
 from snnlab.sim.plasticity import stdp_simple as kernel
-
-# Tests for later stages are strict expected failures with the precise error
-# they meet today; strict=True makes them fail loudly once the stage lands.
-# Stage 4: SignalRecording has no every_steps argument yet (TypeError).
-stage4 = pytest.mark.xfail(
-    raises=TypeError,
-    strict=True,
-    reason="weight snapshots in recordings arrive in stage 4",
-)
 
 PAIRINGS = ("nearest", "all_to_all")
 DT_MS = 0.5
@@ -932,7 +922,6 @@ def test_t29_training_keeps_plasticity_off_and_runtime_weights_win_over_checkpoi
     torch.testing.assert_close(weights(second), weights(whole), rtol=0, atol=0)
 
 
-@stage4
 def test_t30_recordings_follow_the_update_and_one_schedule_across_chunks():
     pre, post = trains(30, 100)
     pre, post = pre.float(), post.float()
@@ -953,11 +942,12 @@ def test_t30_recordings_follow_the_update_and_one_schedule_across_chunks():
     )
 
     # Weights: (snapshot, batch, source, target), taken after each step's update,
-    # at global steps 9, 19, ..., 99. The last equals the final weights.
+    # at global steps 9, 19, ..., 99. The last equals the final weights. The
+    # steps are the recording's time coordinates, as for every recording.
     snapshots = whole.recorded_signals["syn.weight"]
-    steps = whole.recorded_signals["syn.weight.steps"]  # PROVISIONAL
+    steps = whole.numpy().recording.info["syn.weight"].step_indices
     assert snapshots.shape == (10, 1, N_SOURCE, N_TARGET)
-    assert steps.tolist() == list(range(9, 100, 10))
+    assert list(steps) == list(range(9, 100, 10))
     torch.testing.assert_close(
         snapshots.double(), trajectory[9::10], rtol=1e-5, atol=1e-6
     )
@@ -984,14 +974,12 @@ def test_t30_recordings_follow_the_update_and_one_schedule_across_chunks():
     joined = torch.cat(
         [first.recorded_signals["syn.weight"], second.recorded_signals["syn.weight"]]
     )
-    joined_steps = torch.cat(
-        [
-            first.recorded_signals["syn.weight.steps"],
-            second.recorded_signals["syn.weight.steps"],
-        ]
+    joined_steps = (
+        first.numpy().recording.info["syn.weight"].step_indices
+        + second.numpy().recording.info["syn.weight"].step_indices
     )
     torch.testing.assert_close(joined, snapshots, rtol=0, atol=0)
-    assert joined_steps.tolist() == steps.tolist()
+    assert list(joined_steps) == list(steps)
 
     # Recording off: nothing recorded, weights unchanged.
     off = model({"pre": pre}, interventions=replay(post))
@@ -1399,3 +1387,297 @@ def test_t41_a_disabled_projection_stays_frozen_at_any_scale():
             rtol=1e-6,
             atol=1e-6,
         )
+
+
+# T42-T46: persistence, recording and learning frozen (stage 4) ----------------------
+
+
+def masked_recurrent_model(rule, start):
+    """E -> E with autapses excluded and frozen zeros; start is (source, target)."""
+    net = snn.Network("stdp_masks", dt=DT_MS * snn.ms)
+    kick = net.input(
+        "kick", shape=("time", "batch", 4), signal_type="spikes", unit="spike"
+    )
+    cells = net.population("E", size=4, neuron=snn.CUBA_LIF())
+    common = {
+        "synapse": snn.ExponentialCurrent(tau=2 * snn.ms),
+        "initialization_scaling": "direct",
+    }
+    net.connect(
+        kick, cells.excitatory, name="kick_E", weight=snn.Constant(0.0), **common
+    )
+    net.connect(
+        cells.spikes,
+        cells.excitatory,
+        name="rec",
+        weight=snn.Constant(0.5),
+        connection="recurrent",
+        delay=DT_MS * snn.ms,
+        plasticity=rule,
+        **common,
+    )
+    net.output("E_spikes", cells.spikes)
+    model = model_for(net)
+    with torch.no_grad():
+        model.parameter_map()["rec.weight"].copy_(start)
+    return model
+
+
+def test_t42_saved_state_round_trips_weights_traces_and_masks(tmp_path):
+    # A run saved to disk mid-way and reloaded continues exactly like one long
+    # run. The saved state holds the weights, both traces and the mask of
+    # entries that can change; the saved mask wins over the current model's,
+    # as the saved weights do.
+    rule = lang_rule(a_plus=0.05, a_minus=0.05, w_min=0.2, freeze_zero_weights=True)
+    start = torch.full((4, 4), 0.5)
+    start[0, 1] = start[2, 3] = 0.0  # frozen zeros
+    g = torch.Generator().manual_seed(42)
+    spikes = (torch.rand(200, 1, 4, generator=g) < 0.05).float()
+    kick = torch.zeros(200, 1, 4)
+    model = masked_recurrent_model(rule, start)
+
+    def run_chunk(model, chunk, state=None):
+        return model(
+            {"kick": kick[chunk]},
+            runtime_state=state,
+            interventions=replay(spikes, population="E"),
+        )
+
+    whole = run_chunk(model, slice(None))
+    first = run_chunk(model, slice(0, 90))
+    keys = {
+        key for key in first.runtime_state.custom_state if key.startswith("plasticity/")
+    }
+    assert keys == {
+        f"plasticity/rec/{name}"
+        for name in ("weight", "pre_trace", "post_trace", "mask")
+    }
+    saved = sim.save_runtime_state(tmp_path / "state", first.runtime_state)
+    loaded = sim.load_runtime_state(saved)
+    second = run_chunk(model, slice(90, None), loaded)
+    torch.testing.assert_close(
+        second.parameters["rec.weight"], whole.parameters["rec.weight"], rtol=0, atol=0
+    )
+    for name in ("pre_trace", "post_trace"):
+        key = f"plasticity/rec/{name}"
+        torch.testing.assert_close(
+            second.runtime_state.custom_state[key],
+            whole.runtime_state.custom_state[key],
+            rtol=0,
+            atol=0,
+        )
+    final = second.parameters["rec.weight"][0]
+    assert torch.all(final.diagonal() == 0) and final[0, 1] == 0 and final[2, 3] == 0
+
+    # Continue with a model whose zeros sit elsewhere: the saved mask still
+    # decides which entries can change, and the saved weights are used.
+    other_start = torch.full((4, 4), 0.5)
+    other_start[1, 0] = 0.0
+    other = masked_recurrent_model(rule, other_start)
+    resumed = run_chunk(other, slice(90, None), loaded)
+    torch.testing.assert_close(
+        resumed.parameters["rec.weight"], whole.parameters["rec.weight"], rtol=0, atol=0
+    )
+
+
+def test_t43_a_changed_rule_or_a_missing_plastic_state_is_rejected(tmp_path):
+    # Continuation requires the identical rule, amplitudes included, and a
+    # state that carries the plastic weights.
+    pre, post = trains(43, 60)
+    pre, post = pre.float(), post.float()
+    base = {"a_plus": 0.05, "a_minus": 0.05}
+    first = model_for(network(lang_rule(**base)))(
+        {"pre": pre[:30]}, interventions=replay(post)
+    )
+    state = sim.load_runtime_state(
+        sim.save_runtime_state(tmp_path / "state", first.runtime_state)
+    )
+    for changed in (
+        {"a_plus": 0.06},
+        {"tau_minus_ms": 30.0},
+        {"pairing": "all_to_all"},
+        {"w_max": 0.9},
+        {"freeze_zero_weights": True},
+    ):
+        model = model_for(network(lang_rule(**{**base, **changed})))
+        with pytest.raises(ValueError, match="incompatible.*plasticity"):
+            model({"pre": pre[30:]}, runtime_state=state, interventions=replay(post))
+    # The identical rule continues.
+    model_for(network(lang_rule(**base)))(
+        {"pre": pre[30:]}, runtime_state=state, interventions=replay(post)
+    )
+    # A state from the static network cannot start a plastic run, and the
+    # reverse is refused too.
+    static_state = model_for(network())({"pre": pre[:30]}).runtime_state
+    with pytest.raises(ValueError, match="incompatible"):
+        model_for(network(lang_rule(**base)))(
+            {"pre": pre[30:]}, runtime_state=static_state
+        )
+    with pytest.raises(ValueError, match="incompatible"):
+        model_for(network())({"pre": pre[30:]}, runtime_state=state)
+
+
+@pytest.mark.parametrize("split", [33, 35, 37])
+def test_t44_delayed_spikes_cross_chunk_boundaries(split, tmp_path):
+    # With a 4-step delay, spikes emitted just before the split arrive after it.
+    # They must pair at arrival in the second chunk, also through a saved state.
+    delay = 4
+    pre = torch.zeros(80, 1, N_SOURCE)
+    post = torch.zeros(80, 1, N_TARGET)
+    pre[[31, 32, 33, 34, 50], 0, 0] = 1
+    post[[37, 45, 60], 0, 1] = 1
+    params = {"a_plus": 0.05, "a_minus": 0.05}
+    model = model_for(network(lang_rule(**params), delay_steps=delay))
+    whole = model({"pre": pre}, interventions=replay(post))
+    first = model({"pre": pre[:split]}, interventions=replay(post))
+    state = sim.load_runtime_state(
+        sim.save_runtime_state(tmp_path / "state", first.runtime_state)
+    )
+    second = model(
+        {"pre": pre[split:]}, runtime_state=state, interventions=replay(post)
+    )
+    torch.testing.assert_close(weights(second), weights(whole), rtol=0, atol=0)
+    arrivals = torch.cat([torch.zeros(delay, 1, N_SOURCE), pre[:-delay]])
+    w0 = torch.full((1, N_SOURCE, N_TARGET), 0.5, dtype=F64)
+    expected, _, _ = run(make_rule(**params), w0, arrivals.double(), post.double())
+    torch.testing.assert_close(weights(whole).double(), expected, rtol=1e-6, atol=1e-7)
+
+
+def test_t45_weight_recordings_export_to_numpy_and_disk_and_reload(tmp_path):
+    # Weight snapshots carry their step coordinates into NumPy, into exported
+    # files and into a disk sink written during the run; every route reads
+    # back the same arrays and coordinates. Thinning works for any dense signal.
+    pre, post = trains(45, 100, batch=2)
+    pre, post = pre.float(), post.float()
+    model = model_for(network(lang_rule(a_plus=0.05, a_minus=0.05)))
+    signals = (
+        sim.SignalRecording("syn.weight", every_steps=25),
+        sim.SignalRecording("syn.pre_trace"),
+        sim.SignalRecording("post.voltage", every_steps=10),
+    )
+    result = model(
+        {"pre": pre}, interventions=replay(post), recording=sim.RecordingSpec(signals)
+    )
+    exported = result.numpy()
+    info = exported.recording.info["syn.weight"]
+    assert info.axes == ("time", "batch", "source", "target")
+    assert info.step_indices == (24, 49, 74, 99)
+    assert exported.recording.signals["syn.weight"].shape == (4, 2, N_SOURCE, N_TARGET)
+    np.testing.assert_array_equal(
+        exported.recording.signals["syn.weight"][-1], weights(result).numpy()
+    )
+    assert exported.recording.info["post.voltage"].step_indices == tuple(
+        range(9, 100, 10)
+    )
+    assert exported.recording.info["syn.pre_trace"].step_indices == tuple(range(100))
+    one = result.numpy(batch=1).recording
+    assert one.info["syn.weight"].axes == ("time", "source", "target")
+    np.testing.assert_array_equal(
+        one.signals["syn.weight"], exported.recording.signals["syn.weight"][:, 1]
+    )
+
+    # Export to files and read back.
+    path = result.write_recording(tmp_path / "exported")
+    reread = sim.RecordingData.read(path)
+    for name in ("syn.weight", "syn.pre_trace", "post.voltage"):
+        np.testing.assert_array_equal(
+            reread.signals[name], exported.recording.signals[name]
+        )
+        assert (
+            reread.info[name].step_indices == exported.recording.info[name].step_indices
+        )
+        assert reread.info[name].axes == exported.recording.info[name].axes
+
+    # A disk sink during a run in two chunks writes the same snapshots.
+    sink = sim.NPZRecordingSink(tmp_path / "sink")
+    streamed = sim.RecordingSpec(
+        signals, sink=sink, sink_id=sink.identity, block_steps=2
+    )
+    first = model({"pre": pre[:60]}, interventions=replay(post), recording=streamed)
+    model(
+        {"pre": pre[60:]},
+        runtime_state=first.runtime_state,
+        interventions=replay(post),
+        recording=streamed,
+    )
+    from_disk = sim.RecordingData.read(tmp_path / "sink")
+    for name in ("syn.weight", "syn.pre_trace", "post.voltage"):
+        np.testing.assert_array_equal(
+            from_disk.signals[name], exported.recording.signals[name]
+        )
+        assert (
+            from_disk.info[name].step_indices
+            == exported.recording.info[name].step_indices
+        )
+    assert from_disk.info["syn.weight"].unit == "nA"
+
+    # Thinning is for dense signals; weight matrices are recorded whole.
+    for bad in (
+        sim.SignalRecording("syn.weight", every_steps=0),
+        sim.SignalRecording("syn.weight", cells=(0,)),
+        sim.SignalRecording("post.spikes", kind="spike_events", every_steps=5),
+    ):
+        with pytest.raises(ValueError):
+            model({"pre": pre}, recording=sim.RecordingSpec((bad,)))
+
+
+def test_t46_learning_frozen_transmits_the_current_weights_without_changing_them():
+    # A probe between learning phases: learning=False runs with the weights
+    # from runtime_state, does not change them, and transmits exactly like a
+    # static network that holds those weights. The traces keep tracking spikes.
+    pre, post = trains(46, 200, rate=0.1)
+    pre, post = pre.float(), post.float()
+    # Inputs fall silent for 40 ms before the probe, so the synaptic current
+    # left from the learning phase (tau 2 ms) has decayed when the probe starts.
+    pre[20:100] = 0
+    params = {"a_plus": 0.05, "a_minus": 0.05}
+    bundle = snn.compile(network(lang_rule(**params)), target=None)
+    recording = sim.RecordingSpec(
+        signals=(
+            sim.SignalRecording("syn.current"),
+            sim.SignalRecording("syn.pre_trace"),
+        )
+    )
+
+    def simulate(chunk, **extra):
+        return sim.simulate(
+            graph=bundle.graph,
+            input_bindings=(sim.DenseArrayBinding("pre", pre[chunk]),),
+            interventions=replay(post),
+            recording=recording,
+            device="cpu",
+            **extra,
+        )
+
+    learned = simulate(slice(0, 100))
+    probe = simulate(
+        slice(100, None), runtime_state=learned.runtime_state, learning=False
+    )
+    torch.testing.assert_close(weights(probe), weights(learned), rtol=0, atol=0)
+    assert not torch.allclose(weights(learned), torch.tensor(0.5))  # it had learned
+
+    # The probe transmits with the learned weights: a static network holding
+    # them produces the same current.
+    static = model_for(network())
+    with torch.no_grad():
+        static.parameter_map()["syn.weight"].copy_(weights(learned)[0])
+    current = sim.RecordingSpec(signals=(sim.SignalRecording("syn.current"),))
+    reference = static(
+        {"pre": pre[100:]}, interventions=replay(post), recording=current
+    )
+    torch.testing.assert_close(
+        probe.recorded_signals["syn.current"],
+        reference.recorded_signals["syn.current"],
+        rtol=1e-6,
+        atol=1e-7,
+    )
+    # The traces keep tracking, so learning can resume from the probe's state.
+    w0 = torch.full((1, N_SOURCE, N_TARGET), 0.5, dtype=F64)
+    xs, _ = run_with_traces(make_rule(**params), w0, pre.double(), post.double())
+    torch.testing.assert_close(
+        probe.recorded_signals["syn.pre_trace"].double(), xs[100:], rtol=1e-6, atol=1e-6
+    )
+    path = probe.metrics["execution_path"]
+    assert any("per-trial weights" in reason for reason in path["fallback_reasons"])
+    with pytest.raises(TypeError, match="learning"):
+        simulate(slice(0, 10), learning="no")

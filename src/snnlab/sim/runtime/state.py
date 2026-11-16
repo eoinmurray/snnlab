@@ -184,6 +184,13 @@ def runtime_state_compatibility(
                     if "modulation" in projections[row.id]
                     else {}
                 ),
+                # A plastic run continues only under the identical rule; static
+                # projections keep their signature unchanged.
+                **(
+                    {"plasticity": projections[row.id]["plasticity"]}
+                    if "plasticity" in projections[row.id]
+                    else {}
+                ),
             }
             for row in plan.projections
         ],

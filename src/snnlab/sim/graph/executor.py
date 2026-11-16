@@ -387,12 +387,16 @@ class GraphExecutor(nn.Module):
         retain_runtime_state: bool = True,
         batch_offset: int = 0,
         plasticity: bool = True,
+        learning: bool = True,
         transmission_scales: Mapping[str, float] | None = None,
     ) -> ExecutionResult:
         """Run the graph; ``plasticity=False`` uses plastic weights as static.
 
-        ``transmission_scales`` multiplies what each named plastic projection
-        transmits, while its rule keeps learning from the unscaled weights.
+        ``learning=False`` keeps plastic projections' current per-trial weights
+        (from ``runtime_state`` when given) without updating them, while their
+        traces keep tracking spikes. ``transmission_scales`` multiplies what
+        each named plastic projection transmits, while its rule keeps learning
+        from the unscaled weights.
         """
         result, _ = self._forward(
             inputs,
@@ -411,6 +415,7 @@ class GraphExecutor(nn.Module):
             batch_offset=batch_offset,
             automatic_reductions=True,
             plasticity=plasticity,
+            learning=learning,
             transmission_scales=transmission_scales,
         )
         return result
@@ -507,6 +512,7 @@ class GraphExecutor(nn.Module):
         retain_final_state: bool = True,
         retain_runtime_state: bool = True,
         plasticity: bool = True,
+        learning: bool = True,
         transmission_scales: Mapping[str, float] | None = None,
     ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
         return run_forward_pass(
@@ -529,6 +535,7 @@ class GraphExecutor(nn.Module):
             retain_final_state=retain_final_state,
             retain_runtime_state=retain_runtime_state,
             plasticity=plasticity,
+            learning=learning,
             transmission_scales=transmission_scales,
         )
 

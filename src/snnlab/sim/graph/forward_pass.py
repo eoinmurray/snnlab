@@ -105,6 +105,7 @@ class _ForwardOptions:
     # evaluation passes run with it off. Transmission scales multiply what a
     # plastic projection transmits, never what its rule learns from.
     plasticity: bool = True
+    learning: bool = True  # False: plastic weights are used but not updated
     transmission_scales: Mapping[str, float] | None = None
 
 
@@ -193,6 +194,7 @@ def run_forward_pass(
     retain_final_state: bool = True,
     retain_runtime_state: bool = True,
     plasticity: bool = True,
+    learning: bool = True,
     transmission_scales: Mapping[str, float] | None = None,
 ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
     """Execute one graph trajectory through ordered private phases."""
@@ -214,6 +216,7 @@ def run_forward_pass(
         retain_final_state=retain_final_state,
         retain_runtime_state=retain_runtime_state,
         plasticity=plasticity,
+        learning=learning,
         transmission_scales=transmission_scales,
     )
     forward = _ForwardContext(options=options, executor=executor, inputs=inputs)
@@ -757,6 +760,7 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
         dtype=forward.parameter_dtype,
         saved=saved_custom if forward.options.runtime_state is not None else None,
         enabled=forward.options.plasticity,
+        learning=forward.options.learning,
         transmission_scales=forward.options.transmission_scales,
     )
     runtime.custom_state.update(forward.plasticity.custom_state())
@@ -935,7 +939,12 @@ def _select_execution_path(forward: _ForwardContext, runtime: _ForwardState) -> 
             "registered neuron, synapse or surrogate",
         ),
         (forward.capture_steps, "online reductions or recording"),
-        (bool(forward.plasticity), "plastic projections update weights every step"),
+        (
+            bool(forward.plasticity),
+            "plastic projections update weights every step"
+            if forward.options.learning
+            else "plastic projections transmit with per-trial weights",
+        ),
         (bool(forward.prepared_interventions), "spike interventions"),
         (bool(forward.segments.identity), "voltage resets or decision segments"),
         (forward.trace is not None, "execution tracing"),

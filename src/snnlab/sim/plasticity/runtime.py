@@ -22,10 +22,16 @@ weights of the model when the rule sets ``freeze_zero_weights``. A disabled
 projection keeps its weights; its traces still track the spikes. The bounds
 are checked before the run, on the entries that can change.
 
-Two controls come from the caller. With plasticity off, as in training and its
-evaluation passes, plastic projections run exactly like static ones. Transmission
-scales multiply what a plastic projection transmits, not the weights its rule
-learns from, so learning continues even at scale zero.
+Three controls come from the caller. With plasticity off, as in training and
+its evaluation passes, plastic projections run exactly like static ones. With
+learning frozen, they transmit with their current per-trial weights, which do
+not change, while their traces keep tracking spikes, as for a disabled
+projection. Transmission scales multiply what a plastic projection transmits,
+not the weights its rule learns from, so learning continues even at scale zero.
+
+A continuing run needs the weights, both traces and the mask of entries that
+can change; all four are saved in ``custom_state``. The saved mask wins over
+the one the current model would give, as the saved weights do.
 """
 
 from __future__ import annotations
@@ -42,6 +48,7 @@ from snnlab.sim.plasticity import stdp_simple
 
 STATE_PREFIX = "plasticity"
 TRACE_PORTS = ("pre_trace", "post_trace")
+STATE_NAMES = ("weight", "pre_trace", "post_trace", "mask")
 
 
 def plastic_rows(graph: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -68,15 +75,24 @@ def validate_plastic_rows(graph: Mapping[str, Any]) -> None:
             )
 
 
-def trace_axes(graph: Mapping[str, Any], axes: Mapping[str, Any]) -> dict:
-    """Recordable trace signals: ``<projection>.pre_trace`` and ``.post_trace``."""
+def plastic_signal_axes(graph: Mapping[str, Any], axes: Mapping[str, Any]) -> dict:
+    """Recordable signals of plastic projections.
+
+    ``<projection>.pre_trace`` and ``.post_trace`` are (time, batch, neurons);
+    ``<projection>.weight`` is (time, batch, source, target) in the runtime
+    layout, usually recorded every N steps.
+    """
     sizes = {row["id"]: row["size"] for row in graph.get("populations", [])}
+    shapes = {row["id"]: row["shape"] for row in graph.get("parameters", [])}
     result = {}
     for row in plastic_rows(graph):
         n_source = axes[row["source"]][-1]
         n_target = sizes[row["target"].partition(".")[0]]
         result[f"{row['id']}.pre_trace"] = ("time", "batch", n_source)
         result[f"{row['id']}.post_trace"] = ("time", "batch", n_target)
+        # lang declares [target, source]; the runtime holds (source, target).
+        source, target = reversed(shapes[row["parameters"][0]])
+        result[f"{row['id']}.weight"] = ("time", "batch", source, target)
     return result
 
 
@@ -96,7 +112,8 @@ class _Plastic:
     rule: stdp_simple.STDPSimple
     one_to_one: bool
     shape: tuple[int, ...]  # the model parameter's runtime shape
-    mask: torch.Tensor | None  # (source, target), or (n,) for one-to-one
+    structure: torch.Tensor  # entries that can change: (source, target) or (n,)
+    mask: torch.Tensor | None  # what the update step gets: None if all can change
     weights: torch.Tensor  # (batch, *shape)
     state: stdp_simple.STDPState
 
@@ -113,9 +130,13 @@ class PlasticRun:
         dtype: torch.dtype,
         saved: Mapping[str, torch.Tensor] | None,
         enabled: bool = True,
+        learning: bool = True,
         transmission_scales: Mapping[str, float] | None = None,
     ) -> None:
+        if not isinstance(learning, bool):
+            raise TypeError("learning must be True or False")
         self.dt_ms = executor.plan.dt_ms
+        self.learning = learning
         self.projections: dict[str, _Plastic] = {}
         self.scales = _transmission_scales(transmission_scales)
         if not enabled:
@@ -157,6 +178,10 @@ class PlasticRun:
                 mask = torch.zeros_like(mask)
             if one_to_one:
                 mask = mask.reshape(-1)
+            if saved is not None:
+                mask = _restore(
+                    saved, planned.id, "mask", tuple(mask.shape), torch.bool, device
+                )
             n_source, n_target = (
                 (model.numel(), model.numel()) if one_to_one else tuple(model.shape)
             )
@@ -196,6 +221,7 @@ class PlasticRun:
                 rule=rule,
                 one_to_one=one_to_one,
                 shape=tuple(model.shape),
+                structure=mask,
                 mask=None if bool(mask.all()) else mask,
                 weights=weights,
                 state=state,
@@ -231,6 +257,10 @@ class PlasticRun:
         for plastic in self.projections.values():
             pre = arrivals[plastic.id]
             post = spikes[plastic.target]
+            # Learning frozen: the weights stay, the traces keep tracking.
+            mask = (
+                plastic.mask if self.learning else torch.zeros_like(plastic.structure)
+            )
             if plastic.one_to_one:
                 batch = plastic.weights.shape[0]
                 new, plastic.state = stdp_simple.step_one_to_one(
@@ -240,7 +270,7 @@ class PlasticRun:
                     pre,
                     post,
                     dt_ms=self.dt_ms,
-                    mask=plastic.mask,
+                    mask=mask,
                 )
                 plastic.weights = new.reshape(plastic.weights.shape)
             else:
@@ -251,24 +281,26 @@ class PlasticRun:
                     pre,
                     post,
                     dt_ms=self.dt_ms,
-                    mask=plastic.mask,
+                    mask=mask,
                 )
 
     def signals(self) -> dict[str, torch.Tensor]:
-        """The traces after this step's spikes, as recordable step signals."""
+        """Traces and weights after this step's update, as recordable signals."""
         result = {}
         for plastic in self.projections.values():
             result[f"{plastic.id}.pre_trace"] = plastic.state.pre_trace
             result[f"{plastic.id}.post_trace"] = plastic.state.post_trace
+            result[f"{plastic.id}.weight"] = plastic.weights
         return result
 
     def custom_state(self) -> dict[str, torch.Tensor]:
-        """What a continuing run needs: weights and both traces."""
+        """What a continuing run needs: weights, both traces and the mask."""
         result = {}
         for plastic in self.projections.values():
             result[state_key(plastic.id, "weight")] = plastic.weights
             result[state_key(plastic.id, "pre_trace")] = plastic.state.pre_trace
             result[state_key(plastic.id, "post_trace")] = plastic.state.post_trace
+            result[state_key(plastic.id, "mask")] = plastic.structure
         return result
 
     def parameters(self) -> dict[str, torch.Tensor]:

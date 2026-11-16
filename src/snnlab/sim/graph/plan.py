@@ -15,7 +15,7 @@ from snnlab._shared.connectivity import resolve_autapses
 from snnlab._shared.gains import validate as validate_gain
 from snnlab._shared.projections import continuous_source, delay_steps, validate_source
 from snnlab._shared.spatial import source_root, validate_spatial
-from snnlab.sim.plasticity.runtime import trace_axes, validate_plastic_rows
+from snnlab.sim.plasticity.runtime import plastic_signal_axes, validate_plastic_rows
 
 
 def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
@@ -46,7 +46,7 @@ def _signal_axes(graph: Mapping[str, Any]) -> dict[str, tuple[int | str, ...]]:
             size = populations[row["target"].partition(".")[0]]["size"]
             for port in E.resolve("synapse", row["synapse"]).state_units:
                 axes[f"{row['id']}.{port}"] = ("time", "batch", size)
-    axes.update(trace_axes(graph, axes))
+    axes.update(plastic_signal_axes(graph, axes))
     return axes
 
 
