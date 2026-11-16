@@ -1,17 +1,18 @@
 """Acceptance tests for stdp_simple: pair-based, additive STDP with hard bounds.
 
 Stage 1 delivered the update step and the lang contract (T01-T21, T33). Stage 2
-applies the rule inside the simulator (T23-T28, T31, T32, T35-T37). Two tests
-wait for later stages and are strict expected failures, so they fail loudly once
-their stage lands: T29 (training with plasticity off, stage 3) and T30 (weight
-snapshots in recordings, stage 4). Lines marked PROVISIONAL follow the issue
-draft and may change in a later stage. The lang-side tests (T22, T25, T34) live
-in tests/lang/test_snnlang.py.
+applies the rule inside the simulator (T23-T28, T31, T32, T35-T37). Stage 3 keeps
+plasticity off in training and its evaluation passes, and makes projection
+scales act on transmission only (T29, T38-T41). T30 (weight snapshots in
+recordings) waits for stage 4 and is a strict expected failure, so it fails
+loudly once its stage lands. Lines marked PROVISIONAL follow the issue draft
+and may change in a later stage. The lang-side tests (T22, T25, T34) live in
+tests/lang/test_snnlang.py.
 
 Layers:
 - T01-T20 and T33 drive the update step alone, on fixed spike trains.
 - T21 compares the update step with an independent Brian2 model.
-- T23-T32 and T35-T37 run the rule inside snnlab, with the update step as their
+- T23-T32 and T35-T41 run the rule inside snnlab, with the update step as their
   reference. Post spikes are imposed with ReplaySpikes, so neuron dynamics play
   no part. T32 checks that transmission uses the learned weights.
 
@@ -36,13 +37,6 @@ from snnlab.sim.plasticity import stdp_simple as kernel
 
 # Tests for later stages are strict expected failures with the precise error
 # they meet today; strict=True makes them fail loudly once the stage lands.
-# Stage 3: training a plastic network stops with NotImplementedError until the
-# plasticity-off policy for training exists.
-stage3 = pytest.mark.xfail(
-    raises=NotImplementedError,
-    strict=True,
-    reason="training keeps plasticity off from stage 3",
-)
 # Stage 4: SignalRecording has no every_steps argument yet (TypeError).
 stage4 = pytest.mark.xfail(
     raises=TypeError,
@@ -843,7 +837,6 @@ def test_t28_plasticity_selects_the_step_by_step_path_and_says_why():
     assert any("plastic" in reason for reason in path["fallback_reasons"])
 
 
-@stage3
 def test_t29_training_keeps_plasticity_off_and_runtime_weights_win_over_checkpoint(
     tmp_path,
 ):
@@ -1178,18 +1171,231 @@ def test_t37_unsupported_uses_of_plastic_projections_are_rejected(tmp_path):
     )
     with pytest.raises(NotImplementedError, match="dataset inputs.*plastic"):
         sim.simulate(graph=bundle.graph, input_bindings=(binding,), device="cpu")
-    # Scaling the parameters would also scale what the rule learns from. Stage 3
-    # makes scaling act on transmission only; until then it is rejected.
-    with pytest.raises(NotImplementedError, match="scales on plastic"):
-        sim.simulate(
-            graph=bundle.graph,
-            input_bindings=(sim.DenseArrayBinding("pre", torch.zeros(4, 1, N_SOURCE)),),
-            inference_overrides={"projection_scales": {"syn": 0.5}},
-            device="cpu",
-        )
     # CUDA graph replay is never used: weights change every step.
     from snnlab.sim.graph.replay import _replay_fallback_reason
 
     model = model_for(network(lang_rule()))
     reason = _replay_fallback_reason(model, {"pre": torch.zeros(4, 1, N_SOURCE)}, {})
     assert "plastic" in reason
+
+
+# T38-T41: training and transmission controls (stage 3) ------------------------------
+
+
+def trainable_bundle(rule, steps):
+    """A tiny classifier whose only weights are the projection "syn"."""
+    net = snn.Network("stdp_train", dt=DT_MS * snn.ms)
+    source = net.input(
+        "pre", shape=("time", "batch", N_SOURCE), signal_type="spikes", unit="spike"
+    )
+    cells = net.population("post", size=N_TARGET, neuron=snn.CUBA_LIF())
+    extra = {} if rule is None else {"plasticity": rule}
+    net.connect(
+        source,
+        cells.excitatory,
+        name="syn",
+        synapse=snn.ExponentialCurrent(tau=3 * snn.ms),
+        weight=snn.Constant(0.5),
+        initialization_scaling="direct",
+        constraint=snn.NonNegative(),
+        **extra,
+    )
+    scores = snn.MeanVoltage(source=cells.spikes, classes=2, name="scores")
+    net.output("prediction", scores)
+    recipe = snn.TrainSpec(
+        objectives=(snn.CrossEntropy(prediction=scores, target="label"),),
+        parameter_groups=(
+            snn.ParameterGroup(
+                [row["id"] for row in net.parameters], name="all", lr=0.01
+            ),
+        ),
+        optimizer=snn.AdamW(weight_decay=0.0),
+        presentation_duration=steps * DT_MS * snn.ms,
+    )
+    return snn.compile(net, training=recipe)
+
+
+def test_t38_validation_and_final_evaluation_run_with_plasticity_off():
+    # Training, the initial and per-epoch evaluations, validation and the final
+    # test all measure the trained weights. With strong amplitudes, any of these
+    # passes applying the rule would change a loss; every number must equal the
+    # static network's exactly.
+    steps = 20
+    g = torch.Generator().manual_seed(38)
+    values = (torch.rand(steps, 6, N_SOURCE, generator=g) < 0.3).float()
+    labels = torch.arange(6) % 2
+
+    def held_out(spec):
+        return spec(
+            input_bindings=(sim.DenseArrayBinding("pre", values[:, 4:]),),
+            targets={"label": labels[4:]},
+        )
+
+    def train(rule):
+        bundle = trainable_bundle(rule, steps)
+        return sim.train(
+            graph=bundle.graph,
+            training=bundle.training,
+            input_bindings=(sim.DenseArrayBinding("pre", values[:, :4]),),
+            targets={"label": labels[:4]},
+            validation=held_out(sim.ValidationSpec),
+            test=held_out(sim.TestSpec),
+            metrics=sim.TrainingMetrics(
+                train="evaluate", initial=("train", "validation")
+            ),
+            device="cpu",
+            seed=7,
+            epochs=2,
+            batch_size=2,
+            diagnostics=False,
+            performance=sim.Performance(precision="highest"),
+        )
+
+    static = train(None)
+    plastic = train(lang_rule(a_plus=0.2, a_minus=0.2))
+    assert plastic.metrics["epochs"] == static.metrics["epochs"]
+    assert "validation_loss" in plastic.metrics["epochs"][0]
+    assert plastic.metrics["test"]["loss"] == static.metrics["test"]["loss"]
+    assert plastic.metrics["execution_paths"] == static.metrics["execution_paths"]
+    torch.testing.assert_close(
+        plastic.parameters["syn.weight"],
+        static.parameters["syn.weight"],
+        rtol=0,
+        atol=0,
+    )
+
+
+@pytest.mark.parametrize("scale", [0.0, 0.5])
+def test_t39_projection_scales_act_on_transmission_only(scale):
+    # A plastic projection is scaled where it transmits: its current is scaled,
+    # while its rule learns exactly as at scale 1, even at scale 0. A static
+    # projection is scaled as before, through its weights.
+    pre, post = trains(39, 200)
+    pre, post = pre.float(), post.float()
+    params = {"a_plus": 0.05, "a_minus": 0.05}
+    recording = sim.RecordingSpec(signals=(sim.SignalRecording("syn.current"),))
+
+    def simulate(rule, scales):
+        bundle = snn.compile(network(rule), target=None)
+        return sim.simulate(
+            graph=bundle.graph,
+            input_bindings=(sim.DenseArrayBinding("pre", pre),),
+            interventions=replay(post),
+            recording=recording,
+            inference_overrides={"projection_scales": scales},
+            device="cpu",
+        )
+
+    plastic_full = simulate(lang_rule(**params), {})
+    plastic = simulate(lang_rule(**params), {"syn": scale})
+    torch.testing.assert_close(
+        plastic.recorded_signals["syn.current"],
+        scale * plastic_full.recorded_signals["syn.current"],
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(weights(plastic), weights(plastic_full), rtol=0, atol=0)
+    w0 = torch.full((1, N_SOURCE, N_TARGET), 0.5, dtype=F64)
+    expected, _, _ = run(make_rule(**params), w0, pre.double(), post.double())
+    torch.testing.assert_close(
+        weights(plastic).double(), expected, rtol=1e-5, atol=1e-6
+    )
+    assert not torch.allclose(expected, w0)  # it learned, even without transmitting
+
+    static_full = simulate(None, {})
+    static = simulate(None, {"syn": scale})
+    torch.testing.assert_close(
+        static.recorded_signals["syn.current"],
+        scale * static_full.recorded_signals["syn.current"],
+        rtol=0,
+        atol=0,
+    )
+    assert torch.all(static.parameters["syn.weight"] == 0.5 * scale)
+
+
+def test_t40_plasticity_off_runs_a_plastic_network_as_the_static_one():
+    # The explicit switch training uses: with plasticity=False the plastic
+    # network runs exactly like the static one, from the model's weights, on
+    # the same execution path, and leaves no plasticity state.
+    pre, _ = trains(40, 200, rate=0.3)
+    pre = pre.float()
+    recording = sim.RecordingSpec(signals=(sim.SignalRecording("syn.current"),))
+    plastic = model_for(network(lang_rule(a_plus=0.2, a_minus=0.2)))
+    static = model_for(network())
+    off = plastic({"pre": pre}, recording=recording, plasticity=False)
+    reference = static({"pre": pre}, recording=recording)
+    for name, value in reference.outputs.items():
+        torch.testing.assert_close(off.outputs[name], value, rtol=0, atol=0)
+    torch.testing.assert_close(
+        off.recorded_signals["syn.current"],
+        reference.recorded_signals["syn.current"],
+        rtol=0,
+        atol=0,
+    )
+    assert torch.equal(off.parameters["syn.weight"], reference.parameters["syn.weight"])
+    custom = off.runtime_state.custom_state
+    assert not any(key.startswith("plasticity/") for key in custom)
+    for key in ("selected", "fallback_reasons"):
+        assert (
+            off.metrics["execution_path"][key]
+            == reference.metrics["execution_path"][key]
+        )
+    # CUDA graph replay stays available, as for the static network.
+    from snnlab.sim.graph.replay import _replay_fallback_reason
+
+    reason = _replay_fallback_reason(plastic, {"pre": pre}, {"plasticity": False})
+    assert "plastic" not in (reason or "")
+    # The rule's updates are not differentiable: with gradients tracked, a
+    # plastic run must say so instead of training through the updates.
+    weight = plastic.parameter_map()["syn.weight"]
+    weight.requires_grad_(True)
+    try:
+        with pytest.raises(ValueError, match="gradients"):
+            plastic({"pre": pre})
+        assert plastic({"pre": pre}, plasticity=False).outputs  # training's path
+    finally:
+        weight.requires_grad_(False)
+    with pytest.raises(ValueError, match="plasticity is on"):
+        plastic({"pre": pre}, plasticity=False, transmission_scales={"syn": 0.5})
+
+
+def test_t41_a_disabled_projection_stays_frozen_at_any_scale():
+    # A disabled plastic projection transmits nothing and keeps its weights, at
+    # every projection scale; its traces still follow the arrivals and the
+    # target spikes.
+    pre, post = trains(41, 200)
+    pre, post = pre.float(), post.float()
+    rule = make_rule(a_plus=0.05, a_minus=0.05)
+    net = network(lang_rule(a_plus=0.05, a_minus=0.05), enabled=False)
+    bundle = snn.compile(net, target=None)
+    recording = sim.RecordingSpec(
+        signals=tuple(
+            sim.SignalRecording(f"syn.{name}")
+            for name in ("current", "pre_trace", "post_trace")
+        )
+    )
+    w0 = torch.full((1, N_SOURCE, N_TARGET), 0.5, dtype=F64)
+    xs, ys = run_with_traces(rule, w0, pre.double(), post.double())
+    for scale in (0.0, 0.5, 2.0):
+        result = sim.simulate(
+            graph=bundle.graph,
+            input_bindings=(sim.DenseArrayBinding("pre", pre),),
+            interventions=replay(post),
+            recording=recording,
+            inference_overrides={"projection_scales": {"syn": scale}},
+            device="cpu",
+        )
+        assert torch.all(weights(result) == 0.5)
+        assert torch.all(result.recorded_signals["syn.current"] == 0)
+        torch.testing.assert_close(
+            result.recorded_signals["syn.pre_trace"].double(),
+            xs,
+            rtol=1e-6,
+            atol=1e-6,
+        )
+        torch.testing.assert_close(
+            result.recorded_signals["syn.post_trace"].double(),
+            ys,
+            rtol=1e-6,
+            atol=1e-6,
+        )

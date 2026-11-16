@@ -40,7 +40,7 @@ def _replay_fallback_reason(model, inputs, kwargs):
     reason = None
     if model.cuda_graphs == "off":
         reason = "disabled by request"
-    elif plastic_rows(model.plan.graph):
+    elif kwargs.get("plasticity", True) and plastic_rows(model.plan.graph):
         reason = "plastic projections update weights every step"
     elif torch.is_grad_enabled():
         reason = "forward autograd enabled"

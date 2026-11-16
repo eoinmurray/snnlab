@@ -21,10 +21,16 @@ Entries that cannot change are masked: autapses the model excludes, and zero
 weights of the model when the rule sets ``freeze_zero_weights``. A disabled
 projection keeps its weights; its traces still track the spikes. The bounds
 are checked before the run, on the entries that can change.
+
+Two controls come from the caller. With plasticity off, as in training and its
+evaluation passes, plastic projections run exactly like static ones. Transmission
+scales multiply what a plastic projection transmits, not the weights its rule
+learns from, so learning continues even at scale zero.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -106,10 +112,26 @@ class PlasticRun:
         device: torch.device,
         dtype: torch.dtype,
         saved: Mapping[str, torch.Tensor] | None,
+        enabled: bool = True,
+        transmission_scales: Mapping[str, float] | None = None,
     ) -> None:
         self.dt_ms = executor.plan.dt_ms
         self.projections: dict[str, _Plastic] = {}
+        self.scales = _transmission_scales(transmission_scales)
+        if not enabled:
+            if self.scales:
+                raise ValueError(
+                    "transmission scales apply to plastic projections while "
+                    "plasticity is on"
+                )
+            return
         rows = {row["id"]: row for row in plastic_rows(executor.plan.graph)}
+        not_plastic = sorted(set(self.scales) - set(rows))
+        if not_plastic:
+            raise ValueError(
+                f"transmission scales target projections that are not plastic: "
+                f"{not_plastic}"
+            )
         if not rows:
             return
         parameters = executor.parameter_map()
@@ -185,12 +207,19 @@ class PlasticRun:
         return bool(self.projections)
 
     def drive(self, projection_id: str, source: torch.Tensor) -> torch.Tensor:
-        """Transmit ``source`` (batch, source) with this trial's weights."""
+        """Transmit ``source`` (batch, source) with this trial's weights.
+
+        A transmission scale multiplies the drive only; the weights the rule
+        learns from stay unscaled.
+        """
         plastic = self.projections[projection_id]
         weights = plastic.weights
         if plastic.one_to_one:
-            return source * weights.reshape(weights.shape[0], -1)
-        return torch.bmm(source.unsqueeze(1), weights).squeeze(1)
+            drive = source * weights.reshape(weights.shape[0], -1)
+        else:
+            drive = torch.bmm(source.unsqueeze(1), weights).squeeze(1)
+        scale = self.scales.get(projection_id)
+        return drive if scale is None else drive * scale
 
     @torch.no_grad()
     def step(self, arrivals: Mapping[str, torch.Tensor], spikes) -> None:
@@ -247,6 +276,19 @@ class PlasticRun:
         return {
             plastic.parameter: plastic.weights for plastic in self.projections.values()
         }
+
+
+def _transmission_scales(scales: Mapping[str, float] | None) -> dict[str, float]:
+    result = {}
+    for projection_id, factor in (scales or {}).items():
+        factor = float(factor)
+        if not math.isfinite(factor) or factor < 0:
+            raise ValueError(
+                f"transmission scale of {projection_id!r} must be finite and "
+                f"non-negative, got {factor}"
+            )
+        result[projection_id] = factor
+    return result
 
 
 def _restore(saved, projection_id, name, shape, dtype, device) -> torch.Tensor:

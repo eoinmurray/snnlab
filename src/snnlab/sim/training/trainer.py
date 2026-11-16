@@ -1261,6 +1261,9 @@ def train(spec: ExecutionSpec) -> ExecutionResult:  # noqa: C901
                             retain_parameters=False,
                             retain_final_state=False,
                             retain_runtime_state=False,
+                            # Validation, probes and final evaluation measure
+                            # the trained weights, so plasticity stays off.
+                            plasticity=False,
                         )
                         if measurements is not None:
                             measurements.add(

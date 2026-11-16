@@ -100,6 +100,7 @@ def _forward_and_loss(
             retain_parameters=False,
             retain_final_state=False,
             retain_runtime_state=False,
+            plasticity=False,  # training never applies local plasticity rules
         )
         loss, components = context.compute_loss(
             forward, signals, batch_targets, context.input_protocol
@@ -126,6 +127,7 @@ def _forward_and_loss(
             retain_parameters=False,
             retain_final_state=False,
             retain_runtime_state=False,
+            plasticity=False,  # training never applies local plasticity rules
         )
     with trace.region("loss") if trace is not None else nullcontext():
         loss, components = context.compute_loss(

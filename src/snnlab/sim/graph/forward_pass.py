@@ -101,6 +101,11 @@ class _ForwardOptions:
     retain_parameters: bool
     retain_final_state: bool
     retain_runtime_state: bool
+    # Plastic projections learn only when this is True; training and its
+    # evaluation passes run with it off. Transmission scales multiply what a
+    # plastic projection transmits, never what its rule learns from.
+    plasticity: bool = True
+    transmission_scales: Mapping[str, float] | None = None
 
 
 @dataclass(slots=True)
@@ -187,6 +192,8 @@ def run_forward_pass(
     retain_parameters: bool = True,
     retain_final_state: bool = True,
     retain_runtime_state: bool = True,
+    plasticity: bool = True,
+    transmission_scales: Mapping[str, float] | None = None,
 ) -> tuple[ExecutionResult, dict[str, torch.Tensor]]:
     """Execute one graph trajectory through ordered private phases."""
     options = _ForwardOptions(
@@ -206,6 +213,8 @@ def run_forward_pass(
         retain_parameters=retain_parameters,
         retain_final_state=retain_final_state,
         retain_runtime_state=retain_runtime_state,
+        plasticity=plasticity,
+        transmission_scales=transmission_scales,
     )
     forward = _ForwardContext(options=options, executor=executor, inputs=inputs)
     runtime = _ForwardState()
@@ -747,6 +756,8 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
         device=forward.device,
         dtype=forward.parameter_dtype,
         saved=saved_custom if forward.options.runtime_state is not None else None,
+        enabled=forward.options.plasticity,
+        transmission_scales=forward.options.transmission_scales,
     )
     runtime.custom_state.update(forward.plasticity.custom_state())
     if set(saved_custom) - set(runtime.custom_state):
@@ -783,10 +794,11 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
         )
     )
     if forward.plasticity and not forward.inference_only:
-        raise NotImplementedError(
-            f"projections {sorted(forward.plasticity.projections)} are plastic, and "
-            "plastic projections do not support gradient-tracking runs such as "
-            "training yet; simulate them without gradients"
+        # Rule updates are not differentiable; sim.train keeps plasticity off.
+        raise ValueError(
+            f"projections {sorted(forward.plasticity.projections)} are plastic and "
+            "cannot learn while gradients are tracked; run without gradients, or "
+            "pass plasticity=False to use their weights as static"
         )
     forward.streamed_outputs = {
         row["id"]: row["signal"]

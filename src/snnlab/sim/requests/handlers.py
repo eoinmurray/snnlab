@@ -298,7 +298,15 @@ def _reject_plastic_datasets(sources, built):
 
 
 def _apply_projection_scales(overrides, built):
+    """Scale static projections' weights; return plastic projections' scales.
+
+    Scaling a plastic projection's weights would also scale what its rule
+    learns from. Plastic projections are therefore scaled where they transmit,
+    and their rule keeps learning, even at scale zero. Static projections are
+    scaled exactly as before.
+    """
     scales = dict(overrides.get("projection_scales", {}))
+    transmission = {}
     if scales:
         projection_parameters = {
             row["id"]: row["parameters"][0]
@@ -309,15 +317,7 @@ def _apply_projection_scales(overrides, built):
             raise ValueError(
                 f"inference projection scales target unknown projections: {unknown}"
             )
-        plastic = sorted(
-            set(scales) & {row["id"] for row in plastic_rows(built.model.plan.graph)}
-        )
-        if plastic:
-            # Scaling the parameters would also scale what the rule learns from.
-            raise NotImplementedError(
-                f"inference projection scales on plastic projections {plastic} are "
-                "not supported yet"
-            )
+        plastic = {row["id"] for row in plastic_rows(built.model.plan.graph)}
         with torch.no_grad():
             parameters = built.model.parameter_map()
             for projection_id, factor in sorted(scales.items()):
@@ -326,8 +326,11 @@ def _apply_projection_scales(overrides, built):
                     raise ValueError(
                         f"inference projection scale {projection_id} must be finite and non-negative"
                     )
-                parameters[projection_parameters[projection_id]].mul_(factor)
-    return scales
+                if projection_id in plastic:
+                    transmission[projection_id] = factor
+                else:
+                    parameters[projection_parameters[projection_id]].mul_(factor)
+    return scales, transmission
 
 
 def simulate(
@@ -397,7 +400,9 @@ def simulate(
         spec=spec, device=device, source_graph_digest=source_graph_digest, built=built
     )
 
-    scales = _apply_projection_scales(overrides=overrides, built=built)
+    scales, transmission_scales = _apply_projection_scales(
+        overrides=overrides, built=built
+    )
 
     if spec.timing_mode == "synchronized":
         _synchronize_device(device)
@@ -490,6 +495,7 @@ def simulate(
             retain_parameters=spec.retain_parameters,
             retain_final_state=spec.retain_final_state,
             retain_runtime_state=spec.retain_runtime_state,
+            transmission_scales=transmission_scales or None,
         )
     if spec.timing_mode == "synchronized":
         _synchronize_device(device)
