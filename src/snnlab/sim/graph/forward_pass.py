@@ -23,6 +23,7 @@ from snnlab.sim.graph.kernels import (
     precision_fallback,
 )
 from snnlab.sim.graph.plan import _signal_axes
+from snnlab.sim.plasticity.runtime import PlasticRun
 from snnlab.sim.requests.result import ExecutionResult
 from snnlab.sim.runtime.interventions import (
     Intervention,
@@ -140,6 +141,7 @@ class _ForwardContext:
     spatial_operations: dict[str, Any] = field(init=False)
     block_reasons: list[str] = field(init=False)
     compiler_fallback: str | None = field(init=False)
+    plasticity: PlasticRun = field(init=False)
 
 
 @dataclass(slots=True)
@@ -737,6 +739,16 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
             )
         runtime.continuous_histories[signal] = list(values.unbind(0))
         runtime.custom_state[state_key] = values
+    # Plastic weights and traces continue through custom_state; the runtime
+    # values win over the model's weights when a run continues.
+    forward.plasticity = PlasticRun(
+        forward.executor,
+        batch=forward.batch,
+        device=forward.device,
+        dtype=forward.parameter_dtype,
+        saved=saved_custom if forward.options.runtime_state is not None else None,
+    )
+    runtime.custom_state.update(forward.plasticity.custom_state())
     if set(saved_custom) - set(runtime.custom_state):
         raise ValueError("runtime state has unexpected custom state tensors")
     runtime.state_traces = {}
@@ -770,6 +782,12 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
             for value in (*forward.inputs.values(), *forward.executor.weights.values())
         )
     )
+    if forward.plasticity and not forward.inference_only:
+        raise NotImplementedError(
+            f"projections {sorted(forward.plasticity.projections)} are plastic, and "
+            "plastic projections do not support gradient-tracking runs such as "
+            "training yet; simulate them without gradients"
+        )
     forward.streamed_outputs = {
         row["id"]: row["signal"]
         for row in forward.executor.plan.outputs
@@ -905,6 +923,7 @@ def _select_execution_path(forward: _ForwardContext, runtime: _ForwardState) -> 
             "registered neuron, synapse or surrogate",
         ),
         (forward.capture_steps, "online reductions or recording"),
+        (bool(forward.plasticity), "plastic projections update weights every step"),
         (bool(forward.prepared_interventions), "spike interventions"),
         (bool(forward.segments.identity), "voltage resets or decision segments"),
         (forward.trace is not None, "execution tracing"),
@@ -1142,6 +1161,9 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
                 source = projection_source(projection.source, projection.delay_steps)
 
                 def project(*, projection=projection, source=source):
+                    if projection.id in forward.plasticity.projections:
+                        # This trial's weights from the end of the previous step.
+                        return forward.plasticity.drive(projection.id, source)
                     config = forward.projection_rows[projection.id].get("connectivity")
                     if config is not None:
                         return structured_drive(
@@ -1293,6 +1315,15 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
                     signal = f"{owner}.{port}"
                     if signal in forward.needed_signals:
                         runtime.state_traces.setdefault(signal, []).append(state[port])
+        if forward.plasticity:
+            # The spikes are final: update with arrivals and target spikes.
+            forward.plasticity.step(
+                {
+                    plastic.id: projection_source(plastic.source, plastic.delay_steps)
+                    for plastic in forward.plasticity.projections.values()
+                },
+                new_spikes,
+            )
         if forward.capture_steps:
             step_signals = {
                 f"{name}.value": value[t] for name, value in forward.inputs.items()
@@ -1304,6 +1335,7 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
                 {f"{name}.voltage": value for name, value in runtime.voltage.items()}
             )
             step_signals.update(step_pre_reset)
+            step_signals.update(forward.plasticity.signals())
             step_signals.update(
                 {
                     f"{p.id}.{forward.projection_ports[p.id]}": runtime.conductance[
@@ -1349,6 +1381,7 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
             runtime.conductance_traces[projection_id].append(
                 runtime.conductance[(projection.id, projection.polarity)]
             )
+    runtime.custom_state.update(forward.plasticity.custom_state())
 
 
 def _assemble_forward_result(  # noqa: C901
@@ -1628,7 +1661,13 @@ def _assemble_forward_result(  # noqa: C901
         executor="graph",
         outputs=outputs,
         diagnostics=packed,
-        parameters={k: v.detach().clone() for k, v in forward.effective_weights.items()}
+        parameters={
+            k: v.detach().clone()
+            for k, v in {
+                **forward.effective_weights,
+                **forward.plasticity.parameters(),  # final weights per trial
+            }.items()
+        }
         if forward.options.retain_parameters
         else {},
         final_state={

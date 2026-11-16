@@ -9,6 +9,7 @@ from torch import nn
 from snnlab import extensions as E
 from snnlab.sim.diagnostics.tracing import current_trace
 from snnlab.sim.graph.validation import deferred_validation, validate_pending
+from snnlab.sim.plasticity.runtime import plastic_rows
 from snnlab.sim.training.observations import evaluation_rng
 
 
@@ -39,6 +40,8 @@ def _replay_fallback_reason(model, inputs, kwargs):
     reason = None
     if model.cuda_graphs == "off":
         reason = "disabled by request"
+    elif plastic_rows(model.plan.graph):
+        reason = "plastic projections update weights every step"
     elif torch.is_grad_enabled():
         reason = "forward autograd enabled"
     elif not inputs or any(

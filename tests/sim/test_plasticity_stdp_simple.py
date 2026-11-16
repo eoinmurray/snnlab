@@ -1,18 +1,19 @@
 """Acceptance tests for stdp_simple: pair-based, additive STDP with hard bounds.
 
-Stage 1 delivers the update step and the lang contract, so T01-T21 and T33 run.
-The simulator applies plasticity from stage 2; until then T23-T32 are strict
-expected failures: they must fail with NotImplementedError, and they fail loudly
-as soon as the simulator supports plasticity, so the marker has to go. Lines
-marked PROVISIONAL follow the issue draft and may change in a later stage. The
-lang-side tests (T22, T25, T34) live in tests/lang/test_snnlang.py.
+Stage 1 delivered the update step and the lang contract (T01-T21, T33). Stage 2
+applies the rule inside the simulator (T23-T28, T31, T32, T35-T37). Two tests
+wait for later stages and are strict expected failures, so they fail loudly once
+their stage lands: T29 (training with plasticity off, stage 3) and T30 (weight
+snapshots in recordings, stage 4). Lines marked PROVISIONAL follow the issue
+draft and may change in a later stage. The lang-side tests (T22, T25, T34) live
+in tests/lang/test_snnlang.py.
 
 Layers:
 - T01-T20 and T33 drive the update step alone, on fixed spike trains.
 - T21 compares the update step with an independent Brian2 model.
-- T23-T32 run the rule inside snnlab, with the update step as their reference.
-  Post spikes are imposed with ReplaySpikes, so neuron dynamics play no part.
-  T32 checks that transmission uses the learned weights.
+- T23-T32 and T35-T37 run the rule inside snnlab, with the update step as their
+  reference. Post spikes are imposed with ReplaySpikes, so neuron dynamics play
+  no part. T32 checks that transmission uses the learned weights.
 
 Conventions: weights use the runtime layout (batch, source, target). Sizes are
 non-square (3 sources, 2 targets), so a transposed layout fails. Defaults use
@@ -33,13 +34,20 @@ from snnlab import lang as snn
 from snnlab import sim
 from snnlab.sim.plasticity import stdp_simple as kernel
 
-# The simulator applies plasticity from stage 2. Until then these tests must
-# fail with NotImplementedError; strict=True makes them fail loudly once the
-# simulator supports plasticity, so the marker cannot linger.
-stage2 = pytest.mark.xfail(
+# Tests for later stages are strict expected failures with the precise error
+# they meet today; strict=True makes them fail loudly once the stage lands.
+# Stage 3: training a plastic network stops with NotImplementedError until the
+# plasticity-off policy for training exists.
+stage3 = pytest.mark.xfail(
     raises=NotImplementedError,
     strict=True,
-    reason="the simulator applies plasticity from stage 2",
+    reason="training keeps plasticity off from stage 3",
+)
+# Stage 4: SignalRecording has no every_steps argument yet (TypeError).
+stage4 = pytest.mark.xfail(
+    raises=TypeError,
+    strict=True,
+    reason="weight snapshots in recordings arrive in stage 4",
 )
 
 PAIRINGS = ("nearest", "all_to_all")
@@ -519,6 +527,40 @@ def test_t33_clipping_is_sequential_with_depression_first(
     assert float(weights) == pytest.approx(expected, rel=1e-12)
 
 
+# T36: the channel-wise update of one-to-one projections -----------------------
+
+
+@pytest.mark.parametrize("pairing", PAIRINGS)
+def test_t36_one_to_one_update_is_the_diagonal_of_the_dense_update(pairing):
+    # Synapse i joins source i to target i only. The channel-wise step must give
+    # exactly the diagonal of the dense step under an identity mask, including
+    # a frozen channel.
+    g = torch.Generator().manual_seed(36)
+    n = 4
+    pre = random_trains(g, 300, batch=2, n=n, rate=0.08)
+    post = random_trains(g, 300, batch=2, n=n, rate=0.08)
+    rule = make_rule(a_plus=0.05, a_minus=0.05, w_min=0.1, pairing=pairing)
+    frozen = torch.tensor([True, True, False, True])
+    w0 = 0.2 + 0.6 * torch.rand(2, n, generator=g, dtype=F64)
+    dense, _, _ = run(
+        rule,
+        torch.diag_embed(w0),
+        pre,
+        post,
+        mask=torch.diag(frozen),
+    )
+    state = kernel.init_state(rule, batch=2, n_source=n, n_target=n)
+    channel = w0
+    for t in range(pre.shape[0]):
+        channel, state = kernel.step_one_to_one(
+            rule, state, channel, pre[t], post[t], dt_ms=DT_MS, mask=frozen
+        )
+    torch.testing.assert_close(
+        channel, torch.diagonal(dense, dim1=-2, dim2=-1), rtol=0, atol=1e-15
+    )
+    assert torch.all(channel[:, 2] == w0[:, 2])  # the masked channel never moved
+
+
 # T21: independent Brian2 model --------------------------------------------------
 
 
@@ -666,7 +708,6 @@ def trains(seed, steps, batch=1, n_source=N_SOURCE, n_target=N_TARGET, rate=0.05
 # T23-T24: compatibility and bounds ------------------------------------------------
 
 
-@stage2
 def test_t23_zero_amplitudes_reproduce_the_static_network_and_runs_never_write_back():
     pre, post = trains(23, 200, batch=2)
     pre, post = pre.float(), post.float()
@@ -716,7 +757,6 @@ def _recurrent_e_to_e(rule):
     return net
 
 
-@stage2
 def test_t24_bounds_are_checked_on_plastic_entries_only():
     pre, post = torch.zeros(20, 1, N_SOURCE), torch.zeros(20, 1, N_TARGET)
     # A plastic entry outside the bounds raises before the run.
@@ -745,7 +785,6 @@ def test_t24_bounds_are_checked_on_plastic_entries_only():
 # T26-T31: delays, execution, training, recording, disabled projections ------------
 
 
-@stage2
 @pytest.mark.parametrize("delay_steps", [0, 4])
 def test_t26_pre_spikes_count_at_arrival_after_the_delay(delay_steps):
     lag = 10  # the post spike comes 10 steps after the pre spike is emitted
@@ -762,7 +801,6 @@ def test_t26_pre_spikes_count_at_arrival_after_the_delay(delay_steps):
     assert torch.all(final == 0.0)  # no other synapse moved
 
 
-@stage2
 @pytest.mark.parametrize("pairing", PAIRINGS)
 @pytest.mark.parametrize("connectivity", ["dense", "one_to_one"])
 def test_t27_simulation_matches_the_update_step_and_resumes_from_runtime_state(
@@ -797,7 +835,6 @@ def test_t27_simulation_matches_the_update_step_and_resumes_from_runtime_state(
     )
 
 
-@stage2
 def test_t28_plasticity_selects_the_step_by_step_path_and_says_why():
     pre, post = torch.zeros(16, 1, N_SOURCE), torch.zeros(16, 1, N_TARGET)
     model = model_for(network(lang_rule()), compile_block_steps=8)
@@ -806,7 +843,7 @@ def test_t28_plasticity_selects_the_step_by_step_path_and_says_why():
     assert any("plastic" in reason for reason in path["fallback_reasons"])
 
 
-@stage2
+@stage3
 def test_t29_training_keeps_plasticity_off_and_runtime_weights_win_over_checkpoint(
     tmp_path,
 ):
@@ -902,7 +939,7 @@ def test_t29_training_keeps_plasticity_off_and_runtime_weights_win_over_checkpoi
     torch.testing.assert_close(weights(second), weights(whole), rtol=0, atol=0)
 
 
-@stage2
+@stage4
 def test_t30_recordings_follow_the_update_and_one_schedule_across_chunks():
     pre, post = trains(30, 100)
     pre, post = pre.float(), post.float()
@@ -969,7 +1006,6 @@ def test_t30_recordings_follow_the_update_and_one_schedule_across_chunks():
     torch.testing.assert_close(weights(off), weights(whole), rtol=0, atol=0)
 
 
-@stage2
 def test_t31_a_disabled_projection_keeps_its_weights_and_its_traces_track_spikes():
     pre, post = trains(31, 100)
     pre, post = pre.float(), post.float()
@@ -1001,7 +1037,6 @@ def test_t31_a_disabled_projection_keeps_its_weights_and_its_traces_track_spikes
     )
 
 
-@stage2
 @pytest.mark.parametrize("connectivity", ["dense", "one_to_one"])
 def test_t32_transmission_uses_the_learned_weights_from_the_previous_step(
     connectivity,
@@ -1039,3 +1074,122 @@ def test_t32_transmission_uses_the_learned_weights_from_the_previous_step(
         window = current[probe : probe + 40]
         ratio = float(window[:, learner].max() / window[:, control].max())
         assert ratio == pytest.approx(weight / w0, rel=1e-5)
+
+
+# T35: several plastic projections -------------------------------------------------
+
+
+def test_t35_plastic_projections_learn_independently():
+    # Two plastic projections onto one population, with different rules, sizes
+    # and delays, beside a static projection. Each keeps its own traces and
+    # weights and follows its own update step; they share only the post spikes.
+    delay = 2
+    g = torch.Generator().manual_seed(35)
+    pre_a = random_trains(g, 300, batch=2, n=3, rate=0.05)
+    pre_b = random_trains(g, 300, batch=2, n=2, rate=0.05)
+    post = random_trains(g, 300, batch=2, n=2, rate=0.05)
+    rule_a = {"a_plus": 0.05, "a_minus": 0.04, "pairing": "nearest"}
+    rule_b = {
+        "a_plus": 0.03,
+        "a_minus": 0.06,
+        "tau_plus_ms": 10.0,
+        "tau_minus_ms": 20.0,
+        "w_min": 0.1,
+        "w_max": 0.9,
+        "pairing": "all_to_all",
+    }
+    net = snn.Network("stdp_two_projections", dt=DT_MS * snn.ms)
+    a = net.input(
+        "pre_a", shape=("time", "batch", 3), signal_type="spikes", unit="spike"
+    )
+    b = net.input(
+        "pre_b", shape=("time", "batch", 2), signal_type="spikes", unit="spike"
+    )
+    cells = net.population("post", size=2, neuron=snn.CUBA_LIF())
+    common = {
+        "synapse": snn.ExponentialCurrent(tau=2 * snn.ms),
+        "initialization_scaling": "direct",
+    }
+    net.connect(
+        a,
+        cells.excitatory,
+        name="syn_a",
+        weight=snn.Constant(0.5),
+        plasticity=lang_rule(**rule_a),
+        **common,
+    )
+    net.connect(
+        b,
+        cells.excitatory,
+        name="syn_b",
+        weight=snn.Constant(0.4),
+        delay=delay * DT_MS * snn.ms,
+        plasticity=lang_rule(**rule_b),
+        **common,
+    )
+    net.connect(b, cells.excitatory, name="static", weight=snn.Constant(0.3), **common)
+    net.output("post_spikes", cells.spikes)
+    result = model_for(net)(
+        {"pre_a": pre_a.float(), "pre_b": pre_b.float()},
+        interventions=replay(post.float()),
+    )
+
+    expected_a, _, _ = run(make_rule(**rule_a), full((2, 3, 2), 0.5), pre_a, post)
+    arrived_b = torch.cat([torch.zeros(delay, 2, 2, dtype=F64), pre_b[:-delay]])
+    expected_b, _, _ = run(make_rule(**rule_b), full((2, 2, 2), 0.4), arrived_b, post)
+    torch.testing.assert_close(
+        weights(result, "syn_a").double(), expected_a, rtol=1e-5, atol=1e-6
+    )
+    torch.testing.assert_close(
+        weights(result, "syn_b", n_source=2).double(),
+        expected_b,
+        rtol=1e-5,
+        atol=1e-6,
+    )
+    assert not torch.allclose(expected_a, full((2, 3, 2), 0.5))  # the rules acted
+    assert torch.all(result.parameters["static.weight"] == 0.3)
+
+
+# T37: uses that stage 2 rejects ----------------------------------------------------
+
+
+def test_t37_unsupported_uses_of_plastic_projections_are_rejected(tmp_path):
+    bundle = snn.compile(network(lang_rule()), target=None)
+    # Prepared streaming keeps privately owned weights; continuation goes
+    # through sim.simulate with runtime_state instead.
+    with pytest.raises(ValueError, match="streaming.*plastic"):
+        sim.prepare_stream(bundle.graph, window_steps=4, device="cpu")
+    # Dataset inputs would need one weight set per sample (decision of
+    # 16 Nov 2026): rejected before anything runs.
+    snapshot = tmp_path / "samples.npz"
+    np.savez(
+        snapshot,
+        features=np.ones((3, N_SOURCE), dtype=np.float32),
+        labels=np.zeros(3, dtype=np.int64),
+    )
+    binding = sim.DatasetSnapshotBinding(
+        path=snapshot,
+        input_id="pre",
+        dataset_id="stdp-fixture",
+        split="test",
+        encoder=sim.DatasetEncoder(
+            "rate_poisson", duration_ms=5.0, max_rate_hz=10.0, seed=1
+        ),
+    )
+    with pytest.raises(NotImplementedError, match="dataset inputs.*plastic"):
+        sim.simulate(graph=bundle.graph, input_bindings=(binding,), device="cpu")
+    # Scaling the parameters would also scale what the rule learns from. Stage 3
+    # makes scaling act on transmission only; until then it is rejected.
+    with pytest.raises(NotImplementedError, match="scales on plastic"):
+        sim.simulate(
+            graph=bundle.graph,
+            input_bindings=(sim.DenseArrayBinding("pre", torch.zeros(4, 1, N_SOURCE)),),
+            inference_overrides={"projection_scales": {"syn": 0.5}},
+            device="cpu",
+        )
+    # CUDA graph replay is never used: weights change every step.
+    from snnlab.sim.graph.replay import _replay_fallback_reason
+
+    model = model_for(network(lang_rule()))
+    reason = _replay_fallback_reason(model, {"pre": torch.zeros(4, 1, N_SOURCE)}, {})
+    assert "plastic" in reason

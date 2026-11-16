@@ -21,9 +21,11 @@ not pair with each other. They still pair with earlier spikes through the
 traces, and they enter the traces for later pairs. Presynaptic spikes are
 passed at arrival, after any delay.
 
-Weights use the runtime layout ``(batch, source, target)``: every trial in a
-batch has its own weights. ``step`` is functional and never modifies its
-inputs.
+Dense weights use the runtime layout ``(batch, source, target)``: every trial
+in a batch has its own weights. One-to-one projections join source ``i`` to
+target ``i`` only; :func:`step_one_to_one` updates their ``(batch, n)``
+weights channel by channel and gives the diagonal of the dense update. Both
+steps are functional and never modify their inputs.
 """
 
 from __future__ import annotations
@@ -142,25 +144,63 @@ def step(
     and ``post`` is ``(batch, target)``, with 0/1 entries. ``mask`` is a
     boolean ``(source, target)`` tensor; entries that are ``False`` never change.
     """
+    pre, post, x, y = _decay(rule, state, weights.dtype, pre, post, dt_ms)
+    new = _clip(
+        rule,
+        weights,
+        rule.a_minus * pre[:, :, None] * y[:, None, :],
+        rule.a_plus * x[:, :, None] * post[:, None, :],
+        mask,
+    )
+    return new, _jump(rule, x, y, pre, post)
+
+
+def step_one_to_one(
+    rule: STDPSimple,
+    state: STDPState,
+    weights: torch.Tensor,
+    pre: torch.Tensor,
+    post: torch.Tensor,
+    *,
+    dt_ms: float,
+    mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, STDPState]:
+    """Advance one step of a one-to-one projection, channel by channel.
+
+    Synapse ``i`` joins source ``i`` to target ``i``, so ``weights``, ``pre``
+    and ``post`` are all ``(batch, n)``, and ``mask`` is a boolean ``(n,)``
+    tensor. The result equals the diagonal of :func:`step` with an identity
+    mask.
+    """
+    pre, post, x, y = _decay(rule, state, weights.dtype, pre, post, dt_ms)
+    new = _clip(rule, weights, rule.a_minus * pre * y, rule.a_plus * x * post, mask)
+    return new, _jump(rule, x, y, pre, post)
+
+
+def _decay(rule, state, dtype, pre, post, dt_ms):
+    """Cast the spikes and decay both traces by one step."""
     if not math.isfinite(dt_ms) or dt_ms <= 0:
         raise ValueError(f"dt_ms must be positive and finite, got {dt_ms!r}")
-    dtype = weights.dtype
-    pre = pre.to(dtype)
-    post = post.to(dtype)
     x = state.pre_trace * math.exp(-dt_ms / rule.tau_plus_ms)
     y = state.post_trace * math.exp(-dt_ms / rule.tau_minus_ms)
+    return pre.to(dtype), post.to(dtype), x, y
 
-    depression = rule.a_minus * pre[:, :, None] * y[:, None, :]
+
+def _clip(rule, weights, depression, potentiation, mask):
+    """Apply depression, clip at w_min, then potentiation, clip at w_max."""
     new = torch.clamp(weights - depression, min=rule.w_min)
-    potentiation = rule.a_plus * x[:, :, None] * post[:, None, :]
     new = torch.clamp(new + potentiation, max=rule.w_max)
     if mask is not None:
         new = torch.where(mask, new, weights)
+    return new
 
+
+def _jump(rule, x, y, pre, post):
+    """Add this step's spikes to the traces."""
     if rule.pairing == "nearest":
         x = torch.where(pre > 0, torch.ones_like(x), x)
         y = torch.where(post > 0, torch.ones_like(y), y)
     else:
         x = x + pre
         y = y + post
-    return new, STDPState(pre_trace=x, post_trace=y)
+    return STDPState(pre_trace=x, post_trace=y)

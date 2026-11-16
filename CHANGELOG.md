@@ -9,11 +9,12 @@ separate compatibility contracts.
 ### Added
 
 1. `lang.STDPSimple(...)` and `Network.connect(..., plasticity=...)`: pair-based, additive STDP with hard bounds, set per projection. Pairing is symmetric nearest-spike (default) or all-to-all; `freeze_zero_weights=True` keeps zero entries fixed. Graph validation rejects unsupported projections at compile and load time (E120, E121).
-2. `snnlab.sim.plasticity.stdp_simple`: the pure update step (`STDPSimple`, `STDPState`, `init_state`, `step`). Clipping is sequential: depression is clipped at `w_min` before potentiation is added and clipped at `w_max`. The simulator does not apply plasticity yet; planning a graph with a plastic projection raises `NotImplementedError`.
+2. `snnlab.sim.plasticity.stdp_simple`: the pure update step (`STDPSimple`, `STDPState`, `init_state`, `step`, and `step_one_to_one` for channel-wise one-to-one weights). Clipping is sequential: depression is clipped at `w_min` before potentiation is added and clipped at `w_max`.
+3. The simulator applies `stdp_simple` in the step-by-step loop. Each trial keeps its own weights and traces; the update runs once per step after the spikes are final, with presynaptic spikes counted at arrival, and transmission uses the weights from the previous step. Final weights per trial are returned in `result.parameters` as `(batch, *parameter shape)`; weights and traces continue through `runtime_state` (`custom_state` keys `plasticity/<projection>/...`). The model's parameters and the bundle never change. Excluded autapses and, with `freeze_zero_weights`, the model's zero weights never change; bounds are checked before the run on the entries that can change. A disabled projection keeps its weights while its traces track spikes. The traces are recordable as `<projection>.pre_trace` and `<projection>.post_trace`. Plastic networks use the step-by-step path and no CUDA graph replay, with the reason reported. Prepared streaming rejects plastic projections; dataset inputs, projection scales on plastic projections and gradient-tracking runs (training) raise `NotImplementedError` for now.
 
 ### Validation
 
-1. Added acceptance tests for `stdp_simple` (T01–T34). T01–T22, T25, T33 and T34 run now; T23–T32 are strict expected failures until the simulator applies plasticity.
+1. Added acceptance tests for `stdp_simple` (T01–T37). All run except T29 (training with plasticity off) and T30 (weight snapshots in recordings), which are strict expected failures until their stages land. T35 checks that several plastic projections learn independently, T36 that the channel-wise one-to-one update equals the dense update on the diagonal, and T37 that unsupported uses are rejected.
 
 ## [0.32.3] - 2026-11-06
 

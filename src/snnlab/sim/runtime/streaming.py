@@ -14,6 +14,7 @@ from snnlab import lang
 from snnlab.sim.diagnostics.tracing import current_trace
 from snnlab.sim.graph.executor import GraphExecutor
 from snnlab.sim.graph.plan import GraphPlan, _signal_axes, plan_graph
+from snnlab.sim.plasticity.runtime import plastic_rows
 from snnlab.sim.requests.handlers import resolve_device
 from snnlab.sim.requests.performance import Performance
 from snnlab.sim.requests.result import ExecutionResult
@@ -425,6 +426,12 @@ def prepare_stream(
                 "network must be a Network, graph, GraphPlan, Bundle, bundle path or GraphExecutor"
             )
         plan = plan_graph(copy.deepcopy(graph))
+    plastic = [row["id"] for row in plastic_rows(plan.graph)]
+    if plastic:
+        raise ValueError(
+            f"prepared streaming does not support plastic projections {plastic}; "
+            "continue a plastic run with sim.simulate(..., runtime_state=...)"
+        )
     surrogate = copy.deepcopy(source.surrogate_config) if source is not None else None
     model = (
         GraphExecutor(

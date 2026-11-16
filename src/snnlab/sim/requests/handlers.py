@@ -25,6 +25,7 @@ from snnlab.sim.graph.plan import plan_graph
 from snnlab.sim.inputs.bindings import ResolvedDenseInputs
 from snnlab.sim.inputs.provider import DatasetProvider, simulate_dataset
 from snnlab.sim.inputs.resolution import _split_input_bindings, resolve_input_bindings
+from snnlab.sim.plasticity.runtime import plastic_rows
 from snnlab.sim.requests.performance import _performance_report
 from snnlab.sim.requests.result import ExecutionResult
 from snnlab.sim.requests.spec import ExecutionSpec
@@ -283,6 +284,19 @@ def _resolve_poisson_overrides(
     return poisson_bindings
 
 
+def _reject_plastic_datasets(sources, built):
+    """Each sample would need its own weights; reject dataset inputs for now."""
+    if sources.dataset is None:
+        return
+    plastic = [row["id"] for row in plastic_rows(built.model.plan.graph)]
+    if plastic:
+        raise NotImplementedError(
+            f"dataset inputs are not supported for plastic projections {plastic} "
+            "yet; to learn across samples, chain sim.simulate calls with "
+            "runtime_state"
+        )
+
+
 def _apply_projection_scales(overrides, built):
     scales = dict(overrides.get("projection_scales", {}))
     if scales:
@@ -294,6 +308,15 @@ def _apply_projection_scales(overrides, built):
         if unknown:
             raise ValueError(
                 f"inference projection scales target unknown projections: {unknown}"
+            )
+        plastic = sorted(
+            set(scales) & {row["id"] for row in plastic_rows(built.model.plan.graph)}
+        )
+        if plastic:
+            # Scaling the parameters would also scale what the rule learns from.
+            raise NotImplementedError(
+                f"inference projection scales on plastic projections {plastic} are "
+                "not supported yet"
             )
         with torch.no_grad():
             parameters = built.model.parameter_map()
@@ -359,6 +382,7 @@ def simulate(
         build_spec = replace(spec, graph=recompiled_graph, bundle=None)
     built = build(build_spec)
     assert isinstance(built.model, GraphExecutor)
+    _reject_plastic_datasets(sources, built)
     device = resolve_device(spec.device)
     poisson_bindings = sources.poisson
     poisson_bindings = _resolve_poisson_overrides(
