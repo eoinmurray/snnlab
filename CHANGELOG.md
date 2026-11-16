@@ -6,9 +6,14 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+### Added
+
+1. `lang.STDPSimple(...)` and `Network.connect(..., plasticity=...)`: pair-based, additive STDP with hard bounds, set per projection. Pairing is symmetric nearest-spike (default) or all-to-all; `freeze_zero_weights=True` keeps zero entries fixed. Graph validation rejects unsupported projections at compile and load time (E120, E121).
+2. `snnlab.sim.plasticity.stdp_simple`: the pure update step (`STDPSimple`, `STDPState`, `init_state`, `step`). Clipping is sequential: depression is clipped at `w_min` before potentiation is added and clipped at `w_max`. The simulator does not apply plasticity yet; planning a graph with a plastic projection raises `NotImplementedError`.
+
 ### Validation
 
-1. Added acceptance tests for the planned `stdp_simple` plasticity rule: pair-based, additive STDP with hard bounds (T01–T32). They are skipped until `snnlab.sim.plasticity.stdp_simple` and `lang.STDPSimple` exist.
+1. Added acceptance tests for `stdp_simple` (T01–T34). T01–T22, T25, T33 and T34 run now; T23–T32 are strict expected failures until the simulator applies plasticity.
 
 ## [0.32.3] - 2026-11-06
 

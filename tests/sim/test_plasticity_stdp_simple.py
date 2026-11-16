@@ -1,11 +1,14 @@
 """Acceptance tests for stdp_simple: pair-based, additive STDP with hard bounds.
 
-The tests are skipped until the feature exists. Lines marked PROVISIONAL follow
-the issue draft and may change in review. The lang-side tests (T22, T25) live in
-tests/lang/test_snnlang.py.
+Stage 1 delivers the update step and the lang contract, so T01-T21 and T33 run.
+The simulator applies plasticity from stage 2; until then T23-T32 are strict
+expected failures: they must fail with NotImplementedError, and they fail loudly
+as soon as the simulator supports plasticity, so the marker has to go. Lines
+marked PROVISIONAL follow the issue draft and may change in a later stage. The
+lang-side tests (T22, T25, T34) live in tests/lang/test_snnlang.py.
 
 Layers:
-- T01-T20 drive the update step alone, on fixed spike trains.
+- T01-T20 and T33 drive the update step alone, on fixed spike trains.
 - T21 compares the update step with an independent Brian2 model.
 - T23-T32 run the rule inside snnlab, with the update step as their reference.
   Post spikes are imposed with ReplaySpikes, so neuron dynamics play no part.
@@ -20,7 +23,6 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import importlib
 import math
 
 import numpy as np
@@ -29,22 +31,15 @@ import torch
 
 from snnlab import lang as snn
 from snnlab import sim
+from snnlab.sim.plasticity import stdp_simple as kernel
 
-KERNEL_MODULE = "snnlab.sim.plasticity.stdp_simple"  # PROVISIONAL: location
-try:
-    kernel = importlib.import_module(KERNEL_MODULE)
-except ModuleNotFoundError as error:
-    # Skip only while the module itself is absent. A missing dependency or a
-    # broken import inside an existing module must fail collection.
-    if error.name not in {"snnlab.sim.plasticity", KERNEL_MODULE}:
-        raise
-    kernel = None
-
-pytestmark = pytest.mark.skipif(
-    kernel is None, reason=f"{KERNEL_MODULE} is not implemented yet"
-)
-requires_lang = pytest.mark.skipif(
-    not hasattr(snn, "STDPSimple"), reason="lang.STDPSimple is not implemented yet"
+# The simulator applies plasticity from stage 2. Until then these tests must
+# fail with NotImplementedError; strict=True makes them fail loudly once the
+# simulator supports plasticity, so the marker cannot linger.
+stage2 = pytest.mark.xfail(
+    raises=NotImplementedError,
+    strict=True,
+    reason="the simulator applies plasticity from stage 2",
 )
 
 PAIRINGS = ("nearest", "all_to_all")
@@ -204,6 +199,12 @@ def test_t01_spec_states_additive_hard_bounds_and_defaults():
         {"w_min": 1.0},
         {"w_min": 0.6, "w_max": 0.5},
         {"pairing": "presynaptic_centred"},
+        {"a_plus": math.nan},
+        {"a_minus": math.inf},
+        {"tau_plus_ms": math.inf},
+        {"tau_minus_ms": math.nan},
+        {"w_max": math.inf},
+        {"w_min": math.nan},
     ],
     ids=[
         "a_plus<0",
@@ -214,6 +215,12 @@ def test_t01_spec_states_additive_hard_bounds_and_defaults():
         "w_min=w_max",
         "w_min>w_max",
         "unknown_pairing",
+        "a_plus=nan",
+        "a_minus=inf",
+        "tau_plus=inf",
+        "tau_minus=nan",
+        "w_max=inf",
+        "w_min=nan",
     ],
 )
 def test_t02_invalid_parameters_raise(override):
@@ -482,6 +489,36 @@ def test_t20_matches_an_independent_pairwise_reference(pairing, seed):
             assert dw == pytest.approx(expected, rel=1e-10, abs=1e-13)
 
 
+# T33: where clipping happens ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("w0", "depression", "potentiation", "expected"),
+    [
+        # Lower bound: clipping in sequence gives 0.08; clipping the combined
+        # update would give 0.05 - 0.10 + 0.08 = 0.03.
+        (0.05, 0.10, 0.08, 0.08),
+        # Upper bound: depression first gives 0.95 - 0.08 + 0.10 = 0.97;
+        # potentiating first would clip at 1.0 and end at 0.92.
+        (0.95, 0.08, 0.10, 0.97),
+    ],
+    ids=["lower_bound_sequential", "upper_bound_depression_first"],
+)
+def test_t33_clipping_is_sequential_with_depression_first(
+    w0, depression, potentiation, expected
+):
+    # One synapse whose pre and post neurons both spike in this step, with both
+    # traces at 1 from earlier spikes. Amplitudes are chosen so that, after the
+    # one-step decay, depression and potentiation have the sizes above.
+    x = math.exp(-DT_MS / DEFAULTS["tau_plus_ms"])
+    y = math.exp(-DT_MS / DEFAULTS["tau_minus_ms"])
+    rule = make_rule(a_plus=potentiation / x, a_minus=depression / y)
+    ones = torch.ones(1, 1, dtype=F64)
+    state = kernel.STDPState(pre_trace=ones, post_trace=ones)
+    weights, _ = kernel.step(rule, state, full((1, 1, 1), w0), ones, ones, dt_ms=DT_MS)
+    assert float(weights) == pytest.approx(expected, rel=1e-12)
+
+
 # T21: independent Brian2 model --------------------------------------------------
 
 
@@ -551,7 +588,7 @@ def test_t21_matches_brian2(pairing):
 
 def lang_rule(**overrides):
     p = {**DEFAULTS, **overrides}
-    return snn.STDPSimple(  # PROVISIONAL: name and arguments
+    return snn.STDPSimple(
         a_plus=p["a_plus"],
         a_minus=p["a_minus"],
         tau_plus=p["tau_plus_ms"] * snn.ms,
@@ -580,7 +617,7 @@ def network(
     )
     post = net.population("post", size=n_target, neuron=snn.CUBA_LIF())
     if rule is not None:
-        connect["plasticity"] = rule  # PROVISIONAL: keyword on Network.connect
+        connect["plasticity"] = rule
     net.connect(
         pre,
         post.excitatory,
@@ -629,7 +666,7 @@ def trains(seed, steps, batch=1, n_source=N_SOURCE, n_target=N_TARGET, rate=0.05
 # T23-T24: compatibility and bounds ------------------------------------------------
 
 
-@requires_lang
+@stage2
 def test_t23_zero_amplitudes_reproduce_the_static_network_and_runs_never_write_back():
     pre, post = trains(23, 200, batch=2)
     pre, post = pre.float(), post.float()
@@ -673,13 +710,13 @@ def _recurrent_e_to_e(rule):
         initialization_scaling="direct",
         connection="recurrent",
         delay=DT_MS * snn.ms,
-        plasticity=rule,  # PROVISIONAL
+        plasticity=rule,
     )
     net.output("E_spikes", e.spikes)
     return net
 
 
-@requires_lang
+@stage2
 def test_t24_bounds_are_checked_on_plastic_entries_only():
     pre, post = torch.zeros(20, 1, N_SOURCE), torch.zeros(20, 1, N_TARGET)
     # A plastic entry outside the bounds raises before the run.
@@ -697,7 +734,7 @@ def test_t24_bounds_are_checked_on_plastic_entries_only():
     recurrent = weights(result, n_source=3, n_target=3)[0]
     assert torch.all(torch.diagonal(recurrent) == 0.0)
     assert torch.all(recurrent[~torch.eye(3, dtype=torch.bool)] >= 0.2)
-    # Opt-in frozen zeros (PROVISIONAL flag): below w_min, allowed, unchanged.
+    # Opt-in frozen zeros: below w_min, allowed, unchanged.
     frozen = lang_rule(w_min=0.2, freeze_zero_weights=True)
     result = model_for(network(frozen, w0=0.0))(
         {"pre": pre}, interventions=replay(post)
@@ -708,7 +745,7 @@ def test_t24_bounds_are_checked_on_plastic_entries_only():
 # T26-T31: delays, execution, training, recording, disabled projections ------------
 
 
-@requires_lang
+@stage2
 @pytest.mark.parametrize("delay_steps", [0, 4])
 def test_t26_pre_spikes_count_at_arrival_after_the_delay(delay_steps):
     lag = 10  # the post spike comes 10 steps after the pre spike is emitted
@@ -725,7 +762,7 @@ def test_t26_pre_spikes_count_at_arrival_after_the_delay(delay_steps):
     assert torch.all(final == 0.0)  # no other synapse moved
 
 
-@requires_lang
+@stage2
 @pytest.mark.parametrize("pairing", PAIRINGS)
 @pytest.mark.parametrize("connectivity", ["dense", "one_to_one"])
 def test_t27_simulation_matches_the_update_step_and_resumes_from_runtime_state(
@@ -760,7 +797,7 @@ def test_t27_simulation_matches_the_update_step_and_resumes_from_runtime_state(
     )
 
 
-@requires_lang
+@stage2
 def test_t28_plasticity_selects_the_step_by_step_path_and_says_why():
     pre, post = torch.zeros(16, 1, N_SOURCE), torch.zeros(16, 1, N_TARGET)
     model = model_for(network(lang_rule()), compile_block_steps=8)
@@ -769,7 +806,7 @@ def test_t28_plasticity_selects_the_step_by_step_path_and_says_why():
     assert any("plastic" in reason for reason in path["fallback_reasons"])
 
 
-@requires_lang
+@stage2
 def test_t29_training_keeps_plasticity_off_and_runtime_weights_win_over_checkpoint(
     tmp_path,
 ):
@@ -819,7 +856,7 @@ def test_t29_training_keeps_plasticity_off_and_runtime_weights_win_over_checkpoi
         "epochs": 2,
         "batch_size": 2,
         "diagnostics": False,
-        "precision": "highest",
+        "performance": sim.Performance(precision="highest"),
     }
     rule_params = {"a_plus": 0.05, "a_minus": 0.05}
     static_bundle = trainable(None)
@@ -865,7 +902,7 @@ def test_t29_training_keeps_plasticity_off_and_runtime_weights_win_over_checkpoi
     torch.testing.assert_close(weights(second), weights(whole), rtol=0, atol=0)
 
 
-@requires_lang
+@stage2
 def test_t30_recordings_follow_the_update_and_one_schedule_across_chunks():
     pre, post = trains(30, 100)
     pre, post = pre.float(), post.float()
@@ -932,7 +969,7 @@ def test_t30_recordings_follow_the_update_and_one_schedule_across_chunks():
     torch.testing.assert_close(weights(off), weights(whole), rtol=0, atol=0)
 
 
-@requires_lang
+@stage2
 def test_t31_a_disabled_projection_keeps_its_weights_and_its_traces_track_spikes():
     pre, post = trains(31, 100)
     pre, post = pre.float(), post.float()
@@ -964,7 +1001,7 @@ def test_t31_a_disabled_projection_keeps_its_weights_and_its_traces_track_spikes
     )
 
 
-@requires_lang
+@stage2
 @pytest.mark.parametrize("connectivity", ["dense", "one_to_one"])
 def test_t32_transmission_uses_the_learned_weights_from_the_previous_step(
     connectivity,

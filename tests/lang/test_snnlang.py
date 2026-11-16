@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import json
+import math
 import shutil
 
 import pytest
@@ -625,11 +627,8 @@ def test_spike_count_parameters_can_define_its_training_group():
     ]
 
 
-# stdp_simple acceptance tests (T22, T25). Skipped until lang.STDPSimple exists.
-# Lines marked PROVISIONAL follow the issue draft and may change in review.
-requires_stdp_simple = pytest.mark.skipif(
-    not hasattr(snn, "STDPSimple"), reason="lang.STDPSimple is not implemented yet"
-)
+# stdp_simple acceptance tests (T22, T25, T34). The rest are in
+# tests/sim/test_plasticity_stdp_simple.py.
 
 
 def _stdp_simple(**overrides):
@@ -641,7 +640,7 @@ def _stdp_simple(**overrides):
         "w_max": 1.0,
         **overrides,
     }
-    return snn.STDPSimple(**values)  # PROVISIONAL: name and arguments
+    return snn.STDPSimple(**values)
 
 
 def _stdp_network(
@@ -672,7 +671,7 @@ def _stdp_network(
         synapse = snn.AMPA(tau=2 * snn.ms)
         signal = post.voltage
     if plasticity is not None:
-        connect["plasticity"] = plasticity  # PROVISIONAL: keyword on Network.connect
+        connect["plasticity"] = plasticity
     net.connect(
         source,
         getattr(post, port),
@@ -732,7 +731,6 @@ def _stdp_conv2d_network():
     return net
 
 
-@requires_stdp_simple
 def test_t22_stdp_simple_spec_states_its_rule_and_is_opt_in():
     spec = _stdp_simple().json()
     assert spec["kind"] == "stdp_simple"
@@ -741,7 +739,7 @@ def test_t22_stdp_simple_spec_states_its_rule_and_is_opt_in():
     plastic = snn.compile(_stdp_network(_stdp_simple()), target=None).graph
     static = snn.compile(_stdp_network(), target=None).graph
     row = next(r for r in plastic["projections"] if r["id"] == "syn")
-    assert row["plasticity"] == spec  # PROVISIONAL: key in the projection row
+    assert row["plasticity"] == spec
     static_row = next(r for r in static["projections"] if r["id"] == "syn")
     assert "plasticity" not in static_row
 
@@ -761,10 +759,43 @@ _STDP_REJECTED = {
 }
 
 
-@requires_stdp_simple
 @pytest.mark.parametrize("case", sorted(_STDP_REJECTED))
 def test_t25_stdp_simple_rejects_unsupported_projections(case):
     # stdp_simple is a per-projection rule for projections onto an excitatory
     # receptor, from a spiking source to a spiking target, with its own weights.
     with pytest.raises(ValueError, match="stdp_simple|plastic"):
         snn.compile(_STDP_REJECTED[case](), target=None)
+
+
+def _stdp_graph_with(mutation):
+    graph = copy.deepcopy(snn.compile(_stdp_network(_stdp_simple()), target=None).graph)
+    row = next(r for r in graph["projections"] if r["id"] == "syn")
+    mutation(graph, row)
+    return graph
+
+
+def _move_to_inhibitory(graph, row):
+    # A hand-edited bundle: the same projection, now onto the inhibitory receptor.
+    row["target"] = "post.inhibitory"
+    row["polarity"] = "inhibitory"
+
+
+_STDP_CORRUPTED = {
+    "inhibitory_receptor": _move_to_inhibitory,
+    "non_finite_a_plus": lambda graph, row: row["plasticity"].update(a_plus=math.inf),
+    "nan_w_max": lambda graph, row: row["plasticity"].update(w_max=math.nan),
+    "unknown_kind": lambda graph, row: row["plasticity"].update(kind="stdp_magic"),
+    "unknown_field": lambda graph, row: row["plasticity"].update(mu_plus=0.5),
+    "multiplicative": lambda graph, row: row["plasticity"].update(
+        update="multiplicative"
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_STDP_CORRUPTED))
+def test_t34_graph_validation_rejects_unsupported_or_corrupted_plasticity(case):
+    # Bundles loaded from disk pass through validate_graph, so a graph edited
+    # outside Python is held to the same rules as Network.connect.
+    graph = _stdp_graph_with(_STDP_CORRUPTED[case])
+    with pytest.raises(ValueError, match="stdp_simple|plasticity"):
+        snn.validate_graph(graph).raise_for_errors()

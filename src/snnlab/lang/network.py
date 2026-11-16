@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from snnlab._shared.plasticity import PLASTICITY_KINDS
 from snnlab.lang._specs import Spec, _value
 from snnlab.lang.parameters import Constant
 from snnlab.lang.units import Quantity, ms
@@ -101,6 +102,7 @@ class Projection:
     allow_autapses: bool = False
     modulation: Spec | None = None
     connectivity: Spec | None = None
+    plasticity: Spec | None = None
 
     @property
     def conductance(self) -> Signal:
@@ -334,8 +336,15 @@ class Network:
         allow_autapses: bool = False,
         modulation: Spec | Callable | None = None,
         connectivity: Spec | None = None,
+        plasticity: Spec | None = None,
     ) -> Projection:
         modulation, modulation_data = _resolve_modulation(modulation=modulation)
+        if plasticity is not None and (
+            not isinstance(plasticity, Spec) or plasticity.kind not in PLASTICITY_KINDS
+        ):
+            raise TypeError(
+                "plasticity must be a plasticity spec, such as lang.STDPSimple(...)"
+            )
 
         if not isinstance(allow_autapses, bool):
             raise TypeError("allow_autapses must be boolean")
@@ -401,6 +410,8 @@ class Network:
             row["connectivity"] = connectivity.json()
         if modulation_data is not None:
             row["modulation"] = modulation_data
+        if plasticity is not None:
+            row["plasticity"] = plasticity.json()
         self.projections.append(row)
         from snnlab.extensions import projection_port, resolve, synapse_unit
 
@@ -441,6 +452,7 @@ class Network:
             allow_autapses,
             modulation,
             connectivity,
+            plasticity,
         )
 
     def operation(

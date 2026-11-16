@@ -272,6 +272,12 @@ def _plan_projections(graph, dt, parameter_rows):
 def plan_graph(graph: Mapping[str, Any]) -> GraphPlan:
     validate_spatial(graph)
     E.restore(graph)
+    plastic = [row["id"] for row in graph.get("projections", []) if "plasticity" in row]
+    if plastic:
+        raise NotImplementedError(
+            f"projections {plastic} carry plasticity, which the simulator does not "
+            "apply yet; compile and validation support it, simulation does not"
+        )
     autapses = resolve_autapses(graph)
     if "voltage_sampling" in graph and graph["voltage_sampling"] != "explicit":
         raise ValueError("unsupported voltage_sampling contract")

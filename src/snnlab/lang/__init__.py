@@ -11,6 +11,7 @@ from ._version import __version__
 _EXPORTS = {
     "Conv2d": "spatial",
     "OneToOne": "spatial",
+    "STDPSimple": "plasticity",
     "pool2d": "spatial",
     "duration_steps": "._shared.timing",
     "duration_metadata": "._shared.timing",

@@ -8,6 +8,7 @@ from typing import Any
 
 from snnlab import extensions as E
 from snnlab._shared import neurons as N
+from snnlab._shared import plasticity as P
 from snnlab._shared.connectivity import resolve_autapses
 from snnlab._shared.gains import validate as validate_gain
 from snnlab._shared.projections import delay_steps, validate_source
@@ -252,6 +253,23 @@ def _validate_projection_physics(graph, row, out):
     return unit
 
 
+def _validate_plasticity(*, graph, row, out):
+    try:
+        P.stdp_simple_from_json(row["plasticity"])
+    except (ValueError, TypeError) as error:
+        out.diagnostics.append(Diagnostic("error", "E120", str(error), row["id"]))
+        return
+    for reason in P.unsupported_reasons(graph, row):
+        out.diagnostics.append(
+            Diagnostic(
+                "error",
+                "E121",
+                f"stdp_simple cannot apply to this projection: {reason}",
+                row["id"],
+            )
+        )
+
+
 def _validate_projection_parameters(
     *,
     graph,
@@ -370,6 +388,8 @@ def _validate_projections(
                     row["id"],
                 )
             )
+        if "plasticity" in row:
+            _validate_plasticity(graph=graph, row=row, out=out)
         _validate_projection_parameters(
             graph=graph,
             row=row,
