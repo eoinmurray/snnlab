@@ -10,6 +10,7 @@
     "../current-lif",
     "../custom-neurons-and-synapses",
     "../hodgkin-huxley",
+    "../stdp",
     "../meanfield",
     "../pytorch-integration",
     "../animated-neuron"

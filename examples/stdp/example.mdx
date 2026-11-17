@@ -1,0 +1,140 @@
+---
+title: Spike-Timing-Dependent Plasticity
+description: Learn input weights with pair-based STDP in a conductance-based neuron, after Song, Miller and Abbott (2000).
+---
+
+One conductance-based LIF neuron receives 1000 excitatory and 200 inhibitory Poisson inputs. Its excitatory synapses learn with [`stdp_simple`](/api/lang#plasticity): pair-based, additive spike-timing-dependent plasticity with hard bounds. A synapse strengthens when its input spike precedes an output spike and weakens when it follows one.
+
+The setting follows [Song, Miller and Abbott (2000)](https://doi.org/10.1038/78829). Their study made two points. First, STDP regulates the neuron's output rate: stronger input does not simply produce proportionally more output. Second, STDP makes inputs compete: inputs that fire together win, and the others weaken. This example tests both claims in {{LEARNING_SECONDS}} seconds of simulated time.
+
+Three experiments run side by side, as three trials of one batch:
+
+1. 10 Hz inputs, all independent;
+2. 10 Hz inputs, with the first half correlated;
+3. 20 Hz inputs, all independent.
+
+Each trial learns its own copy of the weights, and all three start from the same initial weights. The comparison is therefore controlled: only the input statistics differ.
+
+![1000 excitatory inputs reach one COBA LIF neuron through plastic AMPA synapses; 200 inhibitory inputs reach it through static GABA synapses.](/stdp/network.png)
+
+## Run the example
+
+Run from the repository root:
+
+```bash
+uv run python examples/stdp/example.py
+uv run pytest tests/sim/test_stdp_example.py -q
+```
+
+The run takes between half a minute and a minute and a half on a CPU, depending on the machine. It replaces `results/` with `network.png`, `stdp-window.png`, `stdp-learning.png` and `summary.json`. The summary records the measured rates, the weight statistics and a SHA-256 hash of the final weights. The same seed on the same machine reproduces it exactly. On another machine, float32 rounding can move a spike by one step, and the run then differs in detail; the conclusions below do not depend on such details. Graphviz's `dot` command is required for the diagram.
+
+## 1. Parameters
+
+```python
+{{CONSTANTS}}
+```
+
+Weights are conductances in µS. The bound `W_MAX_US = 0.001` is 1 nS, which is 2% of the neuron's leak conductance (1 nF / 20 ms = 50 nS). One synapse alone is weak; the neuron fires only when many inputs act together.
+
+The amplitudes are absolute, in µS. Potentiation adds up to 2% of `w_max` per spike pair. Depression is 5% stronger, the ratio Song et al. used. That small excess makes uncorrelated pairings depress on balance, which drives the rate regulation below. The amplitude is larger than in the original study, so learning settles within {{LEARNING_SECONDS}} seconds; the price is noisier weights.
+
+## 2. Inputs
+
+```python
+{{INPUTS}}
+```
+
+Both inputs carry spikes. The batch axis holds the experiments, so each input chunk has shape `(time, 3, inputs)`.
+
+## 3. The neuron and its plastic synapses
+
+```python
+{{NETWORK}}
+```
+
+`plasticity=lang.STDPSimple(...)` is the only difference from a static projection. The rule needs a spiking source, a spiking target and an excitatory receptor; see [supported projections](/api/lang#supported-projections). The inhibitory projection stays static. `stdp_simple` rejects inhibitory receptors with `E121`, because inhibitory plasticity needs a different rule.
+
+[COBA_LIF](/api/extensions#neuron-models) uses a 20 ms membrane time constant and a −50 mV threshold. Its excitatory reversal potential is 0 mV and its inhibitory one −80 mV, so AMPA input depolarizes the cell and GABA input pulls it below rest. `initialization_scaling="direct"` keeps the drawn weights in µS, without fan-in normalization. Initial weights are uniform between 0 and `w_max`.
+
+`pairing="all_to_all"` lets every spike pair with every earlier spike on the other side, as in the original model. The update step section of [Plasticity](/api/lang#the-update) gives the exact discrete-time conventions.
+
+## 4. Correlated and independent spike trains
+
+```python
+{{INPUT_CHUNK}}
+```
+
+All excitatory inputs of one experiment fire at the same rate. In the correlated half, each input keeps independent spikes at rate (1 − c)·r and copies a shared train at rate c·r. Two inputs of that half then share about a fraction c of their spikes. Correlation changes timing, not rate. Any difference between the experiments' learned weights therefore comes from spike timing.
+
+## 5. Build the model
+
+```python
+{{BUILD}}
+```
+
+The executor is built once and reused for every chunk. Its weights are the starting point of every trial, and runs never change them. Learned weights live in each result and in its runtime state.
+
+## 6. Learn in one-second chunks
+
+```python
+{{LEARN}}
+```
+
+Each call simulates one second. `runtime_state` carries the learned weights, both traces and the neuron's state into the next call. A chunked run is therefore identical to one long run; one-second chunks keep the input tensors small.
+
+`SignalRecording(..., every_steps=STEPS_PER_SECOND)` records the weights once per second, after the last step of each chunk. The recorded signal has axes `(time, batch, source, target)`; `[-1, :, :, 0]` takes the last snapshot, every trial, every input and the one neuron. `result.parameters` holds the final weights per trial with the same `(batch, source, target)` layout. See [Recording weights and traces](/api/sim#recording-weights-and-traces).
+
+## 7. Measure with learning frozen
+
+```python
+{{PROBE}}
+```
+
+`learning=False` runs the plastic projection with its current weights and does not change them. Without a state, the probe uses the initial weights; with the learned state, it uses the learned ones. Both probes see fresh inputs with the same statistics. The rates before and after learning are therefore directly comparable.
+
+`run_example` runs the first probe, the learning phase and the second probe in order, on one random stream:
+
+```python
+{{RUN}}
+```
+
+## 8. The learning window
+
+```python
+{{WINDOW}}
+```
+
+The pure update step, `snnlab.sim.plasticity.stdp_simple.step`, runs the rule on fixed spike trains, without a network. Here each trial holds one spike pair at a different lag. The result is the classic STDP window: potentiation when the input spike comes first, depression when it comes second.
+
+![Weight change for one spike pair against the lag between the postsynaptic and the presynaptic spike, computed with the update step and compared with the exponential formula.](/stdp/stdp-window.png)
+
+Every point lies on the formula. The pair at lag zero produces no change, because spikes in the same step do not pair. See [The update step](/api/sim#the-update-step).
+
+## 9. Results
+
+![Four panels: output rate during learning for the three experiments; mean weights recorded every second; final weight of each input in the half-correlated experiment; final weight distributions.](/stdp/stdp-learning.png)
+
+{{SUMMARY_TABLE}}
+
+The output rates come from the frozen probes before and after learning. Weights are fractions of `w_max`.
+
+**STDP regulates the output rate.** Before learning, doubling the input rate multiplies the output rate several times. After learning, the gap between the two independent experiments is far smaller. Depression is slightly stronger than potentiation, so random pairings weaken the synapses. The more the neuron fires, the more random pairings occur. Weights fall until the output rate settles.
+
+**Correlated inputs win the competition.** In the half-correlated experiment, the correlated inputs rise to the upper bound. The independent inputs of the same neuron fall well below their starting mean. Shared spikes often trigger an output spike shortly after they arrive. These causal pairings potentiate the correlated synapses. The independent inputs see mostly random pairings and lose. In the fully independent 10 Hz experiment, the mean weight barely moves. The difference between the two experiments is therefore timing, not rate.
+
+**The distributions spread towards the bounds.** The initial weights are uniform. After learning, the half-correlated experiment splits into two groups, and the 20 Hz experiment collects near zero. In the independent 10 Hz experiment the distribution has begun to move towards both bounds. Song et al. reported a fully bimodal distribution; that takes longer than this run.
+
+The half-correlated neuron ends with a higher output rate than the independent 10 Hz neuron. Its strongest inputs fire together, so their combined effect is large.
+
+Try a different `EXPERIMENTS` list, a larger correlation or `pairing="nearest"`, and compare the summary.
+
+## 10. Full example
+
+1. [Download example.py](/stdp/example.py).
+2. [Download the summary](/stdp/summary.json).
+
+```python title="examples/stdp/example.py"
+{{SCRIPT}}
+```
+
+Continue with the reference: [Plasticity in `snnlab.lang`](/api/lang#plasticity) covers the rule, its conventions and its limits. [Plasticity in `snnlab.sim`](/api/sim#plasticity) covers running, recording, saving and training.

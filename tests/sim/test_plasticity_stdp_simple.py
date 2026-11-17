@@ -1,17 +1,16 @@
 """Acceptance tests for stdp_simple: pair-based, additive STDP with hard bounds.
 
-Stage 1 delivered the update step and the lang contract (T01-T21, T33). Stage 2
-applies the rule inside the simulator (T23-T28, T31, T32, T35-T37). Stage 3 keeps
-plasticity off in training and its evaluation passes, and makes projection
-scales act on transmission only (T29, T38-T41). Stage 4 records weights, saves
-and checks plastic state, and adds learning frozen (T30, T42-T46). Lines marked
-PROVISIONAL follow the issue draft and may change in a later stage. The lang-side tests (T22, T25, T34) live in
+The tests cover the update step and its conventions (T01-T21, T33, T36); the rule
+inside the simulator (T23-T28, T31, T32, T35, T37); training and transmission
+controls (T29, T38-T41); recording, persistence and learning frozen (T30,
+T42-T46); devices, dtypes and the precision of the bounds (T47, T48); and
+refusals with their cause (T49). The lang-side tests (T22, T25, T34) live in
 tests/lang/test_snnlang.py.
 
 Layers:
 - T01-T20 and T33 drive the update step alone, on fixed spike trains.
 - T21 compares the update step with an independent Brian2 model.
-- T23-T32 and T35-T46 run the rule inside snnlab, with the update step as their
+- T23-T32 and T35-T49 run the rule inside snnlab, with the update step as their
   reference. Post spikes are imposed with ReplaySpikes, so neuron dynamics play
   no part. T32 checks that transmission uses the learned weights.
 
@@ -32,6 +31,7 @@ import torch
 
 from snnlab import lang as snn
 from snnlab import sim
+from snnlab._shared.plasticity import unsupported_reasons
 from snnlab.sim.plasticity import stdp_simple as kernel
 
 PAIRINGS = ("nearest", "all_to_all")
@@ -670,7 +670,7 @@ def replay(post, population="post"):
 
 
 def as_batch_source_target(w, n_source=N_SOURCE, n_target=N_TARGET):
-    """Weights as (batch, source, target). PROVISIONAL: stored layout."""
+    """Final weights per trial as (batch, source, target)."""
     if w.ndim == 2:
         w = w.unsqueeze(0)
     if n_source != n_target and w.shape[-2:] == (n_target, n_source):
@@ -803,7 +803,7 @@ def test_t27_simulation_matches_the_update_step_and_resumes_from_runtime_state(
     w0 = torch.full((2, n_source, n_target), 0.5, dtype=F64)
     expected, _, _ = run(make_rule(**params), w0, pre, post, mask=mask)
     actual = weights(whole, **sizes).double()
-    if not dense:  # PROVISIONAL: OneToOne stores one weight per channel pair
+    if not dense:  # OneToOne stores one weight per channel: (batch, 1, channels)
         expected = torch.diagonal(expected, dim1=-2, dim2=-1)
         actual = actual.reshape(expected.shape)
     torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
@@ -929,8 +929,8 @@ def test_t30_recordings_follow_the_update_and_one_schedule_across_chunks():
     model = model_for(network(lang_rule(**params)))
     recording = sim.RecordingSpec(
         signals=(
-            sim.SignalRecording("syn.weight", every_steps=10),  # PROVISIONAL
-            sim.SignalRecording("syn.pre_trace"),  # PROVISIONAL signal names
+            sim.SignalRecording("syn.weight", every_steps=10),
+            sim.SignalRecording("syn.pre_trace"),
             sim.SignalRecording("syn.post_trace"),
         )
     )
@@ -994,7 +994,7 @@ def test_t31_a_disabled_projection_keeps_its_weights_and_its_traces_track_spikes
     model = model_for(network(lang_rule(**params), enabled=False))
     recording = sim.RecordingSpec(
         signals=(
-            sim.SignalRecording("syn.pre_trace"),  # PROVISIONAL
+            sim.SignalRecording("syn.pre_trace"),
             sim.SignalRecording("syn.post_trace"),
         )
     )
@@ -1131,7 +1131,7 @@ def test_t35_plastic_projections_learn_independently():
     assert torch.all(result.parameters["static.weight"] == 0.3)
 
 
-# T37: uses that stage 2 rejects ----------------------------------------------------
+# T37: unsupported uses ------------------------------------------------------------
 
 
 def test_t37_unsupported_uses_of_plastic_projections_are_rejected(tmp_path):
@@ -1167,7 +1167,7 @@ def test_t37_unsupported_uses_of_plastic_projections_are_rejected(tmp_path):
     assert "plastic" in reason
 
 
-# T38-T41: training and transmission controls (stage 3) ------------------------------
+# T38-T41: training and transmission controls ---------------------------------------
 
 
 def trainable_bundle(rule, steps):
@@ -1389,7 +1389,7 @@ def test_t41_a_disabled_projection_stays_frozen_at_any_scale():
         )
 
 
-# T42-T46: persistence, recording and learning frozen (stage 4) ----------------------
+# T42-T46: persistence, recording and learning frozen -------------------------------
 
 
 def masked_recurrent_model(rule, start):
@@ -1681,3 +1681,162 @@ def test_t46_learning_frozen_transmits_the_current_weights_without_changing_them
     assert any("per-trial weights" in reason for reason in path["fallback_reasons"])
     with pytest.raises(TypeError, match="learning"):
         simulate(slice(0, 10), learning="no")
+
+
+# T47-T48: devices, dtypes and precision of the bounds ------------------------------
+
+
+def _device(name, dtype):
+    available = {
+        "cpu": True,
+        "mps": torch.backends.mps.is_available(),
+        "cuda": torch.cuda.is_available(),
+    }[name]
+    marks = [] if name == "cpu" else [pytest.mark.accelerator]
+    marks.append(pytest.mark.skipif(not available, reason=f"{name} unavailable"))
+    return pytest.param(name, dtype, id=f"{name}-{str(dtype)[6:]}", marks=marks)
+
+
+# MPS has no float64, so it runs in float32 only.
+DEVICE_CASES = [
+    _device("cpu", torch.float32),
+    _device("cpu", torch.float64),
+    _device("mps", torch.float32),
+    _device("cuda", torch.float32),
+    _device("cuda", torch.float64),
+]
+TOLERANCES = {torch.float32: (1e-5, 1e-6), torch.float64: (1e-12, 1e-13)}
+
+
+@pytest.mark.parametrize(("device", "dtype"), DEVICE_CASES)
+def test_t47_plastic_runs_match_the_update_step_on_every_device_and_dtype(
+    device, dtype
+):
+    # The same plastic simulation, with a delay, two trials, weight recording
+    # and a continuation, on each available device in float32 and float64.
+    delay = 2
+    pre, post = trains(47, 120, batch=2, rate=0.08)
+    params = {"a_plus": 0.05, "a_minus": 0.05, "pairing": "all_to_all"}
+    model = model_for(network(lang_rule(**params), delay_steps=delay))
+    model = model.to(device=device, dtype=dtype)
+    recording = sim.RecordingSpec(
+        signals=(sim.SignalRecording("syn.weight", every_steps=30),)
+    )
+    inputs = pre.to(device=device, dtype=dtype)
+    first = model(
+        {"pre": inputs[:70]}, interventions=replay(post.to(dtype)), recording=recording
+    )
+    second = model(
+        {"pre": inputs[70:]},
+        runtime_state=first.runtime_state,
+        interventions=replay(post.to(dtype)),
+        recording=recording,
+    )
+    final = second.parameters["syn.weight"]
+    assert final.device.type == device and final.dtype == dtype
+    arrivals = torch.cat([torch.zeros(delay, 2, N_SOURCE, dtype=F64), pre[:-delay]])
+    w0 = torch.full((2, N_SOURCE, N_TARGET), 0.5, dtype=F64)
+    expected, _, trajectory = run(make_rule(**params), w0, arrivals, post)
+    rtol, atol = TOLERANCES[dtype]
+    torch.testing.assert_close(final.cpu().double(), expected, rtol=rtol, atol=atol)
+    snapshots = torch.cat(
+        [
+            first.recorded_signals["syn.weight"],
+            second.recorded_signals["syn.weight"],
+        ]
+    )
+    torch.testing.assert_close(
+        snapshots.cpu().double(),
+        trajectory[[29, 59, 89, 119]],
+        rtol=rtol,
+        atol=atol,
+    )
+
+
+@pytest.mark.parametrize("w_max", [0.0015, 0.7, 1.3])
+def test_t48_float32_weights_at_the_bounds_are_accepted(w_max):
+    # 0.0015 has no exact float32 form: a weight drawn at w_max rounds to
+    # float32(w_max), which lies just above w_max. The bounds check compares in
+    # the weights' precision, as the update step clips there, so such weights
+    # start; values truly outside the bounds are still refused.
+    w_min = w_max / 3
+    rule = lang_rule(a_plus=0.1 * w_max, a_minus=0.1 * w_max, w_max=w_max, w_min=w_min)
+    pre, post = trains(48, 60)
+    for value in (w_max, w_min):
+        model = model_for(network(rule, w0=value))
+        assert model.parameter_map()["syn.weight"].dtype == torch.float32
+        result = model({"pre": pre.float()}, interventions=replay(post.float()))
+        final = weights(result)
+        assert final.max() <= torch.tensor(w_max, dtype=torch.float32)
+        assert final.min() >= torch.tensor(w_min, dtype=torch.float32)
+    with pytest.raises(ValueError, match="w_max"):
+        model_for(network(rule, w0=w_max * 1.001))({"pre": pre.float()})
+
+
+# T49: invalid values, graphs and states are refused with their cause ---------------
+
+
+def test_t49_invalid_values_graphs_and_states_are_refused_with_their_cause():
+    with pytest.raises(ValueError, match="tau_plus must be a time"):
+        snn.STDPSimple(
+            a_plus=0.01,
+            a_minus=0.01,
+            tau_plus=20.0,
+            tau_minus=20 * snn.ms,
+            w_max=1.0,
+        )
+    with pytest.raises(ValueError, match="freeze_zero_weights must be boolean"):
+        lang_rule(freeze_zero_weights="yes")
+    rule = make_rule()
+    state = kernel.init_state(rule, batch=1, n_source=N_SOURCE, n_target=N_TARGET)
+    w0 = torch.full((1, N_SOURCE, N_TARGET), 0.5, dtype=F64)
+    silent_pre = torch.zeros(1, N_SOURCE, dtype=F64)
+    silent_post = torch.zeros(1, N_TARGET, dtype=F64)
+    with pytest.raises(ValueError, match="dt_ms must be positive"):
+        kernel.step(rule, state, w0, silent_pre, silent_post, dt_ms=0.0)
+
+    # A graph edited after compilation still meets the simulator's own check.
+    graph = snn.compile(network(lang_rule()), target=None).graph
+    edits = (
+        ("a_plus", -1.0, "a_plus"),
+        ("a_plus", "large", "a_plus must be a finite number"),
+        ("tau_plus", {"value": 0.02, "unit": "s"}, "tau_plus must be a time in ms"),
+        ("freeze_zero_weights", "yes", "freeze_zero_weights must be boolean"),
+        (None, "stdp_simple", "must be a serialized spec mapping"),
+    )
+    for field, value, message in edits:
+        edited = copy.deepcopy(graph)
+        if field is None:
+            edited["projections"][0]["plasticity"] = value
+        else:
+            edited["projections"][0]["plasticity"][field] = value
+        with pytest.raises(ValueError, match=f"projection 'syn'.*{message}"):
+            sim.GraphExecutor(sim.plan_graph(edited), seed=0)
+    unsupported = copy.deepcopy(graph)
+    unsupported["projections"][0]["polarity"] = "inhibitory"
+    with pytest.raises(ValueError, match="projection 'syn'.*cannot apply"):
+        sim.GraphExecutor(sim.plan_graph(unsupported), seed=0)
+    # A source that is neither an input nor a population emits no spikes.
+    row = {**graph["projections"][0], "source": "elsewhere.spikes"}
+    assert "its source does not emit spikes" in unsupported_reasons(graph, row)
+
+    pre, post = trains(49, 40)
+    model = model_for(network(lang_rule()))
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        model({"pre": pre.float()}, transmission_scales={"syn": -1.0})
+    with pytest.raises(ValueError, match="not plastic: \\['other'\\]"):
+        model({"pre": pre.float()}, transmission_scales={"other": 1.0})
+
+    # A saved state that lacks, reshapes or recasts a plastic tensor.
+    saved = model({"pre": pre.float()}, interventions=replay(post.float()))
+    custom = dict(saved.runtime_state.custom_state)
+    key = "plasticity/syn/weight"
+    edits = (
+        ({k: v for k, v in custom.items() if k != key}, "missing"),
+        ({**custom, key: custom[key][..., :1]}, "shape expected"),
+        ({**custom, key: custom[key].double()}, "dtype expected"),
+    )
+    for edited, message in edits:
+        state = dataclasses.replace(saved.runtime_state, custom_state=edited)
+        with pytest.raises(ValueError, match=f"{key} {message}|{message} {key}"):
+            model({"pre": pre.float()}, runtime_state=state)

@@ -135,6 +135,7 @@ net.connect(
     allow_autapses=False,
     modulation=None,
     connectivity=None,
+    plasticity=None,
 )
 ```
 
@@ -153,6 +154,7 @@ net.connect(
 | `enabled` | `bool = True` | Whether this projection participates in execution. |
 | `modulation` | Gain specification, importable callable or `None` | Optional nonnegative scalar schedule applied to new arriving drive. See [Weight modulation](/api/lang#modulation). |
 | `connectivity` | `lang.Conv2d(...)`, `lang.OneToOne()` or `None` | Shared-kernel spatial, matching-channel, or dense projection. |
+| `plasticity` | `lang.STDPSimple(...)` or `None` | Opt-in local learning rule for this projection. See [Plasticity](#plasticity). |
 | `allow_autapses` | `bool = False` | Permit a neuron to feed its own output back to itself. Exclusion applies to same-population identity regardless of routing label; different populations retain matching-index connections. |
 | `initialization_scaling` | `str` or `None`, default `None` | `"direct"` or `"fan_in_normalized"`. Omission normalizes new weights or inherits an existing parameter policy; conflicting shared-parameter settings fail. See [Initialization scaling](/api/lang#initialization-scaling). |
 
@@ -713,6 +715,94 @@ def CumulativePotential(
 | `CumulativePotential` | Applies a linear projection and a cumulative time sum, preserving the time axis. |
 
 `classes` is the output width and `name` identifies the generated group and operations. The helpers expand into normal graph declarations rather than opaque layers. FinalVoltage, SpikeCount, SpikeRate and CumulativePotential inherit the linear helper's zero initializer. Explicit populations, connections and reductions can be clearer when teaching how the readout weights are defined; see [Training](/training).
+
+## Plasticity
+
+A projection can carry a local learning rule. Pass a rule specification as `connect(..., plasticity=...)`; projections without one are unchanged. The first rule is `stdp_simple`: pair-based, additive spike-timing-dependent plasticity (STDP) with hard weight bounds. See [Spike-Timing-Dependent Plasticity](/stdp) for a complete example, and [Plasticity in execution](/api/sim#plasticity) for running, recording and continuing plastic networks.
+
+### STDPSimple
+
+```python
+lang.STDPSimple(
+    *,
+    a_plus,
+    a_minus,
+    tau_plus,
+    tau_minus,
+    w_max,
+    w_min=0.0,
+    pairing="nearest",
+    freeze_zero_weights=False,
+)
+```
+
+| Argument | Type / default | Meaning |
+| --- | --- | --- |
+| `a_plus` | `float`, required | Potentiation amplitude, in the weight's unit (`uS` or `nA`). Finite and non-negative. |
+| `a_minus` | `float`, required | Depression amplitude, in the weight's unit. Finite and non-negative. |
+| `tau_plus` | `Quantity`, required | Decay time of the presynaptic trace, for example `16.8 * lang.ms`. Positive and finite. |
+| `tau_minus` | `Quantity`, required | Decay time of the postsynaptic trace. Positive and finite. |
+| `w_max` | `float`, required | Upper weight bound. Finite. |
+| `w_min` | `float = 0.0` | Lower weight bound. Finite, with `0 <= w_min < w_max`. |
+| `pairing` | `"nearest"` or `"all_to_all"` | How spikes pair; see below. |
+| `freeze_zero_weights` | `bool = False` | Keep the zero entries of the model's weights at zero. |
+
+Amplitudes are absolute, not relative to `w_max`. Invalid values raise `ValueError` when the specification is created.
+
+#### The update
+
+Each plastic synapse keeps a presynaptic trace `x` and a postsynaptic trace `y`. In every step:
+
+1. Both traces decay: `x ← x·exp(−dt/tau_plus)` and `y ← y·exp(−dt/tau_minus)`.
+2. A presynaptic spike depresses the weight: `w ← max(w_min, w − a_minus·y)`.
+3. A postsynaptic spike potentiates it: `w ← min(w_max, w + a_plus·x)`.
+4. The traces jump. With `pairing="nearest"` a spike sets its trace to 1, so each spike pairs only with the latest spike on the other side. With `"all_to_all"` a spike adds 1, so it pairs with every earlier spike.
+
+For one pair with lag `Δt = t_post − t_pre`, the change is `a_plus·exp(−Δt/tau_plus)` when `Δt > 0` and `−a_minus·exp(Δt/tau_minus)` when `Δt < 0`. The update does not depend on the weight, apart from the bounds.
+
+Discrete-time conventions:
+
+- Spikes in the same step do not pair with each other. They still pair with earlier spikes through the traces, and they enter the traces for later pairs.
+- Presynaptic spikes count when they arrive at the synapse, after the projection delay.
+- Transmission in step `t` uses the weights from the end of step `t − 1`.
+- Clipping is sequential: depression is clipped at `w_min` before potentiation is added and clipped at `w_max`.
+
+#### Supported projections
+
+`stdp_simple` applies to projections onto an excitatory receptor (`cells.excitatory`) whose source emits spikes (a spike input or population spikes) and whose target population spikes. Connectivity is dense or [`OneToOne`](#one-to-one-connectivity). Compilation and graph validation, including bundle loading, report:
+
+- `E120` for an invalid or unknown plasticity specification;
+- `E121` for an unsupported projection: an inhibitory or modulatory receptor, a non-spiking source or target, `modulation=`, a weight shared through `ParameterRef`, or `Conv2d` kernels.
+
+Inhibitory plasticity, such as Vogels et al. (2011), needs its own rule.
+
+#### Weights that never change
+
+Autapses excluded by the projection never change. With `freeze_zero_weights=True`, the zero entries of the model's weights also stay at zero. These are the zeros of the weights a run starts from, such as the structural zeros of a trained sparse matrix, not weights that reach zero during learning. Plastic weights must start within `[w_min, w_max]`, compared in the weights' own precision; excluded and frozen entries are exempt. Training does not know `w_max`, so choose it above the trained weights.
+
+```python
+net.connect(
+    inputs,
+    cells.excitatory,
+    name="input_to_E",
+    synapse=lang.AMPA(tau=5 * lang.ms),
+    weight=lang.Uniform(
+        0.0,
+        0.001,
+    ),
+    initialization_scaling="direct",
+    plasticity=lang.STDPSimple(
+        a_plus=0.00002,
+        a_minus=0.000021,
+        tau_plus=20 * lang.ms,
+        tau_minus=20 * lang.ms,
+        w_max=0.001,
+        pairing="all_to_all",
+    ),
+)
+```
+
+The projection row serializes the rule with its fixed family fields, for example `{"kind": "stdp_simple", "update": "additive", "bounds": "hard", "pairing": "all_to_all", ...}`. A bundle without plasticity is unchanged.
 
 ## Modulation
 

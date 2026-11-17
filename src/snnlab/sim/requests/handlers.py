@@ -285,15 +285,15 @@ def _resolve_poisson_overrides(
 
 
 def _reject_plastic_datasets(sources, built):
-    """Each sample would need its own weights; reject dataset inputs for now."""
+    """Reject dataset inputs: each sample would need its own plastic weights."""
     if sources.dataset is None:
         return
     plastic = [row["id"] for row in plastic_rows(built.model.plan.graph)]
     if plastic:
         raise NotImplementedError(
-            f"dataset inputs are not supported for plastic projections {plastic} "
-            "yet; to learn across samples, chain sim.simulate calls with "
-            "runtime_state"
+            f"dataset inputs are not supported for plastic projections {plastic}: "
+            "each sample would need its own weights; to learn across samples, "
+            "chain sim.simulate calls with runtime_state"
         )
 
 

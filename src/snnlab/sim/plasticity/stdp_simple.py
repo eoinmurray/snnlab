@@ -39,7 +39,6 @@ import torch
 from snnlab._shared.plasticity import (
     STDP_SIMPLE,
     STDP_SIMPLE_PAIRINGS,
-    stdp_simple_from_json,
     validate_stdp_simple,
 )
 
@@ -80,13 +79,6 @@ class STDPSimple:
         )
         for name, value in values.items():
             object.__setattr__(self, name, value)
-
-    @classmethod
-    def from_spec(cls, spec: dict[str, Any]) -> STDPSimple:
-        """Build the runtime rule from a serialized ``lang.STDPSimple`` spec."""
-        values = stdp_simple_from_json(spec)
-        values.pop("freeze_zero_weights")
-        return cls(**values)
 
     def json(self) -> dict[str, Any]:
         return {

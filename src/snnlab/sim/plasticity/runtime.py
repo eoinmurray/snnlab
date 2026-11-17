@@ -347,9 +347,14 @@ def _check_bounds(plastic: _Plastic) -> None:
     changeable = weights if plastic.mask is None else weights[:, plastic.mask]
     if changeable.numel() == 0:
         return
-    low, high = float(changeable.min()), float(changeable.max())
     rule = plastic.rule
-    if low < rule.w_min or high > rule.w_max:
+    # Compare in the weights' own precision: the update step clips there, and a
+    # float32 weight drawn at w_max rounds to float32(w_max), not to w_max.
+    low, high = changeable.min(), changeable.max()
+    w_min = torch.tensor(rule.w_min, dtype=weights.dtype, device=weights.device)
+    w_max = torch.tensor(rule.w_max, dtype=weights.dtype, device=weights.device)
+    if bool(low < w_min) or bool(high > w_max):
+        low, high = float(low), float(high)
         raise ValueError(
             f"projection {plastic.id!r}: plastic weights must start within the "
             f"bounds [w_min, w_max] = [{rule.w_min}, {rule.w_max}]; found values "

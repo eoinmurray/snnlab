@@ -1,0 +1,41 @@
+{
+  "learning_seconds": 100,
+  "seed": 7,
+  "weights_relative_to": "w_max",
+  "experiments": [
+    {
+      "label": "10 Hz, independent",
+      "input_rate_hz": 10.0,
+      "correlation_first_half": 0.0,
+      "output_rate_before_hz": 17.0,
+      "output_rate_after_hz": 10.2,
+      "mean_weight_first_half": 0.4672,
+      "mean_weight_second_half": 0.4866,
+      "fraction_below_0.1": 0.17,
+      "fraction_above_0.9": 0.139
+    },
+    {
+      "label": "10 Hz, half correlated",
+      "input_rate_hz": 10.0,
+      "correlation_first_half": 0.2,
+      "output_rate_before_hz": 11.4,
+      "output_rate_after_hz": 26.4,
+      "mean_weight_first_half": 0.9807,
+      "mean_weight_second_half": 0.2703,
+      "fraction_below_0.1": 0.173,
+      "fraction_above_0.9": 0.506
+    },
+    {
+      "label": "20 Hz, independent",
+      "input_rate_hz": 20.0,
+      "correlation_first_half": 0.0,
+      "output_rate_before_hz": 93.0,
+      "output_rate_after_hz": 18.4,
+      "mean_weight_first_half": 0.2581,
+      "mean_weight_second_half": 0.2557,
+      "fraction_below_0.1": 0.384,
+      "fraction_above_0.9": 0.03
+    }
+  ],
+  "final_weights_sha256": "9dd8bd892a8556f7a257f8e1a9971c82db58b8a98cbb7f846cec76abe74e9695"
+}

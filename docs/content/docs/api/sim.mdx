@@ -58,12 +58,13 @@ def simulate(
     timing_mode: Literal["synchronized", "enqueue"] = "synchronized",
     snapshot: str | Path | SnapshotSpec | None = None,
     inference_overrides: Mapping[str, Any] | None = None,
+    learning: bool = True,
 ) -> ExecutionResult: ...
 ```
 
 Builds a fresh model, resolves bound inputs and the device, loads an optional weight checkpoint and executes the graph. Use this function for both network simulation and inference with learned weights. Inputs support dense tensors, sparse events, generated Poisson spikes and dataset snapshots. Pass `runtime_state=previous.runtime_state` to continue compatible dynamics; parameters are loaded separately. Multiple dataset batches represent independent presentations and do not return one resumable trajectory.
 
-`inference_overrides` accepts duration, input rate, timestep and projection scaling overrides directly. Timestep changes cannot convert runtime state. See [override validation](/api/sim#inference_overrides).
+`learning=False` runs [plastic projections](/api/sim#plasticity) with their current weights without updating them. `inference_overrides` accepts duration, input rate, timestep and projection scaling overrides directly. Timestep changes cannot convert runtime state. See [override validation](/api/sim#inference_overrides).
 
 ### train
 
@@ -1056,7 +1057,7 @@ There is no automatic collection of unexposed signals. The previous `recording` 
 | --- | --- | --- |
 | `duration_ms` | Positive duration aligned to graph timestep | Resample generated Poisson inputs for that duration. |
 | `input_rate_hz` | Finite, non-negative rate | Replace each Poisson binding's rates with one fixed rate. The per-step probability must remain valid. |
-| `projection_scales` | Mapping of projection ID to finite, non-negative factor | Scale named projection parameters after checkpoint loading. |
+| `projection_scales` | Mapping of projection ID to finite, non-negative factor | Scale named projection parameters after checkpoint loading. Plastic projections are scaled where they transmit; their rule keeps learning from the unscaled weights. |
 | `timestep_ms` | Finite, positive timestep | Recompile an immutable copy of the graph timebase and resample generated Poisson input while preserving physical duration unless overridden. |
 
 Unknown override keys or projection IDs raise `ValueError`. Duration/rate/timestep changes require resampleable Poisson inputs and reject dense/event replay. A dataset snapshot is not a substitute for these Poisson bindings. New timesteps must also satisfy graph delay/timing validation.
@@ -1241,6 +1242,7 @@ class SignalRecording:
     signal: str
     cells: tuple[int, ...] | None = None
     kind: str = "dense"
+    every_steps: int = 1
 
 
 class RecordingSpec:
@@ -1277,6 +1279,8 @@ class NPZRecordingSink:
 ```
 
 `RecordingBlock.values` contains an independent CPU tensor delivered to a sink. Absolute start/end steps describe the block; `batch_offset` identifies the source sample offset for dataset batching. `cells`, `unit` and `measurement_window` retain interpretation metadata. A recording window and the graph reduction measurement window are independently configurable.
+
+`every_steps=N` keeps a dense signal's values after global steps `N − 1`, `2N − 1`, …, counted from the start of the run, so chunked recordings join exactly; the recorded steps become the time coordinates. Spike events are not thinned. Plastic projections add weight and trace signals; see [Recording weights and traces](/api/sim#recording-weights-and-traces).
 
 New native blocks also expose axes, actual dense step coordinates, sample identities
 and original batch size. Use [`sim.RecordingData.read`](/api/sim#recordingdata-and-numpy-conversion)
@@ -1863,7 +1867,7 @@ restoring dynamic state; state compatibility validation is not a weight checkpoi
 
 `result.runtime_state` is an opaque `GraphRuntimeState` carrying ongoing neuron and synapse dynamics, delayed propagation and random state. Pass it as `runtime_state=` on the next simulation/model call; without it a call starts fresh dynamics. Use `retain_runtime_state=False` when continuation is unnecessary.
 
-Runtime state does not contain learned weights. Preserve the model parameters separately, and keep graph, timestep, device, dtype, input ordering and experimental policies compatible. Continuation detaches state and does not backpropagate through earlier chunks.
+Runtime state does not contain trained model weights; only [plastic projections](/api/sim#plasticity) carry their per-trial weights in it. Preserve the model parameters separately, and keep graph, timestep, device, dtype, input ordering and experimental policies compatible. Continuation detaches state and does not backpropagate through earlier chunks.
 
 ## Runtime state persistence
 
@@ -1918,6 +1922,109 @@ second = model(
 Here `model` is an existing CPU GraphExecutor and the two input mappings are consecutive chunks. Supply the same full [measurement](/api/sim#recording-and-measurement) and [decision](/api/sim#advanced-resets-and-decisions) policies on every call when used. A fresh call without state starts fresh dynamics. An execution timestep override cannot convert saved state. `retain_runtime_state=False` suppresses the returned continuation snapshot.
 
 Portable CPU copies of MPS measurement states are staged back to the execution device before stepping. Float64 reduction accumulators from CPU/CUDA cannot be restored on MPS; this raises an explicit error instead of silently lowering accumulation precision.
+
+## Plasticity
+
+Projections declared with a [plasticity rule](/api/lang#plasticity) learn while a network is simulated. Everything below applies only to those projections; static projections behave as before.
+
+### Learning during a run
+
+- **Per trial.** Each trial in a batch keeps its own copy of the plastic weights and traces, starting from the model's weights. A batch of `N` trials gives the same results as `N` single runs.
+- **Within a step.** The update runs after the step's spikes are final, including replayed or edited spikes. Presynaptic spikes count when they arrive, after the delay. Transmission uses the weights from the end of the previous step.
+- **The model is not changed.** The model's parameters and the bundle never change. Every call starts from the model's weights, unless `runtime_state` continues a run.
+- **Results.** `result.parameters["<projection>.weight"]` holds the final weights per trial, with shape `(batch, *runtime parameter shape)`. For a dense projection that is `(batch, source, target)`; for `OneToOne` it is `(batch, 1, channels)`.
+- **Execution path.** Plastic networks use the step-by-step path. `result.metrics["execution_path"]["fallback_reasons"]` reports "plastic projections update weights every step". CUDA graph replay is off for the same reason.
+
+### Continuing and saving
+
+`result.runtime_state` carries, for each plastic projection, its weights, both traces and the mask of entries that can change. They live in `custom_state` under `plasticity/<projection>/{weight,pre_trace,post_trace,mask}`. Pass the state to the next call and learning continues exactly; a run split into chunks equals one long run, including spikes still in transit across a boundary.
+
+- **Saving.** [`save_runtime_state`](#save_runtime_state) and [`load_runtime_state`](#load_runtime_state) round-trip these tensors.
+- **Runtime state wins.** With both a `checkpoint` and a `runtime_state`, the checkpoint supplies all other parameters, while the plastic weights and masks come from the runtime state.
+- **The rule must match.** The rule is part of the runtime-state compatibility. Continuing under a different rule, amplitudes included, raises `ValueError` naming the field. States with and without plasticity do not mix.
+
+### Learning frozen
+
+```python
+probe = simulate(
+    graph=bundle.graph,
+    input_bindings=(probe_inputs,),
+    runtime_state=learned.runtime_state,
+    learning=False,
+)
+```
+
+`learning=False` runs plastic projections with their current weights, taken from `runtime_state` when one is given, and does not update them. The traces keep tracking spikes, as for a disabled projection, so learning can resume from the probe's state. Use it for probe runs between learning phases. It has no effect on networks without plastic projections. `GraphExecutor` accepts the same keyword.
+
+### Training
+
+`sim.train` runs every training step and every evaluation pass with plasticity off: initial and per-epoch evaluation, validation, probes and the final test. A plastic network therefore trains exactly like its static version. Its checkpoint loads into a plastic `simulate` run, where learning starts from the trained weights. The rule's updates are not differentiable: a direct `GraphExecutor` call that tracks gradients with plasticity on raises `ValueError`. `GraphExecutor(...)(inputs, plasticity=False)` runs plastic projections as static ones.
+
+### Projection scales
+
+`inference_overrides={"projection_scales": {...}}` scales a plastic projection where it transmits: its drive is multiplied, while its rule keeps learning from the unscaled weights, also at scale 0. `result.parameters` holds the learned, unscaled weights. Static projections are still scaled through their weights.
+
+### Recording weights and traces
+
+| Signal | Axes | Meaning |
+| --- | --- | --- |
+| `<projection>.weight` | `(time, batch, source, target)` | Weights after each recorded step's update, in the parameter's unit. |
+| `<projection>.pre_trace` | `(time, batch, sources)` | Presynaptic traces after the step's spikes. |
+| `<projection>.post_trace` | `(time, batch, targets)` | Postsynaptic traces after the step's spikes. |
+
+```python
+recording = RecordingSpec(
+    signals=(
+        SignalRecording(
+            "input_to_E.weight",
+            every_steps=2000,
+        ),
+        SignalRecording("input_to_E.pre_trace"),
+    ),
+)
+```
+
+- **Schedule.** `every_steps=N` keeps the weights after global steps `N − 1`, `2N − 1`, …. The count starts at the beginning of the run, so chunked recordings join exactly.
+- **Step coordinates.** The recorded steps are the time coordinates, available as `result.numpy().recording.info["<projection>.weight"].step_indices`.
+- **Export.** Snapshots export through `result.numpy()`, `result.write_recording()` and `NPZRecordingSink`, and read back with `RecordingData.read`.
+- **Whole matrices.** Weight matrices are recorded whole: `cells` selection is rejected.
+
+### Limits
+
+- Prepared streaming sessions reject plastic projections; continue with `simulate(..., runtime_state=...)`.
+- Dataset inputs raise `NotImplementedError` for plastic projections, because each sample would need its own weights. To learn across samples, chain `simulate` calls with `runtime_state`.
+
+### The update step
+
+`snnlab.sim.plasticity.stdp_simple` exposes the rule's pure update step, which the simulator calls once per step:
+
+```python
+from snnlab.sim.plasticity import stdp_simple
+
+rule = stdp_simple.STDPSimple(
+    a_plus=0.01,
+    a_minus=0.0105,
+    tau_plus_ms=16.8,
+    tau_minus_ms=33.7,
+    w_max=1.0,
+)
+state = stdp_simple.init_state(
+    rule,
+    batch=1,
+    n_source=3,
+    n_target=2,
+)
+weights, state = stdp_simple.step(
+    rule,
+    state,
+    weights,
+    pre_spikes,
+    post_spikes,
+    dt_ms=0.5,
+)
+```
+
+`step` takes weights `(batch, source, target)`, presynaptic spikes `(batch, source)` and postsynaptic spikes `(batch, target)`, plus an optional boolean `(source, target)` mask of entries that may change. `step_one_to_one` takes `(batch, channels)` weights and spikes. Both are functional: they return new tensors and never modify their inputs. Use them to analyse the rule on fixed spike trains without a network.
 
 ## Advanced: spike interventions
 
@@ -2209,6 +2316,9 @@ result = model(
     retain_parameters=True,
     retain_final_state=True,
     retain_runtime_state=True,
+    plasticity=True,
+    learning=True,
+    transmission_scales=None,
 )
 ```
 
@@ -2228,6 +2338,9 @@ Calling the module invokes `forward` and returns an [ExecutionResult](/api/sim#r
 | `retain_parameters` | `bool` | Return independent parameter snapshots; default `True`. |
 | `retain_final_state` | `bool` | Return detached final voltages; default `True`. |
 | `retain_runtime_state` | `bool` | Return complete continuation state; default `True`. |
+| `plasticity` | `bool` | `False` runs plastic projections as static ones, as training does; default `True`. |
+| `learning` | `bool` | `False` keeps plastic weights fixed while their traces track spikes; default `True`. |
+| `transmission_scales` | `Mapping[str, float]` or `None` | Multiply what named plastic projections transmit, not what their rule learns from. |
 
 Inputs must agree on time length and batch size and match the graph's feature dimensions and signal contracts. Direct calls consume tensors; they do not load files, encode datasets or generate Poisson stimuli. Use the execution request's input bindings for those tasks.
 
