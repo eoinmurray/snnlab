@@ -6,7 +6,8 @@
     "extensions",
     "meanfield",
     "analysis",
-    "viz"
+    "viz",
+    "network-schematic"
   ],
   "collapsible": true,
   "defaultOpen": false

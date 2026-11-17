@@ -1,0 +1,298 @@
+---
+title: graph.json
+description: Network graph schema, signal references, populations, projections, parameters and outputs.
+---
+
+`graph.json` (`snnlang.graph/v1`) defines network structure, units, dynamics and
+parameter initialization. Learned weights belong in a checkpoint.
+
+[`Bundle.write`](/api/lang#bundle) saves a directory containing this graph, an optional
+[training recipe](/api/network-schematic/training) and a
+[manifest](/api/network-schematic/manifest).
+
+## Validate a standalone graph
+
+Validate `graph.json` without a manifest or recipe:
+
+```python
+import json
+from pathlib import Path
+
+from snnlab import lang
+
+graph = json.loads(Path("graph.json").read_text())
+result = lang.validate_graph(graph)
+
+for diagnostic in result.diagnostics:
+    print(diagnostic.line())
+
+result.raise_for_errors()
+```
+
+The result exposes `diagnostics`, `errors` and `warnings`. `raise_for_errors()`
+raises `ValueError` for errors, but allows warnings. Checks cover references,
+shapes, units, model settings, delays and connectivity. Custom extensions must be
+available and may be imported.
+
+This semantic validator does not fully enforce JSON structure or `schema`.
+Malformed input can raise exceptions directly. Execution checks backend support.
+
+Use `lang.validate_training(graph, training)` for a parsed recipe, or
+[`lang.load_bundle`](/api/lang#load_bundle) for file and digest checks.
+
+## Top-level fields
+
+**Required?** describes standalone validation and execution. **When used** means
+required for that feature; row fields marked **Yes** are required when the row
+exists. `schema` identifies the format but is not enforced by the validator.
+Omitted settings can differ from compiler defaults; see compatibility below.
+
+The compiler emits all collections, including empty arrays, plus explicit defaults.
+Rows and group members are sorted by ID; `sources` and `shape` arrays retain their
+meaningful order.
+
+| Field | JSON type | Required? | Meaning |
+| --- | --- | --- | --- |
+| `schema` | string | Yes (format identifier) | `snnlang.graph/v1`. |
+| `name` | string | No | Authored network name. |
+| `timebase` | object | Yes | `dt` is a positive finite quantity in milliseconds. |
+| `voltage_sampling` | string | No | `explicit`; voltage ports have explicit sampling semantics. |
+| `refractory_timing` | string | No | Compiler default: `following_steps`. Omission or `legacy_coba` uses historical scheduling. |
+| `inputs` | array of objects | When used | Incoming signal declarations. Actual input data is supplied at execution. |
+| `populations` | array of objects | Yes; may be empty | Neuron populations and their dynamics. |
+| `projections` | array of objects | Yes; may be empty | Connections between source signals and population input ports. |
+| `operations` | array of objects | When used | Signal transformations and reductions. |
+| `parameters` | array of objects | When used | Tensor shapes, initializers, constraints and initialization scaling. |
+| `constants` | array of objects | When used | Named constant values. |
+| `outputs` | array of objects | When used | Named signals returned as outputs. |
+| `observables` | array of objects | When used | Additional exposed signals. |
+| `assets` | array of objects | When used | Logical declarations for accompanying files. |
+| `groups` | array of objects | When used | Named structural groups and membership. |
+| `extensions` | array of objects, optional | When using saved custom implementations | Descriptors for custom implementations used by this graph; omitted when unused. See [extension descriptors](/api/network-schematic/manifest#extension-descriptors). |
+
+## Quantities and references
+
+Quantities use `{"value": 1.0, "unit": "ms"}`. Some fields encode units in their
+names, such as `threshold_mv` and `capacitance_nf`. Unit `"1"` is dimensionless.
+
+Signal references include `input.value`, `counts.value`, `E.spikes` and `E.voltage`.
+Projections target `E.excitatory`, `E.inhibitory` or `E.modulatory`; custom state
+ports are also supported. Their `parameters` field references parameter IDs.
+
+## Inputs and populations
+
+| Row | Field | Required? | Meaning |
+| --- | --- | --- | --- |
+| Input | `id` | Yes | Input identifier. |
+| Input | `shape` | Yes | Normally `["time", "batch", channels]`. |
+| Input | `signal_type` | Yes for the input contract | Incoming signal classification, such as `spikes`. |
+| Input | `unit` | Yes for the input contract | Incoming signal unit, such as `spike`. |
+| Population | `id`, `size`, `neuron`, `spiking` | Yes | Identifier, positive size, neuron specification and availability of spikes. |
+| Population | `group` | No | Structural group ID; omitted or `null` when ungrouped. |
+| Input or population | `spatial_shape` | For spatial connectivity | `[channels, height, width]`; its product equals the flattened channel count or population size. |
+
+Neuron specifications contain `kind` and model settings. Built-ins include
+`cuba_lif`, `coba_lif`, `cuba_alif`, `coba_alif`, `cuba_adex`, `coba_adex`,
+`cuba_mqif`, `coba_mqif` and `leaky_integrator`. Custom neurons use
+`kind: "custom_neuron"`, `definition` and `config`.
+See [model fields and units](/api/extensions).
+
+## Nested model specifications
+
+Quantities require `value` and `unit`; `timebase` requires `dt`. Models and
+initializers require `kind` plus kind-specific fields. Python constructor defaults
+are not necessarily JSON-loader defaults.
+
+For the example's `cuba_lif` neuron:
+
+| Field | Required? | Meaning |
+| --- | --- | --- |
+| `kind` | Yes | `cuba_lif`. |
+| `tau_mem` | Yes | Positive finite membrane time constant in milliseconds. |
+| `capacitance_nf` | Yes | Positive finite capacitance in nF. |
+| `resting_mv`, `threshold_mv`, `reset_mv`, `initial_voltage_mv` | Yes | Explicit finite voltage settings in mV. |
+| `voltage_grad_dampen` | Yes for this model | Positive finite gradient-dampening factor; the current neuron validator requires it explicitly. |
+| `refractory` | With `refractory_timing: "following_steps"`; otherwise optional | Non-negative millisecond duration. With omitted timing, historical CUBA LIF behavior supplies zero when absent. |
+
+`exponential_current` requires `kind` and positive millisecond `tau`.
+`uniform` requires `kind`, `low` and `high`. See [Extensions](/api/extensions)
+and [Weights](/api/lang#weights) for other kinds.
+
+## Projections
+
+| Field | JSON type | Required? | Meaning |
+| --- | --- | --- | --- |
+| `id` | string | Yes | Projection ID. |
+| `source` | string | Yes | Source signal reference. |
+| `target` | string | Yes | Target population input port. |
+| `synapse` | object | Yes | `kind` and synapse-specific configuration, such as an `exponential_current` with a `tau` quantity. |
+| `connection` | string | Yes | `feedforward`, `recurrent`, `feedback` or `modulatory`; backend support is checked separately. |
+| `polarity` | string | Yes | Target port classification: `excitatory`, `inhibitory` or `modulatory`. |
+| `parameters` | array of strings | Yes; one weight ID | Referenced parameter IDs; authored projections currently reference one weight parameter. |
+| `delay` | object or null | For feedback; otherwise no | Non-negative finite millisecond quantity, or `null` for no explicit delay. Must resolve to an integer number of timesteps. Feedback requires a positive explicit delay. |
+| `allow_autapses` | boolean | No | Whether same-population self-connections are allowed. New projections emit `false` by default. |
+| `group` | string or null | No | Structural group ID. |
+| `enabled` | boolean, optional | No | Omitted for enabled projections; the compiler emits `false` for disabled ones. |
+| `connectivity` | object, optional | For structured connectivity | Structured spatial connectivity specification. Omitted for ordinary dense connections. |
+| `modulation` | object, optional | No | Gain specification applied to the projection. |
+
+Disabled projections retain their declarations and parameters. See
+[connection authoring](/api/lang) for connectivity and modulation options.
+
+## Parameters
+
+| Field | JSON type | Required? | Meaning |
+| --- | --- | --- | --- |
+| `id` | string | Yes | Parameter ID, for example `input_to_E.weight`. |
+| `shape` | array | Yes | Declared tensor dimensions. Dense projection weights use `[target_size, source_channels]`; structured connectivity has its own shape rules. |
+| `unit` | string | Yes | Parameter unit, such as `nA`, `nS` or `1`, determined by its use. |
+| `initializer` | object | Yes | `kind` and distribution settings. Describes initialization rather than realized weights. |
+| `constraint` | object or null | No | Constraint specification, such as `{"kind": "non_negative"}`, or no constraint. |
+| `initialization_scaling` | string, optional | No | `direct` or `fan_in_normalized`. New projection weights explicitly default to `fan_in_normalized`; standalone parameters may omit it. |
+| `group` | string or null | No | Structural group ID; separate from training parameter groups. |
+
+Built-in initializers include `constant`, `zeros`, `uniform`, `lower_clamped_normal`
+and `signed_normal`. Projections share weights by referencing the same parameter
+ID. See [Weights](/api/lang#weights) for scaling and fan-in rules.
+
+## Operations and other collections
+
+| Collection | Field | Required? | Meaning |
+| --- | --- | --- | --- |
+| `operations` | `id`, `kind`, `sources`, `shape`, `unit` | Yes | Identifier, operation kind, ordered source references and output shape/unit. Produces `<id>.value`. |
+| `operations` | `signal_type` | No | Output classification; authored operations default to `continuous`. |
+| `operations` | `parameters` | For parameterized operations | Referenced parameter IDs; may be omitted for parameter-free reductions. |
+| `operations` | `config` | When the kind requires settings | Operation-specific settings; a full-window `reduce_sum` needs none. |
+| `operations` | `group` | No | Structural group ID or `null`. |
+| `operations` | `spatial_shape` | For spatial operations | Output geometry. |
+| `constants` | `id`, `value`, `unit` | Yes | Constant identifier, serialized value and unit. |
+| `outputs` | `id`, `signal` | Yes | Public output name and signal reference. |
+| `observables` | `id`, `signal` | Yes | Exposed observable name and signal reference. |
+| `assets` | `id`, `media_type` | Yes for asset declarations | Logical asset identifier and media type. |
+| `assets` | `description` | No | Human-readable asset description; authoring defaults to an empty string. |
+| `groups` | `id`, `members` | Yes for group declarations | Group identifier and sorted member IDs. |
+| `groups` | `parent` | No | Parent group ID or `null`. |
+
+Readouts expand into ordinary graph declarations; there is no `readouts`
+collection. A temporal `reduce_sum` removes the time axis from its output shape.
+
+## Required-fields example
+
+Two inputs feed three current-based LIF neurons and a spike-count output. Only
+required fields and used declarations remain; the companion recipe and manifest
+match this reduced graph.
+
+The executor requires `populations` and `projections`, even when empty. Omitted
+settings use compatibility behavior, which can differ from compiler defaults.
+
+```json
+{
+  "schema": "snnlang.graph/v1",
+  "timebase": {
+    "dt": {
+      "value": 1.0,
+      "unit": "ms"
+    }
+  },
+  "inputs": [
+    {
+      "id": "input",
+      "shape": [
+        "time",
+        "batch",
+        2
+      ],
+      "signal_type": "spikes",
+      "unit": "spike"
+    }
+  ],
+  "populations": [
+    {
+      "id": "E",
+      "size": 3,
+      "neuron": {
+        "kind": "cuba_lif",
+        "capacitance_nf": 1.0,
+        "initial_voltage_mv": -65.0,
+        "reset_mv": -65.0,
+        "resting_mv": -65.0,
+        "tau_mem": {
+          "value": 20.0,
+          "unit": "ms"
+        },
+        "threshold_mv": -50.0,
+        "voltage_grad_dampen": 1.0
+      },
+      "spiking": true
+    }
+  ],
+  "projections": [
+    {
+      "id": "input_to_E",
+      "source": "input.value",
+      "target": "E.excitatory",
+      "synapse": {
+        "kind": "exponential_current",
+        "tau": {
+          "value": 5.0,
+          "unit": "ms"
+        }
+      },
+      "connection": "feedforward",
+      "polarity": "excitatory",
+      "parameters": [
+        "input_to_E.weight"
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "id": "counts",
+      "kind": "reduce_sum",
+      "sources": [
+        "E.spikes"
+      ],
+      "shape": [
+        "batch",
+        3
+      ],
+      "unit": "spike"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "input_to_E.weight",
+      "shape": [
+        3,
+        2
+      ],
+      "unit": "nA",
+      "initializer": {
+        "kind": "uniform",
+        "high": 6.0,
+        "low": 4.0
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "scores",
+      "signal": "counts.value"
+    }
+  ]
+}
+```
+
+## Validation and compatibility
+
+`lang.compile` validates declarations; `lang.load_bundle` checks digests and
+revalidates them. Execution also checks backend capabilities.
+
+Historical graphs may omit `voltage_sampling` and `refractory_timing`. Omitted
+timing selects historical scheduling; omitted `allow_autapses` permits
+self-connections. Missing initialization scaling also uses compatibility rules.
+Preserve these omissions when replaying old bundles: inserting defaults changes
+the digest and may change dynamics.
+
+Schema versions are independent of the package version. Validation is implemented
+in Python; no JSON Schema file is supplied.

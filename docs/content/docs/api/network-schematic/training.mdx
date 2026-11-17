@@ -1,0 +1,145 @@
+---
+title: training.json
+description: Training recipe schema, objectives, parameter groups, optimizers and resolved gradient contracts.
+---
+
+`training.json` (`snnlang.training/v1`) is written when compilation receives a
+`TrainSpec`. Its `graph_digest` binds it to the [graph](/api/network-schematic/graph);
+the [manifest](/api/network-schematic/manifest) records the recipe's digest.
+
+Checkpoints store learned weights, optimizer state and resume coordinates.
+Supply data, targets and execution options to [`sim.train`](/api/sim).
+
+## Top-level fields
+
+| Field | JSON type | Meaning |
+| --- | --- | --- |
+| `schema` | string | `snnlang.training/v1`. |
+| `graph_digest` | string | `sha256:` digest of the canonical graph JSON. |
+| `objectives` | array of objects | Prediction/target objectives and their weights. |
+| `parameter_groups` | array of objects | Complete assignment of graph parameters to trainable or frozen groups. |
+| `resolved_parameters` | object | Explicit trainable IDs, frozen IDs and per-parameter learning rates derived from the groups. |
+| `regularizers` | array of objects | Signal penalties, such as spike-budget regularization. |
+| `stop_gradients` | array of strings | Signal references at which gradient propagation stops. |
+| `optimizer` | object | Optimizer `kind`, `config`, and custom `definition` when applicable. |
+| `epochs` | integer | Authored epoch count; execution settings can override the training schedule. |
+| `gradient_clip` | number or null | Gradient-clipping setting, or no clipping. |
+| `surrogate` | object or null | Surrogate-gradient specification, or no explicit recipe-level surrogate. |
+| `presentation_duration` | object or null | Presentation duration as a positive finite millisecond quantity, aligned to whole graph timesteps. |
+| `resolved_gradients` | object | Explicit surrogate and per-spiking-population voltage-gradient dampening contract. |
+| `extensions` | array of objects, optional | Descriptors for custom implementations used by the recipe; omitted when unused. See [extension descriptors](/api/network-schematic/manifest#extension-descriptors). |
+
+## Objectives
+
+Objectives contain `kind`, `prediction`, `target` and positive finite `weight`.
+Use `cross_entropy`, or `custom_objective` with `definition` and `config`.
+
+`prediction` references a graph output's signal, such as `counts.value`.
+`target` names a training target, such as `labels`.
+
+## Parameter groups and resolved parameters
+
+Groups contain `id`, `parameters`, `lr` and `frozen`. Each graph parameter belongs
+to exactly one group. Trainable groups require positive finite `lr`; frozen groups
+require `lr: 0`.
+
+`resolved_parameters` records:
+
+| Field | JSON type | Meaning |
+| --- | --- | --- |
+| `trainable` | array of strings | Sorted IDs selected by non-frozen groups. |
+| `frozen` | array of strings | Sorted IDs selected by frozen groups. |
+| `learning_rates` | object | Trainable parameter ID to learning-rate mapping. Frozen parameters are excluded. |
+
+Resolved sets and rates must match the groups. Training groups are separate from
+structural groups in `graph.json`.
+
+## Optimizer, regularizers and gradients
+
+The built-in optimizer serializes as `{"kind": "adamw", "config": {...}}`.
+A custom optimizer adds a `definition` and uses `kind: "custom_optimizer"`.
+
+Regularizers contain `kind`, `signals`, `strength` and `config`; custom kinds add
+`definition`. Built-in `spike_budget` uses a non-negative Hz `ceiling`,
+`penalty: "squared_hinge"` and
+`aggregation: "mean_presentations_then_layers_of_population_mean_rate"`.
+Strength is non-negative.
+
+`fast_sigmoid` requires positive finite `slope`. Defaults `gradient_scale: 1.0`
+and `threshold_inclusive: true` are omitted. Custom surrogates use
+`custom_surrogate`, `definition` and `config`.
+
+`resolved_gradients` repeats the surrogate and maps each spiking population to
+its `voltage_grad_dampen` under `voltage_gradient_dampening` (fallback `1.0`).
+These values must match the graph and recipe. See [authoring](/api/lang) and
+[execution](/api/sim).
+
+## Complete example
+
+This recipe trains the [example graph](/api/network-schematic/graph#required-fields-example)
+using spike counts as three-class scores.
+
+```json
+{
+  "schema": "snnlang.training/v1",
+  "graph_digest": "sha256:4dbc087ff539ef96c74c2d0c0bdb68b1dc4adc2ff56cf738272d401e36033aea",
+  "objectives": [
+    {
+      "kind": "cross_entropy",
+      "prediction": "counts.value",
+      "target": "labels",
+      "weight": 1.0
+    }
+  ],
+  "parameter_groups": [
+    {
+      "id": "weights",
+      "parameters": [
+        "input_to_E.weight"
+      ],
+      "lr": 0.001,
+      "frozen": false
+    }
+  ],
+  "resolved_parameters": {
+    "trainable": [
+      "input_to_E.weight"
+    ],
+    "frozen": [],
+    "learning_rates": {
+      "input_to_E.weight": 0.001
+    }
+  },
+  "regularizers": [],
+  "stop_gradients": [],
+  "optimizer": {
+    "kind": "adamw",
+    "config": {}
+  },
+  "epochs": 10,
+  "gradient_clip": null,
+  "surrogate": {
+    "kind": "fast_sigmoid",
+    "slope": 1.0
+  },
+  "presentation_duration": {
+    "value": 100.0,
+    "unit": "ms"
+  },
+  "resolved_gradients": {
+    "surrogate": {
+      "kind": "fast_sigmoid",
+      "slope": 1.0
+    },
+    "voltage_gradient_dampening": {
+      "E": 1.0
+    }
+  }
+}
+```
+
+## Loading and editing
+
+`lang.load_bundle` verifies file digests, graph binding and recipe consistency.
+Recompile after editing `TrainSpec` to update the recipe and manifest together.
+Manual graph edits also require updating the recipe's `graph_digest`.

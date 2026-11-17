@@ -1,0 +1,171 @@
+---
+title: manifest.json
+description: Bundle manifest schema, file inventory, canonical digests, capabilities and extension dependencies.
+---
+
+`manifest.json` (`snnlang.bundle/v1`) lists the [graph](/api/network-schematic/graph),
+optional [recipe](/api/network-schematic/training) and assets with their digests.
+
+## Directory layout
+
+```text
+network.bundle/
+  graph.json
+  training.json       (when a training recipe is supplied)
+  manifest.json
+  assets/             (when physical assets are supplied)
+  reports/
+    summary.md
+```
+
+`graph.json` and `manifest.json` are required; `.bundle` is a directory naming
+convention. `visualise=True` adds circuit, training and expanded SVG/PNG diagrams
+to `reports/`. Reports and diagrams have no manifest digests.
+
+Writing does not clear existing files. Use a fresh directory when removing recipes
+or assets.
+
+## Top-level fields
+
+| Field | JSON type | Meaning |
+| --- | --- | --- |
+| `schema` | string | `snnlang.bundle/v1`. |
+| `compiler` | object | `name: "snnlang"` and the compiler component's `version`. This is separate from the schema version and combined SNNLab package version. |
+| `graph_digest` | string | Canonical graph JSON digest, prefixed with `sha256:`. |
+| `target` | string or null | Requested backend target, commonly `tools/snnsim`, or no target-specific compilation diagnostics. |
+| `required_capabilities` | object | Element-level feature requirements using `snnlang.capabilities/v1`. |
+| `files` | array of objects | File inventory: each row has relative `path` and `digest`. Includes graph, optional recipe and supplied assets. |
+| `assets` | array of objects | Each row has logical `id`, relative `path` and content `digest`. Empty when no assets are supplied. |
+| `extensions` | array of objects, optional | Combined descriptors for custom implementations used by graph or recipe. Omitted when unused. |
+
+## File inventory and assets
+
+File entries contain `path` and `digest`. The graph entry repeats `graph_digest`;
+the recipe has its own digest. The manifest does not list itself.
+
+Every declared asset needs a physical file; undeclared files are rejected.
+Assets are saved as `assets/<logical-id><source-suffix>` and appear in both
+`assets` and `files`.
+
+## Digest algorithm
+
+JSON digests hash UTF-8 with sorted keys, compact separators, unescaped Unicode
+and one trailing newline. The loader canonicalizes pretty-printed JSON before
+checking SHA-256:
+
+```python
+import hashlib
+import json
+
+def json_digest(data):
+    payload = (
+        json.dumps(
+            data,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+```
+
+Indentation and key order do not affect JSON digests; values and array order do.
+Compilation hashes assets as raw bytes, but the loader canonicalizes `.json`
+files. Supply JSON assets in canonical form so these checks agree.
+
+Digests check integrity against the manifest. The manifest is unsigned.
+
+## Required capabilities
+
+`required_capabilities` contains `schema` and an ID-sorted `elements` array.
+Rows contain `element` and `features`, such as `neuron:cuba_lif`,
+`synapse:exponential_current`, `connection:feedforward`, `delay:none`,
+`delay:explicit` and `operation:reduce_sum`. Connectivity, modulation and
+observables add requirements.
+
+Compilation records target-specific diagnostics; execution checks backend support.
+
+## Extension descriptors
+
+The manifest combines custom-definition descriptors from the graph and recipe:
+
+| Field | JSON type | Meaning |
+| --- | --- | --- |
+| `category` | string | Extension category, such as `neuron`, `synapse`, `initializer`, `operation` or `optimizer`. |
+| `definition` | string | Registered, versioned definition name. |
+| `unit` | string | Declared definition unit. |
+| `state_units` | object | State-port names mapped to units. |
+| `classification` | boolean | Whether the definition declares classification behavior. |
+| `implementation` | object | Import references: required `function`, optional `initialize` and `validate`, each in `module:qualified_name` form. Required for saving portable custom implementations. |
+| `capture_safe` | boolean, optional | Emitted as `true` when declared capture-safe. |
+| `input_unit` | string, optional | Declared input unit when present. |
+| `package` | string, optional | Python distribution supplying the implementation. |
+| `package_version` | string, optional | Exact installed version recorded when a package is declared. |
+
+Digests cover import references; source and pickled callbacks are not embedded.
+Loading imports modules and checks declared package versions. Imports can execute
+code, so use trusted extensions. See [Extensions](/api/extensions).
+
+## Complete example
+
+This manifest matches the reduced graph and recipe. File digests were recomputed;
+capabilities and compiler metadata retain their compiled values.
+
+```json
+{
+  "schema": "snnlang.bundle/v1",
+  "compiler": {
+    "name": "snnlang",
+    "version": "0.2.0"
+  },
+  "graph_digest": "sha256:4dbc087ff539ef96c74c2d0c0bdb68b1dc4adc2ff56cf738272d401e36033aea",
+  "target": "tools/snnsim",
+  "required_capabilities": {
+    "schema": "snnlang.capabilities/v1",
+    "elements": [
+      {
+        "element": "E",
+        "features": [
+          "neuron:cuba_lif"
+        ]
+      },
+      {
+        "element": "counts",
+        "features": [
+          "operation:reduce_sum"
+        ]
+      },
+      {
+        "element": "input_to_E",
+        "features": [
+          "synapse:exponential_current",
+          "connection:feedforward",
+          "delay:none"
+        ]
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "graph.json",
+      "digest": "sha256:4dbc087ff539ef96c74c2d0c0bdb68b1dc4adc2ff56cf738272d401e36033aea"
+    },
+    {
+      "path": "training.json",
+      "digest": "sha256:daecaeb4d572c4e48b3e768d0e697483e4ab2c4cd093cc74160de2cf26f8a131"
+    }
+  ],
+  "assets": []
+}
+```
+
+## Loading checks
+
+`lang.load_bundle` accepts a directory or `manifest.json` path. It checks required
+files, declared digests and recipe-to-graph binding, then validates data and
+resolves extensions.
+
+Missing paths raise `FileNotFoundError`. Incomplete bundles, digest mismatches and
+invalid data raise `ValueError`. Schema IDs, compiler versions and backend targets
+identify separate contracts.

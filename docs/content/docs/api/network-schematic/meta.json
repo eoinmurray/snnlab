@@ -1,0 +1,10 @@
+{
+  "title": "Bundle Format",
+  "pages": [
+    "graph",
+    "training",
+    "manifest"
+  ],
+  "collapsible": true,
+  "defaultOpen": false
+}

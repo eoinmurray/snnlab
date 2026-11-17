@@ -2,18 +2,25 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { createDevSource } from '../src/lib/dev-source';
 
-test('the API reference exposes exactly six module pages without subpages', () => {
+test('the API reference exposes six module pages and the Bundle Format group', () => {
   const contents: Record<string, string> = {};
   for (const file of new Bun.Glob('**/*.{md,mdx,json}').scanSync('content/docs')) {
     contents[`/content/docs/${file}`] = readFileSync(`content/docs/${file}`, 'utf8');
   }
   expect(Array.from(new Bun.Glob('**/*.mdx').scanSync('content/docs/api')).sort()).toEqual([
-    'analysis.mdx', 'extensions.mdx', 'lang.mdx', 'meanfield.mdx', 'sim.mdx', 'viz.mdx',
+    'analysis.mdx', 'extensions.mdx', 'lang.mdx', 'meanfield.mdx',
+    'network-schematic/graph.mdx', 'network-schematic/manifest.mdx',
+    'network-schematic/training.mdx', 'sim.mdx', 'viz.mdx',
   ]);
   const source = createDevSource(contents, {}, '/');
   for (const name of ['lang', 'sim', 'extensions', 'meanfield', 'analysis', 'viz']) {
     expect(source.getPage(['api', name])?.data.title).toBe(`snnlab.${name}`);
     expect(JSON.stringify(source.getPageTree())).toContain(`"url":"/api/${name}"`);
+  }
+  expect(JSON.stringify(source.getPageTree())).toContain('Bundle Format');
+  for (const name of ['graph', 'training', 'manifest']) {
+    expect(source.getPage(['api', 'network-schematic', name])?.data.title).toBe(`${name}.json`);
+    expect(JSON.stringify(source.getPageTree())).toContain(`"url":"/api/network-schematic/${name}"`);
   }
   expect(source.getPage(['api', 'sim', 'graph-executor'])).toBeUndefined();
   expect(JSON.stringify(source.getPageTree())).not.toContain('/api/sim/graph-executor');
