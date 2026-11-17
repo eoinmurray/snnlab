@@ -9,8 +9,8 @@ dt, one call to :func:`step` does, in this order:
    w <- max(w_min, w - a_minus y_i).
 3. Potentiation at postsynaptic spikes, clipped at the upper bound:
    w <- min(w_max, w + a_plus x_j).
-4. Add this step's spikes to the traces. With ``"nearest"`` pairing a spike
-   sets its trace to 1; with ``"all_to_all"`` it adds 1.
+4. Add this step's spikes to the traces. With ``"all_to_all"`` pairing (the
+   default) a spike adds 1; with ``"nearest"`` it sets its trace to 1.
 
 Clipping is sequential: depression is clipped before potentiation is added.
 When a synapse is depressed and potentiated in the same step, the result can
@@ -61,7 +61,7 @@ class STDPSimple:
     tau_minus_ms: float
     w_max: float
     w_min: float = 0.0
-    pairing: str = "nearest"
+    pairing: str = "all_to_all"
 
     kind: ClassVar[str] = STDP_SIMPLE
     update: ClassVar[str] = "additive"

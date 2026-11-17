@@ -56,7 +56,7 @@ Both inputs carry spikes. The batch axis holds the experiments, so each input ch
 
 [COBA_LIF](/api/extensions#neuron-models) uses a 20 ms membrane time constant and a −50 mV threshold. Its excitatory reversal potential is 0 mV and its inhibitory one −80 mV, so AMPA input depolarizes the cell and GABA input pulls it below rest. `initialization_scaling="direct"` keeps the drawn weights in µS, without fan-in normalization. Initial weights are uniform between 0 and `w_max`.
 
-`pairing="all_to_all"` lets every spike pair with every earlier spike on the other side, as in the original model. The update step section of [Plasticity](/api/lang#the-update) gives the exact discrete-time conventions.
+`pairing="all_to_all"` lets every spike pair with every earlier spike on the other side, as in the original model. It is the default, written out here because the choice changes what the rule learns. The update step section of [Plasticity](/api/lang#the-update) gives the exact discrete-time conventions.
 
 ## 4. Correlated and independent spike trains
 

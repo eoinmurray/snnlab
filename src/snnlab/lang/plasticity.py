@@ -17,7 +17,7 @@ def STDPSimple(
     tau_minus: Quantity,
     w_max: float,
     w_min: float = 0.0,
-    pairing: str = "nearest",
+    pairing: str = "all_to_all",
     freeze_zero_weights: bool = False,
 ) -> Spec:
     """Pair-based, additive STDP with hard bounds, for one projection.
@@ -35,7 +35,8 @@ def STDPSimple(
         tau_minus: Postsynaptic trace time constant, such as ``33.7 * lang.ms``.
         w_max: Upper bound, in weight units.
         w_min: Lower bound, in weight units; 0 <= w_min < w_max.
-        pairing: ``"nearest"`` (symmetric nearest-spike) or ``"all_to_all"``.
+        pairing: ``"all_to_all"`` (default: every spike pairs with every
+            earlier spike) or ``"nearest"`` (symmetric nearest-spike).
         freeze_zero_weights: Keep weights that start at exactly zero fixed.
 
     The rule applies to projections onto an excitatory receptor, from a

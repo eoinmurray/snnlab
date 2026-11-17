@@ -731,7 +731,7 @@ lang.STDPSimple(
     tau_minus,
     w_max,
     w_min=0.0,
-    pairing="nearest",
+    pairing="all_to_all",
     freeze_zero_weights=False,
 )
 ```
@@ -744,7 +744,7 @@ lang.STDPSimple(
 | `tau_minus` | `Quantity`, required | Decay time of the postsynaptic trace. Positive and finite. |
 | `w_max` | `float`, required | Upper weight bound. Finite. |
 | `w_min` | `float = 0.0` | Lower weight bound. Finite, with `0 <= w_min < w_max`. |
-| `pairing` | `"nearest"` or `"all_to_all"` | How spikes pair; see below. |
+| `pairing` | `"all_to_all"` (default) or `"nearest"` | How spikes pair; see below. |
 | `freeze_zero_weights` | `bool = False` | Keep the zero entries of the model's weights at zero. |
 
 Amplitudes are absolute, not relative to `w_max`. Invalid values raise `ValueError` when the specification is created.
@@ -756,7 +756,7 @@ Each plastic synapse keeps a presynaptic trace `x` and a postsynaptic trace `y`.
 1. Both traces decay: `x ← x·exp(−dt/tau_plus)` and `y ← y·exp(−dt/tau_minus)`.
 2. A presynaptic spike depresses the weight: `w ← max(w_min, w − a_minus·y)`.
 3. A postsynaptic spike potentiates it: `w ← min(w_max, w + a_plus·x)`.
-4. The traces jump. With `pairing="nearest"` a spike sets its trace to 1, so each spike pairs only with the latest spike on the other side. With `"all_to_all"` a spike adds 1, so it pairs with every earlier spike.
+4. The traces jump. With `pairing="all_to_all"`, the default, a spike adds 1, so it pairs with every earlier spike on the other side. With `"nearest"` a spike sets its trace to 1, so it pairs only with the latest spike on the other side.
 
 For one pair with lag `Δt = t_post − t_pre`, the change is `a_plus·exp(−Δt/tau_plus)` when `Δt > 0` and `−a_minus·exp(Δt/tau_minus)` when `Δt < 0`. The update does not depend on the weight, apart from the bounds.
 

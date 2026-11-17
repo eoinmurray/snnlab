@@ -31,7 +31,7 @@ import torch
 
 from snnlab import lang as snn
 from snnlab import sim
-from snnlab._shared.plasticity import unsupported_reasons
+from snnlab._shared.plasticity import stdp_simple_from_json, unsupported_reasons
 from snnlab.sim.plasticity import stdp_simple as kernel
 
 PAIRINGS = ("nearest", "all_to_all")
@@ -155,14 +155,14 @@ def test_t01_spec_states_additive_hard_bounds_and_defaults():
         a_plus=0.01, a_minus=0.0105, tau_plus_ms=16.8, tau_minus_ms=33.7, w_max=1.0
     )
     assert (rule.kind, rule.update, rule.bounds) == ("stdp_simple", "additive", "hard")
-    assert rule.pairing == "nearest"
+    assert rule.pairing == "all_to_all"
     assert rule.w_min == 0.0
     assert set(kernel.PAIRINGS) == set(PAIRINGS)
     assert rule.json() == {
         "kind": "stdp_simple",
         "update": "additive",
         "bounds": "hard",
-        "pairing": "nearest",
+        "pairing": "all_to_all",
         "a_plus": 0.01,
         "a_minus": 0.0105,
         "tau_plus_ms": 16.8,
@@ -170,7 +170,13 @@ def test_t01_spec_states_additive_hard_bounds_and_defaults():
         "w_min": 0.0,
         "w_max": 1.0,
     }
-    assert make_rule(pairing="all_to_all").pairing == "all_to_all"
+    assert make_rule(pairing="nearest").pairing == "nearest"
+    # One default in every layer: lang, a serialized spec without the field,
+    # and the update step.
+    lang_spec = lang_rule().json()
+    assert lang_spec["pairing"] == "all_to_all"
+    without_pairing = {k: v for k, v in lang_spec.items() if k != "pairing"}
+    assert stdp_simple_from_json(without_pairing)["pairing"] == "all_to_all"
     assert make_rule(a_plus=0.0, a_minus=0.0).a_plus == 0.0
     with pytest.raises(TypeError):
         kernel.STDPSimple(0.01, 0.0105, 16.8, 33.7, 1.0)  # keyword-only
@@ -1375,16 +1381,17 @@ def test_t41_a_disabled_projection_stays_frozen_at_any_scale():
         )
         assert torch.all(weights(result) == 0.5)
         assert torch.all(result.recorded_signals["syn.current"] == 0)
+        # All-to-all traces accumulate above 1: compare at float32 precision.
         torch.testing.assert_close(
             result.recorded_signals["syn.pre_trace"].double(),
             xs,
-            rtol=1e-6,
+            rtol=1e-5,
             atol=1e-6,
         )
         torch.testing.assert_close(
             result.recorded_signals["syn.post_trace"].double(),
             ys,
-            rtol=1e-6,
+            rtol=1e-5,
             atol=1e-6,
         )
 
@@ -1495,7 +1502,7 @@ def test_t43_a_changed_rule_or_a_missing_plastic_state_is_rejected(tmp_path):
     for changed in (
         {"a_plus": 0.06},
         {"tau_minus_ms": 30.0},
-        {"pairing": "all_to_all"},
+        {"pairing": "nearest"},
         {"w_max": 0.9},
         {"freeze_zero_weights": True},
     ):

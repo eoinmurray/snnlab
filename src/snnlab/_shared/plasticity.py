@@ -13,7 +13,7 @@ from typing import Any
 
 STDP_SIMPLE = "stdp_simple"
 PLASTICITY_KINDS = frozenset({STDP_SIMPLE})
-STDP_SIMPLE_PAIRINGS = ("nearest", "all_to_all")
+STDP_SIMPLE_PAIRINGS = ("all_to_all", "nearest")  # the first is the default
 _STDP_SIMPLE_KEYS = frozenset(
     {
         "kind",
@@ -107,7 +107,7 @@ def stdp_simple_from_json(spec: Mapping[str, Any]) -> dict[str, Any]:
         tau_minus_ms=_time_ms("tau_minus", spec.get("tau_minus")),
         w_max=spec.get("w_max"),
         w_min=spec.get("w_min", 0.0),
-        pairing=spec.get("pairing", "nearest"),
+        pairing=spec.get("pairing", STDP_SIMPLE_PAIRINGS[0]),
     )
     values["freeze_zero_weights"] = freeze
     return values

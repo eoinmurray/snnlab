@@ -735,7 +735,7 @@ def test_t22_stdp_simple_spec_states_its_rule_and_is_opt_in():
     spec = _stdp_simple().json()
     assert spec["kind"] == "stdp_simple"
     assert (spec["update"], spec["bounds"]) == ("additive", "hard")
-    assert (spec["pairing"], spec["w_min"], spec["w_max"]) == ("nearest", 0.0, 1.0)
+    assert (spec["pairing"], spec["w_min"], spec["w_max"]) == ("all_to_all", 0.0, 1.0)
     plastic = snn.compile(_stdp_network(_stdp_simple()), target=None).graph
     static = snn.compile(_stdp_network(), target=None).graph
     row = next(r for r in plastic["projections"] if r["id"] == "syn")
