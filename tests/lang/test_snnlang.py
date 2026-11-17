@@ -685,7 +685,12 @@ def _stdp_network(
     return net
 
 
-def _stdp_shared_weight_network():
+_STDP_SIMPLE_RULE = object()  # default: the networks of T25 carry stdp_simple
+
+
+def _stdp_shared_weight_network(plasticity=_STDP_SIMPLE_RULE):
+    if plasticity is _STDP_SIMPLE_RULE:
+        plasticity = _stdp_simple()
     net = snn.Network("stdp_shared")
     pre = net.input(
         "pre", shape=("time", "batch", 3), signal_type="spikes", unit="spike"
@@ -694,7 +699,8 @@ def _stdp_shared_weight_network():
     shared = net.parameter(
         "shared", shape=(2, 3), initializer=snn.Constant(0.5), unit="nA"
     )
-    for name, extra in (("a", {"plasticity": _stdp_simple()}), ("b", {})):
+    rule = {} if plasticity is None else {"plasticity": plasticity}
+    for name, extra in (("a", rule), ("b", {})):
         net.connect(
             pre,
             post.excitatory,
@@ -707,7 +713,10 @@ def _stdp_shared_weight_network():
     return net
 
 
-def _stdp_conv2d_network():
+def _stdp_conv2d_network(plasticity=_STDP_SIMPLE_RULE):
+    if plasticity is _STDP_SIMPLE_RULE:
+        plasticity = _stdp_simple()
+    rule = {} if plasticity is None else {"plasticity": plasticity}
     net = snn.Network("stdp_conv")
     source = net.input(
         "pre",
@@ -725,7 +734,7 @@ def _stdp_conv2d_network():
         synapse=snn.ExponentialCurrent(tau=2 * snn.ms),
         weight=snn.Constant(0.1),
         initialization_scaling="direct",
-        plasticity=_stdp_simple(),
+        **rule,
     )
     net.output("post_spikes", cells.spikes)
     return net
@@ -799,3 +808,175 @@ def test_t34_graph_validation_rejects_unsupported_or_corrupted_plasticity(case):
     graph = _stdp_graph_with(_STDP_CORRUPTED[case])
     with pytest.raises(ValueError, match="stdp_simple|plasticity"):
         snn.validate_graph(graph).raise_for_errors()
+
+
+# stdp_nonlinear acceptance tests (N01-N04). The rest are in
+# tests/sim/test_plasticity_stdp_nonlinear.py. Skipped until lang provides
+# STDPNonlinear.
+
+requires_stdp_nonlinear = pytest.mark.skipif(
+    not hasattr(snn, "STDPNonlinear"), reason="STDPNonlinear is not implemented yet"
+)
+
+_NONLINEAR_DEFAULTS = {
+    "a_plus": 0.01,
+    "a_minus": 0.0105,
+    "mu_plus": 0.3,
+    "mu_minus": 0.7,
+    "tau_plus": 16.8 * snn.ms,
+    "tau_minus": 33.7 * snn.ms,
+    "w_max": 1.0,
+}
+
+
+def _stdp_nonlinear(**overrides):
+    return snn.STDPNonlinear(**{**_NONLINEAR_DEFAULTS, **overrides})  # PROVISIONAL
+
+
+@requires_stdp_nonlinear
+def test_n01_spec_states_nonlinear_soft_bounds_and_defaults():
+    spec = _stdp_nonlinear().json()
+    assert spec == {
+        "kind": "stdp_nonlinear",
+        "update": "nonlinear",
+        "bounds": "soft",
+        "pairing": "all_to_all",
+        "a_plus": 0.01,
+        "a_minus": 0.0105,
+        "mu_plus": 0.3,
+        "mu_minus": 0.7,
+        "tau_plus": {"value": 16.8, "unit": "ms"},
+        "tau_minus": {"value": 33.7, "unit": "ms"},
+        "w_min": 0.0,
+        "w_max": 1.0,
+        "freeze_zero_weights": False,
+    }
+    chosen = _stdp_nonlinear(w_min=0.2, pairing="nearest", freeze_zero_weights=True)
+    assert (chosen.json()["w_min"], chosen.json()["pairing"]) == (0.2, "nearest")
+    assert chosen.json()["freeze_zero_weights"] is True
+    # Opt-in: only a projection with the rule carries it.
+    plastic = snn.compile(_stdp_network(_stdp_nonlinear()), target=None).graph
+    static = snn.compile(_stdp_network(), target=None).graph
+    row = next(r for r in plastic["projections"] if r["id"] == "syn")
+    assert row["plasticity"] == spec
+    static_row = next(r for r in static["projections"] if r["id"] == "syn")
+    assert "plasticity" not in static_row
+    # Keyword-only, and every physical parameter is required.
+    with pytest.raises(TypeError):
+        snn.STDPNonlinear(*_NONLINEAR_DEFAULTS.values())
+    for name in _NONLINEAR_DEFAULTS:
+        missing = {k: v for k, v in _NONLINEAR_DEFAULTS.items() if k != name}
+        with pytest.raises(TypeError):
+            snn.STDPNonlinear(**missing)
+    with pytest.raises(TypeError):
+        _stdp_nonlinear(update="additive")  # the update is not a parameter
+
+
+@requires_stdp_nonlinear
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"a_plus": -0.01},
+        {"a_minus": -0.01},
+        {"a_plus": math.nan},
+        {"mu_plus": -0.1},
+        {"mu_minus": -0.1},
+        {"mu_plus": math.nan},
+        {"mu_minus": math.inf},
+        {"mu_plus": True},
+        {"tau_plus": 0.0 * snn.ms},
+        {"tau_minus": -1.0 * snn.ms},
+        {"tau_plus": 16.8},
+        {"w_min": -0.1},
+        {"w_min": 1.0},
+        {"w_min": 0.6, "w_max": 0.5},
+        {"w_max": math.inf},
+        {"pairing": "presynaptic_centred"},
+        {"freeze_zero_weights": "yes"},
+    ],
+    ids=[
+        "a_plus<0",
+        "a_minus<0",
+        "a_plus=nan",
+        "mu_plus<0",
+        "mu_minus<0",
+        "mu_plus=nan",
+        "mu_minus=inf",
+        "mu_plus=bool",
+        "tau_plus=0",
+        "tau_minus<0",
+        "tau_plus_not_a_time",
+        "w_min<0",
+        "w_min=w_max",
+        "w_min>w_max",
+        "w_max=inf",
+        "unknown_pairing",
+        "freeze_not_bool",
+    ],
+)
+def test_n02_invalid_parameters_raise(override):
+    with pytest.raises(ValueError, match="stdp_nonlinear"):
+        _stdp_nonlinear(**override)
+
+
+_NONLINEAR_CORRUPTED = {
+    "unknown_field": lambda spec: spec.update(alpha=1.05),
+    "additive_update": lambda spec: spec.update(update="additive"),
+    "hard_bounds": lambda spec: spec.update(bounds="hard"),
+    "negative_mu_minus": lambda spec: spec.update(mu_minus=-0.5),
+    "non_finite_a_plus": lambda spec: spec.update(a_plus=math.inf),
+    "tau_without_unit": lambda spec: spec.update(tau_plus=16.8),
+}
+
+
+@requires_stdp_nonlinear
+def test_n03_spec_round_trips_and_bad_specs_give_e120(tmp_path):
+    from snnlab._shared.plasticity import stdp_nonlinear_from_json  # PROVISIONAL
+
+    rule = _stdp_nonlinear(w_min=0.1, pairing="nearest", freeze_zero_weights=True)
+    bundle = snn.compile(_stdp_network(rule), target=None)
+    loaded = snn.load_bundle(bundle.write(tmp_path / "bundle"))
+    row = next(r for r in loaded.graph["projections"] if r["id"] == "syn")
+    assert row["plasticity"] == rule.json()
+    values = stdp_nonlinear_from_json(row["plasticity"])
+    assert values["mu_plus"] == 0.3 and values["mu_minus"] == 0.7
+    assert (values["tau_plus_ms"], values["tau_minus_ms"]) == (16.8, 33.7)
+    assert (values["w_min"], values["w_max"], values["pairing"]) == (
+        0.1,
+        1.0,
+        "nearest",
+    )
+    assert values["freeze_zero_weights"] is True
+    errors = [
+        d for d in snn.validate_graph(loaded.graph).diagnostics if d.severity == "error"
+    ]
+    assert errors == []
+    for name, mutation in _NONLINEAR_CORRUPTED.items():
+        graph = copy.deepcopy(bundle.graph)
+        mutation(
+            next(r for r in graph["projections"] if r["id"] == "syn")["plasticity"]
+        )
+        codes = [d.code for d in snn.validate_graph(graph).diagnostics]
+        assert "E120" in codes, name
+
+
+_NONLINEAR_REJECTED = {
+    "inhibitory_receptor": lambda rule: _stdp_network(rule, port="inhibitory"),
+    "modulatory_receptor": lambda rule: _stdp_network(rule, port="modulatory"),
+    "weight_modulation": lambda rule: _stdp_network(
+        rule, modulation=snn.ConstantGain(0.5)
+    ),
+    "shared_weight": _stdp_shared_weight_network,
+    "conv2d_kernel": _stdp_conv2d_network,
+    "non_spiking_source": lambda rule: _stdp_network(rule, source_signal="current"),
+    "non_spiking_target": lambda rule: _stdp_network(rule, spiking_target=False),
+}
+
+
+@requires_stdp_nonlinear
+@pytest.mark.parametrize("case", sorted(_NONLINEAR_REJECTED))
+def test_n04_unsupported_projections_give_e121(case):
+    # Each network compiles without the rule, so the rule alone is refused.
+    snn.compile(_NONLINEAR_REJECTED[case](None), target=None)
+    with pytest.raises(ValueError, match="E121.*stdp_nonlinear"):
+        snn.compile(_NONLINEAR_REJECTED[case](_stdp_nonlinear()), target=None)
