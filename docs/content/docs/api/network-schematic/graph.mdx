@@ -135,9 +135,14 @@ and [Weights](/api/lang#weights) for other kinds.
 | `enabled` | boolean, optional | No | Omitted for enabled projections; the compiler emits `false` for disabled ones. |
 | `connectivity` | object, optional | For structured connectivity | Structured spatial connectivity specification. Omitted for ordinary dense connections. |
 | `modulation` | object, optional | No | Gain specification applied to the projection. |
+| `plasticity` | object, optional | No | Local learning rule of the projection. Omitted for static projections. `stdp_simple` emits `kind`, its fixed fields `update: "additive"` and `bounds: "hard"`, `pairing`, `a_plus`, `a_minus`, `tau_plus` and `tau_minus` (millisecond quantities), `w_min`, `w_max` and `freeze_zero_weights`. |
 
 Disabled projections retain their declarations and parameters. See
 [connection authoring](/api/lang) for connectivity and modulation options.
+
+Validation checks a `plasticity` object with its projection: an invalid or
+unknown rule is `E120`, and a projection the rule cannot apply to is `E121`.
+See [Plasticity](/api/lang#plasticity) for the rule and the projections it supports.
 
 ## Parameters
 
