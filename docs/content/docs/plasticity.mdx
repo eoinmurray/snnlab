@@ -367,6 +367,14 @@ from snnlab.plasticity import (
 OUTPUT_DIR = Path(__file__).resolve().parent / "results"
 
 
+def prepare_results():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
+
+
 def initialize_hebbian(ctx):
     return {"coincidences": ctx.weights.new_zeros(ctx.weights.shape)}
 
@@ -522,11 +530,7 @@ def simulate_rule(request, events, rewards, stem):
 
 
 def main():
-    if OUTPUT_DIR.is_symlink():
-        OUTPUT_DIR.unlink()
-    elif OUTPUT_DIR.exists():
-        shutil.rmtree(OUTPUT_DIR)
-    OUTPUT_DIR.mkdir(parents=True)
+    prepare_results()
     definition = "examples.local_hebbian/v1"
     extensions.register_plasticity(
         definition,
