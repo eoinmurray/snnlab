@@ -700,3 +700,66 @@ def CustomSurrogate(
 Use `register_neuron`, `register_synapse`, `register_initializer`, `register_constraint`, `register_operation`, `register_objective`, `register_regularizer`, `register_optimizer`, `register_surrogate` and `register_encoder` for the corresponding extension categories. Prefer these typed helpers over the generic registry machinery. `extensions.definitions()` can inspect registrations while developing a plugin.
 
 Use versioned definition names and importable module-level callbacks. Saved bundles retain implementation references and configuration; install the implementation module in every execution environment. A closure or callback defined only in `__main__` cannot be portably saved. Develop custom dynamics with strict extension validation and keep state shapes, dtypes, devices and physical units consistent.
+
+
+## Custom plasticity
+
+`extensions.register_plasticity(name, step, *, initialize, state_units=None,
+validate=None, package=None, package_version=None)` registers local simulation
+learning. It is separate from synaptic transmission and optimizer updates.
+
+```python
+from snnlab import extensions, lang
+from snnlab.plasticity import CustomPlasticity, Plasticity
+
+# Put callbacks in an importable module when persisting the rule.
+def initialize(ctx):
+    return {"coincidences": ctx.weights.new_zeros(ctx.weights.shape)}
+
+
+def step(ctx):
+    coincidences = ctx.pre_spikes.T @ ctx.post_spikes
+    delta = ctx.config["amplitude"] * coincidences
+    return delta, {"coincidences": ctx.state["coincidences"] + coincidences}
+
+
+extensions.register_plasticity(
+    "my_lab.hebbian/v1", step, initialize=initialize,
+    state_units={"coincidences": "1"},
+)
+learning = Plasticity(rules={
+    "drive": CustomPlasticity(
+        definition="my_lab.hebbian/v1", config={"amplitude": 0.005},
+        w_min=0 * lang.nA, w_max=0.8 * lang.nA,
+    ),
+})
+```
+
+`initialize` receives `PlasticityInitContext(weights, dt_ms, config)`, where weights
+have runtime orientation `[source, target]` and `dt_ms` is the timestep in
+milliseconds. Return a mapping of finite floating tensors on the weights' device
+and dtype. Its keys must match `state_units`; shapes may differ between state
+entries but must stay fixed across updates and restores. Stateless rules return
+an empty mapping and declare no state units.
+
+`step` receives `PlasticityContext(weights, pre_spikes, post_spikes, state, dt_ms,
+config)`. Spike tensors have shape `[1, source]` and `[1, target]`; the presynaptic
+spikes are delayed arrivals and the postsynaptic spikes are emitted events after
+interventions. Return `(delta, state)`, where `delta` has the weights' exact shape,
+device and dtype, in the weight unit. The engine checks finite values on every
+update, including when ordinary extension validation is structural. It then
+applies bounds, the declared weight constraint and autapse exclusions.
+
+Callbacks receive private copies of weights, spikes, state and JSON configuration
+and execute without gradients. Mutating those copies cannot mutate input tensors
+or the engine's current state. Avoid side effects and external mutable state;
+only the returned tensor state is checkpointed. Model weights are committed only
+when the forward call succeeds. Exceptions do not roll back external callback or
+recording-sink side effects.
+
+Portable descriptors use the same `module:function` references and optional exact
+package versions as other extensions. `Plasticity.from_json` imports referenced
+implementations. In-memory closures can run locally, but without importable
+references they require explicit registration in every loading process. The
+example's callbacks are importable as `example` with `examples/plasticity` on
+`PYTHONPATH` when restoring its custom rule in a new process.

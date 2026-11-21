@@ -9,7 +9,7 @@ const repoDir = path.dirname(docsDir);
 export const contentTasks = [
   ...[
     'snnlang', 'quickstart', 'training', 'pytorch', 'inference', 'streaming',
-    'current-lif', 'customisation', 'hodgkin-huxley', 'meanfield', 'animated-neuron',
+    'current-lif', 'customisation', 'hodgkin-huxley', 'meanfield', 'animated-neuron', 'plasticity',
   ].map(name => ({
     script: `sync-${name}.ts`,
     examples: name === 'training' ? [name, 'native-training', 'native-finetuning'] : [name],

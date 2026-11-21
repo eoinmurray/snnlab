@@ -145,9 +145,9 @@ manually to retry a release.
 For an explicitly requested release without running documentation tests, use a
 `[skip ci]` commit to suppress automatic push workflows, then dispatch
 `publish.yml` on `main` and `docs.yml` on `main` with `skip_tests=true`.
-Documentation tests run by default; Python package tests run only nightly.
-Manual no-test releases still run lint, package builds and documentation
-compilation.
+Documentation tests run by default; Python package tests run on releases and
+nightly. Skipping documentation tests does not disable the Python package checks.
+Manual releases still run lint, package builds and documentation compilation.
 
 The library retains the existing bundle schemas, backend target `tools/snnsim`, component format versions and numerical defaults. Those strings identify persisted scientific contracts; they are not Python import paths. The combined distribution version is defined in `src/snnlab/__init__.py`; component format versions identify separate compatibility contracts.
 

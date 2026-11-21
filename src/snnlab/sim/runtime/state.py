@@ -29,6 +29,10 @@ class GraphRuntimeState:
     Static parameters are deliberately excluded: weight checkpoints and runtime
     state are orthogonal, allowing a mature state to branch across compatible
     parameterisations of the same graph structure.
+
+    Opt-in simulation plasticity stores evolving weights and learning traces in
+    custom_state under plasticity/<projection>/. These are dynamic state, bound
+    to the rule descriptor in compatibility, and restore together on continuation.
     """
 
     signature: str

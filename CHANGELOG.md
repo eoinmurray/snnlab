@@ -6,6 +6,17 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-11-20
+
+### Added
+
+1. Simulation-only online plasticity with bounded all-pairs exponential STDP and registered custom local-learning callbacks. Updates use delayed arrivals and emitted postsynaptic spikes, preserve autapse exclusions and parameter constraints, and resume dynamic weights and traces together through runtime state. The initial path uses one trajectory, dense unshared projections, eager execution and no CUDA replay; training and prepared streaming remain separate. Added a runnable example, portable rule descriptors and numerical/continuation regressions.
+2. Expanded simulation plasticity with normalized weight-dependent pair STDP, four-trace triplet STDP, homeostatic inhibitory STDP and reward-modulated STDP with persistent eligibility and explicit scalar reward inputs. Added analytical timing, signed reward, bounds and saved-continuation checks. The Plasticity example in the documentation sidebar covers every built-in rule and custom callbacks, with downloadable code and arrays, network diagrams, and a save/load continuation walkthrough.
+
+### Fixed
+
+1. Package CI explicitly installs Ubuntu's separate Graphviz neato layout plugin and verifies JSON rendering before running tests, fixing diagram failures on the current Ubuntu runner.
+
 ## [0.32.3] - 2026-11-06
 
 ### Fixed

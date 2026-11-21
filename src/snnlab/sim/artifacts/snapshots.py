@@ -47,6 +47,14 @@ def _tensor_bytes(value):
     return value.detach().cpu().contiguous().reshape(-1).view(torch.uint8).numpy()
 
 
+def _dataclass_value(value):
+    from snnlab.plasticity import Plasticity
+
+    if isinstance(value, Plasticity):
+        return value.json()
+    return {f.name: _json_value(getattr(value, f.name)) for f in fields(value)}
+
+
 def _json_value(value):
     """Describe input arrays by content, without embedding potentially huge data."""
     if isinstance(value, torch.Tensor):
@@ -68,7 +76,7 @@ def _json_value(value):
     if isinstance(value, torch.device):
         return str(value)
     if is_dataclass(value) and not isinstance(value, type):
-        return {f.name: _json_value(getattr(value, f.name)) for f in fields(value)}
+        return _dataclass_value(value)
     if isinstance(value, Mapping):
         if any(not isinstance(key, str) for key in value):
             raise TypeError("snapshot mapping keys must be strings")
@@ -234,7 +242,7 @@ class SnapshotSession:
             }
         )
 
-    def capture(self, stage, **resolved):
+    def capture(self, stage, *, parameter_overrides=None, **resolved):
         if self.option is None or self.option.stage not in {stage, "both"}:
             return
         metadata = {
@@ -246,7 +254,10 @@ class SnapshotSession:
         parameters = (
             {
                 name: value.detach().cpu().clone()
-                for name, value in self.model.parameter_map().items()
+                for name, value in {
+                    **self.model.parameter_map(),
+                    **(parameter_overrides or {}),
+                }.items()
             }
             if self.option.parameters
             else {}

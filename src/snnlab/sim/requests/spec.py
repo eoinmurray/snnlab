@@ -10,6 +10,7 @@ from typing import Any, Literal
 import torch
 
 from snnlab.lang.compilation.bundles import Bundle
+from snnlab.plasticity import Plasticity
 from snnlab.sim.artifacts.snapshots import SnapshotSpec
 from snnlab.sim.diagnostics.tracing import TraceSpec
 from snnlab.sim.inputs.bindings import InputBinding, TargetArrayBinding
@@ -73,6 +74,7 @@ class ExecutionSpec:
     diagnostics: bool = True
     checkpoint: Path | None = None
     weights: WeightInitialization | None = None
+    plasticity: Plasticity | None = None
     runtime_state: GraphRuntimeState | None = None
     options: Mapping[str, Any] = field(default_factory=dict)
     observations: EpochObservations | None = None
@@ -102,6 +104,11 @@ class ExecutionSpec:
     test: TestSpec | None = None
 
     def __post_init__(self):
+        if self.plasticity is not None:
+            if not isinstance(self.plasticity, Plasticity):
+                raise TypeError("plasticity must be Plasticity")
+            if self.kind != "simulate":
+                raise ValueError("plasticity requires simulate; unavailable in train")
         _performance_from_spec(self)
         self._validate_capture_requests()
         if self.weights is not None and self.kind != "train":

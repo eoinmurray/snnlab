@@ -12,6 +12,7 @@ import torch
 from torch import nn
 
 from snnlab import extensions as E
+from snnlab.plasticity import Plasticity
 from snnlab.sim.graph import dynamics as M
 from snnlab.sim.graph import extensions as X
 from snnlab.sim.graph.blocks import signal_parameters
@@ -375,6 +376,7 @@ class GraphExecutor(nn.Module):
         *,
         diagnostics: bool = True,
         runtime_state: GraphRuntimeState | None = None,
+        plasticity: Plasticity | None = None,
         initial_state=None,
         interventions: Sequence[Intervention] = (),
         resets: Sequence[ResetVoltage] = (),
@@ -391,6 +393,7 @@ class GraphExecutor(nn.Module):
             inputs,
             diagnostics=diagnostics,
             runtime_state=runtime_state,
+            plasticity=plasticity,
             **({"initial_state": initial_state} if initial_state is not None else {}),
             interventions=interventions,
             resets=resets,
@@ -417,10 +420,20 @@ class GraphExecutor(nn.Module):
     def _forward(self, inputs, **kwargs):
         from snnlab.sim.graph.precision import execution_precision
 
+        if kwargs.get("plasticity") is not None and (
+            any(value.requires_grad for value in (*inputs.values(), *self.parameters()))
+            or getattr(self, "_stream_metadata", None) is not None
+        ):
+            raise ValueError(
+                "plasticity requires simulation without gradients or prepared streaming"
+            )
         parameter = next(self.parameters(), None)
         automatic_inference = (
             torch.is_grad_enabled()
-            and kwargs.get("runtime_state") is None
+            and (
+                kwargs.get("runtime_state") is None
+                or kwargs.get("plasticity") is not None
+            )
             and not any(
                 value.requires_grad for value in (*inputs.values(), *self.parameters())
             )
@@ -435,9 +448,14 @@ class GraphExecutor(nn.Module):
                 or E.resolve("surrogate", self.surrogate).capture_safe
             )
         )
+        precision_policy = (
+            "highest" if kwargs.get("plasticity") is not None else self.precision
+        )
         with (
-            execution_precision(self.precision, parameter),
-            torch.no_grad() if automatic_inference else nullcontext(),
+            execution_precision(precision_policy, parameter),
+            torch.no_grad()
+            if automatic_inference or kwargs.get("plasticity") is not None
+            else nullcontext(),
         ):
             captured = (
                 self._forward_replay.run(
@@ -446,7 +464,7 @@ class GraphExecutor(nn.Module):
                     kwargs,
                     lambda values: self._forward_impl(values, **kwargs),
                 )
-                if not torch.is_grad_enabled()
+                if not torch.is_grad_enabled() and kwargs.get("plasticity") is None
                 else None
             )
             result, signals = (
@@ -454,12 +472,24 @@ class GraphExecutor(nn.Module):
                 if captured is not None
                 else self._forward_impl(inputs, **kwargs)
             )
-        result.metrics["cuda_graphs"] = self._forward_replay.summary()
+        result.metrics["cuda_graphs"] = (
+            {
+                "scope": "forward only",
+                "captures": 0,
+                "replayed_calls": 0,
+                "fallback_reasons": {"online plasticity": 1},
+                "cache_limit": 2,
+            }
+            if kwargs.get("plasticity") is not None
+            else self._forward_replay.summary()
+        )
         result.metrics["precision"] = {
-            "policy": self.precision,
-            "autocast": "bfloat16" if self._amp_enabled(parameter) else "off",
+            "policy": precision_policy,
+            "autocast": "bfloat16"
+            if precision_policy == "auto" and self._amp_enabled(parameter)
+            else "off",
             "matmul": "high"
-            if self.precision == "auto"
+            if precision_policy == "auto"
             and parameter is not None
             and parameter.device.type == "cuda"
             else "highest"
@@ -483,6 +513,7 @@ class GraphExecutor(nn.Module):
         *,
         diagnostics: bool = True,
         runtime_state: GraphRuntimeState | None = None,
+        plasticity: Plasticity | None = None,
         initial_state=None,
         interventions: Sequence[Intervention] = (),
         resets: Sequence[ResetVoltage] = (),
@@ -503,6 +534,7 @@ class GraphExecutor(nn.Module):
             inputs,
             diagnostics=diagnostics,
             runtime_state=runtime_state,
+            plasticity=plasticity,
             initial_state=initial_state,
             interventions=interventions,
             resets=resets,

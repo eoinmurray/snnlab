@@ -44,6 +44,7 @@ def simulate(
     diagnostics: bool = True,
     checkpoint: Path | None = None,
     runtime_state: GraphRuntimeState | None = None,
+    plasticity: snnlab.plasticity.Plasticity | None = None,
     interventions: Sequence[Intervention] = (),
     resets: Sequence[ResetVoltage] = (),
     decisions: DecisionSegments | None = None,
@@ -64,6 +65,174 @@ def simulate(
 Builds a fresh model, resolves bound inputs and the device, loads an optional weight checkpoint and executes the graph. Use this function for both network simulation and inference with learned weights. Inputs support dense tensors, sparse events, generated Poisson spikes and dataset snapshots. Pass `runtime_state=previous.runtime_state` to continue compatible dynamics; parameters are loaded separately. Multiple dataset batches represent independent presentations and do not return one resumable trajectory.
 
 `inference_overrides` accepts duration, input rate, timestep and projection scaling overrides directly. Timestep changes cannot convert runtime state. See [override validation](/api/sim#inference_overrides).
+
+### Online plasticity (`simulate` only)
+
+Import local learning rules from `snnlab.plasticity`. Attach them to projection
+names on the simulation request; graph bundles and gradient training recipes do
+not activate them.
+
+```python
+from snnlab import lang, sim
+from snnlab.plasticity import PairSTDP, Plasticity
+
+learning = Plasticity(rules={
+    "drive": PairSTDP(
+        a_plus=0.008 * lang.nA,
+        a_minus=0.004 * lang.nA,
+        tau_pre=10 * lang.ms,
+        tau_post=10 * lang.ms,
+        w_min=0 * lang.nA,
+        w_max=0.8 * lang.nA,
+    ),
+})
+result = sim.simulate(
+    graph=compiled.graph,
+    input_bindings=inputs,
+    plasticity=learning,
+    device="cpu",
+)
+```
+
+`PairSTDP` implements bounded additive, all-pairs exponential
+[spike-timing-dependent plasticity](https://www.scholarpedia.org/article/Spike-timing_dependent_plasticity).
+Each timestep decays the pre/post traces, computes potentiation from earlier
+presynaptic arrivals and current postsynaptic spikes, computes depression from
+earlier postsynaptic spikes and current arrivals, then adds current spikes to
+the traces. Same-step spikes do not pair with each other. All previous spikes
+contribute through accumulating traces; this is not nearest-neighbour pairing.
+Presynaptic timing uses the actual delayed arrival used for transmission,
+including the executor's causal recurrent delay. Postsynaptic timing uses emitted
+spikes after interventions. All projections transmit with the old weights before
+learning runs at the end of the timestep; updated weights affect the next step.
+
+1. Supply finite nonnegative amplitudes and `0 <= w_min < w_max`. Amplitudes and
+   bounds must use the parameter's weight unit: `nA`, `uS`, or `Quantity(value, "1")`
+   for dimensionless custom-synapse weights. Both trace time constants are positive
+   time quantities and default to `20 * lang.ms`.
+2. Updates run without gradients, clamp weights to the declared bounds, apply the
+   parameter constraint, then enforce excluded autapses. A constraint that moves
+   an active weight outside the plasticity bounds raises an error. Initial weights
+   must already satisfy the bounds; excluded autapses remain zero even with a
+   positive lower bound. Zero-valued dense connections can become nonzero.
+3. The first version accepts one trajectory (`batch_size=1`), direct spike inputs
+   or population spikes, and enabled dense projections with unshared parameters
+   targeting spiking populations. Structured connectivity, sparse initializers,
+   dataset batches, autograd and prepared streaming are rejected. `train` has no
+   plasticity argument, and internal training requests reject it.
+4. Public `simulate` resolves execution to eager kernels, highest precision and no
+   CUDA graph replay. Requested/resolved performance and the plasticity descriptor
+   appear in result metrics. Direct executor calls use the eager step loop and
+   their configured individual kernels, also without CUDA replay or autocast.
+5. `result.parameters` contains final adapted weights when retained. Dynamic weights
+   and learning traces are stored together under `plasticity/` in runtime
+   `custom_state`, independently of parameter retention. Pass the same `learning`
+   and `result.runtime_state` to continue; `save_runtime_state`/`load_runtime_state`
+   preserve both. Other static weights retain the ordinary checkpoint contract.
+   Changing or omitting the learning rules rejects continuation. Custom rules use
+   the existing importable extension descriptor contract. `learning.json()` and
+   `Plasticity.from_json(data)` round-trip the request separately from the graph.
+
+The [Plasticity example](/plasticity) covers every built-in and a custom rule,
+with step-by-step code, network diagrams and downloadable data. It produces weight trajectories, spike arrays,
+rule JSON and resumable state:
+
+```sh
+uv run python examples/plasticity/example.py
+```
+
+See [custom plasticity callbacks](/api/extensions#custom-plasticity) for the extension
+contract. Runtime state with plasticity is a learned trajectory snapshot: unlike
+ordinary runtime state, it includes the selected evolving weights. To branch with
+fresh learning state, start another simulation with explicitly transferred weights.
+
+#### Additional built-in learning rules
+
+Import these rules from `snnlab.plasticity`. They use the same simulation-only
+execution, bounds, constraint and continuation contracts as `PairSTDP`.
+
+1. **Weight-dependent pair STDP:** use `PairSTDP(..., weight_dependence="multiplicative")`.
+   Potentiation is multiplied by `(w_max - weight) / (w_max - w_min)` and
+   depression by `(weight - w_min) / (w_max - w_min)`. Here `weight` is the
+   current synaptic magnitude and `w_min`/`w_max` are its declared bounds.
+   This is a normalized linear weight-dependent variant; amplitudes retain
+   the weight unit. The default remains additive. Its JSON omits the default
+   mode so existing additive-rule runtime states remain compatible.
+2. **Triplet STDP:** `TripletSTDP(a2_plus=..., a2_minus=..., a3_plus=...,
+   a3_minus=..., tau_pre=..., tau_post=..., tau_x=..., tau_y=...,
+   w_min=..., w_max=...)` implements the all-to-all four-trace rule of
+   [Pfister and Gerstner (2006)](https://doi.org/10.1523/JNEUROSCI.1425-06.2006).
+   All four amplitudes are nonnegative quantities in the weight unit.
+   `tau_pre` and `tau_post` decay the ordinary pre/post traces; `tau_x`
+   and `tau_y` decay the additional pre/post traces, respectively. All four
+   time constants are positive ms quantities and must be supplied explicitly.
+   The extra post trace modulates potentiation at a post spike; the extra pre
+   trace modulates depression at a pre spike. Traces are read before adding
+   current spikes, excluding interactions between same-step events. Setting
+   both triplet amplitudes to zero recovers additive pair STDP.
+3. **Inhibitory STDP:** `InhibitorySTDP(eta=..., target_rate=..., w_min=...,
+   w_max=..., tau=20 * lang.ms)` implements
+   [Vogels-style symmetric inhibitory plasticity](https://doi.org/10.1126/science.1211095).
+   This requires an inhibitory projection and operates on its nonnegative
+   magnitude. `eta` is a nonnegative update amplitude in the weight unit;
+   `target_rate` is a nonnegative frequency quantity in Hz. `tau` is the shared
+   pre/post trace time constant. Each pre spike reads the decayed post trace
+   minus the offset `2 * tau_ms * target_rate_hz / 1000`; each post spike reads the
+   decayed pre trace. Both contributions multiply `eta`. Here `tau_ms` and
+   `target_rate_hz` are the numerical values in ms and Hz; division by 1000
+   converts the offset to a dimensionless spike count. Same-step coincidences
+   are excluded, consistent with the simulator's discrete timing convention.
+   The target is a rule setpoint, not a guarantee of convergence in any network.
+4. **Reward-modulated STDP:** `RewardModulatedSTDP` takes the pair-rule arguments
+   plus required `reward_input`, `tau_eligibility` and `tau_weight`. It combines
+   pair increments with eligibility and a signed reward, adapting the established
+   [three-factor learning-rule family](https://doi.org/10.3389/fncir.2015.00085).
+   Both additional time constants are positive ms quantities. Supply any reward
+   baseline subtraction externally; this is a local learning mechanism rather
+   than a complete reinforcement-learning algorithm.
+
+For the reward rule the exact implemented recurrence is:
+
+$$
+e_n = \exp(-\Delta t/\tau_e)e_{n-1} + \delta_n,
+\qquad
+\Delta w_n = R_n e_n\frac{\Delta t}{\tau_w}.
+$$
+
+Here $n$ indexes completed timesteps, $e_n$ is the eligibility matrix in weight
+units, $\delta_n$ is that step's pair increment before bounds or constraints,
+$R_n$ is the signed dimensionless reward sample, $\Delta t$ is the timestep in
+ms, $\tau_e$ is `tau_eligibility` in ms, $\tau_w$ is `tau_weight` in ms, and
+$\Delta w_n$ is the weight increment. Eligibility decays exponentially before
+receiving the pair increment. Weight integration uses the updated eligibility
+and a forward-Euler increment every step, including steps without spikes.
+Zero reward retains eligibility while leaving weights unchanged. This recurrence
+and normalization are SNNLab's discrete adaptation, rather than a claim to
+reproduce a specific experimental fit.
+
+Declare reward as a continuous dimensionless scalar graph input, then bind
+one signed value per timestep alongside the spike inputs:
+
+```python
+reward = net.input(
+    "reward",
+    shape=("time", "batch", 1),
+    signal_type="analog",
+    unit="1",
+)
+reward_binding = sim.DenseArrayBinding("reward", reward_values)
+```
+
+Set `reward_input="reward"` in the rule. Samples are held over their individual
+timesteps, not interpreted as instantaneous impulses. An impulse with fixed
+integrated area requires sample amplitude inversely proportional to the
+timestep. Reward spikes, masks, extra channels and nonfinite samples are
+rejected. Eligibility and spike traces persist together in runtime state;
+changing the input name or either time constant rejects continuation.
+The runnable example covers all built-ins and a custom Hebbian rule; its
+inhibitory panel has additional fixed excitation, and its reward panel uses
+positive/negative reward intervals. These panels illustrate behavior under
+different rules and drives, rather than benchmark learning performance.
 
 ### train
 

@@ -58,6 +58,24 @@ call. `parameter_map()` exposes parameters by graph parameter ID;
 `enforce_constraints()` applies declared constraints after an external
 optimizer step.
 
+## Simulation-only plasticity
+
+Pass `plasticity=Plasticity(rules={"projection_name": PairSTDP(...)})` to
+`simulate`, importing both classes from `snnlab.plasticity`. `CustomPlasticity`
+uses `snnlab.extensions.register_plasticity` callbacks. Built-ins also include
+weight-dependent pair STDP, `TripletSTDP`, `InhibitorySTDP` and
+`RewardModulatedSTDP` with an explicit signed scalar reward input.
+Local updates use delayed
+spike arrivals and emitted post spikes at the end of each timestep, without
+an optimizer or gradients. Final adapted weights are returned as parameters;
+learning traces and dynamic weights continue together through runtime state.
+The initial scope is dense, unshared spike projections and batch size one.
+Dataset batching, sparse/structured connectivity and prepared streaming are
+unsupported. `train` rejects plasticity. Public simulation selects eager kernels,
+highest precision and disables CUDA replay, reporting the resolved policy.
+See the [plasticity reference](../../../docs/content/docs/api/sim.mdx#online-plasticity-simulate-only)
+and run `uv run python examples/plasticity/example.py` for STDP and custom rules.
+
 ## Prepared streaming inference
 
 `prepare_stream(network, window_steps=10, batch_size=1)` creates a `StreamSession`

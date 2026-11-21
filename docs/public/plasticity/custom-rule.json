@@ -1,0 +1,35 @@
+{
+  "schema": "snnlab.plasticity/v1",
+  "rules": {
+    "drive": {
+      "kind": "custom_plasticity",
+      "definition": "examples.local_hebbian/v1",
+      "config": {
+        "amplitude": 0.005
+      },
+      "w_min": {
+        "value": 0.0,
+        "unit": "nA"
+      },
+      "w_max": {
+        "value": 0.8,
+        "unit": "nA"
+      }
+    }
+  },
+  "extensions": [
+    {
+      "category": "plasticity",
+      "definition": "examples.local_hebbian/v1",
+      "unit": "1",
+      "state_units": {
+        "coincidences": "1"
+      },
+      "classification": false,
+      "implementation": {
+        "function": "example:hebbian_step",
+        "initialize": "example:initialize_hebbian"
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "snnlab.plasticity/v1",
+  "rules": {
+    "drive": {
+      "kind": "inhibitory_stdp",
+      "eta": {
+        "value": 0.005,
+        "unit": "nA"
+      },
+      "target_rate": {
+        "value": 20.0,
+        "unit": "Hz"
+      },
+      "w_min": {
+        "value": 0.0,
+        "unit": "nA"
+      },
+      "w_max": {
+        "value": 0.8,
+        "unit": "nA"
+      },
+      "tau": {
+        "value": 20.0,
+        "unit": "ms"
+      }
+    }
+  }
+}

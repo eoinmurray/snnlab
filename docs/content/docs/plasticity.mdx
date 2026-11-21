@@ -1,0 +1,568 @@
+---
+title: Plasticity
+description: Adapt synaptic weights during simulation with pair, triplet, inhibitory, reward-modulated and custom learning rules.
+---
+
+Run a small current-based network for **200 ms**, learning from its spikes while
+`simulate` advances the dynamics. The example exercises additive and weight-dependent
+pair STDP, triplet STDP, homeostatic inhibitory STDP, reward-modulated STDP and a
+custom Hebbian rule. Each rule starts a separate trajectory with weights of 0.3 nA.
+
+![Two spike input channels connect to two current-based LIF cells through an excitatory projection named drive.](/plasticity/network.png)
+
+The diagram shows the base circuit. The inhibitory variant changes `drive` to
+an inhibitory projection and adds fixed excitation of 0.8 nA per connection.
+The reward variant adds a continuous scalar reward input. All variants use a
+1 ms timestep, batch size one and dense, unshared plastic weights.
+
+Plasticity is an explicit option on `simulate`; it is separate from gradient
+`train` and fixed-weight prepared streaming. The
+[plasticity API reference](/api/sim#online-plasticity-simulate-only) defines the
+rule parameters, timing conventions, equations and literature sources.
+
+## 1. Define the circuit
+
+```python
+def make_graph(*, inhibitory=False, reward=False):
+    net = lang.Network("plasticity", dt=1 * lang.ms)
+    events = net.input(
+        "events",
+        shape=("time", "batch", 2),
+        signal_type="spikes",
+        unit="spike",
+    )
+    if reward:
+        net.input(
+            "reward",
+            shape=("time", "batch", 1),
+            signal_type="analog",
+            unit="1",
+        )
+    cells = net.population(
+        "cells",
+        size=2,
+        neuron=lang.LIF(
+            resting_mv=0,
+            reset_mv=0,
+            initial_voltage_mv=0,
+            threshold_mv=0.8,
+            tau_mem=20 * lang.ms,
+        ),
+    )
+    net.connect(
+        events,
+        cells.inhibitory if inhibitory else cells.excitatory,
+        name="drive",
+        synapse=lang.ExponentialCurrent(tau=2 * lang.ms),
+        weight=lang.Constant(0.3),
+        initialization_scaling="direct",
+        constraint=lang.NonNegative(),
+    )
+    if inhibitory:
+        net.connect(
+            events,
+            cells.excitatory,
+            name="fixed_excitation",
+            synapse=lang.ExponentialCurrent(tau=2 * lang.ms),
+            weight=lang.Constant(0.8),
+            initialization_scaling="direct",
+        )
+    net.output("spikes", cells.spikes)
+    return lang.compile(net, target=None)
+```
+
+Weights are specified directly in nA. `initialization_scaling="direct"` prevents
+fan-in normalization from changing the starting 0.3 nA value. The cells have the
+same parameters and receive identical weight columns, so curves for the two
+postsynaptic targets overlap in the result figure.
+
+## 2. Choose built-in rules
+
+The example imports rules from `snnlab.plasticity` and builds a separate
+`Plasticity(rules={"drive": rule})` request for each one. Parameters below are
+illustrative choices for this circuit, not universal defaults or fitted
+experimental parameter sets.
+
+```python
+def learning_rules(definition):
+    pair = dict(
+        a_plus=0.008 * lang.nA,
+        a_minus=0.004 * lang.nA,
+        tau_pre=10 * lang.ms,
+        tau_post=10 * lang.ms,
+        w_min=0 * lang.nA,
+        w_max=0.8 * lang.nA,
+    )
+    rules = {
+        "STDP": PairSTDP(**pair),
+        "Weight-dependent": PairSTDP(**pair, weight_dependence="multiplicative"),
+        "Triplet": TripletSTDP(
+            a2_plus=0.002 * lang.nA,
+            a2_minus=0.004 * lang.nA,
+            a3_plus=0.006 * lang.nA,
+            a3_minus=0 * lang.nA,
+            tau_pre=10 * lang.ms,
+            tau_post=20 * lang.ms,
+            tau_x=40 * lang.ms,
+            tau_y=40 * lang.ms,
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+        "Inhibitory": InhibitorySTDP(
+            eta=0.005 * lang.nA,
+            target_rate=20 * lang.Hz,
+            tau=20 * lang.ms,
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+        "Reward-modulated": RewardModulatedSTDP(
+            **pair,
+            reward_input="reward",
+            tau_eligibility=50 * lang.ms,
+            tau_weight=20 * lang.ms,
+        ),
+        "Custom Hebbian": CustomPlasticity(
+            definition=definition,
+            config={"amplitude": 0.005},
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+    }
+    return {name: Plasticity(rules={"drive": rule}) for name, rule in rules.items()}
+```
+
+1. **Pair STDP** accumulates exponentially decaying pre/post traces and applies
+   additive timing-based updates. Its weight-dependent variant scales each
+   update by the normalized distance to the relevant weight bound.
+2. **Triplet STDP** adds slow pre/post traces to the pair terms. Both pair and
+   triplet contributions remain subject to the same weight bounds.
+3. **Inhibitory STDP** adapts inhibitory magnitudes using a target-rate parameter.
+   The extra fixed excitatory drive lets the postsynaptic cells fire while their
+   incoming inhibition changes.
+4. **Reward-modulated STDP** stores pair increments in an eligibility trace and
+   converts them to weight changes using the signed reward input. Zero reward
+   allows eligibility to decay without changing weights.
+
+## 3. Register a custom learning rule
+
+The custom rule increments weights when pre and post spikes occur in the same
+timestep and counts those coincidences in tensor state. This explicitly differs
+from the built-in STDP convention, which excludes newly formed same-step pairs.
+
+```python
+def initialize_hebbian(ctx):
+    return {"coincidences": ctx.weights.new_zeros(ctx.weights.shape)}
+
+
+def hebbian_step(ctx):
+    coincidences = ctx.pre_spikes.T @ ctx.post_spikes
+    return ctx.config["amplitude"] * coincidences, {
+        "coincidences": ctx.state["coincidences"] + coincidences
+    }
+```
+
+```python
+definition = "examples.local_hebbian/v1"
+extensions.register_plasticity(
+    definition,
+    "example:hebbian_step",
+    initialize="example:initialize_hebbian",
+    state_units={"coincidences": "1"},
+)
+```
+
+The callback returns a weight increment and its updated state. The configured
+`amplitude` is 0.005 nA per coincidence. The engine applies bounds and parameter
+constraints and saves the coincidence counts with the dynamic weights.
+See [custom plasticity callbacks](/api/extensions#custom-plasticity) for the
+complete contract.
+
+Keep the downloaded script named `example.py`: the registration uses importable
+`example:...` callback references. When loading its custom-rule JSON in a fresh
+process, place the directory containing that file on `PYTHONPATH`.
+
+## 4. Advance consecutive input windows
+
+Input channel 0 spikes every 5 ms, starting at 0 ms. Channel 1 spikes every 7 ms,
+starting at 2 ms. Reward is +1 from 60 to 100 ms, −1 from 140 to 180 ms, and zero
+elsewhere; both intervals exclude their ending timestamp. These are held scalar
+samples, not instantaneous reward impulses.
+
+```python
+events = torch.zeros(200, 1, 2)
+events[::5, 0, 0] = 1
+events[2::7, 0, 1] = 1
+rewards = torch.zeros(200, 1, 1)
+rewards[60:100] = 1
+rewards[140:180] = -1
+```
+
+Each call delivers ten numerical steps. Passing the previous runtime state
+carries membrane voltage, synaptic currents, delayed events, plastic weights
+and learning traces into the next call.
+
+```python
+def simulate_rule(request, events, rewards, stem):
+    rule = request.rules["drive"]
+    bundle = make_graph(
+        inhibitory=isinstance(rule, InhibitorySTDP),
+        reward=isinstance(rule, RewardModulatedSTDP),
+    )
+    viz.render_diagram(
+        lang.diagram(bundle),
+        OUTPUT_DIR / ("network.png" if stem == "stdp" else f"{stem}-network.png"),
+    )
+    state = None
+    weights = [np.full((2, 2), 0.3)]
+    outputs = []
+    for start in range(0, len(events), 10):
+        bindings = [sim.DenseArrayBinding("events", events[start : start + 10])]
+        if isinstance(rule, RewardModulatedSTDP):
+            bindings.append(
+                sim.DenseArrayBinding("reward", rewards[start : start + 10])
+            )
+        result = sim.simulate(
+            graph=bundle.graph,
+            device="cpu",
+            diagnostics=False,
+            input_bindings=bindings,
+            plasticity=request,
+            runtime_state=state,
+        )
+        state = result.runtime_state
+        weights.append(result.parameters["drive.weight"].numpy())
+        outputs.append(result.outputs["spikes"].numpy())
+    history = np.stack(weights)
+    np.savez(
+        OUTPUT_DIR / f"{stem}.npz",
+        weights=history,
+        spikes=np.concatenate(outputs),
+        input_spikes=events.numpy(),
+        time_ms=np.arange(0, 201, 10),
+        reward=rewards.numpy()
+        if isinstance(rule, RewardModulatedSTDP)
+        else np.empty(0),
+    )
+    sim.save_runtime_state(OUTPUT_DIR / f"{stem}-state", state)
+    (OUTPUT_DIR / f"{stem}-rule.json").write_text(
+        json.dumps(request.json(), indent=2) + "\n"
+    )
+    return history
+```
+
+All projections transmit using their existing weights before the learning phase
+at the end of a timestep. Built-ins read the actual delayed presynaptic arrivals
+and emitted postsynaptic spikes. Weight updates affect subsequent transmission.
+Public plastic simulations use eager execution, highest precision and no CUDA
+graph replay. Repeated `simulate` calls here illustrate continuation; they are
+not a prepared streaming session or a performance benchmark.
+
+## 5. Run and inspect the results
+
+From the repository root:
+
+```sh
+uv run python examples/plasticity/example.py
+```
+
+Install Graphviz so its `dot` executable is available for diagram rendering.
+Download the [complete script](/plasticity/example.py) to run it separately with
+SNNLab installed. Each run replaces the script's own `results/` directory.
+
+![Weight trajectories for additive pair, weight-dependent pair, triplet, inhibitory, reward-modulated and custom Hebbian learning over 200 ms. Green and red shading mark positive and negative reward intervals.](/plasticity/plasticity.png)
+
+The reward panel shows weights holding during zero reward, increasing during
+positive reward and decreasing during negative reward for this input sequence.
+Several other rules approach their configured upper bound. The inhibitory
+panel uses a different circuit, and the rules use different parameters; this
+figure illustrates their behavior rather than comparing learning quality or
+establishing homeostatic convergence.
+
+The [figure](/plasticity/plasticity.png), rule descriptions and recorded arrays
+are available to download:
+
+| Rule | Arrays | Rule JSON |
+| --- | --- | --- |
+| Additive pair | [stdp.npz](/plasticity/stdp.npz) | [Configuration](/plasticity/stdp-rule.json) |
+| Weight-dependent pair | [weight-dependent.npz](/plasticity/weight-dependent.npz) | [Configuration](/plasticity/weight-dependent-rule.json) |
+| Triplet | [triplet.npz](/plasticity/triplet.npz) | [Configuration](/plasticity/triplet-rule.json) |
+| Inhibitory | [inhibitory.npz](/plasticity/inhibitory.npz) | [Configuration](/plasticity/inhibitory-rule.json) |
+| Reward-modulated | [reward-modulated.npz](/plasticity/reward-modulated.npz) | [Configuration](/plasticity/reward-modulated-rule.json) |
+| Custom Hebbian | [custom.npz](/plasticity/custom.npz) | [Configuration](/plasticity/custom-rule.json) |
+
+Each array file contains:
+
+1. `weights`: shape `(21, 2, 2)`, sampled initially and after each 10 ms call,
+   with axes `(sample, source, target)` and values in nA.
+2. `time_ms`: the 21 weight-sampling times from 0 through 200 ms.
+3. `input_spikes` and `spikes`: shape `(200, 1, 2)`, with axes `(step, batch, cell)`.
+   Their rows are 1 ms simulation slots, not the 10 ms weight-sampling times.
+4. `reward`: shape `(200, 1, 1)` for the reward rule and an empty array otherwise.
+
+The local run also writes network diagrams, `<rule>-rule.json` files and
+`<rule>-state/` directories. State directories contain both `manifest.json`
+and `tensors.npz`; preserve both for continuation. The JSON configuration alone
+does not contain learned weights or dynamic state.
+
+## 6. Restore a learned trajectory
+
+After running the script, restore the reward rule and continue for another
+10 ms. Run this from the script's directory, with its `example.py` importable:
+
+```python
+import json
+from pathlib import Path
+
+import torch
+
+from example import make_graph
+from snnlab import sim
+from snnlab.plasticity import Plasticity
+
+learning = Plasticity.from_json(
+    json.loads(Path("results/reward-modulated-rule.json").read_text()),
+)
+state = sim.load_runtime_state("results/reward-modulated-state")
+continued = sim.simulate(
+    graph=make_graph(reward=True).graph,
+    device="cpu",
+    plasticity=learning,
+    runtime_state=state,
+    input_bindings=[
+        sim.DenseArrayBinding("events", torch.zeros(10, 1, 2)),
+        sim.DenseArrayBinding("reward", torch.ones(10, 1, 1)),
+    ],
+)
+```
+
+The result reaches 210 completed steps. Changing the learning rule or omitting
+it rejects continuation; keep the same rule configuration and graph. The
+inhibitory variant's extra excitatory weights remain static and must also be
+restored consistently if you change their initialization or load a checkpoint.
+
+## 7. Full script
+
+```python
+import json
+import shutil
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from snnlab import extensions, lang, sim, viz
+from snnlab.plasticity import (
+    CustomPlasticity,
+    InhibitorySTDP,
+    PairSTDP,
+    Plasticity,
+    RewardModulatedSTDP,
+    TripletSTDP,
+)
+
+OUTPUT_DIR = Path(__file__).resolve().parent / "results"
+
+
+def initialize_hebbian(ctx):
+    return {"coincidences": ctx.weights.new_zeros(ctx.weights.shape)}
+
+
+def hebbian_step(ctx):
+    coincidences = ctx.pre_spikes.T @ ctx.post_spikes
+    return ctx.config["amplitude"] * coincidences, {
+        "coincidences": ctx.state["coincidences"] + coincidences
+    }
+
+
+def make_graph(*, inhibitory=False, reward=False):
+    net = lang.Network("plasticity", dt=1 * lang.ms)
+    events = net.input(
+        "events",
+        shape=("time", "batch", 2),
+        signal_type="spikes",
+        unit="spike",
+    )
+    if reward:
+        net.input(
+            "reward",
+            shape=("time", "batch", 1),
+            signal_type="analog",
+            unit="1",
+        )
+    cells = net.population(
+        "cells",
+        size=2,
+        neuron=lang.LIF(
+            resting_mv=0,
+            reset_mv=0,
+            initial_voltage_mv=0,
+            threshold_mv=0.8,
+            tau_mem=20 * lang.ms,
+        ),
+    )
+    net.connect(
+        events,
+        cells.inhibitory if inhibitory else cells.excitatory,
+        name="drive",
+        synapse=lang.ExponentialCurrent(tau=2 * lang.ms),
+        weight=lang.Constant(0.3),
+        initialization_scaling="direct",
+        constraint=lang.NonNegative(),
+    )
+    if inhibitory:
+        net.connect(
+            events,
+            cells.excitatory,
+            name="fixed_excitation",
+            synapse=lang.ExponentialCurrent(tau=2 * lang.ms),
+            weight=lang.Constant(0.8),
+            initialization_scaling="direct",
+        )
+    net.output("spikes", cells.spikes)
+    return lang.compile(net, target=None)
+
+
+def learning_rules(definition):
+    pair = dict(
+        a_plus=0.008 * lang.nA,
+        a_minus=0.004 * lang.nA,
+        tau_pre=10 * lang.ms,
+        tau_post=10 * lang.ms,
+        w_min=0 * lang.nA,
+        w_max=0.8 * lang.nA,
+    )
+    rules = {
+        "STDP": PairSTDP(**pair),
+        "Weight-dependent": PairSTDP(**pair, weight_dependence="multiplicative"),
+        "Triplet": TripletSTDP(
+            a2_plus=0.002 * lang.nA,
+            a2_minus=0.004 * lang.nA,
+            a3_plus=0.006 * lang.nA,
+            a3_minus=0 * lang.nA,
+            tau_pre=10 * lang.ms,
+            tau_post=20 * lang.ms,
+            tau_x=40 * lang.ms,
+            tau_y=40 * lang.ms,
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+        "Inhibitory": InhibitorySTDP(
+            eta=0.005 * lang.nA,
+            target_rate=20 * lang.Hz,
+            tau=20 * lang.ms,
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+        "Reward-modulated": RewardModulatedSTDP(
+            **pair,
+            reward_input="reward",
+            tau_eligibility=50 * lang.ms,
+            tau_weight=20 * lang.ms,
+        ),
+        "Custom Hebbian": CustomPlasticity(
+            definition=definition,
+            config={"amplitude": 0.005},
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+    }
+    return {name: Plasticity(rules={"drive": rule}) for name, rule in rules.items()}
+
+
+def simulate_rule(request, events, rewards, stem):
+    rule = request.rules["drive"]
+    bundle = make_graph(
+        inhibitory=isinstance(rule, InhibitorySTDP),
+        reward=isinstance(rule, RewardModulatedSTDP),
+    )
+    viz.render_diagram(
+        lang.diagram(bundle),
+        OUTPUT_DIR / ("network.png" if stem == "stdp" else f"{stem}-network.png"),
+    )
+    state = None
+    weights = [np.full((2, 2), 0.3)]
+    outputs = []
+    for start in range(0, len(events), 10):
+        bindings = [sim.DenseArrayBinding("events", events[start : start + 10])]
+        if isinstance(rule, RewardModulatedSTDP):
+            bindings.append(
+                sim.DenseArrayBinding("reward", rewards[start : start + 10])
+            )
+        result = sim.simulate(
+            graph=bundle.graph,
+            device="cpu",
+            diagnostics=False,
+            input_bindings=bindings,
+            plasticity=request,
+            runtime_state=state,
+        )
+        state = result.runtime_state
+        weights.append(result.parameters["drive.weight"].numpy())
+        outputs.append(result.outputs["spikes"].numpy())
+    history = np.stack(weights)
+    np.savez(
+        OUTPUT_DIR / f"{stem}.npz",
+        weights=history,
+        spikes=np.concatenate(outputs),
+        input_spikes=events.numpy(),
+        time_ms=np.arange(0, 201, 10),
+        reward=rewards.numpy()
+        if isinstance(rule, RewardModulatedSTDP)
+        else np.empty(0),
+    )
+    sim.save_runtime_state(OUTPUT_DIR / f"{stem}-state", state)
+    (OUTPUT_DIR / f"{stem}-rule.json").write_text(
+        json.dumps(request.json(), indent=2) + "\n"
+    )
+    return history
+
+
+def main():
+    if OUTPUT_DIR.is_symlink():
+        OUTPUT_DIR.unlink()
+    elif OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True)
+    definition = "examples.local_hebbian/v1"
+    extensions.register_plasticity(
+        definition,
+        "example:hebbian_step",
+        initialize="example:initialize_hebbian",
+        state_units={"coincidences": "1"},
+    )
+    events = torch.zeros(200, 1, 2)
+    events[::5, 0, 0] = 1
+    events[2::7, 0, 1] = 1
+    rewards = torch.zeros(200, 1, 1)
+    rewards[60:100] = 1
+    rewards[140:180] = -1
+    fig, axes = plt.subplots(2, 3, figsize=(13, 7))
+    for (label, request), ax in zip(
+        learning_rules(definition).items(), axes.flat, strict=True
+    ):
+        stem = {"STDP": "stdp", "Custom Hebbian": "custom"}.get(label, label.lower())
+        history = simulate_rule(request, events, rewards, stem)
+        for source in range(2):
+            for target in range(2):
+                ax.plot(
+                    np.arange(0, 201, 10),
+                    history[:, source, target],
+                    label=f"{source} → {target}",
+                )
+        if isinstance(request.rules["drive"], RewardModulatedSTDP):
+            ax.axvspan(60, 100, color="green", alpha=0.1)
+            ax.axvspan(140, 180, color="red", alpha=0.1)
+        ax.set(title=label, xlabel="Time (ms)", ylabel="Weight (nA)", ylim=(0, 0.85))
+        ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "plasticity.png", dpi=160)
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    main()
+```

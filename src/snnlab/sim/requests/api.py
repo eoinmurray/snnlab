@@ -14,6 +14,7 @@ from typing import Any, Literal
 import torch
 
 from snnlab.lang.compilation.bundles import Bundle
+from snnlab.plasticity import Plasticity
 from snnlab.sim.artifacts.snapshots import SnapshotSpec
 from snnlab.sim.diagnostics.tracing import TraceSpec
 from snnlab.sim.inputs.bindings import InputBinding, TargetArrayBinding
@@ -88,6 +89,7 @@ def simulate(
     diagnostics: bool = True,
     checkpoint: Path | None = None,
     runtime_state: GraphRuntimeState | None = None,
+    plasticity: Plasticity | None = None,
     interventions: Sequence[Intervention] = (),
     resets: Sequence[ResetVoltage] = (),
     decisions: DecisionSegments | None = None,
@@ -109,7 +111,11 @@ def simulate(
     snapshot: str | Path | SnapshotSpec | None = None,
     inference_overrides: Mapping[str, Any] | None = None,
 ) -> ExecutionResult:
-    """Simulate a graph, optionally loading learned weights for inference."""
+    """Simulate a graph with optional learned weights and local plasticity.
+
+    Plasticity is simulation-only, single-trajectory local learning. Its dynamic
+    weights and traces resume together through runtime_state. See snnlab.plasticity.
+    """
     policy = _resolve_performance(
         performance,
         projection_mode=projection_mode,
@@ -122,6 +128,7 @@ def simulate(
     spec = ExecutionSpec(
         **asdict(policy),
         kind="simulate",
+        plasticity=plasticity,
         bundle=bundle,
         graph=graph,
         training=training,

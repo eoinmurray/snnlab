@@ -142,7 +142,9 @@ def build(spec: ExecutionSpec) -> ExecutionResult:
     device = resolve_device(spec.device)
     started = time.perf_counter()
     trainable = (
-        training.get("resolved_parameters", {}).get("trainable", []) if training else []
+        training.get("resolved_parameters", {}).get("trainable", [])
+        if training and spec.plasticity is None
+        else []
     )
     surrogate = (training or {}).get("surrogate") or {}
     surrogate_slope = float(surrogate.get("slope", M.SURROGATE_SLOPE))
@@ -307,6 +309,32 @@ def _apply_projection_scales(overrides, built):
     return scales
 
 
+def _plasticity_build_spec(spec, sources, build_spec):
+    if spec.plasticity is not None and sources.dataset is not None:
+        raise ValueError(
+            "plasticity requires direct inputs; dataset batches are independent trajectories"
+        )
+    if spec.plasticity is not None:
+        build_spec = replace(
+            build_spec,
+            compile_mode=None,
+            cuda_graphs="off",
+            precision="highest",
+        )
+    return build_spec
+
+
+def _plasticity_snapshot_weights(spec, model, state):
+    if spec.snapshot is None or spec.plasticity is None or state is None:
+        return None
+    projections = {p.id: p for p in model.plan.projections}
+    return {
+        projections[name].parameter: state.custom_state[f"plasticity/{name}/weight"]
+        for name in spec.plasticity.rules
+        if name in projections and f"plasticity/{name}/weight" in state.custom_state
+    }
+
+
 def simulate(
     spec: ExecutionSpec, *, runtime_state: GraphRuntimeState | None = None
 ) -> ExecutionResult:
@@ -357,6 +385,7 @@ def simulate(
             "unit": "ms",
         }
         build_spec = replace(spec, graph=recompiled_graph, bundle=None)
+    build_spec = _plasticity_build_spec(spec, sources, build_spec)
     built = build(build_spec)
     assert isinstance(built.model, GraphExecutor)
     device = resolve_device(spec.device)
@@ -425,7 +454,12 @@ def simulate(
         else None,
         initialization=built.model.initialization_metadata,
     )
-    snapshots.capture("start")
+    snapshots.capture(
+        "start",
+        parameter_overrides=_plasticity_snapshot_weights(
+            spec, built.model, snapshot_runtime_state
+        ),
+    )
     if isinstance(resolved_inputs, DatasetProvider):
         if spec.resets or spec.decisions is not None:
             raise ValueError(
@@ -453,6 +487,7 @@ def simulate(
     else:
         result = built.model(
             resolved_inputs.tensors,
+            plasticity=spec.plasticity,
             diagnostics=spec.diagnostics,
             runtime_state=runtime_state
             if runtime_state is not None

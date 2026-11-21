@@ -64,8 +64,30 @@ class SynapseContext:
     config: Mapping[str, Any]
 
 
+@dataclass(frozen=True)
+class PlasticityInitContext:
+    """Initialize local state using a private copy of [source, target] weights."""
+
+    weights: Any
+    dt_ms: float
+    config: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class PlasticityContext:
+    """Spike arrivals and postsynaptic emissions for one completed timestep."""
+
+    weights: Any
+    pre_spikes: Any
+    post_spikes: Any
+    state: Mapping[str, Any]
+    dt_ms: float
+    config: Mapping[str, Any]
+
+
 _REGISTRY: dict[tuple[str, str], Definition] = {}
 _CATEGORIES = {
+    "plasticity",
     "neuron",
     "synapse",
     "initializer",
@@ -314,6 +336,36 @@ def register_neuron(
         package=package,
         package_version=package_version,
         capture_safe=capture_safe,
+    )
+
+
+def register_plasticity(
+    name,
+    step,
+    *,
+    initialize,
+    state_units=None,
+    validate=None,
+    package=None,
+    package_version=None,
+):
+    """Register initialize(ctx) -> state and step(ctx) -> (delta, state).
+
+    Callbacks run without gradients and receive private tensors. State keys,
+    shapes, devices and dtypes must stay fixed; all results must be finite.
+    Importable module functions permit portable Plasticity JSON round trips.
+    """
+    if initialize is None:
+        raise ValueError("custom plasticity requires an initializer")
+    return register(
+        "plasticity",
+        name,
+        step,
+        initialize=initialize,
+        state_units=state_units,
+        validate=validate,
+        package=package,
+        package_version=package_version,
     )
 
 

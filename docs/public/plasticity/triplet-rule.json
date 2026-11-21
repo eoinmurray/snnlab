@@ -1,0 +1,48 @@
+{
+  "schema": "snnlab.plasticity/v1",
+  "rules": {
+    "drive": {
+      "kind": "triplet_stdp",
+      "a2_plus": {
+        "value": 0.002,
+        "unit": "nA"
+      },
+      "a2_minus": {
+        "value": 0.004,
+        "unit": "nA"
+      },
+      "a3_plus": {
+        "value": 0.006,
+        "unit": "nA"
+      },
+      "a3_minus": {
+        "value": 0.0,
+        "unit": "nA"
+      },
+      "tau_pre": {
+        "value": 10.0,
+        "unit": "ms"
+      },
+      "tau_post": {
+        "value": 20.0,
+        "unit": "ms"
+      },
+      "tau_x": {
+        "value": 40.0,
+        "unit": "ms"
+      },
+      "tau_y": {
+        "value": 40.0,
+        "unit": "ms"
+      },
+      "w_min": {
+        "value": 0.0,
+        "unit": "nA"
+      },
+      "w_max": {
+        "value": 0.8,
+        "unit": "nA"
+      }
+    }
+  }
+}

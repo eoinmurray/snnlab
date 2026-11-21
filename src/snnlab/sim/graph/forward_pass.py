@@ -13,6 +13,7 @@ from snnlab import extensions as E
 from snnlab._shared import neurons as N
 from snnlab._shared.gains import sample as sample_gain
 from snnlab._shared.spatial import pool_tensor, signal_spatial_shape, structured_drive
+from snnlab.plasticity import Plasticity
 from snnlab.sim.artifacts.inference import retention_identity
 from snnlab.sim.diagnostics.tracing import TraceSession, current_trace
 from snnlab.sim.graph import dynamics as M
@@ -86,6 +87,7 @@ class _ForwardOptions:
 
     diagnostics: bool
     runtime_state: GraphRuntimeState | None
+    plasticity: Plasticity | None
     initial_state: Any
     interventions: Sequence[Intervention]
     resets: Sequence[ResetVoltage]
@@ -140,6 +142,7 @@ class _ForwardContext:
     spatial_operations: dict[str, Any] = field(init=False)
     block_reasons: list[str] = field(init=False)
     compiler_fallback: str | None = field(init=False)
+    plasticity_session: Any = field(init=False, default=None)
 
 
 @dataclass(slots=True)
@@ -171,6 +174,7 @@ def run_forward_pass(
     *,
     diagnostics: bool = True,
     runtime_state: GraphRuntimeState | None = None,
+    plasticity: Plasticity | None = None,
     initial_state=None,
     interventions: Sequence[Intervention] = (),
     resets: Sequence[ResetVoltage] = (),
@@ -190,6 +194,7 @@ def run_forward_pass(
     options = _ForwardOptions(
         diagnostics=diagnostics,
         runtime_state=runtime_state,
+        plasticity=plasticity,
         initial_state=initial_state,
         interventions=interventions,
         resets=resets,
@@ -214,12 +219,33 @@ def run_forward_pass(
 
         apply_presentation_state(forward, runtime, initial_state)
     _prepare_forward_context(forward, runtime)
+    if plasticity is not None:
+        from snnlab.sim.runtime.plasticity import PlasticitySession
+
+        forward.plasticity_session = PlasticitySession(
+            plasticity,
+            executor,
+            inputs=forward.inputs,
+            batch=forward.batch,
+            saved=runtime_state.custom_state if runtime_state is not None else None,
+        )
+        forward.effective_weights.update(forward.plasticity_session.weights)
+        runtime.custom_state.update(forward.plasticity_session.tensors())
     _select_execution_path(forward, runtime)
     if not forward.block_reasons:
         _run_compiled_blocks(forward, runtime)
     else:
         _run_eager_steps(forward, runtime)
-    return _assemble_forward_result(forward, runtime)
+    result, signals = _assemble_forward_result(forward, runtime)
+    if forward.plasticity_session is not None:
+        forward.plasticity_session.commit()
+        result.metrics["plasticity"] = {
+            **plasticity.json(),
+            "execution": "eager",
+            "cuda_graphs": "off",
+            "timing": "arrival_based_end_of_step",
+        }
+    return result, signals
 
 
 def _validate_forward_inputs(forward: _ForwardContext, runtime: _ForwardState) -> None:
@@ -334,6 +360,18 @@ def _restore_runtime_state(forward: _ForwardContext, runtime: _ForwardState) -> 
     else:
         forward.expected_compatibility = forward.prepared["compatibility"]
         forward.expected_signature = forward.prepared["signature"]
+    if forward.options.plasticity is not None:
+        import hashlib
+        import json
+
+        forward.expected_compatibility = {
+            **forward.expected_compatibility,
+            "plasticity": forward.options.plasticity.json(),
+        }
+        encoded = json.dumps(
+            forward.expected_compatibility, sort_keys=True, separators=(",", ":")
+        ).encode()
+        forward.expected_signature = "sha256:" + hashlib.sha256(encoded).hexdigest()
     if forward.probe is not None:
         forward.probe.mark("State restore / init")
     if forward.options.runtime_state is None:
@@ -737,7 +775,12 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
             )
         runtime.continuous_histories[signal] = list(values.unbind(0))
         runtime.custom_state[state_key] = values
-    if set(saved_custom) - set(runtime.custom_state):
+    unexpected_custom = set(saved_custom) - set(runtime.custom_state)
+    if forward.options.plasticity is not None:
+        unexpected_custom = {
+            key for key in unexpected_custom if not key.startswith("plasticity/")
+        }
+    if unexpected_custom:
         raise ValueError("runtime state has unexpected custom state tensors")
     runtime.state_traces = {}
     if not isinstance(forward.options.retain_outputs, bool):
@@ -869,7 +912,9 @@ def _prepare_forward_context(forward: _ForwardContext, runtime: _ForwardState) -
 
 
 def _select_execution_path(forward: _ForwardContext, runtime: _ForwardState) -> None:
-    forward.block_reasons = []
+    forward.block_reasons = (
+        ["online plasticity"] if forward.options.plasticity is not None else []
+    )
     forward.compiler_fallback = (
         f"PyTorch {'.'.join(torch.__version__.split('.')[:2])} reduced-precision CPU uses eager tensor graphs"
         if forward.executor.compile_mode is not None
@@ -1070,6 +1115,7 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
         )
         forward.segments.reset(runtime.completed_steps + t, runtime.voltage)
         step_pre_reset = {}
+        plastic_arrivals = {}
         new_spikes: dict[str, torch.Tensor] = {}
         source_cache = {}
         # Freeze every continuous population source before any membrane
@@ -1140,6 +1186,11 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
                     runtime.conductance[key].zero_()
                     continue
                 source = projection_source(projection.source, projection.delay_steps)
+                if (
+                    forward.plasticity_session is not None
+                    and projection.id in forward.plasticity_session.states
+                ):
+                    plastic_arrivals[projection.id] = source
 
                 def project(*, projection=projection, source=source):
                     config = forward.projection_rows[projection.id].get("connectivity")
@@ -1282,6 +1333,9 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
             new_spikes[name] = _intervene(
                 forward, name, new_spikes[name], runtime.completed_steps + t
             )
+        if forward.plasticity_session is not None:
+            forward.plasticity_session.step(plastic_arrivals, new_spikes, t)
+            runtime.custom_state.update(forward.plasticity_session.tensors())
         for category, states in (
             ("neuron", runtime.neuron_states),
             ("synapse", runtime.synapse_states),

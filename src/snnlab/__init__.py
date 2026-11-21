@@ -1,13 +1,21 @@
 """Author, simulate and visualise spiking neural networks.
 
-Subpackages are imported on demand: lang, sim, viz, analysis, meanfield, extensions.
+Subpackages are imported on demand: lang, sim, viz, analysis, meanfield, extensions, plasticity.
 """
 
 from importlib import import_module
 
-__version__ = "0.32.3"
+__version__ = "0.33.0"
 
-_SUBPACKAGES = ("lang", "sim", "viz", "analysis", "meanfield", "extensions")
+_SUBPACKAGES = (
+    "lang",
+    "sim",
+    "viz",
+    "analysis",
+    "meanfield",
+    "extensions",
+    "plasticity",
+)
 __all__ = [*_SUBPACKAGES, "__version__"]
 
 
