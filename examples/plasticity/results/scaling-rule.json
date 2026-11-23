@@ -1,0 +1,27 @@
+{
+  "schema": "snnlab.plasticity/v1",
+  "rules": {},
+  "scaling": {
+    "drive": {
+      "kind": "synaptic_scaling",
+      "target_rate": {
+        "value": 20.0,
+        "unit": "Hz"
+      },
+      "w_min": {
+        "value": 0.0,
+        "unit": "nA"
+      },
+      "w_max": {
+        "value": 0.8,
+        "unit": "nA"
+      },
+      "tau_rate": {
+        "value": 100000.0,
+        "unit": "ms"
+      },
+      "beta": 4e-05,
+      "gamma": 1e-07
+    }
+  }
+}

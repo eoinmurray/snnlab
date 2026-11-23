@@ -1,12 +1,15 @@
 ---
 title: Plasticity
-description: Adapt synaptic weights during simulation with pair, triplet, inhibitory, reward-modulated and custom learning rules.
+description: Adapt synaptic weights with every built-in learning rule, independent synaptic scaling and custom callbacks.
 ---
 
 Run a small current-based network for **200 ms**, learning from its spikes while
 `simulate` advances the dynamics. The example exercises additive and weight-dependent
-pair STDP, triplet STDP, homeostatic inhibitory STDP, reward-modulated STDP and a
-custom Hebbian rule. Each rule starts a separate trajectory with weights of 0.3 nA.
+pair STDP, nonlinear pair STDP, voltage-based STDP, calcium-based learning,
+triplet STDP, homeostatic inhibitory STDP, reward-modulated STDP, independent
+synaptic scaling and a custom Hebbian rule. Each starts a separate trajectory
+with weights of 0.3 nA. Nonlinear, voltage, calcium and scaling specifications
+were added in SNNLab 0.34.0; all learning remains explicitly opt-in.
 
 ![Two spike input channels connect to two current-based LIF cells through an excitatory projection named drive.](/plasticity/network.png)
 
@@ -79,7 +82,8 @@ postsynaptic targets overlap in the result figure.
 ## 2. Choose built-in rules
 
 The example imports rules from `snnlab.plasticity` and builds a separate
-`Plasticity(rules={"drive": rule})` request for each one. Parameters below are
+`Plasticity(rules={"drive": rule})` request for each local rule. Scaling alone
+uses `rules={}` and a separate `scaling` mapping. Parameters below are
 illustrative choices for this circuit, not universal defaults or fitted
 experimental parameter sets.
 
@@ -96,6 +100,24 @@ def learning_rules(definition):
     rules = {
         "STDP": PairSTDP(**pair),
         "Weight-dependent": PairSTDP(**pair, weight_dependence="multiplicative"),
+        "Nonlinear": NonlinearSTDP(**pair, mu_plus=0.5, mu_minus=1.5),
+        "Voltage": VoltageSTDP(
+            a_plus=0.008 * lang.nA,
+            a_minus=0.004 * lang.nA,
+            theta_minus=0.2 * lang.mV,
+            theta_plus=0.6 * lang.mV,
+            voltage_rest=0 * lang.mV,
+            spike_voltage=1 * lang.mV,
+            tau_pre=10 * lang.ms,
+            tau_minus=10 * lang.ms,
+            tau_plus=10 * lang.ms,
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+        "Calcium": CalciumPlasticity(
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
         "Triplet": TripletSTDP(
             a2_plus=0.002 * lang.nA,
             a2_minus=0.004 * lang.nA,
@@ -128,7 +150,18 @@ def learning_rules(definition):
             w_max=0.8 * lang.nA,
         ),
     }
-    return {name: Plasticity(rules={"drive": rule}) for name, rule in rules.items()}
+    requests = {name: Plasticity(rules={"drive": rule}) for name, rule in rules.items()}
+    requests["Scaling"] = Plasticity(
+        rules={},
+        scaling={
+            "drive": SynapticScaling(
+                target_rate=20 * lang.Hz,
+                w_min=0 * lang.nA,
+                w_max=0.8 * lang.nA,
+            ),
+        },
+    )
+    return requests
 ```
 
 1. **Pair STDP** accumulates exponentially decaying pre/post traces and applies
@@ -142,6 +175,26 @@ def learning_rules(definition):
 4. **Reward-modulated STDP** stores pair increments in an eligibility trace and
    converts them to weight changes using the signed reward input. Zero reward
    allows eligibility to decay without changing weights.
+5. **Nonlinear STDP** uses independent power-law exponents for potentiation and
+   depression: `mu_plus=0.5` and `mu_minus=1.5` here. Both zero recovers additive
+   pairs; both one recovers the existing multiplicative pair variant.
+6. **Voltage STDP** combines presynaptic traces with postsynaptic voltage and
+   low-pass voltage filters. Its explicit `spike_voltage` supplies an excursion
+   for reset-based LIF cells. The thresholds and amplitudes here suit this
+   circuit's artificial 0–1 mV voltage scale, not biological membrane voltages.
+7. **Calcium plasticity** integrates dimensionless calcium from pre arrivals and
+   post spikes, then evolves a bounded bistable efficacy. This example retains
+   the deterministic rule's default time constants and calcium parameters;
+   it includes neither stochastic switching nor an additional calcium delay.
+8. **Synaptic scaling** uses proportional-integral feedback from each target's
+   firing-rate estimate. The scaling-only request demonstrates independent
+   homeostasis. To compose it with a local rule, add both under the same
+   projection name in `rules` and `scaling`, with identical bounds and units.
+   The defaults use a 100-second rate time constant, so changes over this
+   200 ms example are small; this is not evidence of homeostatic convergence.
+
+The [extended API reference](/api/sim#extended-built-in-plasticity) gives the
+equations, units, default values, discrete adaptations and original sources.
 
 ## 3. Register a custom learning rule
 
@@ -203,7 +256,7 @@ and learning traces into the next call.
 
 ```python
 def simulate_rule(request, events, rewards, stem):
-    rule = request.rules["drive"]
+    rule = request.rules.get("drive")
     bundle = make_graph(
         inhibitory=isinstance(rule, InhibitorySTDP),
         reward=isinstance(rule, RewardModulatedSTDP),
@@ -269,7 +322,7 @@ Install Graphviz so its `dot` executable is available for diagram rendering.
 Download the [complete script](/plasticity/example.py) to run it separately with
 SNNLab installed. Each run replaces the script's own `results/` directory.
 
-![Weight trajectories for additive pair, weight-dependent pair, triplet, inhibitory, reward-modulated and custom Hebbian learning over 200 ms. Green and red shading mark positive and negative reward intervals.](/plasticity/plasticity.png)
+![Ten weight-trajectory panels for additive pair, weight-dependent pair, nonlinear, voltage, calcium, triplet, inhibitory, reward-modulated, custom Hebbian and scaling-only learning over 200 ms. Green and red shading mark positive and negative reward intervals.](/plasticity/plasticity.png)
 
 The reward panel shows weights holding during zero reward, increasing during
 positive reward and decreasing during negative reward for this input sequence.
@@ -285,10 +338,14 @@ are available to download:
 | --- | --- | --- |
 | Additive pair | [stdp.npz](/plasticity/stdp.npz) | [Configuration](/plasticity/stdp-rule.json) |
 | Weight-dependent pair | [weight-dependent.npz](/plasticity/weight-dependent.npz) | [Configuration](/plasticity/weight-dependent-rule.json) |
+| Nonlinear pair | [nonlinear.npz](/plasticity/nonlinear.npz) | [Configuration](/plasticity/nonlinear-rule.json) |
+| Voltage | [voltage.npz](/plasticity/voltage.npz) | [Configuration](/plasticity/voltage-rule.json) |
+| Calcium | [calcium.npz](/plasticity/calcium.npz) | [Configuration](/plasticity/calcium-rule.json) |
 | Triplet | [triplet.npz](/plasticity/triplet.npz) | [Configuration](/plasticity/triplet-rule.json) |
 | Inhibitory | [inhibitory.npz](/plasticity/inhibitory.npz) | [Configuration](/plasticity/inhibitory-rule.json) |
 | Reward-modulated | [reward-modulated.npz](/plasticity/reward-modulated.npz) | [Configuration](/plasticity/reward-modulated-rule.json) |
 | Custom Hebbian | [custom.npz](/plasticity/custom.npz) | [Configuration](/plasticity/custom-rule.json) |
+| Scaling only | [scaling.npz](/plasticity/scaling.npz) | [Configuration](/plasticity/scaling-rule.json) |
 
 Each array file contains:
 
@@ -356,12 +413,16 @@ import torch
 
 from snnlab import extensions, lang, sim, viz
 from snnlab.plasticity import (
+    CalciumPlasticity,
     CustomPlasticity,
     InhibitorySTDP,
+    NonlinearSTDP,
     PairSTDP,
     Plasticity,
     RewardModulatedSTDP,
+    SynapticScaling,
     TripletSTDP,
+    VoltageSTDP,
 )
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "results"
@@ -446,6 +507,24 @@ def learning_rules(definition):
     rules = {
         "STDP": PairSTDP(**pair),
         "Weight-dependent": PairSTDP(**pair, weight_dependence="multiplicative"),
+        "Nonlinear": NonlinearSTDP(**pair, mu_plus=0.5, mu_minus=1.5),
+        "Voltage": VoltageSTDP(
+            a_plus=0.008 * lang.nA,
+            a_minus=0.004 * lang.nA,
+            theta_minus=0.2 * lang.mV,
+            theta_plus=0.6 * lang.mV,
+            voltage_rest=0 * lang.mV,
+            spike_voltage=1 * lang.mV,
+            tau_pre=10 * lang.ms,
+            tau_minus=10 * lang.ms,
+            tau_plus=10 * lang.ms,
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+        "Calcium": CalciumPlasticity(
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
         "Triplet": TripletSTDP(
             a2_plus=0.002 * lang.nA,
             a2_minus=0.004 * lang.nA,
@@ -478,11 +557,22 @@ def learning_rules(definition):
             w_max=0.8 * lang.nA,
         ),
     }
-    return {name: Plasticity(rules={"drive": rule}) for name, rule in rules.items()}
+    requests = {name: Plasticity(rules={"drive": rule}) for name, rule in rules.items()}
+    requests["Scaling"] = Plasticity(
+        rules={},
+        scaling={
+            "drive": SynapticScaling(
+                target_rate=20 * lang.Hz,
+                w_min=0 * lang.nA,
+                w_max=0.8 * lang.nA,
+            ),
+        },
+    )
+    return requests
 
 
 def simulate_rule(request, events, rewards, stem):
-    rule = request.rules["drive"]
+    rule = request.rules.get("drive")
     bundle = make_graph(
         inhibitory=isinstance(rule, InhibitorySTDP),
         reward=isinstance(rule, RewardModulatedSTDP),
@@ -544,7 +634,7 @@ def main():
     rewards = torch.zeros(200, 1, 1)
     rewards[60:100] = 1
     rewards[140:180] = -1
-    fig, axes = plt.subplots(2, 3, figsize=(13, 7))
+    fig, axes = plt.subplots(5, 2, figsize=(11, 17))
     for (label, request), ax in zip(
         learning_rules(definition).items(), axes.flat, strict=True
     ):
@@ -557,7 +647,7 @@ def main():
                     history[:, source, target],
                     label=f"{source} → {target}",
                 )
-        if isinstance(request.rules["drive"], RewardModulatedSTDP):
+        if isinstance(request.rules.get("drive"), RewardModulatedSTDP):
             ax.axvspan(60, 100, color="green", alpha=0.1)
             ax.axvspan(140, 180, color="red", alpha=0.1)
         ax.set(title=label, xlabel="Time (ms)", ylabel="Weight (nA)", ylim=(0, 0.85))

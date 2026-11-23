@@ -1,0 +1,52 @@
+{
+  "schema": "snnlab.plasticity/v1",
+  "rules": {
+    "drive": {
+      "kind": "voltage_stdp",
+      "a_plus": {
+        "value": 0.008,
+        "unit": "nA"
+      },
+      "a_minus": {
+        "value": 0.004,
+        "unit": "nA"
+      },
+      "theta_minus": {
+        "value": 0.2,
+        "unit": "mV"
+      },
+      "theta_plus": {
+        "value": 0.6,
+        "unit": "mV"
+      },
+      "voltage_rest": {
+        "value": 0.0,
+        "unit": "mV"
+      },
+      "spike_voltage": {
+        "value": 1.0,
+        "unit": "mV"
+      },
+      "tau_pre": {
+        "value": 10.0,
+        "unit": "ms"
+      },
+      "tau_minus": {
+        "value": 10.0,
+        "unit": "ms"
+      },
+      "tau_plus": {
+        "value": 10.0,
+        "unit": "ms"
+      },
+      "w_min": {
+        "value": 0.0,
+        "unit": "nA"
+      },
+      "w_max": {
+        "value": 0.8,
+        "unit": "nA"
+      }
+    }
+  }
+}

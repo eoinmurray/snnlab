@@ -1,0 +1,34 @@
+{
+  "schema": "snnlab.plasticity/v1",
+  "rules": {
+    "drive": {
+      "kind": "nonlinear_stdp",
+      "a_plus": {
+        "value": 0.008,
+        "unit": "nA"
+      },
+      "a_minus": {
+        "value": 0.004,
+        "unit": "nA"
+      },
+      "w_min": {
+        "value": 0.0,
+        "unit": "nA"
+      },
+      "w_max": {
+        "value": 0.8,
+        "unit": "nA"
+      },
+      "tau_pre": {
+        "value": 10.0,
+        "unit": "ms"
+      },
+      "tau_post": {
+        "value": 10.0,
+        "unit": "ms"
+      },
+      "mu_plus": 0.5,
+      "mu_minus": 1.5
+    }
+  }
+}

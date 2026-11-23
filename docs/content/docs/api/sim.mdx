@@ -133,8 +133,8 @@ learning runs at the end of the timestep; updated weights affect the next step.
    the existing importable extension descriptor contract. `learning.json()` and
    `Plasticity.from_json(data)` round-trip the request separately from the graph.
 
-The [Plasticity example](/plasticity) covers pair, triplet, inhibitory, reward
-and custom rules,
+The [Plasticity example](/plasticity) covers every built-in rule, independent
+synaptic scaling and custom callbacks,
 with step-by-step code, network diagrams and downloadable data. It produces weight trajectories, spike arrays,
 rule JSON and resumable state:
 
@@ -237,10 +237,11 @@ different rules and drives, rather than benchmark learning performance.
 
 #### Extended built-in plasticity
 
-Learning remains opt-in. The built-ins cover the eight families proposed in the
-repository: additive pairs, nonlinear pairs, inhibitory homeostasis, triplets,
-weight-dependent pairs with scaling, reward modulation, voltage-based learning,
-and calcium-based learning. Weight amplitudes and bounds are explicit because
+SNNLab 0.34.0 adds `NonlinearSTDP`, `VoltageSTDP`, `CalciumPlasticity` and
+`SynapticScaling`. Learning remains opt-in; no rule activates by default.
+The [runnable Plasticity example](/plasticity) includes all four additions,
+alongside additive and weight-dependent pairs, inhibitory homeostasis,
+triplets, reward modulation and custom learning. Weight amplitudes and bounds are explicit because
 current, conductance and dimensionless projections have different scales.
 The discrete conventions below are SNNLab adaptations, not promises to reproduce
 all figures or fitted parameters of the cited papers.

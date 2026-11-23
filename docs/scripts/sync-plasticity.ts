@@ -33,7 +33,7 @@ copyFileSync(new URL('example.py', example), new URL('example.py', publicDir));
 for (const name of ['network.png', 'plasticity.png']) {
   copyFileSync(new URL(`results/${name}`, example), new URL(name, publicDir));
 }
-for (const stem of ['stdp', 'weight-dependent', 'triplet', 'inhibitory', 'reward-modulated', 'custom']) {
+for (const stem of ['stdp', 'weight-dependent', 'nonlinear', 'voltage', 'calcium', 'triplet', 'inhibitory', 'reward-modulated', 'custom', 'scaling']) {
   for (const name of [`${stem}.npz`, `${stem}-rule.json`, ...(stem === 'stdp' ? [] : [`${stem}-network.png`])]) {
     copyFileSync(new URL(`results/${name}`, example), new URL(name, publicDir));
   }

@@ -11,12 +11,16 @@ import torch
 
 from snnlab import extensions, lang, sim, viz
 from snnlab.plasticity import (
+    CalciumPlasticity,
     CustomPlasticity,
     InhibitorySTDP,
+    NonlinearSTDP,
     PairSTDP,
     Plasticity,
     RewardModulatedSTDP,
+    SynapticScaling,
     TripletSTDP,
+    VoltageSTDP,
 )
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "results"
@@ -101,6 +105,24 @@ def learning_rules(definition):
     rules = {
         "STDP": PairSTDP(**pair),
         "Weight-dependent": PairSTDP(**pair, weight_dependence="multiplicative"),
+        "Nonlinear": NonlinearSTDP(**pair, mu_plus=0.5, mu_minus=1.5),
+        "Voltage": VoltageSTDP(
+            a_plus=0.008 * lang.nA,
+            a_minus=0.004 * lang.nA,
+            theta_minus=0.2 * lang.mV,
+            theta_plus=0.6 * lang.mV,
+            voltage_rest=0 * lang.mV,
+            spike_voltage=1 * lang.mV,
+            tau_pre=10 * lang.ms,
+            tau_minus=10 * lang.ms,
+            tau_plus=10 * lang.ms,
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
+        "Calcium": CalciumPlasticity(
+            w_min=0 * lang.nA,
+            w_max=0.8 * lang.nA,
+        ),
         "Triplet": TripletSTDP(
             a2_plus=0.002 * lang.nA,
             a2_minus=0.004 * lang.nA,
@@ -133,11 +155,22 @@ def learning_rules(definition):
             w_max=0.8 * lang.nA,
         ),
     }
-    return {name: Plasticity(rules={"drive": rule}) for name, rule in rules.items()}
+    requests = {name: Plasticity(rules={"drive": rule}) for name, rule in rules.items()}
+    requests["Scaling"] = Plasticity(
+        rules={},
+        scaling={
+            "drive": SynapticScaling(
+                target_rate=20 * lang.Hz,
+                w_min=0 * lang.nA,
+                w_max=0.8 * lang.nA,
+            ),
+        },
+    )
+    return requests
 
 
 def simulate_rule(request, events, rewards, stem):
-    rule = request.rules["drive"]
+    rule = request.rules.get("drive")
     bundle = make_graph(
         inhibitory=isinstance(rule, InhibitorySTDP),
         reward=isinstance(rule, RewardModulatedSTDP),
@@ -199,7 +232,7 @@ def main():
     rewards = torch.zeros(200, 1, 1)
     rewards[60:100] = 1
     rewards[140:180] = -1
-    fig, axes = plt.subplots(2, 3, figsize=(13, 7))
+    fig, axes = plt.subplots(5, 2, figsize=(11, 17))
     for (label, request), ax in zip(
         learning_rules(definition).items(), axes.flat, strict=True
     ):
@@ -212,7 +245,7 @@ def main():
                     history[:, source, target],
                     label=f"{source} → {target}",
                 )
-        if isinstance(request.rules["drive"], RewardModulatedSTDP):
+        if isinstance(request.rules.get("drive"), RewardModulatedSTDP):
             ax.axvspan(60, 100, color="green", alpha=0.1)
             ax.axvspan(140, 180, color="red", alpha=0.1)
         ax.set(title=label, xlabel="Time (ms)", ylabel="Weight (nA)", ylim=(0, 0.85))
