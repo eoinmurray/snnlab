@@ -65,6 +65,10 @@ Pass `plasticity=Plasticity(rules={"projection_name": PairSTDP(...)})` to
 uses `snnlab.extensions.register_plasticity` callbacks. Built-ins also include
 weight-dependent pair STDP, `TripletSTDP`, `InhibitorySTDP` and
 `RewardModulatedSTDP` with an explicit signed scalar reward input.
+`NonlinearSTDP` adds independent power-law exponents, `VoltageSTDP` uses
+postsynaptic membrane voltage, and `CalciumPlasticity` implements deterministic
+bistable calcium dynamics. `Plasticity.scaling` maps projections to independent
+`SynapticScaling` proportional-integral controllers, with or without another rule.
 Local updates use delayed
 spike arrivals and emitted post spikes at the end of each timestep, without
 an optimizer or gradients. Final adapted weights are returned as parameters;

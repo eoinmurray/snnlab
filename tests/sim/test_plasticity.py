@@ -397,3 +397,38 @@ def test_simulation_freezes_supplied_training_membership():
         },
     )
     assert not result.model.parameter_map()["plastic.weight"].requires_grad
+
+
+def test_scaling_composes_with_custom_rule_and_preserves_callback_state():
+    from snnlab.plasticity import SynapticScaling
+
+    request = replace(
+        custom_request(),
+        scaling={
+            "plastic": SynapticScaling(
+                target_rate=5 * lang.Hz,
+                tau_rate=100 * lang.ms,
+                beta=0.1,
+                gamma=0.01,
+                w_min=0 * lang.nA,
+                w_max=1 * lang.nA,
+            ),
+        },
+    )
+    request = Plasticity.from_json(json.loads(json.dumps(request.json())))
+    full = run([[0, 0]] * 3, [[0, 1]] * 3, request=request)
+    first = run([[0, 0]], [[0, 1]], request=request)
+    second = run(
+        [[0, 0]] * 2, [[0, 1]] * 2, request=request, runtime_state=first.runtime_state
+    )
+    torch.testing.assert_close(
+        full.parameters["plastic.weight"],
+        second.parameters["plastic.weight"],
+        rtol=0,
+        atol=0,
+    )
+    assert full.runtime_state.custom_state["plasticity/plastic/trace/count"].item() == 3
+    assert (
+        full.parameters["plastic.weight"][0, 0]
+        > full.parameters["plastic.weight"][0, 1]
+    )

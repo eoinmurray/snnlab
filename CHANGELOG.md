@@ -6,6 +6,12 @@ separate compatibility contracts.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-11-23
+
+### Added
+
+1. Built-in nonlinear pair STDP with independent exponents, voltage-based STDP with explicit spike excursions, deterministic bistable calcium plasticity, and composable proportional-integral synaptic scaling. All use explicit activation and weight bounds, portable descriptors and resumable learning state. Existing pair, triplet, inhibitory and reward rules retain their numerical and serialization contracts. Added analytical protocols, parameter validation, scaling-only snapshots and saved-continuation checks.
+
 ## [0.33.0] - 2026-11-20
 
 ### Added

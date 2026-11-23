@@ -1334,7 +1334,9 @@ def _run_eager_steps(forward: _ForwardContext, runtime: _ForwardState) -> None: 
                 forward, name, new_spikes[name], runtime.completed_steps + t
             )
         if forward.plasticity_session is not None:
-            forward.plasticity_session.step(plastic_arrivals, new_spikes, t)
+            forward.plasticity_session.step(
+                plastic_arrivals, new_spikes, t, runtime.voltage
+            )
             runtime.custom_state.update(forward.plasticity_session.tensors())
         for category, states in (
             ("neuron", runtime.neuron_states),

@@ -133,7 +133,8 @@ learning runs at the end of the timestep; updated weights affect the next step.
    the existing importable extension descriptor contract. `learning.json()` and
    `Plasticity.from_json(data)` round-trip the request separately from the graph.
 
-The [Plasticity example](/plasticity) covers every built-in and a custom rule,
+The [Plasticity example](/plasticity) covers pair, triplet, inhibitory, reward
+and custom rules,
 with step-by-step code, network diagrams and downloadable data. It produces weight trajectories, spike arrays,
 rule JSON and resumable state:
 
@@ -233,6 +234,142 @@ The runnable example covers all built-ins and a custom Hebbian rule; its
 inhibitory panel has additional fixed excitation, and its reward panel uses
 positive/negative reward intervals. These panels illustrate behavior under
 different rules and drives, rather than benchmark learning performance.
+
+#### Extended built-in plasticity
+
+Learning remains opt-in. The built-ins cover the eight families proposed in the
+repository: additive pairs, nonlinear pairs, inhibitory homeostasis, triplets,
+weight-dependent pairs with scaling, reward modulation, voltage-based learning,
+and calcium-based learning. Weight amplitudes and bounds are explicit because
+current, conductance and dimensionless projections have different scales.
+The discrete conventions below are SNNLab adaptations, not promises to reproduce
+all figures or fitted parameters of the cited papers.
+
+##### Nonlinear pair STDP
+
+`NonlinearSTDP` takes the same quantities as `PairSTDP`, with independent
+nonnegative finite `mu_plus` and `mu_minus` (both default to 1). Its normalized
+weight is $q=(w-w_{\min})/(w_{\max}-w_{\min})$, where $w$ is the current weight
+and $w_{\min}$ and $w_{\max}$ are its bounds. Multiply the usual potentiation by
+$(1-q)^{\mu_+}$ and depression by $q^{\mu_-}$, where $\mu_+$ and $\mu_-$ are the
+two exponents. Both factors use the weight at the start of the update, preserving
+SNNLab's existing pair convention. Both zero recovers additive pairs; both one
+recovers the existing multiplicative mode. Intermediate exponents implement the
+[Gütig et al. family](https://doi.org/10.1523/JNEUROSCI.23-09-03697.2003).
+Do not set `weight_dependence` on this class; select the exponents instead.
+
+##### Independent synaptic scaling
+
+`SynapticScaling` implements the proportional-integral controller in
+[van Rossum et al. (2000), Eq. 3](https://doi.org/10.1523/JNEUROSCI.20-23-08812.2000).
+It is a separate specification in `Plasticity.scaling`, composed with any built-in
+or custom rule on the same projection, or used alone with `rules={}`.
+Composed bounds and units must agree.
+
+```python
+from snnlab.plasticity import NonlinearSTDP, Plasticity, SynapticScaling
+
+learning = Plasticity(
+    rules={
+        "drive": NonlinearSTDP(
+            a_plus=0.001 * lang.nA,
+            a_minus=0.003 * lang.nA,
+            w_min=0 * lang.nA,
+            w_max=1 * lang.nA,
+            mu_plus=0,
+            mu_minus=1,
+        ),
+    },
+    scaling={
+        "drive": SynapticScaling(
+            target_rate=20 * lang.Hz,
+            w_min=0 * lang.nA,
+            w_max=1 * lang.nA,
+        ),
+    },
+)
+```
+
+Here the asymmetric pair exponents select constant potentiation and linear
+weight-dependent depression. The example specifies illustrative current weights;
+it does not reproduce the paper's conductance fit, noise or pairing scheme.
+Scaling defaults are `tau_rate=100000 * lang.ms`, `beta=4e-5` and `gamma=1e-7`.
+`beta` is expressed per second per Hz; `gamma` per second squared per Hz.
+
+For each target neuron, the rate estimate decays exponentially and receives
+`1000 / tau_rate_ms` Hz at each emitted spike. It starts at `target_rate`, with
+zero integrated error. Each step accumulates `(target_rate - rate) * dt_s` and
+adds `weight * dt_s * (beta * error + gamma * integrated_error)` to the local
+rule's increment, both evaluated at the old weight. Here `tau_rate_ms` is the
+rate time constant in ms, `dt_s` is the timestep in seconds, `error` is the
+rate difference in Hz, and `integrated_error` is its integral in Hz seconds.
+Bounds, constraints and autapse masking run after the combined update. Include
+all incoming projections to scale all afferents; unselected projections remain
+fixed. The two scaling trace names are reserved for the engine:
+`scaling_rate` and `scaling_integral`.
+
+##### Voltage-based learning
+
+`VoltageSTDP` is a [Clopath-style rule](https://doi.org/10.1038/nn.2479)
+without the optional slow metaplastic homeostasis. Supply `a_plus`, `a_minus`,
+`w_min`, `w_max`, three positive time constants `tau_pre`, `tau_minus`, `tau_plus`,
+and four mV quantities: `voltage_rest`, `theta_minus`, `theta_plus`, `spike_voltage`.
+Require `voltage_rest <= theta_minus < theta_plus < spike_voltage`.
+
+The voltage sample is the target's end-of-step membrane voltage, replaced by
+`spike_voltage` when it emits a spike, including replay interventions. This
+explicit excursion compensates for reset-based neurons that omit action-potential
+waveforms. It is a discrete adaptation; it is not Brian2's event-based variant.
+Low-pass voltage filters start at `voltage_rest` and use exact exponential
+relaxation toward each sample. Depression at a pre arrival uses the rectified
+filtered voltage above `theta_minus`. Continuous potentiation multiplies the
+old decayed pre trace, the instantaneous voltage above `theta_plus`, and the
+second filtered voltage above `theta_minus`, then integrates over the timestep.
+New pre spikes enter the trace after the update.
+
+Amplitudes are supplied as weight quantities, with numerical voltage factors in
+mV and integration in ms: `a_minus` is a coefficient per mV and `a_plus` per
+mV squared per ms. Choose coefficients for this convention. This rule requires
+membrane voltage in mV and rejects a dimensionless leaky-integrator target.
+
+##### Calcium-based learning
+
+`CalciumPlasticity(w_min=..., w_max=...)` implements the deterministic,
+zero-noise form of [Graupner and Brunel (2012)](https://doi.org/10.1073/pnas.1109359109).
+Normalized efficacy is $\rho=(w-w_{\min})/(w_{\max}-w_{\min})$, with $w$ the
+weight and $w_{\min}$/$w_{\max}$ its bounds. Each synapse has dimensionless
+calcium $c$, decaying with `tau_calcium`; arrivals add `c_pre` and emitted post
+spikes add `c_post`. The transmission delay also delays the presynaptic calcium
+jump; there is no additional independent calcium delay.
+
+After decay and jumps, integrate the efficacy drift
+
+$$
+\tau_w\dot\rho = \rho(1-\rho)(\rho-\rho_*)
++\gamma_p(1-\rho)\mathbf{1}_{c>\theta_p}
+-\gamma_d\rho\mathbf{1}_{c>\theta_d}.
+$$
+
+Here $\tau_w$ is `tau_weight`, $\rho_*$ is `rho_star`, $\gamma_p$/$\gamma_d$
+are the potentiation/depression strengths, $\theta_p$/$\theta_d$ the calcium
+thresholds, and $\mathbf{1}$ is an indicator equal to one when its condition
+holds. The dot denotes a time derivative. The cubic term gives two stable
+endpoints and an unstable interior threshold. Both calcium gates may act
+together, including after coincident spikes.
+
+Defaults are `tau_calcium=20 * lang.ms`, `tau_weight=150000 * lang.ms`,
+`c_pre=1`, `c_post=2`, `theta_depression=1`, `theta_potentiation=1.3`,
+`gamma_depression=200`, `gamma_potentiation=321.808` and `rho_star=0.5`.
+These use the deterministic part of the DP parameter set illustrated by
+[Brian2](https://brian2.readthedocs.io/en/stable/examples/frompapers.Graupner_Brunel_2012.html).
+Calcium decays exactly; efficacy uses forward Euler and the shared hard bounds.
+Select a timestep small enough to resolve the calcium windows and weight dynamics.
+This implementation does not model stochastic switching or reproduce the paper's
+noise-dependent transition probabilities.
+
+All extended rules and scaling serialize through `learning.json()` and
+`Plasticity.from_json(...)`. Their filters, calcium and integrated rate error
+resume with dynamic weights in `RuntimeState`, including scaling-only runs.
 
 ### train
 

@@ -330,7 +330,7 @@ def _plasticity_snapshot_weights(spec, model, state):
     projections = {p.id: p for p in model.plan.projections}
     return {
         projections[name].parameter: state.custom_state[f"plasticity/{name}/weight"]
-        for name in spec.plasticity.rules
+        for name in spec.plasticity.rules.keys() | spec.plasticity.scaling.keys()
         if name in projections and f"plasticity/{name}/weight" in state.custom_state
     }
 

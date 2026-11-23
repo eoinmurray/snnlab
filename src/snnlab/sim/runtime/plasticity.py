@@ -12,6 +12,7 @@ from snnlab.plasticity import (
     InhibitorySTDP,
     Plasticity,
     RewardModulatedSTDP,
+    VoltageSTDP,
 )
 from snnlab.sim.graph import extensions as X
 from snnlab.sim.runtime import plasticity_rules
@@ -65,6 +66,7 @@ class PlasticitySession:
         if getattr(executor, "_stream_metadata", None) is not None:
             raise ValueError("plasticity is unavailable in prepared streaming")
         self.request = request
+        self.rules = dict(request.scaling) | dict(request.rules)
         self.executor = executor
         self.projections = {p.id: p for p in executor.plan.projections}
         self.states = {}
@@ -80,7 +82,7 @@ class PlasticitySession:
             owners.update(op.get("parameters", []))
         populations = {p["id"]: p for p in graph["populations"]}
         inputs = {p["id"]: p for p in graph["inputs"]}
-        for name, rule in request.rules.items():
+        for name, rule in self.rules.items():
             if name not in self.projections:
                 raise ValueError(f"unknown plasticity projection {name!r}")
             p = self.projections[name]
@@ -92,6 +94,11 @@ class PlasticitySession:
                 source in inputs and inputs[source]["signal_type"] == "spikes"
             )
             target = populations[p.target.partition(".")[0]]
+            if (
+                isinstance(rule, VoltageSTDP)
+                and target["neuron"]["kind"] == "leaky_integrator"
+            ):
+                raise ValueError(f"{name}: VoltageSTDP requires membrane voltage in mV")
             if (
                 not p.enabled
                 or p.continuous
@@ -116,6 +123,13 @@ class PlasticitySession:
                 self._validate_weight(name, weight, rule)
             self.weights[p.parameter] = weight
             self.states[name] = self._initial_state(name, rule, weight)
+            if name in request.scaling:
+                rate = weight.new_full(
+                    (1, weight.shape[1]), request.scaling[name].target_rate.value
+                )
+                self.states[name].update(
+                    scaling_rate=rate, scaling_integral=torch.zeros_like(rate)
+                )
         if saved is not None:
             self._restore(saved)
 
@@ -145,6 +159,13 @@ class PlasticitySession:
                     dtype=weight.dtype,
                     name=f"{name}.{key}",
                 )
+        if (
+            name in self.request.scaling
+            and {"scaling_rate", "scaling_integral"} & state.keys()
+        ):
+            raise ValueError(
+                f"{name}: scaling_rate and scaling_integral are reserved state names"
+            )
         return {k: v.detach().clone() for k, v in state.items()}
 
     def _validate_weight(self, name, value, rule):
@@ -193,15 +214,15 @@ class PlasticitySession:
         for name, state in self.states.items():
             prefix = f"plasticity/{name}/"
             weight = restored[prefix + "weight"]
-            self._validate_weight(name, weight, self.request.rules[name])
+            self._validate_weight(name, weight, self.rules[name])
             self.weights[self.projections[name].parameter] = weight
             self.states[name] = {
                 key: restored[prefix + "trace/" + key] for key in state
             }
 
     @torch.no_grad()
-    def step(self, arrivals, spikes, step_index):
-        for name, rule in self.request.rules.items():
+    def step(self, arrivals, spikes, step_index, voltages=None):
+        for name, rule in self.rules.items():
             p = self.projections[name]
             weight = self.weights[p.parameter]
             pre = arrivals[name]
@@ -211,6 +232,15 @@ class PlasticitySession:
             ):
                 raise ValueError(f"{name}: plasticity requires binary spikes")
             state = self.states[name]
+            scaling_state = {
+                key: value
+                for key, value in state.items()
+                if name in self.request.scaling
+                and key in {"scaling_rate", "scaling_integral"}
+            }
+            state = {
+                key: value for key, value in state.items() if key not in scaling_state
+            }
             if not isinstance(rule, CustomPlasticity):
                 delta, state = plasticity_rules.step(
                     rule,
@@ -220,6 +250,9 @@ class PlasticitySession:
                     state,
                     self.dt_ms,
                     self.rewards[name][step_index] if name in self.rewards else None,
+                    voltages[p.target.partition(".")[0]]
+                    if voltages is not None
+                    else None,
                 )
             else:
                 definition = self.definitions[name]
@@ -235,6 +268,17 @@ class PlasticitySession:
                     )
                 )
                 state = X.checked_state(updated, state, definition.name)
+            if name in self.request.scaling:
+                scaling_delta, rate, integral = plasticity_rules.scaling_step(
+                    self.request.scaling[name],
+                    weight,
+                    post,
+                    scaling_state["scaling_rate"],
+                    scaling_state["scaling_integral"],
+                    self.dt_ms,
+                )
+                delta = delta + scaling_delta
+                state.update(scaling_rate=rate, scaling_integral=integral)
             X.checked_tensor(
                 delta,
                 shape=weight.shape,
